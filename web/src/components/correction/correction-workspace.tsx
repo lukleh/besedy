@@ -377,6 +377,7 @@ export function CorrectionWorkspace({
 
           {consent?.accepted && (
             <CorrectionSurface
+              key={`${state.workspace.id}:${userId}`}
               catalogId={catalogId}
               hash={hash}
               userId={userId}

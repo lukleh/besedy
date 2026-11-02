@@ -31,6 +31,7 @@ import {
 import { CorrectionStrip } from "./correction-strip";
 import { CorrectionFlags } from "./correction-flags";
 import { CorrectionGuideDialog } from "./correction-guide-dialog";
+import { useCorrectionDrafts } from "@/contexts/correction-drafts-context";
 import {
   CorrectionSpanAudio,
   PLAYBACK_RATES,
@@ -91,6 +92,8 @@ interface SpanCommandInput {
   span: SpanView;
   action: "approve" | "disapprove" | "withdraw" | "save_and_approve";
   text?: string;
+  /** Exact local wording settled by this command, to preserve typing made while it runs. */
+  draftToClear?: string;
   /** Minted when the person acts, so a retried request replays rather than repeats */
   idempotencyKey: string;
   /** What the person heard of the span, measured when they acted (ADR 0012) */
@@ -98,15 +101,6 @@ interface SpanCommandInput {
 }
 
 type PlaybackReport = ReturnType<PlaybackTracker["report"]>;
-
-/** Unsaved wording of a span the person moved away from, kept until they return. */
-interface StashedDraft {
-  /** The revision the draft was written against */
-  revisionId: string;
-  /** The stored text the draft was measured against */
-  baseText: string;
-  text: string;
-}
 
 /** Playback shares change often; the meter moves in steps so nothing re-renders per tick. */
 const HEARD_STEP = 0.05;
@@ -196,6 +190,7 @@ export function CorrectionSurface({
   const t = useTranslations("correction");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const localDrafts = useCorrectionDrafts(userId, workspace.id);
 
   // Nobody finishes a three-hour recording in a sitting, so the surface opens
   // on the first span that still wants this person rather than on the first
@@ -212,10 +207,6 @@ export function CorrectionSurface({
   // A jump to a segment that is not loaded yet plays it once it arrives.
   const [playOnArrival, setPlayOnArrival] = useState(false);
   const [draft, setDraft] = useState("");
-  // Dirty drafts of spans the person left without approving, by span id.
-  // Moving on used to discard them; a half-written correction of a 30 s
-  // span is work that must survive a click on another segment.
-  const [stash, setStash] = useState<ReadonlyMap<string, StashedDraft>>(() => new Map());
   // Whether the selected span still needs listening before it can be
   // approved. The share itself is shown by HeardMeter, which follows the
   // player on its own; the surface only re-renders when the gate flips.
@@ -340,7 +331,7 @@ export function CorrectionSurface({
     [spans, selectedSpanId]
   );
 
-  // A fresh selection starts from the stored text and positions the audio on
+  // A fresh selection restores any local draft and positions the audio on
   // the span without playing it. When the revision moves under the same span
   // while the draft is dirty, the draft is kept and flagged as a conflict,
   // whatever caused the refresh: the wording is work that would be lost. A
@@ -357,31 +348,23 @@ export function CorrectionSurface({
   ) {
     const spanChanged = draftFor?.spanId !== selected.id;
     if (spanChanged) {
-      // Leaving a span with unsaved wording keeps it; returning restores it,
-      // flagged as a conflict if the stored text moved meanwhile.
-      const leaving =
-        draftFor && draft.trim() !== draftFor.baseText.trim()
-          ? { spanId: draftFor.spanId, revisionId: draftFor.revisionId, baseText: draftFor.baseText, text: draft }
-          : null;
-      const stashed = stash.get(selected.id) ?? null;
-      if (leaving || stashed) {
-        const next = new Map(stash);
-        if (leaving) next.set(leaving.spanId, leaving);
-        if (stashed) next.delete(selected.id);
-        setStash(next);
-      }
-      // A stashed draft that says what the span now says is not unsaved work
-      // any more: somebody saved that wording meanwhile, or this person's own
-      // save landed after they moved on.
-      const restored = stashed && stashed.text.trim() !== selected.text.trim() ? stashed : null;
+      // A draft kept for this span comes back, flagged as a conflict when the
+      // stored text moved away from the text it was written against. The
+      // baseline is compared rather than the revision: a draft already flagged
+      // once records the newer revision, and leaving and returning must not
+      // clear the flag. A draft that says what the span now says is no
+      // unsaved work; the effect below drops it.
+      const saved = localDrafts.drafts[selected.id];
+      const restored =
+        saved?.text && saved.text.text.trim() !== selected.text.trim() ? saved.text : undefined;
       setDraftFor({
         spanId: selected.id,
         revisionId: selected.revisionId,
-        baseText: restored ? restored.baseText : selected.text,
+        baseText: restored?.baseText ?? selected.text,
       });
-      setConflict(restored ? restored.revisionId !== selected.revisionId : false);
-      setCommentBody("");
-      setDraft(restored ? restored.text : selected.text);
+      setConflict(Boolean(restored && restored.baseText.trim() !== selected.text.trim()));
+      setCommentBody(saved?.comment ?? "");
+      setDraft(restored?.text ?? selected.text);
       // The gate follows the span in the same render, so the approve button
       // never shows the previous span's listening for even one frame.
       setMustListen(
@@ -424,36 +407,16 @@ export function CorrectionSurface({
     measureHeard();
   }, [selectedRegions, measureHeard]);
 
-  // Unsaved wording, on screen or stashed, is lost with the page. A reload
-  // or a closed tab asks through beforeunload; a link inside the app does
-  // not unload the page, so same-window links ask through a confirm first.
-  const hasUnsavedWork = Boolean(draftFor && draft.trim() !== draftFor.baseText.trim()) || stash.size > 0;
+  // A kept draft that says what the span now says is no unsaved work any
+  // more: somebody saved that wording meanwhile, or this person's own save
+  // landed after they moved on. Dropping it ends its badge and reload warning.
+  const clearLocalText = localDrafts.clearText;
+  const selectedDraftText = selected ? localDrafts.drafts[selected.id]?.text?.text : undefined;
   useEffect(() => {
-    if (!hasUnsavedWork) return;
-    const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      // Older engines only honour the legacy field.
-      event.returnValue = "";
-    };
-    const guardLinks = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0) return;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const anchor = (event.target as Element | null)?.closest?.("a[href]");
-      if (!(anchor instanceof HTMLAnchorElement) || anchor.target === "_blank") return;
-      if (anchor.origin !== window.location.origin) return;
-      if (anchor.pathname === window.location.pathname && anchor.search === window.location.search) return;
-      if (!window.confirm(t("leaveUnsaved"))) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-    };
-    window.addEventListener("beforeunload", warn);
-    document.addEventListener("click", guardLinks, true);
-    return () => {
-      window.removeEventListener("beforeunload", warn);
-      document.removeEventListener("click", guardLinks, true);
-    };
-  }, [hasUnsavedWork, t]);
+    if (selected && selectedDraftText !== undefined && selectedDraftText.trim() === selected.text.trim()) {
+      clearLocalText(selected.id, selectedDraftText);
+    }
+  }, [selected, selectedDraftText, clearLocalText]);
 
   const historyQuery = useQuery({
     queryKey: ["correction-span-history", catalogId, hash, selected?.id],
@@ -607,15 +570,17 @@ export function CorrectionSurface({
       }),
     onSuccess: async (result, variables) => {
       pendingCommandRef.current = null;
+      if (variables.draftToClear !== undefined) {
+        localDrafts.clearText(variables.span.id, variables.draftToClear);
+      }
       // The server canonicalizes whitespace and Unicode before saving. Adopt
       // its returned wording only while the submitted draft is still on screen;
       // a newer local edit or another selected span belongs to the person.
       if (variables.action === "save_and_approve" && selectedIdRef.current === variables.span.id) {
         setDraft((current) => (current === variables.text ? result.text : current));
       }
-      // The saved wording is the new baseline at once. Advancing before the
-      // refetched list has rendered used to find the old baseline and stash
-      // the span that had just been saved as unsaved work.
+      // The saved wording is the new baseline at once, so the span does not
+      // look edited between the save and the refetched list.
       setDraftFor((current) =>
         current && current.spanId === variables.span.id
           ? { ...current, revisionId: result.revisionId, baseText: result.text }
@@ -673,9 +638,13 @@ export function CorrectionSurface({
       // Approvals and disapprovals report what was heard of this span; the
       // measurement is never a condition for deciding.
       const report = action === "withdraw" ? undefined : playback.report(speechRegionsInSeconds(span));
-      command.mutate({ span, action, text, idempotencyKey: key, playback: report });
+      const draftText = localDrafts.drafts[span.id]?.text?.text;
+      const draftToClear = action === "save_and_approve"
+        ? text
+        : action === "approve" && draftText?.trim() === span.text.trim() ? draftText : undefined;
+      command.mutate({ span, action, text, draftToClear, idempotencyKey: key, playback: report });
     },
-    [command, playback]
+    [command, localDrafts.drafts, playback]
   );
 
   const comment = useMutation({
@@ -688,8 +657,11 @@ export function CorrectionSurface({
           body: input.body,
         }),
       }),
-    onSuccess: async () => {
-      setCommentBody("");
+    onSuccess: async (_result, variables) => {
+      localDrafts.clearComment(variables.span.id, variables.body);
+      if (selectedIdRef.current === variables.span.id) {
+        setCommentBody((current) => current === variables.body ? "" : current);
+      }
       await refresh();
     },
     onError: (error) =>
@@ -739,9 +711,10 @@ export function CorrectionSurface({
   }, [selected, command.isPending, mustListen, isEdited, draft, issue, toast, t]);
 
   // Back to the stored text, for a draft this person no longer wants, on
-  // screen or just restored from the stash.
+  // screen or just restored. A comment being written stays.
   const discardDraft = useCallback(() => {
     if (!selected) return;
+    localDrafts.setText(selected.id, undefined);
     setDraft(selected.text);
     setConflict(false);
     setDraftFor((current) =>
@@ -749,7 +722,7 @@ export function CorrectionSurface({
         ? { ...current, revisionId: selected.revisionId, baseText: selected.text }
         : current
     );
-  }, [selected]);
+  }, [selected, localDrafts]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -869,7 +842,8 @@ export function CorrectionSurface({
               <span className="font-mono text-xs text-muted-foreground">
                 {formatClock(span.startSeconds)}
               </span>
-              {stash.has(span.id) && (
+              {span.id !== selected?.id &&
+                (localDrafts.drafts[span.id]?.text || localDrafts.drafts[span.id]?.comment) && (
                 <Badge variant="outline" className="shrink-0 border-amber-500/60 text-[10px]">
                   {t("unsavedDraft")}
                 </Badge>
@@ -983,7 +957,15 @@ export function CorrectionSurface({
             <Textarea
               ref={textareaRef}
               value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(event) => {
+                const text = event.target.value;
+                setDraft(text);
+                localDrafts.setText(selected.id, text.trim() === selected.text.trim() ? undefined : {
+                  text,
+                  baseText: draftFor?.baseText ?? selected.text,
+                  revisionId: selected.revisionId,
+                });
+              }}
               onKeyDown={handleKeyDown}
               rows={5}
               className="text-base leading-relaxed"
@@ -1078,7 +1060,10 @@ export function CorrectionSurface({
             <div className="space-y-2">
               <Textarea
                 value={commentBody}
-                onChange={(event) => setCommentBody(event.target.value)}
+                onChange={(event) => {
+                  setCommentBody(event.target.value);
+                  localDrafts.setComment(selected.id, event.target.value);
+                }}
                 rows={2}
                 placeholder={t("commentPlaceholder")}
               />

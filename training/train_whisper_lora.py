@@ -23,6 +23,7 @@ from pathlib import Path
 import jiwer
 import soundfile as sf
 import torch
+from accumulation import accumulation_windows
 from peft import LoraConfig, get_peft_model
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
@@ -196,8 +197,7 @@ def main():
         [p for p in model.parameters() if p.requires_grad], lr=args.lr, weight_decay=0.0
     )
 
-    micro_steps = args.epochs * math.ceil(len(train) / args.batch_size)
-    total_steps = math.ceil(micro_steps / args.grad_accum)
+    total_steps = args.epochs * math.ceil(len(train) / (args.batch_size * args.grad_accum))
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
         lambda s: min(1.0, (s + 1) / max(1, total_steps // 10)) * max(0.0, 1 - s / total_steps),
@@ -207,27 +207,25 @@ def main():
     model.train()
     for epoch in range(args.epochs):
         rng.shuffle(train)
-        for i in range(0, len(train), args.batch_size):
-            features, labels = batcher(train[i : i + args.batch_size])
-            with torch.autocast("cuda", dtype=torch.bfloat16):
-                out_ = model(
-                    input_features=features.to(device, torch.bfloat16), labels=labels.to(device)
-                )
-            (out_.loss / args.grad_accum).backward()
-            losses.append(out_.loss.item())
-            if (i // args.batch_size + 1) % args.grad_accum == 0:
-                torch.nn.utils.clip_grad_norm_(
-                    [p for p in model.parameters() if p.requires_grad], 1.0
-                )
-                optimizer.step()
-                scheduler.step()
-                optimizer.zero_grad(set_to_none=True)
-                step += 1
-                if step % 5 == 0:
-                    print(
-                        f"epoch {epoch} step {step}/{total_steps} loss {sum(losses[-20:]) / len(losses[-20:]):.4f}",
-                        flush=True,
+        for window in accumulation_windows(train, args.batch_size, args.grad_accum):
+            for batch in window:
+                features, labels = batcher(batch)
+                with torch.autocast("cuda", dtype=torch.bfloat16):
+                    out_ = model(
+                        input_features=features.to(device, torch.bfloat16), labels=labels.to(device)
                     )
+                (out_.loss / len(window)).backward()
+                losses.append(out_.loss.item())
+            torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], 1.0)
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad(set_to_none=True)
+            step += 1
+            if step % 5 == 0:
+                print(
+                    f"epoch {epoch} step {step}/{total_steps} loss {sum(losses[-20:]) / len(losses[-20:]):.4f}",
+                    flush=True,
+                )
     report["optimizer_steps"] = step
     report["train_loss_first20"] = sum(losses[:20]) / len(losses[:20])
     report["train_loss_last20"] = sum(losses[-20:]) / len(losses[-20:])

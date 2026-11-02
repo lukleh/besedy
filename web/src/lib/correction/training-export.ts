@@ -1,3 +1,4 @@
+import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
 import { loadSpanFlags } from "@/lib/correction/flag-service";
 import { loadSpanSummaries } from "@/lib/correction/span-summaries";
@@ -65,11 +66,12 @@ export interface TrainingExport {
 
 /** The latest playback each approver reported on the given revisions. */
 async function approvalPlayback(
+  client: Prisma.TransactionClient,
   revisionIds: readonly string[]
 ): Promise<Map<string, Map<string, number | null>>> {
   const result = new Map<string, Map<string, number | null>>();
   if (revisionIds.length === 0) return result;
-  const decisions = await prisma.transcriptSpanDecision.findMany({
+  const decisions = await client.transcriptSpanDecision.findMany({
     where: { revisionId: { in: [...revisionIds] }, kind: "APPROVE" },
     orderBy: { sequence: "asc" },
     select: { revisionId: true, actorKey: true, heardFraction: true },
@@ -92,7 +94,22 @@ export async function buildTrainingExport(
   policy: TrainingExportPolicy = DEFAULT_TRAINING_EXPORT_POLICY,
   filter: TrainingExportFilter = {}
 ): Promise<TrainingExport> {
-  const workspaces = await prisma.transcriptWorkspace.findMany({
+  // PostgreSQL's default READ COMMITTED can combine approvals from before an
+  // objection with flags from after it was cleared. Every eligibility read,
+  // including those inside the loaders, must see the same snapshot.
+  return prisma.$transaction(
+    (tx) => buildTrainingExportSnapshot(tx, catalogId, policy, filter),
+    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, maxWait: 10_000, timeout: 60_000 }
+  );
+}
+
+async function buildTrainingExportSnapshot(
+  client: Prisma.TransactionClient,
+  catalogId: string,
+  policy: TrainingExportPolicy,
+  filter: TrainingExportFilter
+): Promise<TrainingExport> {
+  const workspaces = await client.transcriptWorkspace.findMany({
     where: {
       workflowGroupId: catalogId,
       status: "ACTIVE",
@@ -114,14 +131,15 @@ export async function buildTrainingExport(
 
   const exported: TrainingExportWorkspace[] = [];
   for (const workspace of workspaces) {
-    const summaries = await loadSpanSummaries(workspace.id);
-    const regions = await prisma.transcriptSpan.findMany({
+    const summaries = await loadSpanSummaries(workspace.id, { client });
+    const regions = await client.transcriptSpan.findMany({
       where: { workspaceId: workspace.id },
       select: { id: true, chunkOrdinal: true, firstRegionIndex: true, lastRegionIndex: true },
     });
     const regionsBySpan = new Map(regions.map((row) => [row.id, row]));
-    const flags = await loadSpanFlags(summaries.map((span) => span.id));
+    const flags = await loadSpanFlags(summaries.map((span) => span.id), client);
     const playback = await approvalPlayback(
+      client,
       summaries.flatMap((span) => (span.currentRevision ? [span.currentRevision.id] : []))
     );
 
