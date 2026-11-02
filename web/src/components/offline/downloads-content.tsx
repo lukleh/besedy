@@ -29,7 +29,7 @@ import { FormatUpgradeNotice } from '@/components/offline/format-upgrade-notice'
 import { useAacUpgradeAvailable } from '@/hooks/use-aac-upgrade-available';
 import { useDownloadManager } from '@/hooks/use-downloads';
 import { useInstallPrompt } from '@/hooks/use-install-prompt';
-import { formatPartialDate } from '@/lib/date-format';
+import { formatMediumDate, formatPartialDate } from '@/lib/date-format';
 import { formatBytes } from '@/lib/format-bytes';
 import {
   downloadManager,
@@ -40,7 +40,9 @@ import { buildRecordingPagePath } from '@/lib/api/recording-urls';
 import { DOWNLOADS_PATH } from '@/lib/offline/cache-names';
 import { withBackTo } from '@/lib/navigation/back-to';
 import { cn } from '@/lib/utils';
+import { EventPlaybackProgress } from '@/components/catalog/event-playback-progress';
 import { SessionOrdinalBadge } from '@/components/catalog/session-ordinal-badge';
+import { localPlaybackSummary } from './local-event-list';
 
 export function DownloadsContent() {
   const t = useTranslations('downloads');
@@ -52,7 +54,7 @@ export function DownloadsContent() {
 
   const groups = useMemo(() => {
     const byCatalog = new Map<string, DownloadRecord[]>();
-    for (const record of records) {
+    for (const record of sortDownloadRecords(records)) {
       const list = byCatalog.get(record.catalogId) ?? [];
       list.push(record);
       byCatalog.set(record.catalogId, list);
@@ -192,6 +194,36 @@ export function DownloadsContent() {
   );
 }
 
+function recordDateKey(record: DownloadRecord): number | null {
+  const year = record.event?.dateYear ?? record.recording?.dateYear ?? null;
+  if (year === null) return null;
+  const month = record.event?.dateMonth ?? record.recording?.dateMonth ?? 0;
+  const day = record.event?.dateDay ?? record.recording?.dateDay ?? 0;
+  return year * 10_000 + month * 100 + day;
+}
+
+/**
+ * Newest first, as in the catalog list: by event (or recording) date, then
+ * by session within a day. Undated downloads follow, most recent first.
+ */
+export function sortDownloadRecords(
+  records: readonly DownloadRecord[],
+): DownloadRecord[] {
+  return [...records].sort((a, b) => {
+    const dateA = recordDateKey(a);
+    const dateB = recordDateKey(b);
+    if (dateA !== dateB) {
+      if (dateA === null) return 1;
+      if (dateB === null) return -1;
+      return dateB - dateA;
+    }
+    return (
+      (b.event?.sessionIndex ?? 0) - (a.event?.sessionIndex ?? 0) ||
+      b.createdAt - a.createdAt
+    );
+  });
+}
+
 /**
  * The normal page for a download: the event page, or the recording page. Its
  * back control returns here rather than to the catalog list.
@@ -224,11 +256,16 @@ function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
   const dateYear = event?.dateYear ?? recording?.dateYear ?? null;
   const dateMonth = event?.dateMonth ?? recording?.dateMonth ?? null;
   const dateDay = event?.dateDay ?? recording?.dateDay ?? null;
+  // The catalog list's event cards use the same form.
   const formattedDate =
-    dateYear !== null
-      ? (formatPartialDate(dateYear, dateMonth, dateDay, locale) ??
-        String(dateYear))
-      : null;
+    dateYear === null
+      ? null
+      : dateMonth !== null && dateDay !== null
+        ? formatMediumDate(dateYear, dateMonth, dateDay, locale)
+        : formatPartialDate(dateYear, dateMonth, dateDay, locale) ||
+          String(dateYear);
+  const playback =
+    record.status === 'complete' ? localPlaybackSummary(record) : null;
 
   const title = event
     ? [formattedDate, event.locationName].filter(Boolean).join(' · ') ||
@@ -350,6 +387,7 @@ function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          <EventPlaybackProgress playback={playback} layout="inline" showLabel />
           {record.status === 'complete' && (
             // A document navigation: Downloads lives in its own root layout,
             // and the worker serves the target from local packages offline.

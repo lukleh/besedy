@@ -5,6 +5,7 @@ import { DownloadManagerBridge } from '@/components/offline/download-manager-bri
 const mocks = vi.hoisted(() => ({
   downloadManager: {
     hydrate: vi.fn(),
+    setLocale: vi.fn(),
     setOnline: vi.fn(),
     setUserId: vi.fn(),
   },
@@ -17,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   useSession: vi.fn(),
 }));
 
+vi.mock('next-intl', () => ({
+  useLocale: () => 'cs',
+}));
 vi.mock('@/contexts/reload-safety-context', () => ({
   useReloadSafety: () => ({ registerBlocker: mocks.registerBlocker }),
 }));
@@ -107,6 +111,12 @@ describe('DownloadManagerBridge session recovery', () => {
     await waitFor(() =>
       expect(mocks.flushPendingPlaybackProgress).toHaveBeenCalledWith('owner-1'),
     );
+  });
+
+  it('passes the page language to the manager', () => {
+    render(<DownloadManagerBridge />);
+
+    expect(mocks.downloadManager.setLocale).toHaveBeenCalledWith('cs');
   });
 
   it('starts recovery when the online state reconnects', async () => {
