@@ -121,11 +121,22 @@ nothing aside for an experiment, and `--audio-hash`
 `<audio artifacts root>/training/training_export_<timestamp>/` with a
 `training_export` symlink: `audio/*.wav`, `manifest.jsonl`, `export.json` (what
 the web listed, including excluded chunks and why) and `dataset.json` (policy,
-including where the test list came from, and counts). `training/` is a separate
+including where the test list came from, and counts). Each manifest row also
+carries the chunk's `machine_text` (the production transcript the correctors
+started from) and `revision_origins`, so the machine-vs-human baseline can be
+scored from the dataset alone. `training/` is a separate
 uv project (`cd training && uv run train_whisper_lora.py --data <dataset> --out <run>`)
-that fine-tunes Whisper large-v3 with LoRA on such a dataset and writes a
-merged checkpoint for `backends/faster-whisper/convert_model.sh`; its
+that fine-tunes Whisper large-v3 with LoRA on such a dataset, scores it before
+and after on a dev set of whole recordings carved out of the train split, and
+writes a merged checkpoint for `backends/faster-whisper/convert_model.sh`; its
 dependencies (CUDA torch) resolve on Linux only.
+`catalog training-eval` (`besedy/commands/catalog/training_eval.py`) scores any
+CTranslate2 model on the dataset's test chunks through the production decode
+path (`besedy/workflows/eval_faster_whisper.py` in the faster-whisper image,
+with the options of `besedy/lib/workflow/faster_whisper_options.py`) and
+`--compare` prints one table over saved reports; the normalizer and WER/CER
+every score uses live in `besedy/lib/asr_evaluation.py`. `training/README.md`
+walks through export, train, convert, eval and compare.
 
 ### CatalogEntry Join Contract
 

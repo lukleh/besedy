@@ -9,7 +9,9 @@ dependencies = [
     "peft==0.21.2",
     "soundfile",
     "numpy",
-    "jiwer",
+    # The shared normalizer, WER/CER and split logic (besedy/lib/asr_evaluation.py),
+    # from this checkout; its own dependencies are light.
+    "besedy",
 ]
 
 [tool.uv]
@@ -19,6 +21,7 @@ environments = ["sys_platform == 'linux'"]
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu128" }]
+besedy = { path = "..", editable = true }
 
 [[tool.uv.index]]
 name = "pytorch-cu128"

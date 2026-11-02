@@ -6,6 +6,18 @@ was given, and manifest.jsonl with its corrected text and its split
 the model keeps its timestamp mode; the rest are text only, the mode the
 batched production decoding uses.
 
+Splits. The dataset's test recordings are never read for tuning: a dev set of
+whole recordings is carved out of the train split by audio hash
+(--dev-fraction, --seed), deterministically, and scores the model before and
+after training, so --epochs, --lr and --lora-r are chosen against dev. The
+test split is scored once, on the converted model and through the production
+decode path, with `catalog training-eval`; --score-test adds an HF-generate
+score on the test split here for a quick look, which is not that number.
+
+Scores are the shared raw and normalized word error rate and character error
+rate of besedy/lib/asr_evaluation.py; every hypothesis is written next to the
+report so disagreements can be read.
+
 The merged checkpoint in <out>/merged is ready for
 backends/faster-whisper/convert_model.sh: it keeps large-v3's alignment
 heads and writes preprocessor_config.json (128 mel bins).
@@ -20,24 +32,15 @@ import random
 import time
 from pathlib import Path
 
-import jiwer
 import soundfile as sf
 import torch
 from accumulation import accumulation_windows
 from peft import LoraConfig, get_peft_model
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
+from besedy.lib import asr_evaluation as ev
+
 BASE = "openai/whisper-large-v3"
-
-
-def load_rows(data_dir, split):
-    rows = []
-    with open(Path(data_dir) / "manifest.jsonl", encoding="utf-8") as f:
-        for line in f:
-            row = json.loads(line)
-            if row["split"] == split:
-                rows.append(row)
-    return rows
 
 
 def encode_labels(tokenizer, text, duration, with_timestamps):
@@ -99,9 +102,10 @@ def eval_loss(model, batcher, rows, batch_size, device):
 
 
 @torch.no_grad()
-def eval_wer(model, processor, batcher, rows, batch_size, device):
+def generate_hypotheses(model, processor, batcher, rows, batch_size, device):
+    """Greedy HF generation on whole chunks, text mode, as a quick in-training score."""
     model.eval()
-    hyps, refs = [], []
+    hyps = []
     for i in range(0, len(rows), batch_size):
         chunk = rows[i : i + batch_size]
         features, _ = batcher(chunk, with_timestamps=False)
@@ -113,8 +117,35 @@ def eval_wer(model, processor, batcher, rows, batch_size, device):
                 max_new_tokens=440,
             )
         hyps += [t.strip() for t in processor.batch_decode(ids, skip_special_tokens=True)]
-        refs += [r["text"] for r in chunk]
-    return jiwer.wer(refs, hyps), hyps[:3], refs[:3]
+    return hyps
+
+
+def score(model, processor, batcher, rows, batch_size, device, hypotheses_path):
+    """Loss plus the shared WER/CER of the rows, with every hypothesis written out."""
+    hyps = generate_hypotheses(model, processor, batcher, rows, batch_size, device)
+    scores = ev.score_rows(rows, hyps)
+    ev.write_hypotheses(hypotheses_path, scores)
+    return {
+        "loss": eval_loss(model, batcher, rows, batch_size, device),
+        **ev.summarize(scores),
+        "hypotheses": hypotheses_path.name,
+    }
+
+
+def make_splits(rows, dev_fraction, seed):
+    """Train, dev and test rows; dev is whole recordings taken from the train split."""
+    train_all = ev.select_rows(rows, "train")
+    test = ev.select_rows(rows, "test")
+    train_hashes, dev_hashes = ev.split_dev_recordings(
+        (r["audio_hash"] for r in train_all), dev_fraction, seed
+    )
+    test_hashes = {r["audio_hash"] for r in test}
+    assert not set(dev_hashes) & test_hashes, "a dev recording is also a test recording"
+    assert not set(train_hashes) & test_hashes, "a train recording is also a test recording"
+    dev_set = set(dev_hashes)
+    train = [r for r in train_all if r["audio_hash"] not in dev_set]
+    dev = [r for r in train_all if r["audio_hash"] in dev_set]
+    return train, dev, test, dev_hashes
 
 
 def main():
@@ -127,7 +158,26 @@ def main():
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--lora-r", type=int, default=32)
     p.add_argument("--timestamp-ratio", type=float, default=0.5)
-    p.add_argument("--eval-spans", type=int, default=40)
+    p.add_argument(
+        "--dev-fraction",
+        type=float,
+        default=0.1,
+        help="Share of the train recordings (whole, by audio hash) held out as dev",
+    )
+    p.add_argument(
+        "--eval-rows",
+        type=int,
+        default=80,
+        help="Dev chunks scored before and after training, in seeded random order; 0 for all",
+    )
+    p.add_argument(
+        "--score-test",
+        action="store_true",
+        help=(
+            "Also score the merged model on the whole test split with HF generate; "
+            "the production number is `catalog training-eval` on the converted model"
+        ),
+    )
     p.add_argument(
         "--max-train-chunks",
         type=int,
@@ -142,7 +192,7 @@ def main():
     device = "cuda"
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    report = {"base": BASE, "args": vars(args)}
+    report = {"base": BASE, "args": vars(args), "dataset": ev.dataset_identity(Path(args.data))}
 
     processor = WhisperProcessor.from_pretrained(BASE)
     model = WhisperForConditionalGeneration.from_pretrained(BASE, dtype=torch.bfloat16).to(device)
@@ -159,27 +209,49 @@ def main():
     )
     report["label_probe"] = tok.convert_ids_to_tokens(probe)
 
-    train = load_rows(args.data, "train")
-    test = load_rows(args.data, "test")
+    rows = ev.load_manifest(Path(args.data))
+    train, dev, test, dev_hashes = make_splits(rows, args.dev_fraction, args.seed)
     rng.shuffle(train)
     if args.max_train_chunks is not None:
         train = train[: args.max_train_chunks]
     if not train:
         raise SystemExit("The dataset has no training chunks")
-    eval_rows = test[: args.eval_spans]
-    report["train_spans"], report["test_spans"] = len(train), len(test)
+    eval_rows = ev.shuffled_rows(dev, args.seed, args.eval_rows or None)
+    report["splits"] = {
+        "train_recordings": len({r["audio_hash"] for r in train}),
+        "dev_recordings": len(dev_hashes),
+        "test_recordings": len({r["audio_hash"] for r in test}),
+        "train_chunks": len(train),
+        "dev_chunks": len(dev),
+        "dev_chunks_scored": len(eval_rows),
+        "test_chunks": len(test),
+        "dev_audio_hashes": dev_hashes,
+    }
+    ev.write_recordings(out / "dev-recordings.json", dev_hashes)
+    if not dev:
+        print(
+            "warning: no dev set (one training recording or --dev-fraction 0); "
+            "before/after scores are skipped",
+            flush=True,
+        )
+    else:
+        report["dev_machine_baseline"] = ev.machine_baseline(eval_rows)
     batcher = Batcher(
         processor, args.data, model.config.decoder_start_token_id, args.timestamp_ratio, rng
     )
 
     t0 = time.time()
     if eval_rows:
-        report["before"] = {
-            "test_loss": eval_loss(model, batcher, eval_rows, args.batch_size, device)
-        }
-        wer, hyps, refs = eval_wer(model, processor, batcher, eval_rows, args.batch_size, device)
-        report["before"]["test_wer"] = wer
-        print("before:", report["before"], flush=True)
+        report["before"] = score(
+            model,
+            processor,
+            batcher,
+            eval_rows,
+            args.batch_size,
+            device,
+            out / "dev_hypotheses_before.jsonl",
+        )
+        print("before (dev):", report["before"], flush=True)
 
     lora = LoraConfig(
         r=args.lora_r,
@@ -236,13 +308,34 @@ def main():
     merged = model.merge_and_unload()
     merged.config.use_cache = True
     if eval_rows:
-        report["after"] = {
-            "test_loss": eval_loss(merged, batcher, eval_rows, args.batch_size, device)
+        report["after"] = score(
+            merged,
+            processor,
+            batcher,
+            eval_rows,
+            args.batch_size,
+            device,
+            out / "dev_hypotheses_after.jsonl",
+        )
+        print("after (dev):", report["after"], flush=True)
+    if args.score_test and test:
+        report["test_hf_generate"] = {
+            "note": (
+                "HF generate on whole chunks; the production number is "
+                "`catalog training-eval` on the converted model"
+            ),
+            **score(
+                merged,
+                processor,
+                batcher,
+                test,
+                args.batch_size,
+                device,
+                out / "test_hypotheses.jsonl",
+            ),
+            "machine_baseline": ev.machine_baseline(test),
         }
-        wer, hyps, refs = eval_wer(merged, processor, batcher, eval_rows, args.batch_size, device)
-        report["after"]["test_wer"] = wer
-        report["samples"] = [{"ref": r, "hyp": h} for r, h in zip(refs, hyps)]
-        print("after:", report["after"], flush=True)
+        print("test (HF generate):", report["test_hf_generate"], flush=True)
 
     merged_dir = out / "merged"
     merged.generation_config.alignment_heads = base_alignment_heads
@@ -256,11 +349,7 @@ def main():
     assert json.loads((merged_dir / "preprocessor_config.json").read_text())["feature_size"] == 128
     report["merged_files"] = sorted(x.name for x in merged_dir.iterdir())
     (out / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
-    print(
-        json.dumps(
-            {k: v for k, v in report.items() if k != "samples"}, indent=2, ensure_ascii=False
-        )
-    )
+    print(json.dumps(report, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
