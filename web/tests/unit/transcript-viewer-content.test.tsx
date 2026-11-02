@@ -351,6 +351,38 @@ describe("TranscriptContent scrolling", () => {
     expect(elementScrollTo).toHaveBeenCalledWith({ top: 340 });
   });
 
+  it("does not follow a word that starts before stopping has rendered", () => {
+    const clock = createPlaybackClock(0.2);
+    // The handler leaves `follow` as it is: the new mode has not rendered yet.
+    const onFollowChange = vi.fn();
+    const { container } = render(
+      <TranscriptContent
+        transcript={transcript}
+        clock={clock}
+        follow
+        onFollowChange={onFollowChange}
+      />,
+    );
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+
+    fireEvent.scroll(container.querySelector(VIEWPORT_SELECTOR)!);
+    expect(onFollowChange).toHaveBeenCalledWith(false);
+    act(() => clock.set(1.2));
+
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps following on the reader's scroll when nothing can change the mode", () => {
+    const clock = createPlaybackClock(0.2);
+    const { container } = render(<TranscriptContent transcript={transcript} clock={clock} follow />);
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+
+    fireEvent.scroll(container.querySelector(VIEWPORT_SELECTOR)!);
+    act(() => clock.set(1.2));
+
+    expect(elementScrollTo).toHaveBeenCalledTimes(2);
+  });
+
   it("ignores pinch-zoom, sideways wheels and wheels past the end", () => {
     const onFollowChange = vi.fn();
     const { container } = render(

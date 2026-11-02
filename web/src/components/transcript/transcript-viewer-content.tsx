@@ -333,11 +333,23 @@ function useFollowPlayback<T extends Element | number>({
 }: FollowPlaybackOptions<T>) {
   const { activeSegments, playheadIndex, followIndex, started } = usePlayhead(segments, clock);
 
+  // Following is kept in a ref for the followed row's reports, and the last
+  // target brought into view is not measured again: it has not moved unless
+  // the reader scrolled, and that stops following.
+  const followRef = useRef(follow);
+
   const onFollowChangeRef = useRef(onFollowChange);
   useEffect(() => {
     onFollowChangeRef.current = onFollowChange;
   }, [onFollowChange]);
-  const stopFollowing = useCallback(() => onFollowChangeRef.current?.(false), []);
+  // The reader's scroll stops following at once, so a word that changes
+  // before the new mode renders is not scrolled to. Without a handler the
+  // mode cannot change, and following carries on.
+  const stopFollowing = useCallback(() => {
+    if (!onFollowChangeRef.current) return;
+    followRef.current = false;
+    onFollowChangeRef.current(false);
+  }, []);
   const resumeFollowing = useCallback(() => onFollowChangeRef.current?.(true), []);
   const markFollowScroll = useReaderScroll(scroller, follow, stopFollowing);
 
@@ -346,10 +358,6 @@ function useFollowPlayback<T extends Element | number>({
     targetRef.current = target;
   }, [target]);
 
-  // Following is kept in a ref for the followed row's reports, and the last
-  // target brought into view is not measured again: it has not moved unless
-  // the reader scrolled, and that stops following.
-  const followRef = useRef(follow);
   const followIndexRef = useRef(followIndex);
   const reportedRef = useRef<T | null>(null);
   const lastTargetRef = useRef<T | null>(null);
