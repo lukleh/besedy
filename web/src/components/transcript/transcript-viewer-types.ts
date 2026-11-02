@@ -1,6 +1,7 @@
 "use client";
 
 import { z } from "zod";
+import type { PlaybackClock } from "@/lib/playback-clock";
 
 export type TranscriptBackend = string;
 export type TranscriptFormat = "json" | "txt" | "srt" | "vtt";
@@ -130,7 +131,8 @@ export interface TranscriptViewerProps {
   groupId: string;
   /** Offers the correction surface from the progress panel */
   canCorrectTranscripts?: boolean;
-  currentTime?: number;
+  /** The player's position; without one the transcript shows no playback. */
+  clock?: PlaybackClock;
   onSeek?: (time: number) => void;
   isPlaying?: boolean;
   canDownload?: boolean;
@@ -144,7 +146,7 @@ export interface TranscriptViewerProps {
 
 export interface TranscriptContentProps {
   transcript: Transcript;
-  currentTime: number;
+  clock?: PlaybackClock;
   onSeek?: (time: number) => void;
   autoScroll?: boolean;
   diarization?: Diarization;

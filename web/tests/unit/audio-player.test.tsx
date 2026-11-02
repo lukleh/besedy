@@ -1708,6 +1708,31 @@ describe("AudioPlayer external seek", () => {
 });
 
 describe("AudioPlayer lifecycle resume", () => {
+  it("holds its time display while the page is hidden and catches up when shown", async () => {
+    const onTimeUpdate = vi.fn();
+    const { audio, container } = renderPlayer({ onTimeUpdate });
+    Object.defineProperty(audio, "duration", { value: 100, configurable: true });
+    await act(async () => {
+      audio.dispatchEvent(new Event("loadedmetadata"));
+    });
+
+    setVisibilityState("hidden");
+    audio.currentTime = 20;
+    await act(async () => {
+      audio.dispatchEvent(new Event("timeupdate"));
+    });
+
+    // Position saving still hears about it; the screen does not change.
+    expect(onTimeUpdate).toHaveBeenCalledWith(20);
+    expect(container.textContent).not.toContain("0:20");
+
+    await act(async () => {
+      setVisibilityState("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(container.textContent).toContain("0:20");
+  });
+
   it("restores the saved position when a visible page resumes with the audio reset to zero", async () => {
     const hash = "a".repeat(64);
     const onTimeUpdate = vi.fn();

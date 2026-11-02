@@ -135,7 +135,7 @@ describe("useRecordingPlayback", () => {
       result.current.setCurrentTime(91);
     });
 
-    expect(result.current.currentTime).toBe(91);
+    expect(result.current.clock.get()).toBe(91);
 
     act(() => {
       setVisibilityState("hidden");
@@ -169,7 +169,7 @@ describe("useRecordingPlayback", () => {
     // The player has already moved the media element; a request would seek
     // it a second time. The page still follows and remembers the position.
     expect(result.current.seekRequest).toBeUndefined();
-    expect(result.current.currentTime).toBe(70);
+    expect(result.current.clock.get()).toBe(70);
     expect(localStorage.getItem(STORAGE_KEY)).toBe("70");
 
     act(() => {

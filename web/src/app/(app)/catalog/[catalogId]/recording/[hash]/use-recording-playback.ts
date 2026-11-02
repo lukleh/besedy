@@ -21,6 +21,7 @@ import {
   savePlaybackPosition,
 } from "@/lib/playback-position";
 import { isAtPlaybackEnd } from "@/lib/playback-progress";
+import { createPlaybackClock } from "@/lib/playback-clock";
 
 export interface RecordingSeekRequest {
   time: number;
@@ -66,6 +67,7 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   const radioHandoffSucceeded = useRef(false);
   const positionRestoredRef = useRef(false);
   const currentTimeRef = useRef(0);
+  const isPlayingRef = useRef(false);
   const durationRef = useRef(0);
   const lastLocalSaveRef = useRef(0);
   const lastServerSyncRef = useRef(0);
@@ -76,7 +78,9 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   const remoteRestoreAppliedRef = useRef(false);
   const playbackSeekedRef = useRef(false);
   const lastRequestRef = useRef<{ signature: string; sentAt: number } | null>(null);
-  const [currentTime, setCurrentTime] = useState(0);
+  // The playback position lives in a clock rather than state, so time updates
+  // re-render only what shows the time, not the whole page.
+  const [clock] = useState(() => createPlaybackClock());
   const [isPlaying, setIsPlaying] = useState(false);
   const [seekRequest, setSeekRequest] = useState<RecordingSeekRequest | undefined>(undefined);
   const [autoPlayOnSeek, setAutoPlayOnSeek] = useState(false);
@@ -248,10 +252,6 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
       return () => clearTimeout(timer);
     }
   }, [autoPlayOnSeek, seekRequest]);
-
-  useEffect(() => {
-    currentTimeRef.current = currentTime;
-  }, [currentTime]);
 
   useEffect(() => {
     if (positionRestoredRef.current) return;
@@ -443,15 +443,20 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     userId,
   ]);
 
-  // Persist periodically during long uninterrupted playback. Pause, hide,
-  // navigation and completion are handled separately below.
-  useEffect(() => {
-    if (!isPlaying || currentTime <= 0) return;
+  // The player reports its time here about four times a second, also while
+  // the page is hidden. Position saving reads it directly; the clock passes it
+  // on to the view only while the page is visible.
+  const setCurrentTime = useCallback((time: number) => {
+    clock.set(time);
+    currentTimeRef.current = time;
+    // Persist periodically during long uninterrupted playback. Pause, hide,
+    // navigation and completion are handled separately below.
+    if (!isPlayingRef.current || time <= 0) return;
     const now = Date.now();
     if (now - lastLocalSaveRef.current < LOCAL_PLAYBACK_SAVE_INTERVAL_MS) return;
     if (now - lastServerSyncRef.current < 15_000) return;
     persistCurrentPlaybackPosition();
-  }, [currentTime, isPlaying, persistCurrentPlaybackPosition]);
+  }, [clock, persistCurrentPlaybackPosition]);
 
   // Attach the beforeunload listener once per hash, not on every timeupdate —
   // the old combined effect was churning window listeners ~4x/second.
@@ -508,6 +513,7 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   }, []);
 
   const handlePlayingChange = useCallback((playing: boolean) => {
+    isPlayingRef.current = playing;
     setIsPlaying(playing);
     if (!playing) {
       persistCurrentPlaybackPosition();
@@ -531,12 +537,12 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   // back as a request would seek a second time and restart the audio request.
   const handlePlayerSeek = useCallback((time: number) => {
     noteSeek(time);
-    setCurrentTime(time);
-  }, [noteSeek]);
+    clock.set(time);
+  }, [clock, noteSeek]);
 
   return {
     autoPlayOnSeek,
-    currentTime,
+    clock,
     handleAudioEnded,
     handleDurationChange,
     handlePlayerSeek,

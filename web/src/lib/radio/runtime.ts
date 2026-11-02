@@ -288,8 +288,22 @@ export function createRadioRuntime() {
     nextAudio.preload = "metadata";
     audio = nextAudio;
 
-    const handleTimeUpdate = () => {
+    // Every listener re-renders on a new snapshot, so while the page is hidden
+    // (screen off, app in the background) the position waits and is caught
+    // up when the page is shown.
+    const syncCurrentTime = () => {
       setSnapshot((current) => ({ ...current, currentTime: nextAudio.currentTime }));
+    };
+    const handleTimeUpdate = () => {
+      if (document.visibilityState !== "hidden") syncCurrentTime();
+    };
+    const handleVisibilityChange = () => {
+      if (
+        document.visibilityState !== "hidden" &&
+        snapshot.currentTime !== nextAudio.currentTime
+      ) {
+        syncCurrentTime();
+      }
     };
 
     const handleDurationChange = () => {
@@ -389,6 +403,7 @@ export function createRadioRuntime() {
     errorHandler = handleError;
 
     nextAudio.addEventListener("timeupdate", handleTimeUpdate);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     nextAudio.addEventListener("durationchange", handleDurationChange);
     nextAudio.addEventListener("play", handlePlay);
     nextAudio.addEventListener("pause", handlePause);
@@ -401,6 +416,7 @@ export function createRadioRuntime() {
 
     cleanupAudio = () => {
       nextAudio.removeEventListener("timeupdate", handleTimeUpdate);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       nextAudio.removeEventListener("durationchange", handleDurationChange);
       nextAudio.removeEventListener("play", handlePlay);
       nextAudio.removeEventListener("pause", handlePause);

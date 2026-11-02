@@ -71,7 +71,7 @@ function Harness({
   currentTime: number;
   onSeek: (time: number) => void;
 }) {
-  const draft = useBookmarkDraft(currentTime, true);
+  const draft = useBookmarkDraft(() => currentTime, true);
   return (
     <>
       <button type="button" data-testid="audio-bookmark" onClick={draft.startDraft} />

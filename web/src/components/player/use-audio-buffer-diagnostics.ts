@@ -113,6 +113,10 @@ export function useAudioBufferDiagnostics({
     fetchCountRef.current = 0;
 
     const updateBasicBufferInfo = () => {
+      // The time left in the buffer moves with every timeupdate, and each new
+      // value re-renders the player. Nothing is drawn while the page is hidden
+      // (screen off, app in the background); it is read again when shown.
+      if (document.visibilityState === 'hidden') return;
       const snapshot = readBufferSnapshot(audio);
       const bufferGrowth =
         snapshot.totalBuffered - previousTotalBufferedRef.current;
@@ -154,12 +158,14 @@ export function useAudioBufferDiagnostics({
     events.forEach((event) =>
       audio.addEventListener(event, updateBasicBufferInfo),
     );
+    document.addEventListener('visibilitychange', updateBasicBufferInfo);
     updateBasicBufferInfo();
 
     return () => {
       events.forEach((event) =>
         audio.removeEventListener(event, updateBasicBufferInfo),
       );
+      document.removeEventListener('visibilitychange', updateBasicBufferInfo);
     };
   }, [audioRef, src]);
 

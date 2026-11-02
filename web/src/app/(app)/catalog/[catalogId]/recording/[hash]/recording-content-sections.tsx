@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type ComponentProps, type ReactNode } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, Download, FileAudio, Mic, Pencil, SquarePen } from "lucide-react";
@@ -17,6 +17,8 @@ import {
   ResponsiveMenuTrigger,
 } from "@/components/ui/responsive-menu";
 import { buildCorrectionPagePath } from "@/lib/api/recording-urls";
+import type { PlaybackClock } from "@/lib/playback-clock";
+import { usePlaybackTime } from "@/hooks/use-playback-time";
 import { cn } from "@/lib/utils";
 import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
 import type { CatalogEntryResponse } from "@/types/catalog";
@@ -92,7 +94,7 @@ interface RecordingTranscriptSectionProps {
   /** An embedding page offers correction from its own menu instead. */
   hideCorrectionLink?: boolean;
   catalogId: string;
-  currentTime: number;
+  clock: PlaybackClock;
   hash: string;
   isPlaying: boolean;
   onSeek: (time: number) => void;
@@ -341,6 +343,16 @@ export function RecordingAudioSection({
   );
 }
 
+// The stream view animates its own playhead from the time, so it follows
+// every update of the clock (only while the page is visible).
+function ClockedTranscriptStreamViewer({
+  clock,
+  ...props
+}: Omit<ComponentProps<typeof TranscriptStreamViewer>, "currentTime"> & { clock: PlaybackClock }) {
+  const currentTime = usePlaybackTime(clock);
+  return <TranscriptStreamViewer currentTime={currentTime} {...props} />;
+}
+
 export function RecordingTranscriptSection({
   canDownloadTranscripts,
   canSeeSpeakers = false,
@@ -349,7 +361,7 @@ export function RecordingTranscriptSection({
   correctionEligible = false,
   hideCorrectionLink = false,
   catalogId,
-  currentTime,
+  clock,
   hash,
   isPlaying,
   onSeek,
@@ -409,10 +421,10 @@ export function RecordingTranscriptSection({
         )}
       </div>
       {streamVisible ? (
-        <TranscriptStreamViewer
+        <ClockedTranscriptStreamViewer
           hash={hash}
           groupId={catalogId}
-          currentTime={currentTime}
+          clock={clock}
           onSeek={onSeek}
           isPlaying={isPlaying}
         />
@@ -420,7 +432,7 @@ export function RecordingTranscriptSection({
         <TranscriptViewer
           hash={hash}
           groupId={catalogId}
-          currentTime={currentTime}
+          clock={clock}
           onSeek={onSeek}
           isPlaying={isPlaying}
           canDownload={canDownloadTranscripts}

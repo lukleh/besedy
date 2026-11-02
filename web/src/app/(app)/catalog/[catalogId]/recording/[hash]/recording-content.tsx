@@ -101,7 +101,7 @@ export default function RecordingContent({
   });
   const {
     autoPlayOnSeek,
-    currentTime,
+    clock,
     handleAudioEnded,
     handleDurationChange,
     handlePlayingChange,
@@ -120,7 +120,7 @@ export default function RecordingContent({
     hash,
     signedIn && !catalogNotFound && !catalogValidationLoading
   );
-  const bookmarkDraft = useBookmarkDraft(currentTime, signedIn);
+  const bookmarkDraft = useBookmarkDraft(clock.get, signedIn);
   const bookmarkMarkers = useMemo(
     () => bookmarks.bookmarks.map((bookmark) => bookmark.positionSec),
     [bookmarks.bookmarks]
@@ -288,7 +288,7 @@ export default function RecordingContent({
           correctionEligible={data.correctionEligible ?? false}
           hideCorrectionLink={hideCorrectionLink}
           catalogId={catalogId}
-          currentTime={currentTime}
+          clock={clock}
           hash={hash}
           isPlaying={isPlaying}
           onSeek={handleSeek}
