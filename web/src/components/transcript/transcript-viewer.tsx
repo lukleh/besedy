@@ -56,6 +56,7 @@ import {
 import {
   TRANSCRIPT_LAYERS,
   useTranscriptLayers,
+  type LayerState,
   type TranscriptLayerId,
 } from "./transcript-layers";
 import {
@@ -284,21 +285,30 @@ export function TranscriptViewer({
     },
   });
 
-  // The overlay is administrative, so a stored preference from when it was
-  // shown to everyone does not bring it back.
-  const hasDiarization =
-    canSeeSpeakers && (availableDiarizations?.backends.length ?? 0) > 0;
-  const layerAvailable: Record<TranscriptLayerId, boolean> = {
-    timestamps: true,
-    speakers: hasDiarization,
+  // Each layer the account may see is listed from the start, so the menu and
+  // its count stay put while the recording's data loads. Speakers are
+  // administrative: a stored preference from when they were shown to
+  // everyone does not bring them back.
+  const speakersState: LayerState | null = !canSeeSpeakers
+    ? null
+    : availableDiarizations === undefined
+      ? "loading"
+      : availableDiarizations.backends.length > 0
+        ? "available"
+        : "unavailable";
+  const layerStates: Record<TranscriptLayerId, LayerState | null> = {
+    timestamps: "available",
+    speakers: speakersState,
   };
-  const availableLayers = TRANSCRIPT_LAYERS.filter(
-    (layer) => layerAvailable[layer.id]
+  const listedLayers = TRANSCRIPT_LAYERS.filter(
+    (layer) => layerStates[layer.id] !== null
   );
   const layerVisible = (id: TranscriptLayerId) =>
-    layerAvailable[id] && layerChoices[id];
-  const visibleLayerCount = availableLayers.filter((layer) =>
-    layerVisible(layer.id)
+    layerStates[id] === "available" && layerChoices[id];
+  // A chosen layer counts while its data loads, so the count changes only
+  // when a recording turns out to have none.
+  const visibleLayerCount = listedLayers.filter(
+    (layer) => layerChoices[layer.id] && layerStates[layer.id] !== "unavailable"
   ).length;
   const speakersVisible = layerVisible("speakers");
 
@@ -477,34 +487,41 @@ export function TranscriptViewer({
               </Button>
             </ResponsiveMenuTrigger>
             <ResponsiveMenuContent title={t("view")} showCloseButton={false}>
-              {availableLayers.map((layer) => {
+              {listedLayers.map((layer) => {
                 const Icon = layer.icon;
+                const unavailable = layerStates[layer.id] === "unavailable";
                 return (
                   <ResponsiveMenuCheckboxItem
                     key={layer.id}
-                    checked={layerChoices[layer.id]}
+                    checked={!unavailable && layerChoices[layer.id]}
                     onCheckedChange={(checked) =>
                       setLayerVisible(layer.id, checked)
                     }
+                    disabled={unavailable}
+                    closeOnSelect={false}
                   >
                     <Icon className="h-4 w-4 text-muted-foreground" />
                     {t(layer.labelKey)}
+                    {unavailable && (
+                      <span className="ml-auto pl-3 text-xs text-muted-foreground">
+                        {t("layerUnavailable")}
+                      </span>
+                    )}
                   </ResponsiveMenuCheckboxItem>
                 );
               })}
             </ResponsiveMenuContent>
           </ResponsiveMenu>
           <Button
-            variant={following ? "secondary" : "outline"}
+            // Pressed reads as a solid button, so following is clear at a glance.
+            variant={following ? "default" : "outline"}
             size="sm"
             className="gap-2"
             aria-pressed={following}
             title={following ? t("followingHint") : t("followHint")}
             onClick={toggleFollowing}
           >
-            <LocateFixed
-              className={following ? "h-4 w-4 text-primary" : "h-4 w-4"}
-            />
+            <LocateFixed className="h-4 w-4" />
             {t("follow")}
           </Button>
           {canSeeTranscriptVariants && available.backends.length > 0 && (
