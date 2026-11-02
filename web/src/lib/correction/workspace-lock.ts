@@ -6,6 +6,39 @@ import { createServerLogger } from "@/lib/log/server";
 const logger = createServerLogger("correction.workspace-lock");
 
 /**
+ * How long a writer waits for the workspace row before it gives up with
+ * `WORKSPACE_LOCKED`. Other decisions hold it for milliseconds and a
+ * publication's prepare step for a few seconds; waiting longer only runs the
+ * caller's transaction into its own timeout, which surfaces as a server
+ * error instead of a conflict the person can act on.
+ */
+export const WORKSPACE_LOCK_WAIT_MS = 5_000;
+
+/**
+ * Bounds for the writers that hold the workspace row briefly: decisions,
+ * edits, flags and comments. `lockWorkspace` gives up on the row after
+ * `WORKSPACE_LOCK_WAIT_MS`, so the transaction's own limit only has to cover
+ * that wait plus the writes; Prisma's default of five seconds did not, and a
+ * writer caught behind a publication's prepare step timed out as a server
+ * error instead of a conflict.
+ */
+export const SHORT_WRITE_TRANSACTION = { maxWait: 10_000, timeout: 15_000 } as const;
+
+/** PostgreSQL `lock_not_available`, raised when `lock_timeout` expires. */
+const LOCK_NOT_AVAILABLE = "55P03";
+
+function isLockTimeout(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { code, meta, message } = error as {
+    code?: unknown;
+    meta?: { code?: unknown };
+    message?: unknown;
+  };
+  if (meta?.code === LOCK_NOT_AVAILABLE) return true;
+  return code === "P2010" && typeof message === "string" && message.includes(LOCK_NOT_AVAILABLE);
+}
+
+/**
  * Serialize everything that touches one workspace.
  *
  * Checking for an in-flight publication and then acting on the answer is not
@@ -26,14 +59,29 @@ export async function lockWorkspace(
   tx: Prisma.TransactionClient,
   workspaceId: string
 ): Promise<void> {
-  const rows = await tx.$queryRaw<
-    { id: string; workflow_group_id: string; status: string; segmentation_version: string | null }[]
-  >`
-    SELECT "id", "workflow_group_id", "status"::text AS "status", "segmentation_version"
-    FROM "transcript_workspace"
-    WHERE "id" = ${workspaceId}::uuid
-    FOR UPDATE
-  `;
+  // SET LOCAL lasts for this transaction only. The value is a constant, so
+  // the statement needs no parameters, which SET does not accept anyway.
+  await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '${WORKSPACE_LOCK_WAIT_MS}ms'`);
+
+  let rows: { id: string; workflow_group_id: string; status: string; segmentation_version: string | null }[];
+  try {
+    rows = await tx.$queryRaw<
+      { id: string; workflow_group_id: string; status: string; segmentation_version: string | null }[]
+    >`
+      SELECT "id", "workflow_group_id", "status"::text AS "status", "segmentation_version"
+      FROM "transcript_workspace"
+      WHERE "id" = ${workspaceId}::uuid
+      FOR UPDATE
+    `;
+  } catch (error) {
+    if (isLockTimeout(error)) {
+      throw new CorrectionError(
+        "WORKSPACE_LOCKED",
+        "Another change to this transcript is being saved or it is being published; try again in a moment"
+      );
+    }
+    throw error;
+  }
 
   const row = rows[0];
   if (!row) {

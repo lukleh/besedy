@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { Check, MessageSquare, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
+import { Check, MessageSquare, Play, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,7 +23,11 @@ import {
 } from "@/lib/api/recording-urls";
 import { AudioPlayer } from "@/components/player/audio-player";
 import { formatClock } from "@/lib/correction/format";
-import { PlaybackTracker, speechRegionsInSeconds } from "@/lib/correction/playback-coverage";
+import {
+  MIN_HEARD_FRACTION_FOR_TRAINING,
+  PlaybackTracker,
+  speechRegionsInSeconds,
+} from "@/lib/correction/playback-coverage";
 import { CorrectionStrip } from "./correction-strip";
 import { CorrectionFlags } from "./correction-flags";
 import { CorrectionGuideDialog } from "./correction-guide-dialog";
@@ -95,6 +99,18 @@ interface SpanCommandInput {
 
 type PlaybackReport = ReturnType<PlaybackTracker["report"]>;
 
+/** Unsaved wording of a span the person moved away from, kept until they return. */
+interface StashedDraft {
+  /** The revision the draft was written against */
+  revisionId: string;
+  /** The stored text the draft was measured against */
+  baseText: string;
+  text: string;
+}
+
+/** Playback shares change often; the meter moves in steps so the surface does not re-render per tick. */
+const HEARD_STEP = 0.05;
+
 function stateVariant(state: SpanState): "default" | "secondary" | "destructive" | "outline" {
   switch (state) {
     case "done":
@@ -136,6 +152,12 @@ export function CorrectionSurface({
   // A jump to a segment that is not loaded yet plays it once it arrives.
   const [playOnArrival, setPlayOnArrival] = useState(false);
   const [draft, setDraft] = useState("");
+  // Dirty drafts of spans the person left without approving, by span id.
+  // Moving on used to discard them; a half-written correction of a 30 s
+  // span is work that must survive a click on another segment.
+  const [stash, setStash] = useState<ReadonlyMap<string, StashedDraft>>(() => new Map());
+  // Share of the selected span's speech played on this page, in steps.
+  const [heard, setHeard] = useState(0);
   // Set when the stored text moved under a draft. It stays until the person
   // acts or moves on, and while it is set the current stored text is shown
   // beside the editor.
@@ -167,12 +189,27 @@ export function CorrectionSurface({
   useEffect(() => {
     rateRef.current = rate;
   }, [rate]);
-  const handlePlayerTime = useCallback((time: number) => {
-    currentTimeRef.current = time;
-    timeListenersRef.current.forEach((listener) => listener(time));
-    if (playingRef.current) playbackRef.current.observe(time, rateRef.current);
-    else playbackRef.current.interrupt();
+  // The speech of the span on screen, for the heard meter; a ref so the time
+  // callback stays stable and keeps the player's media listeners in place.
+  const selectedRegionsRef = useRef<[number, number][]>([]);
+  const measureHeard = useCallback(() => {
+    const coverage = playbackRef.current.played.coverage(selectedRegionsRef.current);
+    const stepped = Math.min(1, Math.floor(coverage / HEARD_STEP + 1e-9) * HEARD_STEP);
+    setHeard((current) => (current === stepped ? current : stepped));
   }, []);
+  const handlePlayerTime = useCallback(
+    (time: number) => {
+      currentTimeRef.current = time;
+      timeListenersRef.current.forEach((listener) => listener(time));
+      if (playingRef.current) {
+        playbackRef.current.observe(time, rateRef.current);
+        measureHeard();
+      } else {
+        playbackRef.current.interrupt();
+      }
+    },
+    [measureHeard]
+  );
   const handlePlayerPlaying = useCallback((playing: boolean) => {
     playingRef.current = playing;
     if (!playing) playbackRef.current.interrupt();
@@ -252,10 +289,27 @@ export function CorrectionSurface({
   ) {
     const spanChanged = draftFor?.spanId !== selected.id;
     if (spanChanged) {
-      setDraftFor({ spanId: selected.id, revisionId: selected.revisionId, baseText: selected.text });
-      setConflict(false);
+      // Leaving a span with unsaved wording keeps it; returning restores it,
+      // flagged as a conflict if the stored text moved meanwhile.
+      const leaving =
+        draftFor && draft.trim() !== draftFor.baseText.trim()
+          ? { spanId: draftFor.spanId, revisionId: draftFor.revisionId, baseText: draftFor.baseText, text: draft }
+          : null;
+      const restored = stash.get(selected.id) ?? null;
+      if (leaving || restored) {
+        const next = new Map(stash);
+        if (leaving) next.set(leaving.spanId, leaving);
+        if (restored) next.delete(selected.id);
+        setStash(next);
+      }
+      setDraftFor({
+        spanId: selected.id,
+        revisionId: selected.revisionId,
+        baseText: restored ? restored.baseText : selected.text,
+      });
+      setConflict(restored ? restored.revisionId !== selected.revisionId : false);
       setCommentBody("");
-      setDraft(selected.text);
+      setDraft(restored ? restored.text : selected.text);
       if (seekRequest?.spanId !== selected.id) {
         setSeekRequest({
           spanId: selected.id,
@@ -283,6 +337,24 @@ export function CorrectionSurface({
       setDraft(selected.text);
     }
   }
+
+  // A span revisited on the same page keeps what was heard of it: the
+  // tracker remembers every interval played since the page opened.
+  useEffect(() => {
+    selectedRegionsRef.current = selected ? speechRegionsInSeconds(selected) : [];
+    measureHeard();
+  }, [selected, measureHeard]);
+
+  // Unsaved wording, on screen or stashed, is lost with the page.
+  const hasUnsavedWork = Boolean(draftFor && draft.trim() !== draftFor.baseText.trim()) || stash.size > 0;
+  useEffect(() => {
+    if (!hasUnsavedWork) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasUnsavedWork]);
 
   const historyQuery = useQuery({
     queryKey: ["correction-span-history", catalogId, hash, selected?.id],
@@ -464,6 +536,13 @@ export function CorrectionSurface({
           toast({ description: t("conflict"), variant: "destructive" });
           return;
         }
+        if (payload?.code === "WORKSPACE_LOCKED") {
+          // A publication or another writer holds the workspace; the draft
+          // stays and the refresh shows the publication's state.
+          await refresh();
+          toast({ description: t("workspaceLocked"), variant: "destructive" });
+          return;
+        }
       }
       toast({
         description: error instanceof Error ? error.message : String(error),
@@ -534,12 +613,17 @@ export function CorrectionSurface({
   });
 
   const isEdited = selected ? draft.trim() !== selected.text.trim() : false;
+  // An approval made without listening is stored, but training leaves it out
+  // (ADR 0012), and the person would only learn that at export time. The
+  // editor asks for the listening first; disapproving and withdrawing do not
+  // need it.
+  const mustListen = heard < MIN_HEARD_FRACTION_FOR_TRAINING;
 
   const runPrimary = useCallback(() => {
-    if (!selected || command.isPending) return;
+    if (!selected || command.isPending || mustListen) return;
     if (isEdited) issue(selected, "save_and_approve", draft);
     else issue(selected, "approve");
-  }, [selected, command.isPending, isEdited, draft, issue]);
+  }, [selected, command.isPending, mustListen, isEdited, draft, issue]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -659,6 +743,11 @@ export function CorrectionSurface({
               <span className="font-mono text-xs text-muted-foreground">
                 {formatClock(span.startSeconds)}
               </span>
+              {stash.has(span.id) && (
+                <Badge variant="outline" className="shrink-0 border-amber-500/60 text-[10px]">
+                  {t("unsavedDraft")}
+                </Badge>
+              )}
               <Badge variant={stateVariant(span.state)} className="shrink-0 text-[10px]">
                 {t(
                   span.state === "done"
@@ -775,7 +864,12 @@ export function CorrectionSurface({
             />
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={runPrimary} disabled={command.isPending} className="gap-2">
+              <Button
+                onClick={runPrimary}
+                disabled={command.isPending || mustListen}
+                className="gap-2"
+                data-testid="correction-approve"
+              >
                 <Check className="h-4 w-4" />
                 {isEdited
                   ? draft.trim() === ""
@@ -815,6 +909,32 @@ export function CorrectionSurface({
                 <SkipForward className="h-4 w-4" />
                 {t("nextOpen")}
               </Button>
+            </div>
+
+            <div
+              className={`flex flex-wrap items-center gap-2 text-xs ${mustListen ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"}`}
+              data-testid="correction-heard"
+              data-heard={heard.toFixed(2)}
+            >
+              <span>{t("heard", { percent: Math.round(heard * 100) })}</span>
+              {mustListen && (
+                <>
+                  <span>
+                    {t("listenBeforeApprove", {
+                      percent: Math.round(MIN_HEARD_FRACTION_FOR_TRAINING * 100),
+                    })}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-xs"
+                    onClick={() => playSpan(selected)}
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                    {t("audio.playSpan")}
+                  </Button>
+                </>
+              )}
             </div>
 
             <p className="text-xs text-muted-foreground">{t("shortcutHint")}</p>

@@ -9,7 +9,17 @@ vi.mock('@/lib/log/server', () => ({
 const WORKSPACE = '11111111-2222-3333-4444-555555555555';
 
 function txReturning(rows: unknown[]) {
-  return { $queryRaw: vi.fn().mockResolvedValue(rows) } as never;
+  return {
+    $executeRawUnsafe: vi.fn().mockResolvedValue(0),
+    $queryRaw: vi.fn().mockResolvedValue(rows),
+  } as never;
+}
+
+function txRefusing(error: unknown) {
+  return {
+    $executeRawUnsafe: vi.fn().mockResolvedValue(0),
+    $queryRaw: vi.fn().mockRejectedValue(error),
+  } as never;
 }
 
 describe('lockWorkspace', () => {
@@ -88,5 +98,35 @@ describe('lockWorkspace', () => {
     await expect(
       lockWorkspace(txReturning([]), WORKSPACE),
     ).rejects.toMatchObject({ code: 'NO_WORKSPACE' });
+  });
+
+  // A writer waits a bounded time for the row and then tells the person the
+  // workspace is busy, instead of running into its transaction timeout.
+  it('bounds the wait for the row and reports a busy workspace', async () => {
+    const { WORKSPACE_LOCK_WAIT_MS, lockWorkspace } = await import(
+      '@/lib/correction/workspace-lock'
+    );
+    const tx = txRefusing(
+      Object.assign(new Error('Raw query failed. Code: `55P03`'), {
+        code: 'P2010',
+        meta: { code: '55P03', message: 'canceling statement due to lock timeout' },
+      }),
+    );
+    await expect(lockWorkspace(tx, WORKSPACE)).rejects.toMatchObject({
+      code: 'WORKSPACE_LOCKED',
+      statusCode: 409,
+    });
+    expect((tx as { $executeRawUnsafe: ReturnType<typeof vi.fn> }).$executeRawUnsafe).toHaveBeenCalledWith(
+      `SET LOCAL lock_timeout = '${WORKSPACE_LOCK_WAIT_MS}ms'`,
+    );
+  });
+
+  it('passes other query failures through', async () => {
+    const { lockWorkspace } = await import('@/lib/correction/workspace-lock');
+    const failure = Object.assign(new Error('Raw query failed. Code: `42P01`'), {
+      code: 'P2010',
+      meta: { code: '42P01' },
+    });
+    await expect(lockWorkspace(txRefusing(failure), WORKSPACE)).rejects.toBe(failure);
   });
 });

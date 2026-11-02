@@ -80,18 +80,28 @@ test.describe("transcript correction", () => {
     await expect(page.getByTestId("correction-empty-span")).toBeVisible();
     await expect(page.getByRole("button", { name: /Nic tu nezaznělo|Nothing was said here/ })).toBeVisible();
 
-    // Approving reports playback; the server refuses an approval without it.
+    // Approving waits until most of the span was heard, then reports the
+    // playback; the server refuses an approval without a report.
     await spanList.getByRole("button", { name: /^0:00/ }).first().click();
     await expect(page.getByRole("textbox").first()).toHaveValue("Dobrý den, vítejte.");
+    const approve = page.getByTestId("correction-approve");
+    await expect(approve).toBeDisabled();
+    // Selecting the span started it playing; the first span is ten seconds.
+    await expect(approve).toBeEnabled({ timeout: 30000 });
     const approved = page.waitForResponse(
       (response) => response.url().includes("/correction/spans/") && response.request().method() === "POST"
     );
-    await page.getByRole("button", { name: /Schválit a pokračovat|Approve and continue/ }).click();
+    await approve.click();
     const response = await approved;
     expect(response.status()).toBe(200);
-    expect(response.request().postDataJSON()).toMatchObject({
+    const body = response.request().postDataJSON() as {
+      action: string;
+      playback: { heardFraction: number; minPlaybackRate: number; maxPlaybackRate: number };
+    };
+    expect(body).toMatchObject({
       action: "approve",
-      playback: { heardFraction: expect.any(Number), minPlaybackRate: 1, maxPlaybackRate: 1 },
+      playback: { minPlaybackRate: 1, maxPlaybackRate: 1 },
     });
+    expect(body.playback.heardFraction).toBeGreaterThanOrEqual(0.9);
   });
 });
