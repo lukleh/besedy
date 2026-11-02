@@ -27,20 +27,46 @@ describe("useAudioBufferDiagnostics", () => {
     const { result } = renderHook(() =>
       useAudioBufferDiagnostics({ audioRef, debugEnabled: false, src: "a.mp3" }),
     );
-    expect(result.current.bufferInfo.bufferAhead).toBe(100);
+    expect(result.current.bufferInfo.get().bufferAhead).toBe(100);
 
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     audio.currentTime = 30;
     act(() => {
       audio.dispatchEvent(new Event("timeupdate"));
     });
-    expect(result.current.bufferInfo.bufferAhead).toBe(100);
+    expect(result.current.bufferInfo.get().bufferAhead).toBe(100);
 
     visibility.mockReturnValue("visible");
     act(() => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    expect(result.current.bufferInfo.bufferAhead).toBe(70);
+    expect(result.current.bufferInfo.get().bufferAhead).toBe(70);
+  });
+
+  it("tells the indicator about the buffer reading only when its whole seconds change", () => {
+    const audio = audioBufferedTo(100);
+    const audioRef = { current: audio };
+    const { result } = renderHook(() =>
+      useAudioBufferDiagnostics({ audioRef, debugEnabled: false, src: "a.mp3" }),
+    );
+    const listener = vi.fn();
+    result.current.bufferInfo.subscribe(listener);
+
+    for (const time of [30, 30.2, 30.4]) {
+      audio.currentTime = time;
+      act(() => {
+        audio.dispatchEvent(new Event("timeupdate"));
+      });
+    }
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(result.current.bufferInfo.get().bufferAhead).toBe(70);
+
+    audio.currentTime = 31;
+    act(() => {
+      audio.dispatchEvent(new Event("timeupdate"));
+    });
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(result.current.bufferInfo.get().bufferAhead).toBe(69);
   });
 
   it("keeps each chunk loaded while hidden instead of one merged chunk", () => {

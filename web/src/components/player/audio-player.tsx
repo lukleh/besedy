@@ -30,6 +30,7 @@ import {
 import { AudioPlayerChrome } from './audio-player-chrome';
 import { AudioPlayerDebugPanel } from './audio-player-debug-panel';
 import { describeAudioSource } from '@/lib/offline/audio-transport';
+import { createPlaybackClock } from '@/lib/playback-clock';
 import {
   INITIAL_RETRY_STATE,
   isRetrying,
@@ -106,7 +107,11 @@ export function AudioPlayer({
   const downloadRecord = useDownloadRecord(catalogId ?? null, hash);
   const cacheStatus = downloadRecord?.status ?? 'none';
 
-  const [currentTime, setCurrentTime] = useState(0);
+  // The position the controls show. A clock rather than state: the element
+  // reports its time about four times a second, and as state each report
+  // re-rendered every control. Only the progress bar and its time labels
+  // read it (see AudioPlayerChrome), and the debug panel while it is open.
+  const [timeClock] = useState(() => createPlaybackClock());
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
@@ -172,6 +177,13 @@ export function AudioPlayer({
   // Last playback position React observed; survives the element reset that a
   // src change performs before effects run.
   const lastTimeRef = useRef(0);
+  const setCurrentTime = useCallback(
+    (time: number) => {
+      lastTimeRef.current = time;
+      timeClock.set(time);
+    },
+    [timeClock],
+  );
   // Whether the listener wants playback. The browser pauses the element
   // before it reports a media error, so `audio.paused` alone cannot tell an
   // interrupted play from a deliberate pause when deciding to resume.
@@ -303,7 +315,7 @@ export function AudioPlayer({
       'Queued saved position after resume',
       `To ${savedPosition.toFixed(1)}s`,
     );
-  }, [hash, onTimeUpdate, logDebugEvent]);
+  }, [hash, onTimeUpdate, logDebugEvent, setCurrentTime]);
 
   // Drive the retry machine. When phase transitions to "scheduled", schedule
   // the reload; when it transitions to "exhausted", log and clear transient
@@ -396,7 +408,7 @@ export function AudioPlayer({
       window.removeEventListener('pageshow', handlePageShow);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [restoreSavedPositionAfterResume]);
+  }, [restoreSavedPositionAfterResume, setCurrentTime]);
 
   // Reset state when audio source changes (not on initial mount)
   useEffect(() => {
@@ -471,7 +483,7 @@ export function AudioPlayer({
       setDebugEvents([createSourceEvent(debugEventIdRef.current++, src)]);
       onPlayingChange?.(false);
     });
-  }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics, cancelSleepFade]);
+  }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics, cancelSleepFade, setCurrentTime]);
 
   // Consume each external request once. Callback changes and the page clearing
   // autoPlayOnSeek must not replay an old handoff over a later user seek. The
@@ -503,7 +515,6 @@ export function AudioPlayer({
       // A newer request also supersedes a seek queued before metadata arrived.
       pendingSeekRef.current = null;
       audio.currentTime = seekTo;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCurrentTime(seekTo);
       onTimeUpdate?.(seekTo);
       logDebugEvent(
@@ -523,11 +534,7 @@ export function AudioPlayer({
         `To ${seekTo.toFixed(1)}s (waiting for metadata, readyState=${audio.readyState})`,
       );
     }
-  }, [src, hash, seekTo, seekKey, playbackEnd, onTimeUpdate, autoPlayOnSeek, logDebugEvent, dispatchRetry]);
-
-  useEffect(() => {
-    lastTimeRef.current = currentTime;
-  }, [currentTime]);
+  }, [src, hash, seekTo, seekKey, playbackEnd, onTimeUpdate, autoPlayOnSeek, logDebugEvent, dispatchRetry, setCurrentTime]);
 
   // NOTE: PerformanceObserver was removed because it only fires when HTTP requests complete.
   // For streaming audio, the request stays open until the entire file downloads, so it's not
@@ -661,7 +668,7 @@ export function AudioPlayer({
 
     dispatchRetry({ type: 'RECOVERED' });
     setIsBuffering(false);
-  }, [dispatchRetry, logDebugEvent]);
+  }, [dispatchRetry, logDebugEvent, setCurrentTime]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -711,15 +718,10 @@ export function AudioPlayer({
       if (linkedPlaybackEnd !== null && endFrame === null && !audio.paused) {
         endFrame = requestAnimationFrame(watchExcerptEnd);
       }
-      // A transport switch restores from here, so it follows the element
-      // even while the time display below is held.
-      lastTimeRef.current = audio.currentTime;
-      // Nothing is drawn while the page is hidden (screen off, app in the
-      // background), so the player's own time display waits; it catches up
-      // when the page is shown. onTimeUpdate still gets every update.
-      if (document.visibilityState !== 'hidden') {
-        setCurrentTime(audio.currentTime);
-      }
+      // While the page is hidden (screen off, app in the background) the
+      // clock holds the time display back and catches it up when the page is
+      // shown; lastTimeRef and onTimeUpdate still get every update.
+      setCurrentTime(audio.currentTime);
       onTimeUpdate?.(audio.currentTime);
       // If timeupdate fires, audio is actually playing - clear buffering state
       if (!audio.paused) {
@@ -903,6 +905,7 @@ export function AudioPlayer({
     showDebug,
     logDebugEvent,
     updateDebugInfo,
+    setCurrentTime,
   ]);
 
   // Leaving the page detaches the <audio> element, but it keeps its source,
@@ -956,7 +959,7 @@ export function AudioPlayer({
       userInitiatedRef.current = true;
       safePlay(audio, 'auto-play after control seek', logDebugEvent);
     }
-  }, [onSeek, dispatchRetry, logDebugEvent]);
+  }, [onSeek, dispatchRetry, logDebugEvent, setCurrentTime]);
 
   const handleSeek = (value: number[]) => seekFromControls(value[0]);
 
@@ -1133,8 +1136,8 @@ export function AudioPlayer({
       <AudioPlayerChrome
         bufferInfo={bufferInfo}
         catalogId={catalogId}
+        clock={timeClock}
         downloadEventId={downloadEventId}
-        currentTime={currentTime}
         duration={duration}
         hash={hash}
         isBuffering={isBuffering}
@@ -1160,7 +1163,7 @@ export function AudioPlayer({
         <AudioPlayerDebugPanel
           cacheStatus={cacheStatus}
           chunkFetches={chunkFetches}
-          currentTime={currentTime}
+          clock={timeClock}
           debugEvents={debugEvents}
           debugInfo={debugInfo}
           duration={duration}

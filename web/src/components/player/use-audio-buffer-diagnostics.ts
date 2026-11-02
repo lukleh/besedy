@@ -3,6 +3,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type RefObject,
 } from 'react';
 
@@ -30,6 +31,47 @@ const INITIAL_BUFFER_INFO: BufferInfo = {
   networkState: 0,
   peakBuffer: 0,
 };
+
+/**
+ * The buffer reading the indicator shows, kept outside player state. The time
+ * left in the buffer moves with every time report, about four times a second,
+ * and as state each new value re-rendered every control. The indicator reads
+ * it with `useBufferInfo`; its values are whole seconds, so it changes about
+ * once a second at most.
+ */
+export interface BufferInfoSource {
+  get(): BufferInfo;
+  subscribe(listener: () => void): () => void;
+}
+
+function createBufferInfoSource() {
+  let info = INITIAL_BUFFER_INFO;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => info,
+    set(next: BufferInfo) {
+      if (
+        next.bufferAhead === info.bufferAhead &&
+        next.networkState === info.networkState &&
+        next.peakBuffer === info.peakBuffer
+      ) {
+        return;
+      }
+      info = next;
+      for (const listener of [...listeners]) listener();
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+
+export function useBufferInfo(source: BufferInfoSource): BufferInfo {
+  return useSyncExternalStore(source.subscribe, source.get, source.get);
+}
 
 const INITIAL_DEBUG_INFO: DebugInfo = {
   bufferedRanges: [],
@@ -76,7 +118,7 @@ export function useAudioBufferDiagnostics({
   debugEnabled: boolean;
   src: string;
 }) {
-  const [bufferInfo, setBufferInfo] = useState<BufferInfo>(INITIAL_BUFFER_INFO);
+  const [bufferInfo] = useState(createBufferInfoSource);
   const [debugInfo, setDebugInfo] = useState<DebugInfo>(INITIAL_DEBUG_INFO);
   const [chunkFetches, setChunkFetches] = useState<ChunkFetchRecord[]>([]);
   const previousTotalBufferedRef = useRef(0);
@@ -140,9 +182,8 @@ export function useAudioBufferDiagnostics({
         previousTotalBufferedRef.current = snapshot.totalBuffered;
         lastBufferGrowthTimeRef.current = now;
       }
-      // The time left in the buffer moves with every timeupdate, and each new
-      // value re-renders the player. Nothing is drawn while the page is hidden
-      // (screen off, app in the background), so state waits until it is
+      // Nothing is drawn while the page is hidden (screen off, app in the
+      // background), so the reading and the chunk history wait until it is
       // shown; the chunks above are still recorded as they happen.
       if (document.visibilityState === 'hidden') return;
 
@@ -152,15 +193,15 @@ export function useAudioBufferDiagnostics({
         setChunkFetches((previous) => [...previous, ...chunks].slice(-20));
       }
 
-      setBufferInfo((previous) => {
-        const bufferIncreased = snapshot.bufferAhead > previous.bufferAhead + 1;
-        return {
-          bufferAhead: snapshot.bufferAhead,
-          networkState: audio.networkState,
-          peakBuffer: bufferIncreased
-            ? snapshot.bufferAhead
-            : Math.max(previous.peakBuffer, snapshot.bufferAhead),
-        };
+      const previous = bufferInfo.get();
+      const bufferAhead = Math.round(snapshot.bufferAhead);
+      const bufferIncreased = bufferAhead > previous.bufferAhead + 1;
+      bufferInfo.set({
+        bufferAhead,
+        networkState: audio.networkState,
+        peakBuffer: bufferIncreased
+          ? bufferAhead
+          : Math.max(previous.peakBuffer, bufferAhead),
       });
     };
 
@@ -177,17 +218,17 @@ export function useAudioBufferDiagnostics({
       );
       document.removeEventListener('visibilitychange', updateBasicBufferInfo);
     };
-  }, [audioRef, src]);
+  }, [audioRef, bufferInfo, src]);
 
   const reset = useCallback(() => {
     fetchCountRef.current = 0;
     pendingChunksRef.current = [];
     setChunkFetches([]);
-    setBufferInfo(INITIAL_BUFFER_INFO);
-  }, []);
+    bufferInfo.set(INITIAL_BUFFER_INFO);
+  }, [bufferInfo]);
 
   return {
-    bufferInfo,
+    bufferInfo: bufferInfo as BufferInfoSource,
     chunkFetches,
     debugInfo,
     reset,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState, type ComponentProps } from "react";
 import { useTranslations } from "next-intl";
 import {
   BookmarkPlus,
@@ -19,17 +19,23 @@ import { DownloadButton } from "@/components/offline/download-button";
 import { SleepTimerButton } from "./sleep-timer-button";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { usePlaybackTime } from "@/hooks/use-playback-time";
+import type { PlaybackClock } from "@/lib/playback-clock";
 import { formatAudioTime } from "./audio-player-utils";
+import { useBufferInfo, type BufferInfoSource } from "./use-audio-buffer-diagnostics";
+
+// Positions the progress bar tells apart. Its thumb and time label move once
+// a second, or in finer steps when the recording is short enough for a
+// second to be a visible jump; a 2.5-hour recording moves the thumb one
+// pixel every 25 seconds or so.
+const PROGRESS_STEPS = 1000;
 
 interface AudioPlayerChromeProps {
-  bufferInfo: {
-    bufferAhead: number;
-    networkState: number;
-    peakBuffer: number;
-  };
+  bufferInfo: BufferInfoSource;
   catalogId?: string;
+  /** Playback position; only the progress bar reads it. */
+  clock: PlaybackClock;
   downloadEventId?: number;
-  currentTime: number;
   duration: number;
   hash: string | null;
   isBuffering: boolean;
@@ -54,8 +60,8 @@ interface AudioPlayerChromeProps {
 export function AudioPlayerChrome({
   bufferInfo,
   catalogId,
+  clock,
   downloadEventId,
-  currentTime,
   duration,
   hash,
   isBuffering,
@@ -76,14 +82,6 @@ export function AudioPlayerChrome({
   volume,
 }: AudioPlayerChromeProps) {
   const t = useTranslations("player");
-  // While the thumb is being dragged, show where it is without seeking: every
-  // seek cancels the in-flight audio request, and a burst of them can leave
-  // the media element stuck mid-seek. The seek happens once, on commit.
-  const [scrubTime, setScrubTime] = useState<number | null>(null);
-  // Key presses commit before they change the value, so a preview set for
-  // them would outlive the seek and freeze the thumb; only drags preview.
-  const draggingRef = useRef(false);
-  const shownTime = scrubTime ?? currentTime;
   const downloadControl =
     hash && catalogId ? (
       downloadEventId !== undefined ? (
@@ -113,60 +111,14 @@ export function AudioPlayerChrome({
 
   return (
     <>
-      <div className="relative mb-4">
-        <Slider
-          // Until the duration is known the thumb stays at the start, but a
-          // drag still has to register as a change for it to commit a seek.
-          value={[duration > 0 ? shownTime : (scrubTime ?? 0)]}
-          max={duration || 100}
-          step={0.1}
-          onValueChange={([value]) => {
-            if (draggingRef.current) setScrubTime(value);
-          }}
-          onValueCommit={(value) => {
-            setScrubTime(null);
-            onSeek(value);
-          }}
-          onPointerDown={() => {
-            draggingRef.current = true;
-          }}
-          // A drag that ends where it started, or is cancelled, commits
-          // nothing; stop previewing either way.
-          onPointerUp={() => {
-            draggingRef.current = false;
-            setScrubTime(null);
-          }}
-          onPointerCancel={() => {
-            draggingRef.current = false;
-            setScrubTime(null);
-          }}
-          className="min-h-11 cursor-pointer [&_[data-slot=slider-thumb]]:size-6"
-          aria-label={t("progress")}
-        />
-        {duration > 0 &&
-          markers?.map((position, index) => (
-            <span
-              key={index}
-              aria-hidden="true"
-              data-testid="audio-progress-marker"
-              className="pointer-events-none absolute top-[1.375rem] h-3 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-500"
-              style={{ left: `${(Math.min(position, duration) / duration) * 100}%` }}
-            />
-          ))}
-        <div className="mt-1 flex justify-between text-xs text-muted-foreground">
-          <span>{formatAudioTime(shownTime)}</span>
-          <span>{formatAudioTime(duration)}</span>
-        </div>
-      </div>
+      <PlayerTimeline clock={clock} duration={duration} markers={markers} onSeek={onSeek} />
 
       <div className="flex flex-col items-center gap-2 sm:gap-0">
         <div className="relative flex w-full items-center justify-center gap-2 sm:gap-4">
           <div className="absolute left-0 hidden items-center gap-1 sm:flex">
             {downloadControl}
-            <BufferIndicator
-              bufferAhead={bufferInfo.bufferAhead}
-              peakBuffer={bufferInfo.peakBuffer}
-              networkState={bufferInfo.networkState}
+            <LiveBufferIndicator
+              source={bufferInfo}
               isBuffering={isBuffering}
               isReconnecting={isReconnecting}
               isCached={isDownloaded}
@@ -270,10 +222,8 @@ export function AudioPlayerChrome({
               {downloadControl}
             </div>
             <div className="flex h-12 items-center justify-center">
-              <BufferIndicator
-                bufferAhead={bufferInfo.bufferAhead}
-                peakBuffer={bufferInfo.peakBuffer}
-                networkState={bufferInfo.networkState}
+              <LiveBufferIndicator
+                source={bufferInfo}
                 isBuffering={isBuffering}
                 isReconnecting={isReconnecting}
                 isCached={isDownloaded}
@@ -318,5 +268,98 @@ export function AudioPlayerChrome({
         <div className="hidden w-8 sm:block" />
       </div>
     </>
+  );
+}
+
+// The progress bar and its time labels: the only part of the player that
+// follows playback.
+function PlayerTimeline({
+  clock,
+  duration,
+  markers,
+  onSeek,
+}: {
+  clock: PlaybackClock;
+  duration: number;
+  markers?: readonly number[];
+  onSeek: (value: number[]) => void;
+}) {
+  const t = useTranslations("player");
+  const step = duration > 0 ? Math.min(1, duration / PROGRESS_STEPS) : 1;
+  const toStep = useCallback((time: number) => Math.floor(time / step) * step, [step]);
+  const currentTime = usePlaybackTime(clock, toStep);
+  // While the thumb is being dragged, show where it is without seeking: every
+  // seek cancels the in-flight audio request, and a burst of them can leave
+  // the media element stuck mid-seek. The seek happens once, on commit.
+  const [scrubTime, setScrubTime] = useState<number | null>(null);
+  // Key presses commit before they change the value, so a preview set for
+  // them would outlive the seek and freeze the thumb; only drags preview.
+  const draggingRef = useRef(false);
+  const shownTime = scrubTime ?? currentTime;
+
+  return (
+    <div className="relative mb-4">
+      <Slider
+        // Until the duration is known the thumb stays at the start, but a
+        // drag still has to register as a change for it to commit a seek.
+        value={[duration > 0 ? shownTime : (scrubTime ?? 0)]}
+        max={duration || 100}
+        step={0.1}
+        onValueChange={([value]) => {
+          if (draggingRef.current) setScrubTime(value);
+        }}
+        onValueCommit={(value) => {
+          setScrubTime(null);
+          onSeek(value);
+        }}
+        onPointerDown={() => {
+          draggingRef.current = true;
+        }}
+        // A drag that ends where it started, or is cancelled, commits
+        // nothing; stop previewing either way.
+        onPointerUp={() => {
+          draggingRef.current = false;
+          setScrubTime(null);
+        }}
+        onPointerCancel={() => {
+          draggingRef.current = false;
+          setScrubTime(null);
+        }}
+        className="min-h-11 cursor-pointer [&_[data-slot=slider-thumb]]:size-6"
+        aria-label={t("progress")}
+      />
+      {duration > 0 &&
+        markers?.map((position, index) => (
+          <span
+            key={index}
+            aria-hidden="true"
+            data-testid="audio-progress-marker"
+            className="pointer-events-none absolute top-[1.375rem] h-3 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-500"
+            style={{ left: `${(Math.min(position, duration) / duration) * 100}%` }}
+          />
+        ))}
+      <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+        <span>{formatAudioTime(shownTime)}</span>
+        <span>{formatAudioTime(duration)}</span>
+      </div>
+    </div>
+  );
+}
+
+function LiveBufferIndicator({
+  source,
+  ...props
+}: { source: BufferInfoSource } & Omit<
+  ComponentProps<typeof BufferIndicator>,
+  "bufferAhead" | "peakBuffer" | "networkState"
+>) {
+  const { bufferAhead, peakBuffer, networkState } = useBufferInfo(source);
+  return (
+    <BufferIndicator
+      bufferAhead={bufferAhead}
+      peakBuffer={peakBuffer}
+      networkState={networkState}
+      {...props}
+    />
   );
 }
