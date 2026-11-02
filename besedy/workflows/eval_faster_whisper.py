@@ -64,13 +64,24 @@ def transcribe_rows(
     data_dir: Path,
     rows: Sequence[Mapping[str, Any]],
     options: Mapping[str, Any],
-) -> list[str]:
+) -> tuple[list[str], dict[str, str]]:
+    """Hypotheses in row order, and the error per audio file that could not be decoded.
+
+    A chunk that fails to decode scores as an empty hypothesis (every reference
+    word a deletion) instead of discarding the whole run; the report lists it.
+    """
     hyps: list[str] = []
+    errors: dict[str, str] = {}
     for row in tqdm(rows, desc="Scoring chunks", unit="chunk", ncols=100):
-        segments, _info = pipeline.transcribe(str(data_dir / row["audio"]), **options)
-        parts = [(getattr(seg, "text", "") or "").strip() for seg in segments]
+        try:
+            segments, _info = pipeline.transcribe(str(data_dir / row["audio"]), **options)
+            parts = [(getattr(seg, "text", "") or "").strip() for seg in segments]
+        except Exception as exc:  # any decode failure of one chunk, not the run
+            logging.error("Could not decode %s: %s", row["audio"], exc)
+            errors[str(row["audio"])] = f"{type(exc).__name__}: {exc}"
+            parts = []
         hyps.append(" ".join(part for part in parts if part).strip())
-    return hyps
+    return hyps, errors
 
 
 def main() -> int:
@@ -80,8 +91,9 @@ def main() -> int:
     workflow = select_transcription_workflow("faster-whisper", language=args.language)
     language_setting = resolve_language_setting(args.language, workflow.language)
     language = resolve_inference_language(language_setting)
-    options = production_transcribe_options(language=language, batch_size=args.batch_size)
-    options.pop("log_progress", None)
+    options = production_transcribe_options(
+        language=language, batch_size=args.batch_size, log_progress=False
+    )
 
     recordings = ev.load_recordings(args.recordings) if args.recordings else None
     rows = ev.select_rows(ev.load_manifest(args.data), args.split, recordings)
@@ -89,10 +101,12 @@ def main() -> int:
         raise SystemExit(f"No {args.split} rows in {args.data / 'manifest.jsonl'}")
 
     resolved = resolve_model_reference(args.model)
+    # Identity first: a failure to hash or download must not cost the decoding.
+    model_description = describe_model(args.model, resolved)
     logging.info("Loading %s on %s (%s)", resolved, args.device, args.compute_type)
     model = WhisperModel(resolved, device=args.device, compute_type=args.compute_type)
     pipeline = BatchedInferencePipeline(model=model)
-    hyps = transcribe_rows(pipeline, args.data, rows, options)
+    hyps, decode_errors = transcribe_rows(pipeline, args.data, rows, options)
     scores = ev.score_rows(rows, hyps)
 
     label = args.label or args.model
@@ -102,11 +116,7 @@ def main() -> int:
         split=args.split,
         rows=rows,
         scores=scores,
-        model={
-            **describe_model(args.model, resolved),
-            "device": args.device,
-            "compute_type": args.compute_type,
-        },
+        model={**model_description, "device": args.device, "compute_type": args.compute_type},
         options={
             **options,
             "language_setting": language_setting,
@@ -119,6 +129,9 @@ def main() -> int:
         },
         recordings_source=str(args.recordings) if args.recordings else None,
     )
+    report["decode_errors"] = decode_errors
+    if decode_errors:
+        logging.warning("%d chunk(s) could not be decoded and score as empty", len(decode_errors))
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

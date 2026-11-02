@@ -49,7 +49,24 @@ def normalize_text(text: str) -> str:
 
 
 def edit_distance(a: Sequence[Any], b: Sequence[Any]) -> int:
-    """Levenshtein distance over two sequences (words or characters)."""
+    """Levenshtein distance over two sequences (words or characters).
+
+    The common prefix and suffix are stripped first: hypotheses mostly match
+    their reference, so the quadratic dynamic programme runs over the
+    differing middle only.
+    """
+    start = 0
+    while start < len(a) and start < len(b) and a[start] == b[start]:
+        start += 1
+    end_a, end_b = len(a), len(b)
+    while end_a > start and end_b > start and a[end_a - 1] == b[end_b - 1]:
+        end_a -= 1
+        end_b -= 1
+    a, b = a[start:end_a], b[start:end_b]
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
     if len(a) < len(b):
         a, b = b, a
     previous = list(range(len(b) + 1))
@@ -173,7 +190,8 @@ def split_dev_recordings(
     unique = sorted(set(audio_hashes))
     if fraction == 0 or len(unique) < 2:
         return unique, []
-    count = min(max(1, math.ceil(fraction * len(unique))), len(unique) - 1)
+    # Rounded first: 0.07 * 100 is 7.000000000000001 in binary floating point.
+    count = min(max(1, math.ceil(round(fraction * len(unique), 9))), len(unique) - 1)
     order = list(unique)
     random.Random(seed).shuffle(order)
     dev = sorted(order[:count])
@@ -214,13 +232,28 @@ def select_rows(
     ]
 
 
+RECORDINGS_LIST_VERSION = 1
+
+
 def load_recordings(path: Path) -> set[str]:
-    """Audio hashes from a ``{"version": 1, "audio_hashes": [...]}`` file, a JSON list or lines."""
+    """Audio hashes from a ``{"version": 1, "audio_hashes": [...]}`` file, a JSON list or lines.
+
+    The one parser of that format: the catalog's ``test-recordings.json``, the
+    trainer's ``dev-recordings.json`` and ``training-eval --recordings`` all
+    read through here. A missing file raises FileNotFoundError, anything else
+    wrong with it ValueError.
+    """
     raw = path.read_text(encoding="utf-8").strip()
     if not raw:
         return set()
     if raw.startswith("{"):
-        hashes = json.loads(raw).get("audio_hashes")
+        document = json.loads(raw)
+        if document.get("version") != RECORDINGS_LIST_VERSION:
+            raise ValueError(
+                f"{path} is a recordings list of version {document.get('version')!r}, "
+                f"expected {RECORDINGS_LIST_VERSION}"
+            )
+        hashes = document.get("audio_hashes")
         if not isinstance(hashes, list):
             raise ValueError(f"{path} has no audio_hashes list")
     else:
@@ -233,16 +266,21 @@ def load_recordings(path: Path) -> set[str]:
 
 
 def write_recordings(path: Path, audio_hashes: Iterable[str]) -> None:
-    path.write_text(
-        json.dumps({"version": 1, "audio_hashes": sorted(set(audio_hashes))}, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    document = {"version": RECORDINGS_LIST_VERSION, "audio_hashes": sorted(set(audio_hashes))}
+    path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 
 
 def rows_fingerprint(rows: Iterable[Mapping[str, Any]]) -> str:
-    """Identifies exactly which chunks were scored, so reports can be compared safely."""
-    names = sorted(str(row["audio"]) for row in rows)
-    return hashlib.sha256("\n".join(names).encode("utf-8")).hexdigest()
+    """Identifies the scored chunks and their references, so reports can be compared safely.
+
+    The file name alone would match across exports of the same chunks with
+    different labels (fillers stripped or not, corrections made since), so the
+    corrected and machine texts are part of the identity.
+    """
+    lines = sorted(
+        json.dumps([str(row["audio"]), str(row["text"]), row.get("machine_text")]) for row in rows
+    )
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
 def dataset_identity(data_dir: Path) -> dict[str, Any]:
@@ -267,11 +305,7 @@ def machine_baseline(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None
     if not with_machine:
         return None
     scores = score_rows(with_machine, [str(row["machine_text"]) for row in with_machine])
-    return {
-        "system": MACHINE_SYSTEM,
-        **summarize(scores),
-        "rows_without_machine_text": len(rows) - len(with_machine),
-    }
+    return {**summarize(scores), "rows_without_machine_text": len(rows) - len(with_machine)}
 
 
 # --- reports ----------------------------------------------------------------
@@ -304,7 +338,7 @@ def build_report(
         "hours": round(sum(float(row.get("duration") or 0.0) for row in rows) / 3600, 3),
         "model": dict(model) if model is not None else None,
         "options": dict(options) if options is not None else None,
-        "scores": {"system": system, **summarize(scores)} if scores is not None else None,
+        "scores": summarize(scores) if scores is not None else None,
         "machine_baseline": machine_baseline(rows),
     }
 
@@ -314,7 +348,11 @@ def _format_rate(value: float | None) -> str:
 
 
 def comparison_table(reports: Sequence[Mapping[str, Any]]) -> str:
-    """One table over reports scored on identical rows; refuses mismatched ones."""
+    """One table over reports scored on identical rows; refuses mismatched ones.
+
+    Identical rows means the same chunks with the same references, so the
+    machine baselines of the reports must agree as well; the first one is shown.
+    """
     if not reports:
         raise ValueError("No reports to compare")
     first = reports[0]
@@ -325,29 +363,31 @@ def comparison_table(reports: Sequence[Mapping[str, Any]]) -> str:
                 f"({report.get('rows')} vs {first.get('rows')} rows); compare reports of one "
                 "dataset and split only"
             )
-    lines: list[dict[str, Any]] = []
-    machine = None
-    for report in reports:
-        if report.get("scores"):
-            lines.append(report["scores"])
-        if machine is None and report.get("machine_baseline"):
-            machine = report["machine_baseline"]
-    if machine is not None:
-        lines.insert(0, machine)
+    baselines = [r["machine_baseline"] for r in reports if r.get("machine_baseline")]
+    for baseline in baselines[1:]:
+        if baseline != baselines[0]:
+            raise ValueError(
+                "The reports carry different machine baselines on the same rows; "
+                "they were not scored on one dataset"
+            )
+    lines: list[tuple[str, Mapping[str, Any]]] = []
+    if baselines:
+        lines.append((MACHINE_SYSTEM, baselines[0]))
+    lines.extend((str(r.get("system")), r["scores"]) for r in reports if r.get("scores"))
     if not lines:
         raise ValueError("None of the reports carries scores")
 
     header = ("system", "rows", "ref words", "WER raw", "WER norm", "CER norm")
     body = [
         (
-            str(line["system"]),
+            name,
             str(line["rows"]),
             str(line["ref_words"]),
             _format_rate(line["wer_raw"]),
             _format_rate(line["wer"]),
             _format_rate(line["cer"]),
         )
-        for line in lines
+        for name, line in lines
     ]
     widths = [max(len(row[i]) for row in (header, *body)) for i in range(len(header))]
 

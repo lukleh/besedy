@@ -36,6 +36,7 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from besedy.lib import correction_segmentation as cs
+from besedy.lib.asr_evaluation import load_recordings
 from besedy.lib.catalog.manager import source_file_sha256
 from besedy.lib.correction_guard import map_recorded_path
 
@@ -47,8 +48,6 @@ DATASET_SCHEMA_VERSION = 2
 # in the repository: they are this deployment's data, backed up with the work
 # they protect.
 TEST_RECORDINGS_NAME = "test-recordings.json"
-TEST_RECORDINGS_VERSION = 1
-_AUDIO_HASH = re.compile(r"^[0-9a-f]{64}$")
 
 # The spellings the correction guide fixes for fillers (ADR 0012). A filler
 # takes the punctuation written right after it along ("Ehm? Ano." leaves
@@ -138,38 +137,22 @@ def load_test_recordings(path: Path) -> set[str]:
 
     A catalog's list is ``{"version": 1, "audio_hashes": [...]}`` at
     :func:`test_recordings_path`; a file given on the command line may also be
-    a JSON list or one hash per line. A missing list is refused rather than
-    read as having no test recordings: a recording trained on can never become
-    a test recording again, so the list is chosen before any export. An
-    explicit empty list says the catalog has none on purpose.
+    a JSON list or one hash per line (parsed by
+    :func:`besedy.lib.asr_evaluation.load_recordings`). A missing list is
+    refused rather than read as having no test recordings: a recording trained
+    on can never become a test recording again, so the list is chosen before
+    any export. An explicit empty list says the catalog has none on purpose.
     """
     try:
-        raw = path.read_text(encoding="utf-8").strip()
+        return load_recordings(path)
     except FileNotFoundError as exc:
         raise TrainingExportError(
             f"No test recordings are listed at {path}. Choose them before the first export "
             '(write {"version": 1, "audio_hashes": [...]}, an empty list if the catalog has '
             "none on purpose), or pass --no-test-recordings for an experiment"
         ) from exc
-    if not raw:
-        return set()
-    if raw.startswith("{"):
-        document = json.loads(raw)
-        if document.get("version") != TEST_RECORDINGS_VERSION:
-            raise TrainingExportError(
-                f"{path} is test recordings version {document.get('version')!r}, "
-                f"expected {TEST_RECORDINGS_VERSION}"
-            )
-        hashes = document.get("audio_hashes")
-        if not isinstance(hashes, list):
-            raise TrainingExportError(f"{path} has no audio_hashes list")
-    else:
-        hashes = json.loads(raw) if raw.startswith("[") else raw.split()
-    result = {str(value).strip() for value in hashes if str(value).strip()}
-    for value in result:
-        if not _AUDIO_HASH.match(value):
-            raise TrainingExportError(f"{path} names {value!r}, not a 64-character audio hash")
-    return result
+    except ValueError as exc:
+        raise TrainingExportError(str(exc)) from exc
 
 
 @dataclass

@@ -50,7 +50,17 @@ def test_numbers_are_not_converted_between_digits_and_words() -> None:
 
 @pytest.mark.parametrize(
     ("a", "b", "distance"),
-    [("kitten", "sitting", 3), ("", "abc", 3), ("abc", "", 3), ("same", "same", 0), ("", "", 0)],
+    [
+        ("kitten", "sitting", 3),
+        ("", "abc", 3),
+        ("abc", "", 3),
+        ("same", "same", 0),
+        ("", "", 0),
+        # Shared prefix and suffix around the difference, and one side a prefix of the other.
+        ("dobrý den pane", "dobrej den pane", 2),
+        ("dobrý den", "dobrý den pane", 5),
+        ("abcabc", "abc", 3),
+    ],
 )
 def test_edit_distance(a: str, b: str, distance: int) -> None:
     assert ev.edit_distance(a, b) == distance
@@ -121,6 +131,9 @@ class TestDevSplit:
         assert len(ev.split_dev_recordings(HASHES[:3], 0.1, seed=0)[1]) == 1
         assert len(ev.split_dev_recordings(HASHES[:15], 0.1, seed=0)[1]) == 2
         assert len(ev.split_dev_recordings(HASHES[:2], 0.9, seed=0)[1]) == 1
+        # 0.07 * 100 is 7.000000000000001 in floating point; still 7 recordings.
+        hundred = [f"{i:064x}" for i in range(100)]
+        assert len(ev.split_dev_recordings(hundred, 0.07, seed=0)[1]) == 7
 
     def test_a_single_recording_or_a_zero_fraction_gives_no_dev_set(self) -> None:
         assert ev.split_dev_recordings(HASHES[:1], 0.5, seed=0) == (HASHES[:1], [])
@@ -161,6 +174,11 @@ def test_recordings_lists_round_trip_and_accept_the_three_spellings(tmp_path: Pa
     (tmp_path / "bad.txt").write_text("abc\n")
     with pytest.raises(ValueError, match="64-character"):
         ev.load_recordings(tmp_path / "bad.txt")
+    (tmp_path / "v2.json").write_text(json.dumps({"version": 2, "audio_hashes": []}))
+    with pytest.raises(ValueError, match="version"):
+        ev.load_recordings(tmp_path / "v2.json")
+    with pytest.raises(FileNotFoundError):
+        ev.load_recordings(tmp_path / "missing.json")
 
 
 def test_machine_baseline_scores_the_manifest_text_against_the_label() -> None:
@@ -171,7 +189,6 @@ def test_machine_baseline_scores_the_manifest_text_against_the_label() -> None:
     ]
     baseline = ev.machine_baseline(rows)
     assert baseline is not None
-    assert baseline["system"] == ev.MACHINE_SYSTEM
     assert baseline["rows"] == 2 and baseline["rows_without_machine_text"] == 1
     assert baseline["wer"] == pytest.approx(1 / 7, abs=1e-4)
     assert baseline["wer_raw"] == pytest.approx(3 / 7, abs=1e-4)
@@ -199,8 +216,11 @@ def test_build_report_fingerprints_the_scored_rows_whatever_their_order() -> Non
         report["rows_sha256"]
         == _report("other", list(reversed(rows)), ["c d", "a b"])["rows_sha256"]
     )
+    # The same chunks with other references (another export) are other rows.
+    relabelled = [{**rows[0], "text": "a b ehm"}, rows[1]]
+    assert _report("x", relabelled, ["a b", "c d"])["rows_sha256"] != report["rows_sha256"]
+    assert report["system"] == "large-v3"
     assert report["scores"] == {
-        "system": "large-v3",
         "rows": 2,
         "ref_words": 4,
         "wer_raw": 0.0,
@@ -237,3 +257,15 @@ def test_comparison_table_refuses_reports_of_different_rows() -> None:
         ev.comparison_table([])
     with pytest.raises(ValueError, match="carries scores"):
         ev.comparison_table([_report("machine only", rows, None)])
+
+
+def test_comparison_table_refuses_reports_whose_machine_baselines_disagree() -> None:
+    rows = [_row(0, "a b", machine_text="a b"), _row(1, "c d", machine_text="c d")]
+    first = _report("x", rows, ["a b", "c d"])
+    second = _report("y", rows, ["a b", "c d"])
+    second["machine_baseline"]["wer"] = 0.5
+    with pytest.raises(ValueError, match="different machine baselines"):
+        ev.comparison_table([first, second])
+    # A report without a baseline (an older one) compares fine.
+    second["machine_baseline"] = None
+    assert "| y " in ev.comparison_table([first, second])

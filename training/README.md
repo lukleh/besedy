@@ -78,8 +78,10 @@ path: the faster-whisper image, `BatchedInferencePipeline` and the options
 `<dataset>/eval/<label>_<timestamp>/report.json` (symlink
 `<dataset>/eval/<label>`) with the model's identity (path, `model.bin` hash),
 the decode options, faster-whisper and CTranslate2 versions, the dataset, the
-git commit, a fingerprint of the scored rows, the scores and the machine-text
-baseline on the same rows, plus `hypotheses.jsonl`.
+git commit, a fingerprint of the scored rows and their references, the scores
+and the machine-text baseline on the same rows, plus `hypotheses.jsonl`. A
+chunk that fails to decode scores as an empty hypothesis and is listed under
+`decode_errors` instead of aborting the run.
 
 `--recordings <run dir>/dev-recordings.json --split train` scores the dev
 recordings instead, and `--data <dataset>` without `--model` writes the

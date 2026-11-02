@@ -18,13 +18,15 @@ def production_transcribe_options(
     language: str | None,
     batch_size: int,
     vad: VadConfig | None = None,
+    log_progress: bool = True,
 ) -> dict[str, Any]:
     """Keyword arguments for ``BatchedInferencePipeline.transcribe``.
 
     ``language`` is the inference language (None lets the model detect it).
     The batched pipeline runs its own Silero VAD pass while decoding and packs
     the regions into inputs of at most 30 s of speech; ``vad_parameters`` is
-    only set when the configuration names a minimum silence.
+    only set when the configuration names a minimum silence. ``log_progress``
+    only controls faster-whisper's own progress bar, not what is decoded.
     """
     vad = vad if vad is not None else config.vad
     options: dict[str, Any] = {
@@ -37,7 +39,7 @@ def production_transcribe_options(
         ),
         "word_timestamps": vad.word_timestamps,
         "language": language,
-        "log_progress": True,
+        "log_progress": log_progress,
         # Equivalent to --max-context 0: every chunk is decoded on its own.
         "condition_on_previous_text": False,
         "repetition_penalty": 1.1,

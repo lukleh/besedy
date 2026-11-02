@@ -158,6 +158,32 @@ def test_with_a_model_the_worker_runs_in_the_faster_whisper_image(
     assert latest.is_symlink() and build["output_paths"] == [latest.resolve()]
 
 
+def test_a_relative_local_model_goes_into_the_container_as_an_absolute_path(
+    dataset: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_dir = tmp_path / "models" / "besedy-ct2"
+    model_dir.mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    captured: dict[str, object] = {}
+
+    def fake_build(**kwargs):
+        captured.update(kwargs)
+        return BackendProcessSpec(argv=("worker",), extra_env=None)
+
+    monkeypatch.setattr(training_eval, "build_python_backend_process", fake_build)
+    monkeypatch.setattr(training_eval, "git_commit", lambda: None)
+    monkeypatch.setattr(
+        training_eval.subprocess,
+        "run",
+        lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0),
+    )
+    argv = ["training-eval", "--data", str(dataset), "--model", "./models/besedy-ct2"]
+    assert catalog_cli.main(argv) == 0
+    script_args = captured["script_args"]
+    assert script_args[script_args.index("--model") + 1] == str(model_dir)
+    assert captured["model_paths"] == [model_dir]
+
+
 def test_the_default_label_is_the_sanitized_model_and_a_failed_worker_leaves_no_symlink(
     dataset: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -173,7 +199,8 @@ def test_the_default_label_is_the_sanitized_model_and_a_failed_worker_leaves_no_
     )
     assert catalog_cli.main(["training-eval", "--data", str(dataset), "--model", "large-v3"]) == 3
     assert not (dataset / "eval" / "large-v3").exists()
-    assert [p.name for p in (dataset / "eval").iterdir()][0].startswith("large-v3_")
+    # The empty directory made for the worker's mount is removed again.
+    assert list((dataset / "eval").iterdir()) == []
 
 
 def test_compare_prints_one_table_over_saved_reports(dataset: Path, tmp_path: Path, capsys) -> None:

@@ -141,13 +141,16 @@ def machine_baseline_report(args: argparse.Namespace, out: Path) -> int:
 
 
 def model_report(args: argparse.Namespace, out: Path, label: str) -> int:
+    # A local directory goes in by its absolute path: the worker resolves
+    # relative paths against its own working directory, not this one.
+    local_model = resolve_local_model_path(args.model)
     script_args = [
         "--data",
         str(args.data),
         "--out",
         str(out),
         "--model",
-        args.model,
+        str(local_model) if local_model is not None else args.model,
         "--label",
         label,
         "--split",
@@ -168,7 +171,6 @@ def model_report(args: argparse.Namespace, out: Path, label: str) -> int:
     commit = git_commit()
     if commit is not None:
         script_args.extend(["--git-commit", commit])
-    local_model = resolve_local_model_path(args.model)
     out.mkdir(parents=True, exist_ok=True)
     process = build_python_backend_process(
         backend_id="faster-whisper",
@@ -186,6 +188,8 @@ def model_report(args: argparse.Namespace, out: Path, label: str) -> int:
     if process.extra_env:
         env.update(process.extra_env)
     result = subprocess.run(process.argv, env=env, cwd=str(PROJECT_ROOT), check=False)
+    if result.returncode != 0 and not any(out.iterdir()):
+        out.rmdir()  # the mount point was made for the worker; a failed run leaves nothing
     return result.returncode
 
 
