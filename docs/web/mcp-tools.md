@@ -1,8 +1,8 @@
 # Besedy MCP Tool Reference
 
-> Last updated: 2026-09-02
+> Last updated: 2026-11-02
 
-This is the human-readable reference for the ten Besedy MCP tools. The
+This is the human-readable reference for the eleven Besedy MCP tools. The
 authoritative contract is the code: input schemas live in each registrar under
 `web/src/lib/mcp/tools/`, success shapes in
 `web/src/lib/mcp/tools/output-schemas.ts`, and both are advertised live through
@@ -14,7 +14,7 @@ architectural rules behind these tools, see [mcp-server.md](mcp-server.md).
 
 ## Conventions
 
-All ten tools are read-only, idempotent, and limited to Besedy data rather
+All eleven tools are read-only, idempotent, and limited to Besedy data rather
 than the open web. Successful calls return machine-readable JSON in
 `structuredContent`. Every tool advertises an `outputSchema` through
 `tools/list`, so an agent can understand the success response before its first
@@ -63,8 +63,11 @@ every matching segment in one response.
 | `get_transcript`           | Read its transcript when linked to a released event              | Accessible catalog and listener visibility |
 | `search_transcripts`       | Find event-scoped passages by meaning, including different words | Accessible catalog and listener visibility |
 | `find_transcript_mentions` | Exhaustively find event-scoped indexed wording                   | Accessible catalog and listener visibility |
+| `list_bookmarks`           | List the user's own bookmarks and their comments                 | `besedy:bookmarks` scope, accessible catalog, and listener visibility |
 
-All tools are discoverable by an active portal user. Discovery is only a
+All tools except `list_bookmarks` are discoverable by an active portal user;
+`list_bookmarks` is listed only to a client granted the `besedy:bookmarks`
+scope. Discovery is only a
 usability surface: every catalog-scoped call authorizes its resolved catalog and
 applies listener visibility again.
 
@@ -367,9 +370,11 @@ catalog, recording, and relevant time window remain aligned.
 | `segmentLimit`  | integer from 1 to 200           | `50` in `page` mode     | Page mode only: maximum whole segments                                     |
 | `maxTextChars`  | integer from 1,000 to 50,000    | `20,000` in `page` mode | Page mode only: soft text-size target                                      |
 
-The server reads only its configured canonical transcript, the one selected by
-`RAG_BACKEND_KEY`. It returns `transcript_not_found` when that transcript is
-absent. Transcript implementation identifiers are not part of the MCP contract.
+The server reads the transcript that search indexes: the corrected transcript
+once one has been published for search, and otherwise its configured canonical
+transcript, the one selected by `RAG_BACKEND_KEY`. It returns
+`transcript_not_found` when that transcript is absent. Transcript
+implementation identifiers are not part of the MCP contract.
 
 `mode: "full"` returns every segment overlapping the optional time window in a
 single response, up to a hard 200,000-character response ceiling. With no time
@@ -551,8 +556,8 @@ Every result contains:
 - the exact `match`, including time range, text, and seekable `webUrl`, which
   is the citation;
 - optional before/after `context` without duplicating the exact match; and
-- `transcriptRequest`, when the canonical transcript exists, with
-  `mode: "page"` and the time range to verify. This may be `null`.
+- `transcriptRequest`, when `get_transcript` has a transcript to read (see
+  above), with `mode: "page"` and the time range to verify. This may be `null`.
 
 The match `webUrl` is a bounded excerpt link: it seeks to `startSec`, stops once
 at `endSec`, and then permits ordinary continued playback when the user presses
@@ -640,6 +645,84 @@ Example return value:
 }
 ```
 
+## `list_bookmarks`
+
+Use this tool to see which moments the user bookmarked and what they wrote
+about them, for example to start from what they found worth returning to or to
+find a passage they remember noting. The tool is registered only for a client
+granted the `besedy:bookmarks` OAuth scope; other clients do not see it in
+`tools/list`.
+
+| Argument    | Type                                     | Default           | Meaning                                                            |
+| ----------- | ---------------------------------------- | ----------------- | ------------------------------------------------------------------ |
+| `catalogId` | string                                   | effective default | Catalog whose bookmarks are listed                                 |
+| `query`     | non-empty string, at most 200 characters | omitted           | Case-insensitive substring match against the comment and excerpt   |
+| `audioHash` | 64-character hexadecimal string          | omitted           | Only list bookmarks in this recording                              |
+| `cursor`    | opaque string                            | omitted           | Continuation token returned as `nextCursor` by the previous page   |
+| `limit`     | integer from 1 to 100                    | `50`              | Maximum bookmarks in the page                                      |
+
+Only the caller's own bookmarks are returned, newest first. A bookmark appears
+only while its recording passes the same listener visibility as
+`get_recording`, so a bookmark made in the web application on a recording that
+is unreleased, unpublished, or no longer linked to a released event stays
+hidden and comes back with the access.
+
+Each bookmark carries its `positionSec`, the user's `comment`, the transcript
+`excerpt` saved when it was made, and `createdAt`/`updatedAt`. `webUrl` opens
+the recording at the bookmarked position. `recording` names the recording, and
+`event` is its visible event (the primary link first) or `null`.
+`transcriptRequest` covers 60 seconds on each side of the position and is
+`null` when `get_transcript` has no transcript to read for the recording.
+
+The comment is the user's own note, not recording evidence: agents should treat
+it as the user's interest or opinion and never cite it as what was said. The
+excerpt is a snapshot that later transcript corrections do not update, so read
+the passage through `transcriptRequest` before relying on its wording.
+
+Pass `nextCursor` unchanged with the same catalog, `query`, and `audioHash`.
+The cursor is the creation time and ID of the last returned bookmark, so a
+bookmark deleted between pages cannot invalidate it. A malformed or mismatched
+cursor returns `invalid_cursor`.
+
+Example return value:
+
+```json
+{
+  "catalogId": "20990101_000000",
+  "bookmarks": [
+    {
+      "id": "cmbookmark0000000000000",
+      "positionSec": 754.2,
+      "comment": "Good summary of the funding question",
+      "excerpt": "The second part of the budget goes to the library.",
+      "createdAt": "2099-04-13T08:15:00.000Z",
+      "updatedAt": "2099-04-13T08:20:00.000Z",
+      "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?seek=754.2",
+      "recording": {
+        "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "title": "Example recording",
+        "webUrl": "https://besedy.example/catalog/20990101_000000/recording/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "event": {
+        "id": 4242,
+        "webUrl": "https://besedy.example/catalog/20990101_000000/event/4242",
+        "date": { "year": 2099, "month": 4, "day": 12 },
+        "location": { "id": 999, "name": "Example Hall" },
+        "isPrimary": true
+      },
+      "transcriptRequest": {
+        "catalogId": "20990101_000000",
+        "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "mode": "page",
+        "startSec": 694.2,
+        "endSec": 814.2
+      }
+    }
+  ],
+  "nextCursor": null
+}
+```
+
 ## Tool errors
 
 Expected tool failures set `isError: true` and return the same object in
@@ -661,7 +744,7 @@ Expected tool failures set `isError: true` and return the same object in
 | `invalid_cursor`        | A list cursor is malformed, stale, or does not match the current request           |
 | `not_found`             | The catalog, event, or recording is absent or deliberately hidden by access policy |
 | `identity_unavailable`  | The authenticated account disappeared before identity serialization                |
-| `transcript_not_found`  | The recording has no readable canonical transcript                                 |
+| `transcript_not_found`  | The recording has no readable transcript                                           |
 | `invalid_window`        | `endSec` is not greater than `startSec`                                            |
 | `response_too_large`    | A full transcript window exceeds the hard response ceiling                         |
 | `search_not_configured` | The catalog has no transcript search bundle                                        |

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { respondToMcpConsent } from '@/lib/auth/client';
+import { MCP_BOOKMARKS_SCOPE } from '@/lib/mcp/config';
 import { useValidatedMcpAuthorizationRequest } from '@/app/(app)/auth/use-validated-mcp-authorization-request';
 import { McpClientIdentity } from '@/app/(app)/auth/mcp-client-identity';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -20,11 +21,15 @@ export default function McpConsent() {
   const searchParams = useSearchParams();
   const clientId = searchParams.get('client_id');
   const oauthQuery = searchParams.toString();
-  const scopes = (searchParams.get('scope') ?? '')
-    .split(/\s+/)
-    .filter(
-      (scope) => scope && scope !== 'openid' && scope !== 'offline_access',
-    );
+  const requestedScopes = (searchParams.get('scope') ?? '').split(/\s+/);
+  const canReadBookmarks = requestedScopes.includes(MCP_BOOKMARKS_SCOPE);
+  const scopes = requestedScopes.filter(
+    (scope) =>
+      scope &&
+      scope !== 'openid' &&
+      scope !== 'offline_access' &&
+      scope !== MCP_BOOKMARKS_SCOPE,
+  );
   const { requestValidation, validatedClient } =
     useValidatedMcpAuthorizationRequest(
       clientId,
@@ -98,6 +103,12 @@ export default function McpConsent() {
                 <li>
                   Read and search transcripts for those published recordings.
                 </li>
+                {canReadBookmarks && (
+                  <li>
+                    Read your own bookmarks in those recordings, including your
+                    comments on them.
+                  </li>
+                )}
                 {scopes.map((scope) => (
                   <li key={scope}>Request scope: {scope}</li>
                 ))}

@@ -117,7 +117,8 @@ type McpToolName =
   | 'get_recording'
   | 'get_transcript'
   | 'search_transcripts'
-  | 'find_transcript_mentions';
+  | 'find_transcript_mentions'
+  | 'list_bookmarks';
 
 const MCP_ENVELOPE = {
   'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,
@@ -559,6 +560,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       tools: Array<{ name: string }>;
     }>;
     expect(toolsBody.error).toBeUndefined();
+    // The client requests every advertised scope, besedy:bookmarks included.
     expect(toolsBody.result?.tools.map((tool) => tool.name)).toEqual([
       'who_am_i',
       'list_catalogs',
@@ -570,6 +572,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       'get_transcript',
       'search_transcripts',
       'find_transcript_mentions',
+      'list_bookmarks',
     ]);
 
     const identityResponse = await request.post(MCP_RESOURCE, {
@@ -1363,6 +1366,60 @@ test('@smoke MCP enforces listener visibility and hidden-target semantics', asyn
       'not_found',
     );
 
+    // Bookmarks are stored without an access check, so a bookmark on a
+    // recording linked only to an unreleased event must stay hidden.
+    const identity = await callMcpTool<{ account: { id: string } }>(
+      request,
+      listener,
+      'who_am_i',
+      {},
+    );
+    const listenerUserId = identity.result!.structuredContent.account.id;
+    const bookmarkIds = ['e2emcpbookmarkvisible', 'e2emcpbookmarkhidden'];
+    await pool.query(
+      `INSERT INTO "recording_bookmark"
+         ("id", "user_id", "workflow_group_id", "audio_hash", "position_sec",
+          "comment", "excerpt", "updated_at")
+       VALUES ($1, $3, $4, $5, 12, 'Visible bookmark comment', NULL, now()),
+              ($2, $3, $4, $6, 3, 'Hidden bookmark comment', NULL, now())`,
+      [
+        ...bookmarkIds,
+        listenerUserId,
+        catalogId,
+        MCP_FIXTURE_RECORDING.hash,
+        hiddenRecording.hash,
+      ],
+    );
+    try {
+      const bookmarks = await callMcpTool<{
+        bookmarks: Array<{
+          id: string;
+          comment: string | null;
+          recording: { audioHash: string };
+          transcriptRequest: { startSec: number; endSec: number } | null;
+        }>;
+      }>(request, listener, 'list_bookmarks', {});
+      expect(bookmarks.result?.isError).not.toBe(true);
+      expect(bookmarks.result?.structuredContent.bookmarks).toEqual([
+        expect.objectContaining({
+          id: 'e2emcpbookmarkvisible',
+          comment: 'Visible bookmark comment',
+          recording: expect.objectContaining({
+            audioHash: MCP_FIXTURE_RECORDING.hash,
+          }),
+          transcriptRequest: expect.objectContaining({
+            startSec: 0,
+            endSec: 72,
+          }),
+        }),
+      ]);
+    } finally {
+      await pool.query(
+        `DELETE FROM "recording_bookmark" WHERE "id" = ANY($1::text[])`,
+        [bookmarkIds],
+      );
+    }
+
     // Listener transcript access through MCP is a documented decision, not a
     // gap: see "Design decision: listener transcript access" in
     // docs/web/mcp-server.md.
@@ -1489,6 +1546,7 @@ test('@smoke MCP enforces listener visibility and hidden-target semantics', asyn
       ],
       ['search_transcripts', { query: 'Besedy MCP deterministic search' }],
       ['find_transcript_mentions', { query: 'deterministic evidence' }],
+      ['list_bookmarks', {}],
     ];
     for (const [tool, args] of catalogScopedCalls) {
       expectToolError(
