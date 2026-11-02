@@ -404,7 +404,11 @@
   "transcript": {
     "title": "Přepis",
     "source": "Zdroj",
-    "autoScroll": "Automatické posouvání",
+    "view": "Zobrazit",
+    "follow": "Sledovat",
+    "followHint": "Sledovat přehrávání: přehrávané slovo zůstane na očích",
+    "followingHint": "Přepis sleduje přehrávání. Posunutím přepisu nebo kliknutím sem sledování zastavíte",
+    "backToPlayback": "Zpět na přehrávání",
     "timestamps": "Časy",
     "speakers": "Mluvčí",
     "speakersDetected": "{count} mluvčí detekován",

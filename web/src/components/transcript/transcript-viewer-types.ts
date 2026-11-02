@@ -134,7 +134,6 @@ export interface TranscriptViewerProps {
   /** The player's position; without one the transcript shows no playback. */
   clock?: PlaybackClock;
   onSeek?: (time: number) => void;
-  isPlaying?: boolean;
   canDownload?: boolean;
   /** Administrative: the backend picker and the count of machine transcripts. */
   canSeeTranscriptVariants?: boolean;
@@ -148,16 +147,22 @@ export interface TranscriptContentProps {
   transcript: Transcript;
   clock?: PlaybackClock;
   onSeek?: (time: number) => void;
-  autoScroll?: boolean;
+  /**
+   * Following keeps the word being played highlighted and in view. Otherwise
+   * the transcript stays where the reader left it and only a marker beside the
+   * current segment shows where playback is.
+   */
+  follow?: boolean;
+  /** Asked to stop when the reader scrolls, and to resume from the jump-back button. */
+  onFollowChange?: (follow: boolean) => void;
   diarization?: Diarization;
   showTimestamps?: boolean;
   scrollToTime?: number | null;
   onScrollComplete?: () => void;
 }
 
-export const AUTO_SCROLL_PREF_KEY = "besedy-transcript-autoscroll";
-export const SPEAKER_LABELS_PREF_KEY = "besedy-speaker-labels";
-export const TIMESTAMPS_PREF_KEY = "besedy-timestamps";
+// The key predates follow mode, so readers who turned auto-scroll off start idle.
+export const FOLLOW_PREF_KEY = "besedy-transcript-autoscroll";
 export const VIRTUAL_SCROLL_THRESHOLD = 100;
 
 const SPEAKER_COLORS = [

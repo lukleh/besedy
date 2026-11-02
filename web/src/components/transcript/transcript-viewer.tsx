@@ -1,9 +1,10 @@
 "use client";
 
 // Owns the transcript-reading workspace: loading transcript variants, virtualized
-// rendering, speaker/download controls, and reader-level preferences. The
-// rendering-heavy content lives in transcript-viewer-content.tsx and the local
-// read-model types live in transcript-viewer-types.ts.
+// rendering, the View menu and follow control, downloads, and reader-level
+// preferences. The rendering-heavy content lives in transcript-viewer-content.tsx,
+// the optional data layers in transcript-layers.ts, and the local read-model
+// types in transcript-viewer-types.ts.
 
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -12,14 +13,13 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import {
   ResponsiveMenu,
+  ResponsiveMenuCheckboxItem,
   ResponsiveMenuContent,
   ResponsiveMenuItem,
   ResponsiveMenuTrigger,
 } from "@/components/ui/responsive-menu";
-import { Switch } from "@/components/ui/switch";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
   readLocalDiarization,
@@ -41,10 +41,11 @@ import { formatModelLabel } from "@/lib/transcript-labels";
 import {
   Check,
   ChevronDown,
-  Clock,
   Copy,
   Download,
+  Eye,
   FileText,
+  LocateFixed,
   Users,
 } from "lucide-react";
 import { CorrectionProgressPanel } from "@/components/correction/correction-progress-panel";
@@ -53,9 +54,12 @@ import {
   TranscriptSkeleton,
 } from "./transcript-viewer-content";
 import {
-  AUTO_SCROLL_PREF_KEY,
-  SPEAKER_LABELS_PREF_KEY,
-  TIMESTAMPS_PREF_KEY,
+  TRANSCRIPT_LAYERS,
+  useTranscriptLayers,
+  type TranscriptLayerId,
+} from "./transcript-layers";
+import {
+  FOLLOW_PREF_KEY,
   availableDiarizationsSchema,
   availableFormatsSchema,
   availableTranscriptsSchema,
@@ -87,7 +91,6 @@ export function TranscriptViewer({
   groupId,
   clock,
   onSeek,
-  isPlaying = false,
   canDownload = false,
   canSeeTranscriptVariants = false,
   canSeeSpeakers = false,
@@ -102,21 +105,28 @@ export function TranscriptViewer({
   const copyResetRef = useRef<number | null>(null);
   const [scrollToTime, setScrollToTime] = useState<number | null>(null);
   const prevBackendRef = useRef<TranscriptBackend | null>(null);
-  const [autoScroll, setAutoScroll] = useHydratedBoolean(
-    AUTO_SCROLL_PREF_KEY,
-    true
+  // The stored preference is the reader's mode. Scrolling away only pauses
+  // following for this visit; the jump-back button or seeking resumes it.
+  const [followPref, setFollowPref] = useHydratedBoolean(FOLLOW_PREF_KEY, true);
+  const [following, setFollowing] = useState(followPref);
+  const [syncedFollowPref, setSyncedFollowPref] = useState(followPref);
+  if (syncedFollowPref !== followPref) {
+    setSyncedFollowPref(followPref);
+    setFollowing(followPref);
+  }
+  const toggleFollowing = useCallback(() => {
+    setFollowing(!following);
+    setFollowPref(!following);
+  }, [following, setFollowPref]);
+  const handleSeek = useCallback(
+    (time: number) => {
+      onSeek?.(time);
+      if (followPref) setFollowing(true);
+    },
+    [onSeek, followPref]
   );
-  const [showSpeakers, setShowSpeakers] = useHydratedBoolean(
-    SPEAKER_LABELS_PREF_KEY,
-    true
-  );
-  const [showTimestamps, setShowTimestamps] = useHydratedBoolean(
-    TIMESTAMPS_PREF_KEY,
-    true
-  );
-  // The overlay is administrative, so a stored preference from when it was
-  // shown to everyone does not bring it back.
-  const speakersVisible = canSeeSpeakers && showSpeakers;
+
+  const [layerChoices, setLayerVisible] = useTranscriptLayers();
 
   const handleBackendChange = useCallback((backend: TranscriptBackend) => {
     setSelectedBackend(backend);
@@ -274,6 +284,24 @@ export function TranscriptViewer({
     },
   });
 
+  // The overlay is administrative, so a stored preference from when it was
+  // shown to everyone does not bring it back.
+  const hasDiarization =
+    canSeeSpeakers && (availableDiarizations?.backends.length ?? 0) > 0;
+  const layerAvailable: Record<TranscriptLayerId, boolean> = {
+    timestamps: true,
+    speakers: hasDiarization,
+  };
+  const availableLayers = TRANSCRIPT_LAYERS.filter(
+    (layer) => layerAvailable[layer.id]
+  );
+  const layerVisible = (id: TranscriptLayerId) =>
+    layerAvailable[id] && layerChoices[id];
+  const visibleLayerCount = availableLayers.filter((layer) =>
+    layerVisible(layer.id)
+  ).length;
+  const speakersVisible = layerVisible("speakers");
+
   const effectiveDiarizationBackend = availableDiarizations?.backends.includes(
     "pyannote"
   )
@@ -296,9 +324,6 @@ export function TranscriptViewer({
       ),
     enabled: !!effectiveDiarizationBackend && speakersVisible,
   });
-
-  const hasDiarization =
-    canSeeSpeakers && (availableDiarizations?.backends.length ?? 0) > 0;
 
   if (loadingBackends) {
     return <TranscriptSkeleton />;
@@ -434,47 +459,54 @@ export function TranscriptViewer({
             {t("sourcesPlural", { count: available.backends.length })}
           </Badge>
         )}
-        <div className="w-full sm:w-auto sm:ml-auto flex flex-wrap items-center gap-x-4 gap-y-2 mt-2 sm:mt-0">
-          {hasDiarization && (
-            <div className="flex items-center gap-2">
-              <Switch
-                id="show-speakers"
-                checked={showSpeakers}
-                onCheckedChange={setShowSpeakers}
-              />
-              <Label
-                htmlFor="show-speakers"
-                className="text-sm cursor-pointer flex items-center gap-1"
-              >
-                <Users className="h-3 w-3" />
-                {t("speakers")}
-              </Label>
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <Switch
-              id="show-timestamps"
-              checked={showTimestamps}
-              onCheckedChange={setShowTimestamps}
+        <div className="ml-auto flex items-center gap-2">
+          <ResponsiveMenu>
+            <ResponsiveMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Eye className="h-4 w-4" />
+                {t("view")}
+                {visibleLayerCount > 0 && (
+                  <Badge
+                    variant="secondary"
+                    className="h-5 min-w-5 rounded-full px-1.5 tabular-nums"
+                  >
+                    {visibleLayerCount}
+                  </Badge>
+                )}
+                <ChevronDown className="h-4 w-4 opacity-50" />
+              </Button>
+            </ResponsiveMenuTrigger>
+            <ResponsiveMenuContent title={t("view")} showCloseButton={false}>
+              {availableLayers.map((layer) => {
+                const Icon = layer.icon;
+                return (
+                  <ResponsiveMenuCheckboxItem
+                    key={layer.id}
+                    checked={layerChoices[layer.id]}
+                    onCheckedChange={(checked) =>
+                      setLayerVisible(layer.id, checked)
+                    }
+                  >
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                    {t(layer.labelKey)}
+                  </ResponsiveMenuCheckboxItem>
+                );
+              })}
+            </ResponsiveMenuContent>
+          </ResponsiveMenu>
+          <Button
+            variant={following ? "secondary" : "outline"}
+            size="sm"
+            className="gap-2"
+            aria-pressed={following}
+            title={following ? t("followingHint") : t("followHint")}
+            onClick={toggleFollowing}
+          >
+            <LocateFixed
+              className={following ? "h-4 w-4 text-primary" : "h-4 w-4"}
             />
-            <Label
-              htmlFor="show-timestamps"
-              className="text-sm cursor-pointer flex items-center gap-1"
-            >
-              <Clock className="h-3 w-3" />
-              {t("timestamps")}
-            </Label>
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch
-              id="auto-scroll"
-              checked={autoScroll}
-              onCheckedChange={setAutoScroll}
-            />
-            <Label htmlFor="auto-scroll" className="text-sm cursor-pointer">
-              {t("autoScroll")}
-            </Label>
-          </div>
+            {t("follow")}
+          </Button>
           {canSeeTranscriptVariants && available.backends.length > 0 && (
             <Badge variant="secondary" className="hidden sm:inline-flex">
               {available.backends.length === 1
@@ -502,10 +534,11 @@ export function TranscriptViewer({
         <TranscriptContent
           transcript={transcript}
           clock={clock}
-          onSeek={onSeek}
-          autoScroll={autoScroll && isPlaying}
+          onSeek={handleSeek}
+          follow={following}
+          onFollowChange={setFollowing}
           diarization={speakersVisible ? diarization : undefined}
-          showTimestamps={showTimestamps}
+          showTimestamps={layerVisible("timestamps")}
           scrollToTime={scrollToTime}
           onScrollComplete={() => setScrollToTime(null)}
         />
