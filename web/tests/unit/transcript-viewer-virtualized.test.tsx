@@ -5,8 +5,14 @@ import { findSpeakerAtTime, type Diarization, type Transcript } from "@/componen
 import { createPlaybackClock } from "@/lib/playback-clock";
 import { formatTimestamp } from "@/lib/utils";
 
-// 48px rows in a 400px box with 16px padding: rows 0-7 fit when scrolled to the top.
-const virtual = vi.hoisted(() => ({ indices: [0, 1, 2], scrollOffset: 0, scrollToIndex: vi.fn() }));
+// 48px rows in a box 400px tall inside: rows 0-7 fit when scrolled to the top.
+// The virtualizer lays the padding out itself, so row 0 starts at 16px.
+const virtual = vi.hoisted(() => ({
+  indices: [0, 1, 2],
+  scrollOffset: 0 as number | null,
+  scrollToIndex: vi.fn(),
+  measureElement: vi.fn(),
+}));
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: () => ({
     getTotalSize: () => 200 * 48,
@@ -14,14 +20,15 @@ vi.mock("@tanstack/react-virtual", () => ({
     measurementsCache: Array.from({ length: 200 }, (_, index) => ({
       index,
       key: index,
-      start: index * 48,
-      end: index * 48 + 48,
+      start: 16 + index * 48,
+      end: 16 + index * 48 + 48,
       size: 48,
       lane: 0,
     })),
+    measureElement: virtual.measureElement,
     range: { startIndex: virtual.indices[0], endIndex: virtual.indices[virtual.indices.length - 1] },
     scrollOffset: virtual.scrollOffset,
-    scrollRect: { width: 600, height: 400 },
+    scrollElement: { clientHeight: 400 },
     getOffsetForIndex: (index: number) => [index * 48, "center"],
     scrollToIndex: virtual.scrollToIndex,
   }),
@@ -112,14 +119,14 @@ describe("virtualized transcript playback", () => {
     act(() => clock.set(7.5));
     expect(virtual.scrollToIndex).not.toHaveBeenCalled();
 
-    // Row 8 ends 16px below it.
+    // Row 8 ends 48px below it.
     act(() => clock.set(8.5));
     expect(virtual.scrollToIndex).toHaveBeenCalledTimes(1);
     expect(virtual.scrollToIndex).toHaveBeenCalledWith(8, { align: "center", behavior: "smooth" });
   });
 
   it("scrolls to a playing row above the box", () => {
-    virtual.scrollOffset = 100 * 48;
+    virtual.scrollOffset = 16 + 100 * 48;
     virtual.indices = [100, 101, 102];
     const clock = createPlaybackClock(100.5);
     render(<TranscriptContent transcript={transcript} clock={clock} follow />);
@@ -127,6 +134,20 @@ describe("virtualized transcript playback", () => {
 
     act(() => clock.set(99.5));
     expect(virtual.scrollToIndex).toHaveBeenCalledWith(99, { align: "center", behavior: "smooth" });
+  });
+
+  it("scrolls while the virtualizer has not reported a scroll position yet", () => {
+    virtual.scrollOffset = null;
+    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(1.5)} follow />);
+    expect(virtual.scrollToIndex).toHaveBeenCalledWith(1, { align: "center", behavior: "smooth" });
+  });
+
+  it("hands each rendered row to the virtualizer to measure", () => {
+    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(0)} />);
+    const measured = virtual.measureElement.mock.calls
+      .map(([element]) => (element as HTMLElement | null)?.getAttribute("data-index"))
+      .filter((index) => index !== undefined);
+    expect(measured).toEqual(["0", "1", "2"]);
   });
 
   it("stops following when the reader scrolls", () => {

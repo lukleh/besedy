@@ -829,9 +829,8 @@ const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
   );
 });
 
-// The virtualized box's padding. Its rows are placed from the padding edge, so
-// deciding whether a row is in view needs the same number as the class.
-const VIRTUAL_BOX_PADDING_CLASS = "p-4";
+// The space above the first row and below the last, laid out by the
+// virtualizer so that row positions count from the box's top edge.
 const VIRTUAL_BOX_PADDING_PX = 16;
 
 // Long transcripts without word timings: only the rows near the viewport are
@@ -861,6 +860,10 @@ function VirtualizedASRTranscript({
     count: segments.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 48,
+    // Rows report their height once rendered (see the row's ref), so a
+    // segment that wraps to several lines takes the room it needs.
+    paddingStart: VIRTUAL_BOX_PADDING_PX,
+    paddingEnd: VIRTUAL_BOX_PADDING_PX,
     overscan: 10,
     getItemKey: (index) => `segment-${index}`,
   });
@@ -872,17 +875,15 @@ function VirtualizedASRTranscript({
     }
     virtualizer.scrollToIndex(index, { align: "center", behavior: "smooth" });
   };
-  // Whether the row is wholly inside the box, from the virtualizer's own
-  // numbers: the sizes it lays rows out with and the scroll position and box
-  // size its listeners keep current. Reads no layout.
+  // Whether the row is wholly inside the box: the position the virtualizer
+  // laid it out at, against the scroll position its listener keeps current
+  // and the box's inner height (its rect would include the border).
   const segmentInView = (index: number) => {
     const item = virtualizer.measurementsCache[index];
     const offset = virtualizer.scrollOffset;
-    const box = virtualizer.scrollRect;
+    const box = virtualizer.scrollElement;
     if (!item || offset === null || !box) return false;
-    const top = item.start + VIRTUAL_BOX_PADDING_PX;
-    const bottom = item.end + VIRTUAL_BOX_PADDING_PX;
-    return top >= offset && bottom <= offset + box.height;
+    return item.start >= offset && item.end <= offset + box.clientHeight;
   };
   const target: FollowTarget<number> = {
     resolve: (index) => index,
@@ -920,7 +921,7 @@ function VirtualizedASRTranscript({
     <FollowFrame offscreenPlayhead={offscreenPlayhead} onResumeFollowing={resumeFollowing}>
       <div
         ref={setParent}
-        className={`h-[400px] overflow-y-auto overflow-x-hidden rounded-lg border ${VIRTUAL_BOX_PADDING_CLASS} [overflow-anchor:none]`}
+        className="h-[400px] overflow-y-auto overflow-x-hidden rounded-lg border px-4 [overflow-anchor:none]"
       >
         <div
           ref={setContent}
@@ -936,7 +937,9 @@ function VirtualizedASRTranscript({
               <VirtualizedASRRow
                 key={virtualItem.key}
                 segment={segment}
+                index={virtualItem.index}
                 top={virtualItem.start}
+                measure={virtualizer.measureElement}
                 isActive={activeSegments.has(virtualItem.index)}
                 follow={follow}
                 speaker={speakerLabels[virtualItem.index]}
@@ -954,7 +957,11 @@ function VirtualizedASRTranscript({
 
 interface VirtualizedASRRowProps {
   segment: TranscriptSegment;
+  /** The segment's index, which the virtualizer reads back from the row. */
+  index: number;
   top: number;
+  /** The virtualizer's measurer; one function for the list's lifetime. */
+  measure: (element: HTMLDivElement | null) => void;
   isActive: boolean;
   follow: boolean;
   speaker: string | null;
@@ -965,7 +972,9 @@ interface VirtualizedASRRowProps {
 
 const VirtualizedASRRow = memo(function VirtualizedASRRow({
   segment,
+  index,
   top,
+  measure,
   isActive,
   follow,
   speaker,
@@ -976,6 +985,8 @@ const VirtualizedASRRow = memo(function VirtualizedASRRow({
   const showSpeakerLabel = !!speaker && !!speakerLabelClass;
   return (
     <div
+      ref={measure}
+      data-index={index}
       style={{
         position: "absolute",
         top: 0,
