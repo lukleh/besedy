@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { AudioPlayerDebugPanel } from "@/components/player/audio-player-debug-panel";
+import { createPlaybackClock } from "@/lib/playback-clock";
 
 const useOnlineStatusMock = vi.fn();
 vi.mock("@/hooks/use-online-status", () => ({
@@ -14,7 +15,7 @@ vi.mock("@/hooks/use-online-status", () => ({
 const baseProps = {
   cacheStatus: "complete",
   chunkFetches: [],
-  currentTime: 0,
+  clock: createPlaybackClock(),
   debugEvents: [],
   debugInfo: {
     bufferedRanges: [],

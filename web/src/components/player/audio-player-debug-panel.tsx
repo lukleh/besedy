@@ -10,6 +10,8 @@ import {
   Wifi,
 } from "lucide-react";
 import { useOnlineStatus } from "@/hooks/use-online-status";
+import { usePlaybackTime } from "@/hooks/use-playback-time";
+import type { PlaybackClock } from "@/lib/playback-clock";
 import {
   describeAudioSource,
 } from "@/lib/offline/audio-transport";
@@ -27,7 +29,7 @@ import {
 interface AudioPlayerDebugPanelProps {
   cacheStatus: string;
   chunkFetches: ChunkFetchRecord[];
-  currentTime: number;
+  clock: PlaybackClock;
   debugEvents: DebugEvent[];
   debugInfo: DebugInfo;
   duration: number;
@@ -39,13 +41,14 @@ interface AudioPlayerDebugPanelProps {
 export function AudioPlayerDebugPanel({
   cacheStatus,
   chunkFetches,
-  currentTime,
+  clock,
   debugEvents,
   debugInfo,
   duration,
   isBuffering,
   src,
 }: AudioPlayerDebugPanelProps) {
+  const currentTime = usePlaybackTime(clock);
   const source = describeAudioSource(src);
   return (
     <div className="mt-3 space-y-2 rounded-md bg-muted/50 p-3 font-mono text-xs">
