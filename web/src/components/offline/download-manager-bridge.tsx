@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useLocale } from 'next-intl';
 import { useReloadSafety } from '@/contexts/reload-safety-context';
 import { useSession } from '@/contexts/session-context';
 import { useDownloadManager } from '@/hooks/use-downloads';
@@ -14,11 +15,13 @@ import {
 
 /**
  * Connects the download manager to the React tree: hydrates the registry,
- * tracks the signed-in user and connectivity, blocks automatic app reloads
- * while a download runs, and resumes network-interrupted work on reconnect.
+ * tracks the signed-in user, language and connectivity, blocks automatic app
+ * reloads while a download runs, and resumes network-interrupted work on
+ * reconnect.
  */
 export function DownloadManagerBridge() {
   const { session } = useSession();
+  const locale = useLocale();
   const { isOnline } = useOnlineStatus();
   const { registerBlocker } = useReloadSafety();
   const { activeKey, records } = useDownloadManager();
@@ -36,6 +39,10 @@ export function DownloadManagerBridge() {
   useEffect(() => {
     downloadManager.setOnline(isOnline);
   }, [isOnline]);
+
+  useEffect(() => {
+    downloadManager.setLocale(locale);
+  }, [locale]);
 
   useEffect(
     () =>

@@ -387,6 +387,42 @@ describe('download manager', () => {
     expect(bundle?.transcript?.segments).toEqual([]);
   });
 
+  it('renders the Downloads shell again after a language switch', async () => {
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const warmFrames: HTMLIFrameElement[] = [];
+    const append = document.body.append.bind(document.body);
+    vi.spyOn(document.body, 'append').mockImplementation((...nodes) => {
+      for (const node of nodes) {
+        if (node instanceof HTMLIFrameElement) warmFrames.push(node);
+      }
+      append(...nodes);
+    });
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+    downloadManager.setUserId('user-1');
+    downloadManager.setLocale('en');
+
+    await downloadManager.enqueueRecording({ catalogId: CATALOG, hash: HASH });
+    await waitFor(
+      () => downloadManager.getSnapshot().records[0]?.status === 'complete',
+    );
+    await waitFor(() => warmFrames.length === 1);
+    expect(warmFrames[0].src).toMatch(/\/downloads\?warm=1$/);
+
+    downloadManager.setLocale('en');
+    downloadManager.setLocale('cs');
+    // The new warm-up waits for the one still loading.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(warmFrames).toHaveLength(1);
+    warmFrames[0].dispatchEvent(new Event('load'));
+    await waitFor(() => warmFrames.length === 2);
+
+    downloadManager.setLocale('cs');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(warmFrames).toHaveLength(2);
+  });
+
   it('downloads the AAC copy on WebKit when the source lists one', async () => {
     const iphone =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1';

@@ -611,6 +611,7 @@ class DownloadManager {
   private online = true;
   private onlineGeneration = 0;
   private userId: string | null = null;
+  private locale: string | null = null;
   private activeKey: string | null = null;
   private storage: StorageEstimateSnapshot | null = null;
   private channel: BroadcastChannel | null = null;
@@ -699,6 +700,29 @@ class DownloadManager {
     this.userId = userId;
     this.publish();
     this.scheduleTranscriptPermissionReconciliation();
+  }
+
+  /**
+   * The cached Downloads shell keeps the language it was rendered in. A
+   * language switch refreshes the page without reloading it, so render the
+   * shell again in the new language once any earlier warm-up has settled.
+   */
+  setLocale(locale: string): void {
+    const previous = this.locale;
+    this.locale = locale;
+    if (previous === null || previous === locale) return;
+    const pending = downloadsShellWarmPromise ?? Promise.resolve();
+    downloadsShellWarmPromise = null;
+    void pending.then(() => {
+      if (
+        this.online &&
+        Array.from(this.records.values()).some(
+          (record) => record.status === 'complete',
+        )
+      ) {
+        return warmDownloadsShell();
+      }
+    });
   }
 
   setOnline(online: boolean): void {

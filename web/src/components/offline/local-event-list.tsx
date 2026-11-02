@@ -12,7 +12,10 @@ import { EventListResults } from '@/components/catalog/event-list-results';
 import type { CatalogEventRow } from '@/components/catalog/event-list-types';
 import { useDownloadManager } from '@/hooks/use-downloads';
 import type { DownloadRecord } from '@/lib/offline/downloads-db';
-import { summarizePlaybackProgress } from '@/lib/playback-progress';
+import {
+  summarizePlaybackProgress,
+  type PlaybackProgressSummary,
+} from '@/lib/playback-progress';
 import {
   getSavedPlaybackPosition,
   isPlaybackCompleted,
@@ -38,6 +41,23 @@ function eventIdOf(record: DownloadRecord): number | null {
   return record.event?.id ?? null;
 }
 
+/** Listening progress saved on this device for a downloaded recording. */
+export function localPlaybackSummary(
+  record: DownloadRecord,
+): PlaybackProgressSummary | null {
+  const completed = isPlaybackCompleted(record.hash);
+  const positionSec = getSavedPlaybackPosition(record.hash) ?? 0;
+  if (!completed && positionSec <= 0) return null;
+  return summarizePlaybackProgress(
+    {
+      positionSec,
+      durationSec: null,
+      completedAt: completed ? new Date(0) : null,
+    },
+    durationSeconds(record.recording?.durationHms ?? null),
+  );
+}
+
 export function localEventRows(
   records: readonly DownloadRecord[],
   catalogId: string,
@@ -49,19 +69,7 @@ export function localEventRows(
     const event = record.event;
     const eventId = eventIdOf(record);
     if (!event || eventId === null || rows.has(eventId)) continue;
-    const completed = isPlaybackCompleted(record.hash);
-    const positionSec = getSavedPlaybackPosition(record.hash) ?? 0;
-    const playback =
-      completed || positionSec > 0
-        ? summarizePlaybackProgress(
-            {
-              positionSec,
-              durationSec: null,
-              completedAt: completed ? new Date(0) : null,
-            },
-            durationSeconds(record.recording?.durationHms ?? null),
-          )
-        : null;
+    const playback = localPlaybackSummary(record);
     rows.set(eventId, {
       id: eventId,
       title: event.title,
