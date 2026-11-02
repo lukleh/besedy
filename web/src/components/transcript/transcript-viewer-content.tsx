@@ -1,6 +1,6 @@
 "use client";
 
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { elementScroll, useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { useTranslations } from "next-intl";
 import {
@@ -424,7 +424,14 @@ function useFollowPlayback<T extends Element | number>({
     return () => cancelAnimationFrame(frame);
   }, [scrollToTime, segments, onScrollComplete, markFollowScroll]);
 
-  return { activeSegments, followIndex, followElement, offscreenPlayhead, resumeFollowing };
+  return {
+    activeSegments,
+    followIndex,
+    followElement,
+    markFollowScroll,
+    offscreenPlayhead,
+    resumeFollowing,
+  };
 }
 
 // The transcript box with the jump-back button over it.
@@ -797,6 +804,10 @@ const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
   );
 });
 
+// The space above the first row and below the last, laid out by the
+// virtualizer so that row positions count from the box's top edge.
+const VIRTUAL_BOX_PADDING_PX = 16;
+
 // Long transcripts without word timings: only the rows near the viewport are
 // rendered.
 function VirtualizedASRTranscript({
@@ -819,25 +830,54 @@ function VirtualizedASRTranscript({
     setScroller(element);
   }, []);
 
+  // Every scroll the virtualizer makes is announced as ours before it starts.
+  // Besides the follow scroll itself it scrolls on its own once rows report
+  // their size: it re-targets a smooth scroll as rows near the target are
+  // measured, and shifts the position when a row above the fold turns out
+  // taller than estimated (first measurement, or a re-wrap after the width
+  // changed). Unannounced, those read as the reader's and stop following.
+  // Set in a layout effect: the first follow scroll runs in a passive effect
+  // of the same commit.
+  const markFollowScrollRef = useRef<MarkFollowScroll | null>(null);
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: segments.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 48,
+    // Rows report their height once rendered (see the row's ref), so a
+    // segment that wraps to several lines takes the room it needs.
+    paddingStart: VIRTUAL_BOX_PADDING_PX,
+    paddingEnd: VIRTUAL_BOX_PADDING_PX,
     overscan: 10,
     getItemKey: (index) => `segment-${index}`,
+    scrollToFn: (offset, options, instance) => {
+      const box = parentRef.current;
+      if (box) markFollowScrollRef.current?.(box, offset + (options.adjustments ?? 0));
+      elementScroll(offset, options, instance);
+    },
   });
 
-  const scrollToSegment = (index: number, markFollowScroll: MarkFollowScroll) => {
-    const offset = virtualizer.getOffsetForIndex(index, "center")?.[0];
-    if (parentRef.current && offset !== undefined) {
-      markFollowScroll(parentRef.current, offset);
-    }
+  // The virtualizer announces the scroll itself (see scrollToFn above).
+  const scrollToSegment = (index: number) => {
     virtualizer.scrollToIndex(index, { align: "center", behavior: "smooth" });
+  };
+  // Whether the row is wholly inside the box: the position the virtualizer
+  // laid it out at, against the scroll position its listener keeps current
+  // and the box's inner height (its rect would include the border).
+  const segmentInView = (index: number) => {
+    const item = virtualizer.measurementsCache[index];
+    const offset = virtualizer.scrollOffset;
+    const box = virtualizer.scrollElement;
+    if (!item || offset === null || !box) return false;
+    return item.start >= offset && item.end <= offset + box.clientHeight;
   };
   const target: FollowTarget<number> = {
     resolve: (index) => index,
-    bringIntoView: scrollToSegment,
+    // Like the full list, scrolls only once the row has left the box. Centring
+    // every segment animated the list every few seconds while it was in view.
+    bringIntoView: (index) => {
+      if (!segmentInView(index)) scrollToSegment(index);
+    },
     centre: scrollToSegment,
     // The virtualizer updates its visible range in its own scroll listener,
     // which runs before the one that calls this.
@@ -851,23 +891,27 @@ function VirtualizedASRTranscript({
   };
 
   // Re-renders the list only when the playing segments change.
-  const { activeSegments, offscreenPlayhead, resumeFollowing } = useFollowPlayback({
-    segments,
-    clock,
-    follow,
-    onFollowChange,
-    scrollToTime,
-    onScrollComplete,
-    scroller,
-    content,
-    target,
-  });
+  const { activeSegments, markFollowScroll, offscreenPlayhead, resumeFollowing } =
+    useFollowPlayback({
+      segments,
+      clock,
+      follow,
+      onFollowChange,
+      scrollToTime,
+      onScrollComplete,
+      scroller,
+      content,
+      target,
+    });
+  useLayoutEffect(() => {
+    markFollowScrollRef.current = markFollowScroll;
+  }, [markFollowScroll]);
 
   return (
     <FollowFrame offscreenPlayhead={offscreenPlayhead} onResumeFollowing={resumeFollowing}>
       <div
         ref={setParent}
-        className="h-[400px] overflow-y-auto overflow-x-hidden rounded-lg border p-4 [overflow-anchor:none]"
+        className="h-[400px] overflow-y-auto overflow-x-hidden rounded-lg border px-4 [overflow-anchor:none]"
       >
         <div
           ref={setContent}
@@ -883,7 +927,9 @@ function VirtualizedASRTranscript({
               <VirtualizedASRRow
                 key={virtualItem.key}
                 segment={segment}
+                index={virtualItem.index}
                 top={virtualItem.start}
+                measure={virtualizer.measureElement}
                 isActive={activeSegments.has(virtualItem.index)}
                 follow={follow}
                 speaker={speakerLabels[virtualItem.index]}
@@ -901,7 +947,11 @@ function VirtualizedASRTranscript({
 
 interface VirtualizedASRRowProps {
   segment: TranscriptSegment;
+  /** The segment's index, which the virtualizer reads back from the row. */
+  index: number;
   top: number;
+  /** The virtualizer's measurer; one function for the list's lifetime. */
+  measure: (element: HTMLDivElement | null) => void;
   isActive: boolean;
   follow: boolean;
   speaker: string | null;
@@ -912,7 +962,9 @@ interface VirtualizedASRRowProps {
 
 const VirtualizedASRRow = memo(function VirtualizedASRRow({
   segment,
+  index,
   top,
+  measure,
   isActive,
   follow,
   speaker,
@@ -923,6 +975,8 @@ const VirtualizedASRRow = memo(function VirtualizedASRRow({
   const showSpeakerLabel = !!speaker && !!speakerLabelClass;
   return (
     <div
+      ref={measure}
+      data-index={index}
       style={{
         position: "absolute",
         top: 0,

@@ -622,6 +622,49 @@ describe("useRecordingPlayback", () => {
     expect(result.current.clock.get()).toBe(6);
   });
 
+  it("tells the server every 15 s while visible and every 60 s while hidden", async () => {
+    const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // The restore, with nothing to import.
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const serverWrites = () =>
+      vi.mocked(fetch).mock.calls.filter(([, request]) => request?.method === "PUT").length;
+    const playFor = (seconds: number) => {
+      act(() => {
+        vi.advanceTimersByTime(5_000);
+        result.current.setCurrentTime(seconds);
+      });
+    };
+
+    act(() => {
+      result.current.handlePlayingChange(true);
+    });
+    playFor(5);
+    playFor(10);
+    // The browser is kept current every 5 s; the server waits for 15 s.
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("10");
+    expect(serverWrites()).toBe(0);
+    playFor(15);
+    expect(serverWrites()).toBe(1);
+
+    setVisibilityState("hidden");
+    for (let seconds = 20; seconds <= 70; seconds += 5) playFor(seconds);
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("70");
+    expect(serverWrites()).toBe(1);
+    playFor(75);
+    expect(serverWrites()).toBe(2);
+
+    setVisibilityState("visible");
+    playFor(80);
+    playFor(85);
+    expect(serverWrites()).toBe(2);
+    playFor(90);
+    expect(serverWrites()).toBe(3);
+  });
+
   it("hands the player one time callback for the view's lifetime", () => {
     const { result, rerender } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
     const first = result.current.setCurrentTime;

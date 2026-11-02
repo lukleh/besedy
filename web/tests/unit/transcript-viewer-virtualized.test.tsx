@@ -1,18 +1,47 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TranscriptContent } from "@/components/transcript/transcript-viewer-content";
 import { findSpeakerAtTime, type Diarization, type Transcript } from "@/components/transcript/transcript-viewer-types";
 import { createPlaybackClock } from "@/lib/playback-clock";
 import { formatTimestamp } from "@/lib/utils";
 
-const virtual = vi.hoisted(() => ({ indices: [0, 1, 2], scrollToIndex: vi.fn() }));
+// 48px rows in a box 400px tall inside: rows 0-7 fit when scrolled to the top.
+// The virtualizer lays the padding out itself, so row 0 starts at 16px.
+type ScrollToFn = (offset: number, options: { adjustments?: number; behavior?: ScrollBehavior }) => void;
+const virtual = vi.hoisted(() => ({
+  indices: [0, 1, 2],
+  scrollOffset: 0 as number | null,
+  // The list's scrollToFn, as the real virtualizer would call it: for its own
+  // scrollToIndex here, and on its own for size corrections.
+  scrollToFn: null as ScrollToFn | null,
+  scrollToIndex: vi.fn((index: number) => {
+    virtual.scrollToFn?.(index * 48, { behavior: "smooth" });
+  }),
+  measureElement: vi.fn(),
+}));
 vi.mock("@tanstack/react-virtual", () => ({
-  useVirtualizer: () => ({
+  elementScroll: vi.fn(),
+  useVirtualizer: (options: { scrollToFn: ScrollToFn }) => ({
+    options,
     getTotalSize: () => 200 * 48,
     getVirtualItems: () => virtual.indices.map((index) => ({ index, key: index, start: index * 48 })),
+    measurementsCache: Array.from({ length: 200 }, (_, index) => ({
+      index,
+      key: index,
+      start: 16 + index * 48,
+      end: 16 + index * 48 + 48,
+      size: 48,
+      lane: 0,
+    })),
+    measureElement: virtual.measureElement,
     range: { startIndex: virtual.indices[0], endIndex: virtual.indices[virtual.indices.length - 1] },
+    scrollOffset: virtual.scrollOffset,
+    scrollElement: { clientHeight: 400 },
     getOffsetForIndex: (index: number) => [index * 48, "center"],
-    scrollToIndex: virtual.scrollToIndex,
+    scrollToIndex: (...args: Parameters<typeof virtual.scrollToIndex>) => {
+      virtual.scrollToFn = options.scrollToFn;
+      return virtual.scrollToIndex(...args);
+    },
   }),
 }));
 vi.mock("next-intl", () => ({
@@ -45,6 +74,8 @@ const diarization: Diarization = {
 describe("virtualized transcript playback", () => {
   beforeEach(() => {
     virtual.indices = [0, 1, 2];
+    virtual.scrollOffset = 0;
+    virtual.scrollToFn = null;
     vi.clearAllMocks();
   });
 
@@ -84,11 +115,92 @@ describe("virtualized transcript playback", () => {
   });
 
   it("follows playback only while following", () => {
-    const view = render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(1.5)} />);
+    const view = render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(20.5)} />);
     expect(virtual.scrollToIndex).not.toHaveBeenCalled();
 
-    view.rerender(<TranscriptContent transcript={transcript} clock={createPlaybackClock(1.5)} follow />);
+    view.rerender(<TranscriptContent transcript={transcript} clock={createPlaybackClock(20.5)} follow />);
+    expect(virtual.scrollToIndex).toHaveBeenCalledWith(20, { align: "center", behavior: "smooth" });
+  });
+
+  it("scrolls only once the playing row has left the bottom of the box", () => {
+    const clock = createPlaybackClock(1.5);
+    render(<TranscriptContent transcript={transcript} clock={clock} follow />);
+    expect(virtual.scrollToIndex).not.toHaveBeenCalled();
+
+    // Row 7 ends exactly at the bottom edge.
+    act(() => clock.set(7.5));
+    expect(virtual.scrollToIndex).not.toHaveBeenCalled();
+
+    // Row 8 ends 48px below it.
+    act(() => clock.set(8.5));
+    expect(virtual.scrollToIndex).toHaveBeenCalledTimes(1);
+    expect(virtual.scrollToIndex).toHaveBeenCalledWith(8, { align: "center", behavior: "smooth" });
+  });
+
+  it("scrolls to a playing row above the box", () => {
+    virtual.scrollOffset = 16 + 100 * 48;
+    virtual.indices = [100, 101, 102];
+    const clock = createPlaybackClock(100.5);
+    render(<TranscriptContent transcript={transcript} clock={clock} follow />);
+    expect(virtual.scrollToIndex).not.toHaveBeenCalled();
+
+    act(() => clock.set(99.5));
+    expect(virtual.scrollToIndex).toHaveBeenCalledWith(99, { align: "center", behavior: "smooth" });
+  });
+
+  it("scrolls while the virtualizer has not reported a scroll position yet", () => {
+    virtual.scrollOffset = null;
+    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(1.5)} follow />);
     expect(virtual.scrollToIndex).toHaveBeenCalledWith(1, { align: "center", behavior: "smooth" });
+  });
+
+  it("hands each rendered row to the virtualizer to measure", () => {
+    render(<TranscriptContent transcript={transcript} clock={createPlaybackClock(0)} />);
+    const measured = virtual.measureElement.mock.calls
+      .map(([element]) => (element as HTMLElement | null)?.getAttribute("data-index"))
+      .filter((index) => index !== undefined);
+    expect(measured).toEqual(["0", "1", "2"]);
+  });
+
+  it("takes the virtualizer's own scrolls for follow scrolls, not the reader's", () => {
+    // The box's geometry has to be there for the follow scroll on mount.
+    let boxScrollTop = 0;
+    const isBox = (element: Element) => element.matches(".overflow-y-auto");
+    vi.spyOn(Element.prototype, "scrollHeight", "get").mockImplementation(function (this: Element) {
+      return isBox(this) ? 200 * 48 + 32 : 0;
+    });
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockImplementation(function (this: Element) {
+      return isBox(this) ? 400 : 0;
+    });
+    vi.spyOn(Element.prototype, "scrollTop", "get").mockImplementation(function (this: Element) {
+      return isBox(this) ? boxScrollTop : 0;
+    });
+    try {
+      const onFollowChange = vi.fn();
+      const { container } = render(
+        <TranscriptContent transcript={transcript} clock={createPlaybackClock(20.5)} follow onFollowChange={onFollowChange} />,
+      );
+      const box = container.querySelector(".overflow-y-auto")!;
+
+      // The follow scroll on mount was announced by the virtualizer's scrollToFn.
+      expect(virtual.scrollToIndex).toHaveBeenCalledWith(20, { align: "center", behavior: "smooth" });
+      boxScrollTop = 20 * 48;
+      fireEvent.scroll(box);
+      expect(onFollowChange).not.toHaveBeenCalled();
+
+      // A size correction the virtualizer makes by itself.
+      virtual.scrollToFn!(20 * 48, { adjustments: 48 });
+      boxScrollTop = 20 * 48 + 48;
+      fireEvent.scroll(box);
+      expect(onFollowChange).not.toHaveBeenCalled();
+
+      // The reader's scroll.
+      boxScrollTop = 500;
+      fireEvent.scroll(box);
+      expect(onFollowChange).toHaveBeenCalledWith(false);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   it("stops following when the reader scrolls", () => {
