@@ -172,6 +172,41 @@ describe("TranscriptContent scrolling", () => {
     expect(elementScrollTo).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps a long segment playing after a nested shorter segment ends", () => {
+    const overlapping: Transcript = {
+      backend: "whisperx",
+      segments: [
+        { text: "long", start: 0, end: 10, words: [{ word: "long", start: 0, end: 10 }] },
+        { text: "short", start: 1, end: 2, words: [{ word: "short", start: 1, end: 2 }] },
+      ],
+    };
+    const clock = createPlaybackClock(1.5);
+    const { container } = render(<TranscriptContent transcript={overlapping} clock={clock} follow />);
+    act(() => clock.set(3));
+
+    expect(container.querySelector('[data-segment-index="0"]')).toHaveClass("border-l-primary");
+    expect(screen.getByText("long")).toHaveAttribute("data-playing");
+    expect(screen.getByText("short")).not.toHaveAttribute("data-playing");
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("highlights the original row of an unsorted transcript", () => {
+    const unsorted: Transcript = {
+      backend: "whisperx",
+      segments: [
+        { text: "later", start: 5, end: 10, words: [{ word: "later", start: 5, end: 10 }] },
+        { text: "earlier", start: 0, end: 2, words: [{ word: "earlier", start: 0, end: 2 }] },
+      ],
+    };
+    const clock = createPlaybackClock(1.5);
+    const { container } = render(<TranscriptContent transcript={unsorted} clock={clock} follow />);
+    expect(screen.getByText("earlier")).toHaveAttribute("data-playing");
+    expect(container.querySelector('[data-segment-index="1"]')).toHaveClass("border-l-primary");
+    act(() => clock.set(6));
+    expect(screen.getByText("later")).toHaveAttribute("data-playing");
+    expect(screen.getByText("earlier")).not.toHaveAttribute("data-playing");
+  });
+
   it("follows the word of the next overlapping segment once the first one ends", () => {
     const overlapping: Transcript = {
       backend: "whisperx",

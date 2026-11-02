@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useAudioBufferDiagnostics } from "@/components/player/use-audio-buffer-diagnostics";
+import { useAudioBufferDiagnostics, useBufferDiagnostics } from "@/components/player/use-audio-buffer-diagnostics";
 
 function audioBufferedTo(end: number) {
   const audio = document.createElement("audio");
@@ -18,6 +18,7 @@ function setBufferedEnd(audio: HTMLAudioElement, end: number) {
 describe("useAudioBufferDiagnostics", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("holds the buffer reading back while the page is hidden and tells the indicator when shown", () => {
@@ -98,7 +99,9 @@ describe("useAudioBufferDiagnostics", () => {
     const { result } = renderHook(() =>
       useAudioBufferDiagnostics({ audioRef, debugEnabled: false, src: "a.mp3" }),
     );
-    expect(result.current.chunkFetches.map((chunk) => chunk.dataSeconds)).toEqual([10]);
+    const source = result.current.diagnostics;
+    const { result: panel } = renderHook(() => useBufferDiagnostics(source));
+    expect(panel.current.chunkFetches.map((chunk) => chunk.dataSeconds)).toEqual([10]);
 
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     for (const end of [20, 35]) {
@@ -107,12 +110,86 @@ describe("useAudioBufferDiagnostics", () => {
         audio.dispatchEvent(new Event("progress"));
       });
     }
-    expect(result.current.chunkFetches).toHaveLength(1);
+    expect(panel.current.chunkFetches).toHaveLength(1);
 
     visibility.mockReturnValue("visible");
     act(() => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    expect(result.current.chunkFetches.map((chunk) => chunk.dataSeconds)).toEqual([10, 10, 15]);
+    expect(panel.current.chunkFetches.map((chunk) => chunk.dataSeconds)).toEqual([10, 10, 15]);
+  });
+
+  it("keeps a bounded history while closed and hidden without rendering its owner", () => {
+    const audio = audioBufferedTo(10);
+    const audioRef = { current: audio };
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders++;
+      return useAudioBufferDiagnostics({ audioRef, debugEnabled: false, src: "a.mp3" });
+    });
+    const before = renders;
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    for (let end = 11; end <= 35; end++) {
+      setBufferedEnd(audio, end);
+      act(() => audio.dispatchEvent(new Event("progress")));
+    }
+    expect(renders).toBe(before);
+    // Opening the panel can read the last twenty original chunks immediately.
+    const chunks = result.current.diagnostics.get().chunkFetches;
+    expect(chunks).toHaveLength(20);
+    expect(chunks[0]).toMatchObject({ id: 6, dataSeconds: 1, bufferEnd: 16 });
+    expect(chunks.at(-1)).toMatchObject({ id: 25, dataSeconds: 1, bufferEnd: 35 });
+  });
+
+  it("polls only while debug is open and visible, and refreshes on return", () => {
+    vi.useFakeTimers();
+    const audio = audioBufferedTo(10);
+    const audioRef = { current: audio };
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const { result, rerender, unmount } = renderHook(
+      ({ debugEnabled }) => useAudioBufferDiagnostics({ audioRef, debugEnabled, src: "a.mp3" }),
+      { initialProps: { debugEnabled: false } },
+    );
+    expect(vi.getTimerCount()).toBe(0);
+    rerender({ debugEnabled: true });
+    expect(vi.getTimerCount()).toBe(1);
+    expect(result.current.diagnostics.get().debugInfo.totalBuffered).toBe(10);
+
+    setBufferedEnd(audio, 20);
+    act(() => vi.advanceTimersByTime(250));
+    expect(result.current.diagnostics.get().debugInfo.totalBuffered).toBe(20);
+
+    visibility.mockReturnValue("hidden");
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    expect(vi.getTimerCount()).toBe(0);
+    setBufferedEnd(audio, 30);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+      result.current.updateDebugInfo();
+    });
+    expect(result.current.diagnostics.get().debugInfo.totalBuffered).toBe(20);
+
+    visibility.mockReturnValue("visible");
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    expect(vi.getTimerCount()).toBe(1);
+    expect(result.current.diagnostics.get().debugInfo.totalBuffered).toBe(30);
+    rerender({ debugEnabled: false });
+    expect(vi.getTimerCount()).toBe(0);
+    unmount();
+  });
+
+  it("clears diagnostic readings and history when reset", () => {
+    const audio = audioBufferedTo(10);
+    const audioRef = { current: audio };
+    const { result } = renderHook(() =>
+      useAudioBufferDiagnostics({ audioRef, debugEnabled: true, src: "a.mp3" }),
+    );
+    expect(result.current.diagnostics.get().chunkFetches).toHaveLength(1);
+    act(() => result.current.reset());
+    expect(result.current.diagnostics.get()).toMatchObject({
+      chunkFetches: [],
+      debugInfo: { totalBuffered: 0, bufferedRanges: [] },
+    });
+    expect(result.current.bufferInfo.get()).toEqual({ bufferAhead: 0, peakBuffer: 0, networkState: 0 });
   });
 });

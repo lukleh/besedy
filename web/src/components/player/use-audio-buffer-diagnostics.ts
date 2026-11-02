@@ -63,6 +63,24 @@ const INITIAL_DEBUG_INFO: DebugInfo = {
   paused: true,
 };
 
+interface BufferDiagnostics {
+  debugInfo: DebugInfo;
+  chunkFetches: ChunkFetchRecord[];
+}
+
+const INITIAL_DIAGNOSTICS: BufferDiagnostics = {
+  debugInfo: INITIAL_DEBUG_INFO,
+  chunkFetches: [],
+};
+const MAX_CHUNK_HISTORY = 20;
+
+export type BufferDiagnosticsSource = Pick<HeldValue<BufferDiagnostics>, 'get' | 'subscribe'>;
+
+/** Only the mounted debug panel subscribes; the player never reads this in render. */
+export function useBufferDiagnostics(source: BufferDiagnosticsSource): BufferDiagnostics {
+  return useSyncExternalStore(source.subscribe, source.get, source.get);
+}
+
 /** Read the browser's discontinuous TimeRanges into a stable domain value. */
 export function readBufferSnapshot(audio: BufferedAudioState): BufferSnapshot {
   const bufferedRanges: BufferSnapshot['bufferedRanges'] = [];
@@ -104,33 +122,44 @@ export function useAudioBufferDiagnostics({
   // more than a second is decided on these, not on rounding.
   const exactAheadRef = useRef(0);
   const exactPeakRef = useRef(0);
-  const [debugInfo, setDebugInfo] = useState<DebugInfo>(INITIAL_DEBUG_INFO);
-  const [chunkFetches, setChunkFetches] = useState<ChunkFetchRecord[]>([]);
+  const [diagnostics] = useState(() => createHeldValue(INITIAL_DIAGNOSTICS));
   const previousTotalBufferedRef = useRef(0);
   const lastBufferGrowthTimeRef = useRef(0);
   const fetchCountRef = useRef(0);
-  // Chunks not yet in state: those seen while the page is hidden wait here.
-  const pendingChunksRef = useRef<ChunkFetchRecord[]>([]);
 
   const updateDebugInfo = useCallback(() => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || document.visibilityState === 'hidden') return;
 
     const snapshot = readBufferSnapshot(audio);
-    setDebugInfo({
-      ...snapshot,
-      networkState: audio.networkState,
-      readyState: audio.readyState,
-      paused: audio.paused,
+    diagnostics.set({
+      ...diagnostics.get(),
+      debugInfo: {
+        ...snapshot,
+        networkState: audio.networkState,
+        readyState: audio.readyState,
+        paused: audio.paused,
+      },
     });
-  }, [audioRef]);
+  }, [audioRef, diagnostics]);
 
   useEffect(() => {
     if (!debugEnabled) return;
 
-    updateDebugInfo();
-    const interval = setInterval(updateDebugInfo, 250);
-    return () => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const syncVisibility = () => {
+      clearInterval(interval);
+      interval = undefined;
+      if (document.visibilityState === 'hidden') return;
+      updateDebugInfo();
+      interval = setInterval(updateDebugInfo, 250);
+    };
+    syncVisibility();
+    document.addEventListener('visibilitychange', syncVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', syncVisibility);
+    };
   }, [debugEnabled, updateDebugInfo]);
 
   useEffect(() => {
@@ -140,7 +169,6 @@ export function useAudioBufferDiagnostics({
     previousTotalBufferedRef.current = 0;
     lastBufferGrowthTimeRef.current = Date.now();
     fetchCountRef.current = 0;
-    pendingChunksRef.current = [];
 
     const updateBasicBufferInfo = () => {
       const snapshot = readBufferSnapshot(audio);
@@ -163,7 +191,13 @@ export function useAudioBufferDiagnostics({
           dataSeconds: bufferGrowth,
           bufferEnd: maxBufferEnd,
         };
-        pendingChunksRef.current.push(newRecord);
+        // Keep a bounded retrospective history even with debug closed or
+        // the screen off. Publishing it never renders the player controls.
+        const current = diagnostics.get();
+        diagnostics.set({
+          ...current,
+          chunkFetches: [...current.chunkFetches.slice(-(MAX_CHUNK_HISTORY - 1)), newRecord],
+        });
         previousTotalBufferedRef.current = snapshot.totalBuffered;
         lastBufferGrowthTimeRef.current = now;
       }
@@ -178,16 +212,6 @@ export function useAudioBufferDiagnostics({
         networkState: audio.networkState,
         peakBuffer: Math.round(peakBuffer),
       });
-
-      // Nothing is drawn while the page is hidden (screen off, app in the
-      // background), so the chunk history waits until it is shown; the
-      // chunks above are still recorded as they happen.
-      if (document.visibilityState === 'hidden') return;
-      if (pendingChunksRef.current.length > 0) {
-        const chunks = pendingChunksRef.current;
-        pendingChunksRef.current = [];
-        setChunkFetches((previous) => [...previous, ...chunks].slice(-20));
-      }
     };
 
     const events = ['timeupdate', 'progress', 'waiting', 'canplay', 'playing'];
@@ -203,22 +227,21 @@ export function useAudioBufferDiagnostics({
       );
       document.removeEventListener('visibilitychange', updateBasicBufferInfo);
     };
-  }, [audioRef, bufferInfo, src]);
+  }, [audioRef, bufferInfo, diagnostics, src]);
 
   const reset = useCallback(() => {
     fetchCountRef.current = 0;
-    pendingChunksRef.current = [];
     exactAheadRef.current = 0;
     exactPeakRef.current = 0;
-    setChunkFetches([]);
+    diagnostics.set(INITIAL_DIAGNOSTICS);
     bufferInfo.set(INITIAL_BUFFER_INFO);
-  }, [bufferInfo]);
+  }, [bufferInfo, diagnostics]);
 
   const bufferInfoSource: BufferInfoSource = bufferInfo;
+  const diagnosticsSource: BufferDiagnosticsSource = diagnostics;
   return {
     bufferInfo: bufferInfoSource,
-    chunkFetches,
-    debugInfo,
+    diagnostics: diagnosticsSource,
     reset,
     updateDebugInfo,
   };

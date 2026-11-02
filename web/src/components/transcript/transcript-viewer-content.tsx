@@ -18,6 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePlaybackTime } from "@/hooks/use-playback-time";
 import { createPlaybackClock, type PlaybackClock } from "@/lib/playback-clock";
+import { createTranscriptPlayhead } from "@/lib/transcript-playhead";
 import { formatTimestamp } from "@/lib/utils";
 import {
   findSpeakerAtTime,
@@ -96,38 +97,6 @@ type MarkFollowScroll = (scroller: Element, top: number) => void;
 const STOPPED_CLOCK = createPlaybackClock();
 const playbackStarted = (time: number) => time > 0;
 
-// The segment playback is in, or the last one to start before it when playback
-// is between segments. Segments are in start order, so this is a binary search:
-// subscriptions run it on every time update.
-function playheadSegmentIndex(segments: TranscriptSegment[], time: number) {
-  let low = 0;
-  let high = segments.length - 1;
-  let index = -1;
-  while (low <= high) {
-    const middle = (low + high) >> 1;
-    if (segments[middle].start <= time) {
-      index = middle;
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-  return index;
-}
-
-/**
- * The segments playing at `time` (segments can overlap), as "3" or "3,4".
- * Walks back from the playhead while segments still cover the time, so
- * overlapping neighbours count together.
- */
-function activeSegmentsAt(segments: TranscriptSegment[], time: number): string {
-  let key = "";
-  for (let idx = playheadSegmentIndex(segments, time); idx >= 0 && time < segments[idx].end; idx--) {
-    key = key ? `${idx},${key}` : `${idx}`;
-  }
-  return key;
-}
-
 /**
  * Where playback is in the transcript, re-rendering the caller only when that
  * changes: the playing segments (one subscription for the whole list; the
@@ -135,10 +104,9 @@ function activeSegmentsAt(segments: TranscriptSegment[], time: number): string {
  * playback has started.
  */
 function usePlayhead(segments: TranscriptSegment[], clock: PlaybackClock) {
-  const selectActive = useCallback((time: number) => activeSegmentsAt(segments, time), [segments]);
-  const selectPlayhead = useCallback((time: number) => playheadSegmentIndex(segments, time), [segments]);
-  const activeKey = usePlaybackTime(clock, selectActive);
-  const playheadIndex = usePlaybackTime(clock, selectPlayhead);
+  const index = useMemo(() => createTranscriptPlayhead(segments), [segments]);
+  const activeKey = usePlaybackTime(clock, index.activeKey);
+  const playheadIndex = usePlaybackTime(clock, index.playheadIndex);
   const started = usePlaybackTime(clock, playbackStarted);
   const activeSegments = useMemo(
     () => new Set(activeKey ? activeKey.split(",").map(Number) : []),
