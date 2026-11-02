@@ -601,6 +601,35 @@ describe("useRecordingPlayback", () => {
     expect(localStorage.setItem).toHaveBeenCalledTimes(3);
   });
 
+  it("keeps saving periodically while the page is hidden", () => {
+    vi.mocked(fetch).mockReturnValueOnce(new Promise<Response>(() => {}));
+    const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+    // Hidden without the visibilitychange event, so only the periodic save runs.
+    setVisibilityState("hidden");
+
+    act(() => {
+      result.current.handlePlayingChange(true);
+      result.current.setCurrentTime(1);
+    });
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("1");
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+      result.current.setCurrentTime(6);
+    });
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("6");
+    // The view is not told while hidden; saving reads the time directly.
+    expect(result.current.clock.get()).toBe(6);
+  });
+
+  it("hands the player one time callback for the view's lifetime", () => {
+    const { result, rerender } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
+    const first = result.current.setCurrentTime;
+    mocks.session.userId = "user-2";
+    rerender();
+    expect(result.current.setCurrentTime).toBe(first);
+  });
+
   it("does not run server restoration after a radio handoff", async () => {
     mocks.searchParams = new URLSearchParams({ fromRadio: "true" });
     const handOffPlayback = vi.fn(() => ({ time: 42, wasPlaying: false }));

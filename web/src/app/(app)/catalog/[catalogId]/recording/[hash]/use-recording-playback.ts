@@ -443,6 +443,14 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     userId,
   ]);
 
+  // The player re-attaches its media listeners when this callback changes, so
+  // it stays the same for the view's lifetime and reaches the save through a
+  // ref (the save changes as the session and download record load).
+  const persistRef = useRef(persistCurrentPlaybackPosition);
+  useEffect(() => {
+    persistRef.current = persistCurrentPlaybackPosition;
+  }, [persistCurrentPlaybackPosition]);
+
   // The player reports its time here about four times a second, also while
   // the page is hidden. Position saving reads it directly; the clock passes it
   // on to the view only while the page is visible.
@@ -455,8 +463,8 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     const now = Date.now();
     if (now - lastLocalSaveRef.current < LOCAL_PLAYBACK_SAVE_INTERVAL_MS) return;
     if (now - lastServerSyncRef.current < 15_000) return;
-    persistCurrentPlaybackPosition();
-  }, [clock, persistCurrentPlaybackPosition]);
+    persistRef.current();
+  }, [clock]);
 
   // Attach the beforeunload listener once per hash, not on every timeupdate —
   // the old combined effect was churning window listeners ~4x/second.

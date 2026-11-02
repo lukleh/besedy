@@ -82,6 +82,8 @@ export function useAudioBufferDiagnostics({
   const previousTotalBufferedRef = useRef(0);
   const lastBufferGrowthTimeRef = useRef(0);
   const fetchCountRef = useRef(0);
+  // Chunks not yet in state: those seen while the page is hidden wait here.
+  const pendingChunksRef = useRef<ChunkFetchRecord[]>([]);
 
   const updateDebugInfo = useCallback(() => {
     const audio = audioRef.current;
@@ -111,12 +113,9 @@ export function useAudioBufferDiagnostics({
     previousTotalBufferedRef.current = 0;
     lastBufferGrowthTimeRef.current = Date.now();
     fetchCountRef.current = 0;
+    pendingChunksRef.current = [];
 
     const updateBasicBufferInfo = () => {
-      // The time left in the buffer moves with every timeupdate, and each new
-      // value re-renders the player. Nothing is drawn while the page is hidden
-      // (screen off, app in the background); it is read again when shown.
-      if (document.visibilityState === 'hidden') return;
       const snapshot = readBufferSnapshot(audio);
       const bufferGrowth =
         snapshot.totalBuffered - previousTotalBufferedRef.current;
@@ -137,9 +136,20 @@ export function useAudioBufferDiagnostics({
           dataSeconds: bufferGrowth,
           bufferEnd: maxBufferEnd,
         };
-        setChunkFetches((previous) => [...previous, newRecord].slice(-20));
+        pendingChunksRef.current.push(newRecord);
         previousTotalBufferedRef.current = snapshot.totalBuffered;
         lastBufferGrowthTimeRef.current = now;
+      }
+      // The time left in the buffer moves with every timeupdate, and each new
+      // value re-renders the player. Nothing is drawn while the page is hidden
+      // (screen off, app in the background), so state waits until it is
+      // shown; the chunks above are still recorded as they happen.
+      if (document.visibilityState === 'hidden') return;
+
+      if (pendingChunksRef.current.length > 0) {
+        const chunks = pendingChunksRef.current;
+        pendingChunksRef.current = [];
+        setChunkFetches((previous) => [...previous, ...chunks].slice(-20));
       }
 
       setBufferInfo((previous) => {
@@ -171,6 +181,7 @@ export function useAudioBufferDiagnostics({
 
   const reset = useCallback(() => {
     fetchCountRef.current = 0;
+    pendingChunksRef.current = [];
     setChunkFetches([]);
     setBufferInfo(INITIAL_BUFFER_INFO);
   }, []);

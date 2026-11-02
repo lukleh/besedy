@@ -134,6 +134,45 @@ describe("TranscriptContent scrolling", () => {
     expect(elementScrollTo).toHaveBeenCalledTimes(2);
   });
 
+  it("brings the active word into view when auto-scroll turns on", () => {
+    const clock = createPlaybackClock(2.5);
+    const { rerender } = render(<TranscriptContent transcript={transcript} clock={clock} />);
+    expect(elementScrollTo).not.toHaveBeenCalled();
+
+    rerender(<TranscriptContent transcript={transcript} clock={clock} autoScroll />);
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps following a row without word timings once a second", () => {
+    const textOnly: Transcript = {
+      backend: "whisperx",
+      segments: [{ text: "a long sentence", start: 0, end: 30 }],
+    };
+    const clock = createPlaybackClock(0.2);
+    render(<TranscriptContent transcript={textOnly} clock={clock} autoScroll />);
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+
+    act(() => clock.set(0.7));
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+    act(() => clock.set(1.1));
+    expect(elementScrollTo).toHaveBeenCalledTimes(2);
+  });
+
+  it("follows only the first of overlapping segments", () => {
+    const overlapping: Transcript = {
+      backend: "whisperx",
+      segments: [
+        { text: "one", start: 0, end: 3, words: [{ word: "one", start: 2, end: 3 }] },
+        { text: "two", start: 2, end: 4, words: [{ word: "two", start: 2, end: 4 }] },
+      ],
+    };
+    render(<TranscriptContent transcript={overlapping} clock={createPlaybackClock(2.5)} autoScroll />);
+
+    expect(screen.getByText("one")).toHaveClass("font-medium");
+    expect(screen.getByText("two")).toHaveClass("font-medium");
+    expect(elementScrollTo).toHaveBeenCalledTimes(1);
+  });
+
   it("does not scroll when the active word is already visible", () => {
     contentRect = { top: 200, bottom: 220, height: 20 };
 
@@ -292,6 +331,19 @@ describe("TranscriptContent playback updates", () => {
     // Next segment: the one left behind and the one entered.
     act(() => clock.set(12.5));
     expect(vi.mocked(formatTimestamp).mock.calls).toEqual([[10], [12]]);
+  });
+
+  it("does not re-render the rows when playback pauses or resumes", () => {
+    const clock = createPlaybackClock(10.5);
+    const { rerender } = render(
+      <TranscriptContent transcript={longTranscript} clock={clock} autoScroll showTimestamps />,
+    );
+    vi.mocked(formatTimestamp).mockClear();
+
+    rerender(<TranscriptContent transcript={longTranscript} clock={clock} showTimestamps />);
+    rerender(<TranscriptContent transcript={longTranscript} clock={clock} autoScroll showTimestamps />);
+
+    expect(formatTimestamp).not.toHaveBeenCalled();
   });
 
   it("holds the highlight while the page is hidden and catches up when shown", () => {

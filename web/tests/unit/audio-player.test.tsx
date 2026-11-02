@@ -1465,6 +1465,27 @@ describe("AudioPlayer external seek", () => {
     expect(audio.play).toHaveBeenCalledTimes(1);
   });
 
+  it("restores the position reached while hidden across a transport switch", async () => {
+    const hash = "a".repeat(64);
+    const src = `/api/catalogs/cat/recordings/${hash}/audio`;
+    const { audio, rerender } = renderPlayer({ src, recordingHash: hash });
+    audio.pause = vi.fn();
+    await loadMetadata(audio);
+
+    // A download finishing with the screen off swaps in the local package.
+    setVisibilityState("hidden");
+    audio.currentTime = 50;
+    await act(async () => {
+      audio.dispatchEvent(new Event("timeupdate"));
+    });
+    mockReadyState(audio, 0);
+    audio.currentTime = 0;
+    rerender(playerElement({ src: `${src}?local=1`, recordingHash: hash }));
+    await loadMetadata(audio);
+
+    expect(audio.currentTime).toBe(50);
+  });
+
   it("restores the current position instead of replaying a consumed request on source switch", async () => {
     const hash = "a".repeat(64);
     const src = `/api/catalogs/cat/recordings/${hash}/audio`;

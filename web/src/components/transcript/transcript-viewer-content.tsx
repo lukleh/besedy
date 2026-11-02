@@ -52,8 +52,32 @@ function centerInBand(viewport: Element, element: Element, band: Band) {
   viewport.scrollTo({ top: viewport.scrollTop + offset, behavior: "smooth" });
 }
 
-// Without a player the transcript shows no playback position.
+// Without a player the transcript shows no playback position. Rows that are
+// not playing read it too: it never changes, so they never re-render.
 const STOPPED_CLOCK = createPlaybackClock();
+const NOTHING_ACTIVE = () => null;
+
+/** The segments playing at `time` (segments can overlap), as "3" or "3,4". */
+function activeSegmentsAt(segments: TranscriptSegment[], time: number): string {
+  let key = "";
+  for (let idx = 0; idx < segments.length; idx++) {
+    if (time >= segments[idx].start && time < segments[idx].end) {
+      key = key ? `${key},${idx}` : `${idx}`;
+    }
+  }
+  return key;
+}
+
+/**
+ * The playing segments, re-rendering the caller only when they change. One
+ * subscription for the whole list: rows that are not playing never hear about
+ * time updates, and the active rows read the clock themselves.
+ */
+function useActiveSegments(segments: TranscriptSegment[], clock: PlaybackClock): ReadonlySet<number> {
+  const select = useCallback((time: number) => activeSegmentsAt(segments, time), [segments]);
+  const key = usePlaybackTime(clock, select);
+  return useMemo(() => new Set(key ? key.split(",").map(Number) : []), [key]);
+}
 
 export function TranscriptContent({
   transcript,
@@ -67,11 +91,18 @@ export function TranscriptContent({
 }: TranscriptContentProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { segments } = transcript;
+  const activeSegments = useActiveSegments(segments, clock);
+  // With overlapping segments only the first one playing is followed.
+  const followedSegment = activeSegments.size > 0 ? Math.min(...activeSegments) : -1;
 
-  // The active row calls this when its highlighted word (or, without word
-  // timings, the row itself) changes, rather than on every time update: the
-  // check measures layout.
-  const follow = useCallback((element: Element) => {
+  // Auto-scroll turns on and off with playback. Kept in a ref, so pausing does
+  // not re-render every row; the followed row reports its element instead.
+  const autoScrollRef = useRef(autoScroll);
+  const followedElementRef = useRef<Element | null>(null);
+
+  // The check measures layout, so the followed row calls it when its
+  // highlighted word changes and once a second, not on every time update.
+  const bringIntoView = useCallback((element: Element) => {
     const viewport = getViewport(scrollContainerRef.current);
     if (!viewport) return;
 
@@ -89,6 +120,18 @@ export function TranscriptContent({
       centerInBand(viewport, element, band);
     }
   }, []);
+
+  const follow = useCallback((element: Element) => {
+    followedElementRef.current = element;
+    if (autoScrollRef.current) bringIntoView(element);
+  }, [bringIntoView]);
+
+  useEffect(() => {
+    const turnedOn = autoScroll && !autoScrollRef.current;
+    autoScrollRef.current = autoScroll;
+    const element = followedElementRef.current;
+    if (turnedOn && element?.isConnected) bringIntoView(element);
+  }, [autoScroll, bringIntoView]);
 
   useEffect(() => {
     if (scrollToTime !== null && scrollToTime !== undefined && scrollToTime > 0 && scrollContainerRef.current) {
@@ -159,17 +202,13 @@ export function TranscriptContent({
   return (
     <ScrollArea className="h-[400px] rounded-lg border p-4" ref={scrollContainerRef}>
       <div className="leading-relaxed">
-        {/*
-          Each row reads the clock itself, so a time update re-renders only
-          the rows whose highlight changes, not this list of every segment.
-        */}
         {segments.map((segment, segmentIdx) => (
           <TranscriptSegmentRow
             key={segmentIdx}
             segment={segment}
             segmentIdx={segmentIdx}
-            clock={clock}
-            autoScroll={autoScroll}
+            clock={activeSegments.has(segmentIdx) ? clock : null}
+            followed={segmentIdx === followedSegment}
             onFollow={follow}
             speaker={speakerLabels[segmentIdx]}
             speakerLabelClass={speakerLabelClasses[segmentIdx]}
@@ -186,9 +225,11 @@ export function TranscriptContent({
 interface TranscriptSegmentRowProps {
   segment: TranscriptSegment;
   segmentIdx: number;
-  clock: PlaybackClock;
-  autoScroll: boolean;
-  /** Brings the active element into view (see TranscriptContent). */
+  /** The player's clock while this segment plays, otherwise null. */
+  clock: PlaybackClock | null;
+  /** This row is the one auto-scroll keeps in view. */
+  followed: boolean;
+  /** Reports the element to keep in view (see TranscriptContent). */
   onFollow: (element: Element) => void;
   speaker: string | null;
   /** Set where the speaker label is shown: the first segment of a speaker turn. */
@@ -209,7 +250,7 @@ const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
   segment,
   segmentIdx,
   clock,
-  autoScroll,
+  followed,
   onFollow,
   speaker,
   speakerLabelClass,
@@ -222,15 +263,24 @@ const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
     (time: number) => activeWordAt(segment, withWords, time),
     [segment, withWords],
   );
-  const activeWordIdx = usePlaybackTime(clock, selectActiveWord);
+  const activeWordIdx = usePlaybackTime(
+    clock ?? STOPPED_CLOCK,
+    clock ? selectActiveWord : NOTHING_ACTIVE,
+  );
+  // The followed row also checks once a second, so a transcript scrolled away
+  // by hand comes back even within a long word or a row without word timings.
+  const followedSecond = usePlaybackTime(
+    followed && clock ? clock : STOPPED_CLOCK,
+    followed && clock ? Math.floor : NOTHING_ACTIVE,
+  );
   const segmentActive = activeWordIdx !== null;
   const showSpeakerLabel = !!speaker && !!speakerLabelClass;
 
   // The highlighted word, or the whole text without word timings.
   const activeElementRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
-    if (autoScroll && activeElementRef.current) onFollow(activeElementRef.current);
-  }, [autoScroll, activeWordIdx, onFollow]);
+    if (followed && activeElementRef.current) onFollow(activeElementRef.current);
+  }, [followed, activeWordIdx, followedSecond, onFollow]);
 
   if (withWords && segment.words) {
     return (
@@ -327,13 +377,9 @@ function VirtualizedASRTranscript({
 }: VirtualizedASRTranscriptProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
-  // Re-renders the list only when the active segment changes; the rows read
-  // their own highlight.
-  const selectActiveIndex = useCallback(
-    (time: number) => segments.findIndex((segment) => time >= segment.start && time < segment.end),
-    [segments],
-  );
-  const activeIndex = usePlaybackTime(clock, selectActiveIndex);
+  // Re-renders the list only when the playing segments change.
+  const activeSegments = useActiveSegments(segments, clock);
+  const activeIndex = activeSegments.size > 0 ? Math.min(...activeSegments) : -1;
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
@@ -381,7 +427,7 @@ function VirtualizedASRTranscript({
               key={virtualItem.key}
               segment={segment}
               top={virtualItem.start}
-              clock={clock}
+              isActive={activeSegments.has(virtualItem.index)}
               speaker={speakerLabels[virtualItem.index]}
               speakerLabelClass={speakerLabelClasses[virtualItem.index]}
               showTimestamps={showTimestamps}
@@ -397,7 +443,7 @@ function VirtualizedASRTranscript({
 interface VirtualizedASRRowProps {
   segment: TranscriptSegment;
   top: number;
-  clock: PlaybackClock;
+  isActive: boolean;
   speaker: string | null;
   speakerLabelClass: string | null;
   showTimestamps: boolean;
@@ -407,17 +453,12 @@ interface VirtualizedASRRowProps {
 const VirtualizedASRRow = memo(function VirtualizedASRRow({
   segment,
   top,
-  clock,
+  isActive,
   speaker,
   speakerLabelClass,
   showTimestamps,
   onSeek,
 }: VirtualizedASRRowProps) {
-  const selectActive = useCallback(
-    (time: number) => time >= segment.start && time < segment.end,
-    [segment],
-  );
-  const isActive = usePlaybackTime(clock, selectActive);
   const showSpeakerLabel = !!speaker && !!speakerLabelClass;
   return (
     <div

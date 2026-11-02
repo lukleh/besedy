@@ -711,6 +711,9 @@ export function AudioPlayer({
       if (linkedPlaybackEnd !== null && endFrame === null && !audio.paused) {
         endFrame = requestAnimationFrame(watchExcerptEnd);
       }
+      // A transport switch restores from here, so it follows the element
+      // even while the time display below is held.
+      lastTimeRef.current = audio.currentTime;
       // Nothing is drawn while the page is hidden (screen off, app in the
       // background), so the player's own time display waits; it catches up
       // when the page is shown. onTimeUpdate still gets every update.
