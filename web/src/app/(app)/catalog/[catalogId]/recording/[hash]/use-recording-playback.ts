@@ -40,11 +40,20 @@ interface RemotePlaybackProgressResponse {
 interface PlaybackPersistOptions {
   completed?: boolean;
   keepalive?: boolean;
+  /** Save in this browser only; the server and the offline queue keep their cadence. */
+  localOnly?: boolean;
   positionSec?: number;
   durationSec?: number;
 }
 
+// How often uninterrupted playback saves its position: in this browser, and
+// to the server. With the screen off each request wakes the cellular radio
+// for seconds of tail time, often as the only network use (a downloaded
+// recording), and hiding the page already flushed the position, so the
+// server waits longer then.
 const LOCAL_PLAYBACK_SAVE_INTERVAL_MS = 5_000;
+const SERVER_SYNC_INTERVAL_MS = 15_000;
+const HIDDEN_SERVER_SYNC_INTERVAL_MS = 60_000;
 
 /**
  * Owns playback persistence, seek restoration, and radio handoff for a single
@@ -184,7 +193,7 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
 
       savePlaybackPosition(hash, positionSec, { clearWhenZero: true });
       lastLocalSaveRef.current = Date.now();
-      if (restorePendingRef.current) return;
+      if (restorePendingRef.current || options.localOnly) return;
       if (restoreFailedRef.current) {
         // The server could not be reached for this view. Writing directly
         // could overwrite a further position from another device, so the
@@ -462,8 +471,13 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     if (!isPlayingRef.current || time <= 0) return;
     const now = Date.now();
     if (now - lastLocalSaveRef.current < LOCAL_PLAYBACK_SAVE_INTERVAL_MS) return;
-    if (now - lastServerSyncRef.current < 15_000) return;
-    persistRef.current();
+    const serverInterval =
+      document.visibilityState === "hidden"
+        ? HIDDEN_SERVER_SYNC_INTERVAL_MS
+        : SERVER_SYNC_INTERVAL_MS;
+    persistRef.current({
+      localOnly: now - lastServerSyncRef.current < serverInterval,
+    });
   }, [clock]);
 
   // Attach the beforeunload listener once per hash, not on every timeupdate —

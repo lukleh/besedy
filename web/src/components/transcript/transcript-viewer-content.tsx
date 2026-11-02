@@ -829,6 +829,11 @@ const TranscriptSegmentRow = memo(function TranscriptSegmentRow({
   );
 });
 
+// The virtualized box's padding. Its rows are placed from the padding edge, so
+// deciding whether a row is in view needs the same number as the class.
+const VIRTUAL_BOX_PADDING_CLASS = "p-4";
+const VIRTUAL_BOX_PADDING_PX = 16;
+
 // Long transcripts without word timings: only the rows near the viewport are
 // rendered.
 function VirtualizedASRTranscript({
@@ -867,9 +872,25 @@ function VirtualizedASRTranscript({
     }
     virtualizer.scrollToIndex(index, { align: "center", behavior: "smooth" });
   };
+  // Whether the row is wholly inside the box, from the virtualizer's own
+  // numbers: the sizes it lays rows out with and the scroll position and box
+  // size its listeners keep current. Reads no layout.
+  const segmentInView = (index: number) => {
+    const item = virtualizer.measurementsCache[index];
+    const offset = virtualizer.scrollOffset;
+    const box = virtualizer.scrollRect;
+    if (!item || offset === null || !box) return false;
+    const top = item.start + VIRTUAL_BOX_PADDING_PX;
+    const bottom = item.end + VIRTUAL_BOX_PADDING_PX;
+    return top >= offset && bottom <= offset + box.height;
+  };
   const target: FollowTarget<number> = {
     resolve: (index) => index,
-    bringIntoView: scrollToSegment,
+    // Like the full list, scrolls only once the row has left the box. Centring
+    // every segment animated the list every few seconds while it was in view.
+    bringIntoView: (index, markFollowScroll) => {
+      if (!segmentInView(index)) scrollToSegment(index, markFollowScroll);
+    },
     centre: scrollToSegment,
     // The virtualizer updates its visible range in its own scroll listener,
     // which runs before the one that calls this.
@@ -899,7 +920,7 @@ function VirtualizedASRTranscript({
     <FollowFrame offscreenPlayhead={offscreenPlayhead} onResumeFollowing={resumeFollowing}>
       <div
         ref={setParent}
-        className="h-[400px] overflow-y-auto overflow-x-hidden rounded-lg border p-4 [overflow-anchor:none]"
+        className={`h-[400px] overflow-y-auto overflow-x-hidden rounded-lg border ${VIRTUAL_BOX_PADDING_CLASS} [overflow-anchor:none]`}
       >
         <div
           ref={setContent}
