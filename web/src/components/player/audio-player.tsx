@@ -26,6 +26,7 @@ import {
   useCallback,
   useMemo,
   useReducer,
+  useImperativeHandle,
 } from 'react';
 import { AudioPlayerChrome } from './audio-player-chrome';
 import { AudioPlayerDebugPanel } from './audio-player-debug-panel';
@@ -75,6 +76,7 @@ function createSourceEvent(id: number, src: string): DebugEvent {
 }
 
 export function AudioPlayer({
+  ref,
   src,
   recordingHash,
   catalogId,
@@ -89,6 +91,7 @@ export function AudioPlayer({
   playbackEnd,
   autoPlayOnSeek,
   playbackRate,
+  sleepTimerEnabled = true,
   mediaMetadata,
   markers,
   onBookmark,
@@ -922,18 +925,33 @@ export function AudioPlayer({
     };
   }, []);
 
-  const togglePlay = () => {
+  const play = useCallback((end?: number) => {
     const audio = audioRef.current;
     if (!audio) return;
-
-    // Let audio element events update state (handlePlay/handlePause callbacks)
-    // This ensures consistent behavior between button clicks and keyboard shortcuts
     userInitiatedRef.current = true;
+    playIntentRef.current = true;
+    dispatchRetry({ type: 'PLAY_INTENT_CHANGED', playing: true });
+    if (end !== undefined) playbackEndRef.current = resolvePlaybackEnd(end);
+    if (pendingSeekRef.current) {
+      pendingSeekRef.current.autoPlay = true;
+      return;
+    }
+    safePlay(audio, 'playback requested', logDebugEvent);
+  }, [dispatchRetry, logDebugEvent]);
+
+  const pause = useCallback(() => {
+    playIntentRef.current = false;
+    if (pendingSeekRef.current) pendingSeekRef.current.autoPlay = false;
+    dispatchRetry({ type: 'PLAY_INTENT_CHANGED', playing: false });
+    audioRef.current?.pause();
+  }, [dispatchRetry]);
+
+  const togglePlay = () => {
+    // Media events remain the source of truth for both sets of controls.
     if (isPlaying) {
-      playIntentRef.current = false;
-      audio.pause();
+      pause();
     } else {
-      safePlay(audio, 'toggle play button', logDebugEvent);
+      play();
     }
   };
 
@@ -1061,6 +1079,9 @@ export function AudioPlayer({
         return;
       }
 
+      // Space activates a focused control; let the browser deliver its click.
+      if (e.code === 'Space' && target.closest('button, a, summary, [role="button"]')) return;
+
       switch (e.code) {
         case 'Space':
           e.preventDefault();
@@ -1122,8 +1143,17 @@ export function AudioPlayer({
     };
   }, [handleKeyDown]);
 
+  useImperativeHandle(ref, () => ({
+    play,
+    pause,
+    getCurrentTime: () => audioRef.current?.currentTime ?? 0,
+    isPlayRequested: () => Boolean(
+      (isRetrying(retryStateRef.current) && playIntentRef.current) || pendingSeekRef.current?.autoPlay ||
+      (audioRef.current && !audioRef.current.paused)
+    ),
+  }), [play, pause]);
   // Last among the hooks: the refs the fade touches are still written above.
-  useSleepTimerTarget(isPlaying && !isBuffering, sleepFadeOutAndPause);
+  useSleepTimerTarget(isPlaying && !isBuffering, sleepFadeOutAndPause, sleepTimerEnabled);
 
   return (
     <div
@@ -1154,6 +1184,7 @@ export function AudioPlayer({
         onTogglePlay={togglePlay}
         onVolumeChange={handleVolumeChange}
         showDebug={showDebug}
+        sleepTimerEnabled={sleepTimerEnabled}
         volume={volume}
       />
 

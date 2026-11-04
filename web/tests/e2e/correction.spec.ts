@@ -50,9 +50,24 @@ test.describe("transcript correction", () => {
     const spanList = page.locator("aside");
     await spanList.getByRole("button", { name: /^0:00/ }).first().click();
     await expect(page.getByRole("textbox").first()).toHaveValue("Dobrý den, vítejte.");
+    const audio = page.locator("audio").first();
+    const spanControls = page.getByTestId("correction-span-audio");
+    await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
+    await expect(page.getByTestId("sleep-timer-button")).toHaveCount(0);
+
+    await spanControls.getByRole("button", { name: /^(Přehrát úsek|Play span)$/ }).click();
+    const pauseSpan = spanControls.getByRole("button", { name: /Pozastavit úsek|Pause span/ });
+    await expect(pauseSpan).toBeVisible();
+    await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBeGreaterThan(0.2);
+    await pauseSpan.click();
+    await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
+    const pausedAt = await audio.evaluate((element: HTMLAudioElement) => element.currentTime);
+    await spanControls.getByRole("button", { name: /Pokračovat v úseku|Resume span/ }).click();
+    await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBeGreaterThan(pausedAt);
 
     // The second span holds a region the model wrote nothing for.
     await spanList.getByRole("button", { name: /^0:10/ }).first().click();
+    await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
     await expect(page.getByRole("textbox").first()).toHaveValue("Dnes budeme mluvit.");
     await expect(page.getByTestId("correction-region-without-text")).toHaveCount(1);
     await expect(page.getByTestId("correction-speech-without-text")).toBeVisible();
@@ -144,7 +159,8 @@ test.describe("transcript correction", () => {
     await expect(page.getByRole("textbox").first()).toHaveValue("Dobrý den, vítejte.");
     const approve = page.getByTestId("correction-approve");
     await expect(approve).toBeDisabled();
-    // Selecting the span started it playing; the first span is ten seconds.
+    // Selecting a span only prepares it. Start its ten seconds explicitly.
+    await spanControls.getByRole("button", { name: /^(Přehrát úsek|Play span)$/ }).click();
     await expect(approve).toBeEnabled({ timeout: 30000 });
     const approved = page.waitForResponse(
       (response) => response.url().includes("/correction/spans/") && response.request().method() === "POST"

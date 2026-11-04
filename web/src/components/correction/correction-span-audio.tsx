@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { ChevronLeft, ChevronRight, Gauge, Play, Repeat, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Gauge, Pause, Play, Repeat, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { speechRegionsInSeconds } from "@/lib/correction/playback-coverage";
 import { regionIndexForMidpoint } from "@/lib/correction/segmentation";
@@ -53,6 +53,8 @@ export function regionIndexAt(regions: readonly SpanAudioRegion[], time: number)
 
 interface CorrectionSpanAudioProps {
   span: SpanView;
+  isPlaying: boolean;
+  onTogglePlay: () => void;
   subscribeTime: TimeSubscription;
   rate: number;
   onPlayRange: (start: number, end: number) => void;
@@ -63,6 +65,8 @@ interface CorrectionSpanAudioProps {
 
 export function CorrectionSpanAudio({
   span,
+  isPlaying,
+  onTogglePlay,
   subscribeTime,
   rate,
   onPlayRange,
@@ -80,15 +84,17 @@ export function CorrectionSpanAudio({
   const position = (seconds: number) =>
     `${Math.min(100, Math.max(0, ((seconds - windowStart) / windowLength) * 100))}%`;
   const inSpan = time !== null && time >= span.startSeconds && time <= span.endSeconds;
+  const canResume = inSpan && time > span.startSeconds && time < span.endSeconds;
+  const playbackLabel = isPlaying ? t("pauseSpan") : canResume ? t("resumeSpan") : t("playSpan");
   const speechWithoutText = regions.filter((region) => region.wordCount === 0).length;
   const rateLabel = rate === 1 ? "1×" : `${rate.toLocaleString()}×`;
 
   return (
     <div className="space-y-2 rounded-md border p-3" data-testid="correction-span-audio">
       <div className="flex flex-wrap items-center gap-1">
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onPlayRange(span.startSeconds, span.endSeconds)}>
-          <Play className="h-3.5 w-3.5" />
-          {t("playSpan")}
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={onTogglePlay}>
+          {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+          {playbackLabel}
         </Button>
         <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => onRegion("previous")} aria-label={t("previousRegion")}>
           <ChevronLeft className="h-3.5 w-3.5" />

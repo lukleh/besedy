@@ -66,6 +66,7 @@ interface AudioPlayerChromeProps {
   onTogglePlay: () => void;
   onVolumeChange: (value: number[]) => void;
   showDebug: boolean;
+  sleepTimerEnabled?: boolean;
   volume: number;
 }
 
@@ -91,6 +92,7 @@ export function AudioPlayerChrome({
   onTogglePlay,
   onVolumeChange,
   showDebug,
+  sleepTimerEnabled = true,
   volume,
 }: AudioPlayerChromeProps) {
   const t = useTranslations("player");
@@ -193,7 +195,7 @@ export function AudioPlayerChrome({
           </div>
 
           <div className="absolute right-0 hidden items-center justify-end gap-2 sm:flex">
-            <SleepTimerButton variant="player" />
+            {sleepTimerEnabled && <SleepTimerButton variant="player" />}
             <Button
               variant="ghost"
               size="icon"
@@ -234,7 +236,11 @@ export function AudioPlayerChrome({
           </button>
           <div
             className={`grid items-center justify-items-center gap-3 ${
-              bookmarkControl ? "w-[18rem] grid-cols-5" : "w-[14.25rem] grid-cols-4"
+              bookmarkControl && sleepTimerEnabled
+                ? "w-[18rem] grid-cols-5"
+                : bookmarkControl || sleepTimerEnabled
+                  ? "w-[14.25rem] grid-cols-4"
+                  : "w-[10.5rem] grid-cols-3"
             }`}
           >
             <div className="flex h-12 items-center justify-center">
@@ -258,7 +264,7 @@ export function AudioPlayerChrome({
                 <Volume2 className="size-6" />
               )}
             </Button>
-            <SleepTimerButton variant="player" />
+            {sleepTimerEnabled && <SleepTimerButton variant="player" />}
           </div>
         </div>
       </div>

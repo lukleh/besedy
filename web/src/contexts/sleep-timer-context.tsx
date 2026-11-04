@@ -145,11 +145,12 @@ export function useSleepTimer(): SleepTimerContextValue | null {
 /**
  * Registers a player with the sleep timer: the countdown runs while it plays
  * audio (not while it buffers), and `fadeOutAndPause` is called when the
- * timer runs out. Does nothing outside a SleepTimerProvider.
+ * timer runs out. Does nothing when disabled or outside a SleepTimerProvider.
  */
 export function useSleepTimerTarget(
   isPlaying: boolean,
   fadeOutAndPause: FadeOutAndPause,
+  enabled = true,
 ): void {
   const registry = useContext(SleepTimerRegistryContext);
   const id = useId();
@@ -160,11 +161,12 @@ export function useSleepTimerTarget(
   }, [fadeOutAndPause]);
 
   useEffect(() => {
-    if (!registry) return;
+    if (!registry || !enabled) return;
     return registry.register(id, () => fadeRef.current());
-  }, [registry, id]);
+  }, [registry, id, enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
     registry?.setPlaying(id, isPlaying);
-  }, [registry, id, isPlaying]);
+  }, [registry, id, isPlaying, enabled]);
 }

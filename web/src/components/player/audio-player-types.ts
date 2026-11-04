@@ -1,4 +1,16 @@
+import type { Ref } from "react";
+
+/** Controls for an additional UI operating the same media element. */
+export interface AudioPlayerHandle {
+  play: (end?: number) => void;
+  pause: () => void;
+  getCurrentTime: () => number;
+  /** Includes playback queued until metadata arrives or a connection recovers. */
+  isPlayRequested: () => boolean;
+}
+
 export interface AudioPlayerProps {
+  ref?: Ref<AudioPlayerHandle>;
   src: string;
   /**
    * The recording behind `src`. Needed when `src` is not the recording's API
@@ -18,6 +30,8 @@ export interface AudioPlayerProps {
   autoPlayOnSeek?: boolean;
   /** Playback speed; 1 when omitted. The correction page slows passages down. */
   playbackRate?: number;
+  /** Opt out of both sleep-timer controls and its effect on this player. */
+  sleepTimerEnabled?: boolean;
   /** What the lock screen and media notification show for this recording. */
   mediaMetadata?: MediaSessionMetadata;
   /** Positions (seconds) marked on the progress bar, e.g. the listener's bookmarks. */

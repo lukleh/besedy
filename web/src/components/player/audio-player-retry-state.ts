@@ -37,6 +37,7 @@ export type RetryState =
 
 export type RetryAction =
   | { type: 'RESET' }
+  | { type: 'PLAY_INTENT_CHANGED'; playing: boolean }
   | { type: 'ERROR_DETECTED'; savedPosition: number; wasPlaying: boolean; scheduleId: number }
   | { type: 'TIMER_FIRED' }
   | { type: 'SEEK_REQUESTED'; time: number }
@@ -59,6 +60,10 @@ export function retryReducer(
   action: RetryAction,
 ): RetryState {
   switch (action.type) {
+    case 'PLAY_INTENT_CHANGED':
+      return state.phase === 'scheduled' || state.phase === 'reloading'
+        ? { ...state, wasPlaying: action.playing }
+        : state;
     case 'RESET':
       return INITIAL_RETRY_STATE;
 
