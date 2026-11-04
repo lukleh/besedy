@@ -26,6 +26,7 @@ import {
   useCallback,
   useMemo,
   useReducer,
+  useImperativeHandle,
 } from 'react';
 import { AudioPlayerChrome } from './audio-player-chrome';
 import { AudioPlayerDebugPanel } from './audio-player-debug-panel';
@@ -75,6 +76,7 @@ function createSourceEvent(id: number, src: string): DebugEvent {
 }
 
 export function AudioPlayer({
+  ref,
   src,
   recordingHash,
   catalogId,
@@ -82,6 +84,7 @@ export function AudioPlayer({
   onTimeUpdate,
   onDurationChange,
   onPlayingChange,
+  onPlayRequestChange,
   onSeek,
   onEnded,
   seekTo,
@@ -89,6 +92,7 @@ export function AudioPlayer({
   playbackEnd,
   autoPlayOnSeek,
   playbackRate,
+  sleepTimerEnabled = true,
   mediaMetadata,
   markers,
   onBookmark,
@@ -240,6 +244,33 @@ export function AudioPlayer({
   // and bails if they differ, closing that window.
   const retrySrcRef = useRef<string | null>(null);
   const retryScheduleCounterRef = useRef(0);
+  // Pending seek - stores seek request until metadata is loaded
+  const pendingSeekRef = useRef<{ time: number; autoPlay: boolean } | null>(
+    null,
+  );
+  // Whether playback is wanted right now: playing, queued until metadata
+  // arrives, or held by a reconnect that will resume it. Reported to the page
+  // whenever it changes, so controls outside the player can show what a
+  // click on them will do.
+  const isPlayRequested = useCallback(() => {
+    const audio = audioRef.current;
+    return Boolean(
+      (isRetrying(retryStateRef.current) && playIntentRef.current) ||
+      pendingSeekRef.current?.autoPlay ||
+      (audio && !audio.paused),
+    );
+  }, []);
+  const onPlayRequestChangeRef = useRef(onPlayRequestChange);
+  useEffect(() => {
+    onPlayRequestChangeRef.current = onPlayRequestChange;
+  }, [onPlayRequestChange]);
+  const playRequestedRef = useRef(false);
+  const syncPlayRequest = useCallback(() => {
+    const requested = isPlayRequested();
+    if (requested === playRequestedRef.current) return;
+    playRequestedRef.current = requested;
+    onPlayRequestChangeRef.current?.(requested);
+  }, [isPlayRequested]);
   const dispatchRetry = useCallback(
     (action: UnstampedRetryAction) => {
       // Any action that exits the retry chain must kill a pending timer
@@ -265,14 +296,11 @@ export function AudioPlayer({
           : action;
       retryStateRef.current = retryReducer(retryStateRef.current, stamped);
       reactDispatchRetry(stamped);
+      syncPlayRequest();
     },
-    [cancelRetryTimer],
+    [cancelRetryTimer, syncPlayRequest],
   );
 
-  // Pending seek - stores seek request until metadata is loaded
-  const pendingSeekRef = useRef<{ time: number; autoPlay: boolean } | null>(
-    null,
-  );
   const lastExternalSeekRef = useRef<{
     recording: string;
     time: number;
@@ -469,6 +497,7 @@ export function AudioPlayer({
       }
     }
     pendingSeekRef.current = restoreAfterSourceSwitch;
+    syncPlayRequest();
 
     // Reset UI state - deferred to avoid synchronous setState in effect body
     queueMicrotask(() => {
@@ -482,7 +511,7 @@ export function AudioPlayer({
       setDebugEvents([createSourceEvent(debugEventIdRef.current++, src)]);
       onPlayingChange?.(false);
     });
-  }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics, cancelSleepFade, setCurrentTime]);
+  }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics, cancelSleepFade, setCurrentTime, syncPlayRequest]);
 
   // Consume each external request once. Callback changes and the page clearing
   // autoPlayOnSeek must not replay an old handoff over a later user seek. The
@@ -533,7 +562,8 @@ export function AudioPlayer({
         `To ${seekTo.toFixed(1)}s (waiting for metadata, readyState=${audio.readyState})`,
       );
     }
-  }, [src, hash, seekTo, seekKey, playbackEnd, onTimeUpdate, autoPlayOnSeek, logDebugEvent, dispatchRetry, setCurrentTime]);
+    syncPlayRequest();
+  }, [src, hash, seekTo, seekKey, playbackEnd, onTimeUpdate, autoPlayOnSeek, logDebugEvent, dispatchRetry, setCurrentTime, syncPlayRequest]);
 
   // NOTE: PerformanceObserver was removed because it only fires when HTTP requests complete.
   // For streaming audio, the request stays open until the entire file downloads, so it's not
@@ -760,6 +790,7 @@ export function AudioPlayer({
           userInitiatedRef.current = true;
           safePlay(audio, 'auto-play after pending seek', logDebugEvent);
         }
+        syncPlayRequest();
       }
     };
 
@@ -772,6 +803,7 @@ export function AudioPlayer({
       setIsPlaying(false);
       onPlayingChange?.(false);
       onEnded?.(Number.isFinite(audio.duration) ? audio.duration : 0);
+      syncPlayRequest();
     };
 
     const handlePlay = () => {
@@ -783,6 +815,7 @@ export function AudioPlayer({
         setIsBuffering(true);
       }
       onPlayingChange?.(true);
+      syncPlayRequest();
       if (playbackEndRef.current !== null && endFrame === null) {
         endFrame = requestAnimationFrame(watchExcerptEnd);
       }
@@ -798,6 +831,7 @@ export function AudioPlayer({
       setIsPlaying(false);
       setIsBuffering(false); // Clear buffering state when paused
       onPlayingChange?.(false);
+      syncPlayRequest();
       logDebugEvent(
         'pause',
         'Playback paused',
@@ -905,6 +939,7 @@ export function AudioPlayer({
     logDebugEvent,
     updateDebugInfo,
     setCurrentTime,
+    syncPlayRequest,
   ]);
 
   // Leaving the page detaches the <audio> element, but it keeps its source,
@@ -922,20 +957,41 @@ export function AudioPlayer({
     };
   }, []);
 
-  const togglePlay = () => {
+  // Every play and pause control goes through these two, so a deliberate
+  // pause also cancels a play queued for metadata or a reconnect.
+  const play = useCallback((end?: number) => {
     const audio = audioRef.current;
     if (!audio) return;
-
-    // Let audio element events update state (handlePlay/handlePause callbacks)
-    // This ensures consistent behavior between button clicks and keyboard shortcuts
     userInitiatedRef.current = true;
-    if (isPlaying) {
-      playIntentRef.current = false;
-      audio.pause();
-    } else {
-      safePlay(audio, 'toggle play button', logDebugEvent);
+    playIntentRef.current = true;
+    if (end !== undefined) playbackEndRef.current = resolvePlaybackEnd(end);
+    // A queued seek still applies its position when metadata arrives.
+    if (pendingSeekRef.current) pendingSeekRef.current.autoPlay = true;
+    dispatchRetry({ type: 'PLAY_INTENT_CHANGED', playing: true });
+    // A reconnect resumes on its own once the connection is back. Otherwise
+    // play now, inside the click: browsers that require a user gesture
+    // refuse a play started later from loadedmetadata, and some only load
+    // the media once play is called.
+    if (!isRetrying(retryStateRef.current)) {
+      safePlay(audio, 'playback requested', logDebugEvent);
     }
-  };
+    syncPlayRequest();
+  }, [dispatchRetry, logDebugEvent, syncPlayRequest]);
+
+  const pause = useCallback(() => {
+    userInitiatedRef.current = true;
+    playIntentRef.current = false;
+    if (pendingSeekRef.current) pendingSeekRef.current.autoPlay = false;
+    dispatchRetry({ type: 'PLAY_INTENT_CHANGED', playing: false });
+    audioRef.current?.pause();
+    syncPlayRequest();
+  }, [dispatchRetry, syncPlayRequest]);
+
+  // Media events remain the source of truth for both sets of controls.
+  const togglePlay = useCallback(() => {
+    if (isPlaying) pause();
+    else play();
+  }, [isPlaying, play, pause]);
 
   const seekFromControls = useCallback((time: number) => {
     const audio = audioRef.current;
@@ -958,7 +1014,8 @@ export function AudioPlayer({
       userInitiatedRef.current = true;
       safePlay(audio, 'auto-play after control seek', logDebugEvent);
     }
-  }, [onSeek, dispatchRetry, logDebugEvent, setCurrentTime]);
+    syncPlayRequest();
+  }, [onSeek, dispatchRetry, logDebugEvent, setCurrentTime, syncPlayRequest]);
 
   const handleSeek = (value: number[]) => seekFromControls(value[0]);
 
@@ -987,20 +1044,22 @@ export function AudioPlayer({
     }
   };
 
+  // Where playback is, for relative seeks and for controls outside the player.
   // A retry's reload empties the element, which then reports position 0 until
-  // metadata returns. A relative seek in that window starts from where the
-  // listener was, which the retry state holds.
+  // the recovery seek; until then the retry state holds where the listener was.
   const relativeSeekBase = useCallback((audio: HTMLAudioElement) => {
     // Without metadata the element reports 0 wherever the listener is: a
     // queued seek (saved position, ?seek=, handoff, transport switch) is the
-    // position, and during a retry's reload so is the retry's restore target.
-    if (audio.readyState < 1) {
-      const pending = pendingSeekRef.current;
-      if (pending) return pending.time;
-      const retry = retryStateRef.current;
-      if (retry.phase === 'scheduled' || retry.phase === 'reloading') {
-        return retry.savedPosition;
-      }
+    // position.
+    if (audio.readyState < 1 && pendingSeekRef.current) {
+      return pendingSeekRef.current.time;
+    }
+    // Until a reconnect recovers, its restore target is the position. The
+    // reload resets the element to 0, and metadata can return before the
+    // recovery seek, so readyState alone does not tell.
+    const retry = retryStateRef.current;
+    if (retry.phase === 'scheduled' || retry.phase === 'reloading') {
+      return retry.savedPosition;
     }
     return audio.currentTime;
   }, []);
@@ -1027,17 +1086,10 @@ export function AudioPlayer({
     metadata: mediaMetadata,
     isPlaying,
     onPlay: () => {
-      const audio = audioRef.current;
-      if (!audio || isReconnecting) return;
-      userInitiatedRef.current = true;
-      safePlay(audio, 'media session play', logDebugEvent);
+      if (!isReconnecting) play();
     },
     onPause: () => {
-      const audio = audioRef.current;
-      if (!audio || isReconnecting) return;
-      userInitiatedRef.current = true;
-      playIntentRef.current = false;
-      audio.pause();
+      if (!isReconnecting) pause();
     },
     onSkipBackward: skipBackward,
     onSkipForward: skipForward,
@@ -1061,16 +1113,19 @@ export function AudioPlayer({
         return;
       }
 
+      // A page's own playback buttons can keep Space for their native click
+      // by sitting inside [data-native-space]; elsewhere Space plays/pauses.
+      if (
+        e.code === 'Space' &&
+        target.closest('button, [role="button"]')?.closest('[data-native-space]')
+      ) {
+        return;
+      }
+
       switch (e.code) {
         case 'Space':
           e.preventDefault();
-          userInitiatedRef.current = true;
-          if (isPlaying) {
-            playIntentRef.current = false;
-            audio.pause();
-          } else {
-            safePlay(audio, 'space keyboard shortcut', logDebugEvent);
-          }
+          togglePlay();
           break;
         case 'ArrowLeft':
           e.preventDefault();
@@ -1111,7 +1166,7 @@ export function AudioPlayer({
           break;
       }
     },
-    [isPlaying, duration, volume, isMuted, logDebugEvent, seekFromControls, relativeSeekBase, cancelSleepFade],
+    [togglePlay, duration, volume, isMuted, seekFromControls, relativeSeekBase, cancelSleepFade],
   );
 
   // Register keyboard shortcuts
@@ -1122,8 +1177,17 @@ export function AudioPlayer({
     };
   }, [handleKeyDown]);
 
+  useImperativeHandle(ref, () => ({
+    play,
+    pause,
+    getCurrentTime: () => {
+      const audio = audioRef.current;
+      return audio ? relativeSeekBase(audio) : 0;
+    },
+    isPlayRequested,
+  }), [play, pause, relativeSeekBase, isPlayRequested]);
   // Last among the hooks: the refs the fade touches are still written above.
-  useSleepTimerTarget(isPlaying && !isBuffering, sleepFadeOutAndPause);
+  useSleepTimerTarget(isPlaying && !isBuffering, sleepFadeOutAndPause, sleepTimerEnabled);
 
   return (
     <div
@@ -1154,6 +1218,7 @@ export function AudioPlayer({
         onTogglePlay={togglePlay}
         onVolumeChange={handleVolumeChange}
         showDebug={showDebug}
+        sleepTimerEnabled={sleepTimerEnabled}
         volume={volume}
       />
 

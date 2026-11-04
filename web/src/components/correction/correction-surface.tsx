@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { Check, Eraser, MessageSquare, Play, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
+import { Check, Eraser, MessageSquare, Pause, Play, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,6 +22,7 @@ import {
   buildCorrectionStripUrl,
 } from "@/lib/api/recording-urls";
 import { AudioPlayer } from "@/components/player/audio-player";
+import type { AudioPlayerHandle } from "@/components/player/audio-player-types";
 import { formatClock } from "@/lib/correction/format";
 import {
   MIN_HEARD_FRACTION_FOR_TRAINING,
@@ -35,8 +36,10 @@ import { useCorrectionDrafts } from "@/contexts/correction-drafts-context";
 import {
   CorrectionSpanAudio,
   PLAYBACK_RATES,
+  canResumeSpan,
   regionIndexAt,
   spanAudioRegions,
+  spanPlaybackAction,
   type TimeSubscription,
 } from "./correction-span-audio";
 import {
@@ -121,25 +124,31 @@ function HeardMeter({
   tracker,
   subscribeTime,
   mustListen,
+  playRequested,
   onPlay,
 }: {
   span: SpanView;
   tracker: PlaybackTracker;
   subscribeTime: TimeSubscription;
   mustListen: boolean;
+  playRequested: boolean;
   onPlay: () => void;
 }) {
   const t = useTranslations("correction");
   const regions = useMemo(() => speechRegionsInSeconds(span), [span]);
   const [heard, setHeard] = useState(() => steppedHeard(tracker, regions));
+  // Only whether the span can be resumed, not the time itself, so the meter
+  // re-renders when that flips rather than on every time update.
+  const [resumable, setResumable] = useState(false);
   useEffect(() => {
-    const measure = () => {
+    const measure = (time: number) => {
       const next = steppedHeard(tracker, regions);
       setHeard((current) => (current === next ? current : next));
+      setResumable(canResumeSpan(span, time));
     };
-    measure();
     return subscribeTime(measure);
-  }, [tracker, regions, subscribeTime]);
+  }, [span, tracker, regions, subscribeTime]);
+  const playbackAction = spanPlaybackAction(playRequested, resumable);
 
   return (
     <div
@@ -155,9 +164,15 @@ function HeardMeter({
               percent: Math.round(MIN_HEARD_FRACTION_FOR_TRAINING * 100),
             })}
           </span>
-          <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs" onClick={onPlay}>
-            <Play className="h-3.5 w-3.5" />
-            {t("audio.playSpan")}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs"
+            onClick={onPlay}
+            data-native-space
+          >
+            {playRequested ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+            {t(`audio.${playbackAction}`)}
           </Button>
         </>
       )}
@@ -204,8 +219,6 @@ export function CorrectionSurface({
   const [anchorOffset, setAnchorOffset] = useState(() =>
     resume ? Math.floor(resume.ordinal / PAGE_SIZE) * PAGE_SIZE : 0
   );
-  // A jump to a segment that is not loaded yet plays it once it arrives.
-  const [playOnArrival, setPlayOnArrival] = useState(false);
   const [draft, setDraft] = useState("");
   // Whether the selected span still needs listening before it can be
   // approved. The share itself is shown by HeardMeter, which follows the
@@ -221,6 +234,9 @@ export function CorrectionSurface({
   // not a ref, because the render that selects a span reads it for the gate.
   const [playback] = useState(() => new PlaybackTracker());
   const playingRef = useRef(false);
+  const playerRef = useRef<AudioPlayerHandle>(null);
+  // Playing, or about to: what the span buttons offer and what they do.
+  const [playRequested, setPlayRequested] = useState(false);
   const [rate, setRate] = useState<number>(1);
 
   // The playback time reaches the parts that follow it through a
@@ -231,6 +247,9 @@ export function CorrectionSurface({
   const subscribeTime = useCallback<TimeSubscription>((listener) => {
     const listeners = timeListenersRef.current;
     listeners.add(listener);
+    // A part mounted for a new selection starts from where the audio is; the
+    // seek that positioned it may have been announced before it subscribed.
+    listener(currentTimeRef.current);
     return () => {
       listeners.delete(listener);
     };
@@ -264,6 +283,11 @@ export function CorrectionSurface({
   );
   const handlePlayerPlaying = useCallback((playing: boolean) => {
     playingRef.current = playing;
+    const time = playerRef.current?.getCurrentTime();
+    if (time !== undefined) {
+      currentTimeRef.current = time;
+      timeListenersRef.current.forEach((listener) => listener(time));
+    }
     if (playing) {
       // The first time update after play lands a quarter second in; seeding
       // the tracker with the position play started from counts that lead,
@@ -376,10 +400,9 @@ export function CorrectionSurface({
           time: selected.startSeconds,
           end: selected.endSeconds,
           key: (seekRequest?.key ?? 0) + 1,
-          autoPlay: playOnArrival,
+          autoPlay: false,
         });
       }
-      if (playOnArrival) setPlayOnArrival(false);
     } else if (draft.trim() === selected.text.trim()) {
       // The new revision says what the draft says: this person's own save
       // landing, or somebody saving the same wording. Nothing to flag.
@@ -450,6 +473,23 @@ export function CorrectionSurface({
     }));
   }, [playback]);
 
+  const toggleSpanPlayback = useCallback((span: SpanView) => {
+    const player = playerRef.current;
+    if (!player) return;
+    if (player.isPlayRequested()) {
+      player.pause();
+      return;
+    }
+    // Anywhere inside the span plays on from there to its end; a finished or
+    // unrelated position starts the span over.
+    const time = player.getCurrentTime();
+    if (time >= span.startSeconds && time < span.endSeconds) {
+      player.play(span.endSeconds);
+    } else {
+      playSpan(span);
+    }
+  }, [playSpan]);
+
   const playRegion = useCallback(
     (span: SpanView, direction: "previous" | "current" | "next") => {
       const regions = spanAudioRegions(span);
@@ -484,11 +524,22 @@ export function CorrectionSurface({
   }, []);
 
   const selectSpan = useCallback(
-    (span: SpanView, play = true) => {
+    (span: SpanView) => {
+      // The span on screen keeps its position and playback: clicking it
+      // again must not throw away where the person paused.
+      if (span.id === selectedIdRef.current) return;
+      playerRef.current?.pause();
+      playback.interrupt();
       setSelectedSpanId(span.id);
-      if (play) playSpan(span);
+      setSeekRequest((previous) => ({
+        spanId: span.id,
+        time: span.startSeconds,
+        end: span.endSeconds,
+        key: (previous?.key ?? 0) + 1,
+        autoPlay: false,
+      }));
     },
-    [playSpan]
+    [playback]
   );
 
   const stripQuery = useQuery({
@@ -508,11 +559,12 @@ export function CorrectionSurface({
         selectSpan(loaded);
         return;
       }
+      playerRef.current?.pause();
+      playback.interrupt();
       setAnchorOffset(Math.floor(target.ordinal / PAGE_SIZE) * PAGE_SIZE);
       setSelectedSpanId(target.spanId);
-      setPlayOnArrival(true);
     },
-    [spans, selectSpan]
+    [spans, selectSpan, playback]
   );
 
   // Move on from the span a command was issued on. Anchored on that span
@@ -532,8 +584,7 @@ export function CorrectionSurface({
       if (!spansQuery.hasNextPage) return;
 
       // The next span is on a page that is not loaded yet. Selecting it has to
-      // wait for the fetch, or approving the last span of a page would leave
-      // the surface sitting on it with nothing selected and nothing playing.
+      // wait for the fetch, so the editor and player both select the next span.
       const fetched = await spansQuery.fetchNextPage();
       const first = fetched.data?.pages.at(-1)?.spans[0];
       if (first && selectedIdRef.current === fromSpanId) selectSpan(first);
@@ -742,7 +793,7 @@ export function CorrectionSurface({
     (event: KeyboardEvent) => {
       if (!selected || !event.altKey || event.metaKey || event.ctrlKey) return;
       const actions: Record<string, () => void> = {
-        KeyP: () => playSpan(selected),
+        KeyP: () => toggleSpanPlayback(selected),
         KeyR: () => playRegion(selected, "current"),
         ArrowLeft: () => playRegion(selected, "previous"),
         ArrowRight: () => playRegion(selected, "next"),
@@ -754,7 +805,7 @@ export function CorrectionSurface({
       event.preventDefault();
       action();
     },
-    [selected, playSpan, playRegion, playBack, cycleRate]
+    [selected, toggleSpanPlayback, playRegion, playBack, cycleRate]
   );
   const shortcutRef = useRef(handleShortcut);
   useEffect(() => {
@@ -880,6 +931,7 @@ export function CorrectionSurface({
 
       <section className="space-y-4">
         <AudioPlayer
+          ref={playerRef}
           src={buildAudioUrl(catalogId, hash, "archived", [])}
           catalogId={catalogId}
           seekTo={seekRequest?.time}
@@ -887,8 +939,10 @@ export function CorrectionSurface({
           playbackEnd={seekRequest?.end}
           autoPlayOnSeek={seekRequest?.autoPlay ?? false}
           playbackRate={rate}
+          sleepTimerEnabled={false}
           onTimeUpdate={handlePlayerTime}
           onPlayingChange={handlePlayerPlaying}
+          onPlayRequestChange={setPlayRequested}
           onSeek={handlePlayerSeek}
         />
 
@@ -923,6 +977,8 @@ export function CorrectionSurface({
 
             <CorrectionSpanAudio
               span={selected}
+              playRequested={playRequested}
+              onTogglePlay={() => toggleSpanPlayback(selected)}
               subscribeTime={subscribeTime}
               rate={rate}
               onPlayRange={(start, end) => playRange(selected, start, end)}
@@ -1037,7 +1093,8 @@ export function CorrectionSurface({
               tracker={playback}
               subscribeTime={subscribeTime}
               mustListen={mustListen}
-              onPlay={() => playSpan(selected)}
+              playRequested={playRequested}
+              onPlay={() => toggleSpanPlayback(selected)}
             />
 
             <p className="text-xs text-muted-foreground">{t("shortcutHint")}</p>

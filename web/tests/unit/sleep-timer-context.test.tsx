@@ -12,11 +12,13 @@ type Timer = NonNullable<ReturnType<typeof useSleepTimer>>;
 function Target({
   playing,
   onFade,
+  enabled,
 }: {
   playing: boolean;
   onFade: () => () => void;
+  enabled?: boolean;
 }) {
-  useSleepTimerTarget(playing, onFade);
+  useSleepTimerTarget(playing, onFade, enabled);
   return null;
 }
 
@@ -30,12 +32,12 @@ function setup() {
   const cancelRadioFade = vi.fn();
   const radioFade = vi.fn(() => cancelRadioFade);
   const playerFade = vi.fn(() => () => {});
-  const tree = (radioPlaying: boolean, player: boolean | null) => (
+  const tree = (radioPlaying: boolean, player: boolean | null, playerEnabled = true) => (
     <StrictMode>
       <SleepTimerProvider>
         <Probe timerRef={timerRef} />
         <Target playing={radioPlaying} onFade={radioFade} />
-        {player !== null && <Target playing={player} onFade={playerFade} />}
+        {player !== null && <Target playing={player} onFade={playerFade} enabled={playerEnabled} />}
       </SleepTimerProvider>
     </StrictMode>
   );
@@ -45,8 +47,8 @@ function setup() {
     radioFade,
     cancelRadioFade,
     playerFade,
-    rerender: (radioPlaying: boolean, player: boolean | null) =>
-      view.rerender(tree(radioPlaying, player)),
+    rerender: (radioPlaying: boolean, player: boolean | null, playerEnabled = true) =>
+      view.rerender(tree(radioPlaying, player, playerEnabled)),
   };
 }
 
@@ -120,6 +122,36 @@ describe("SleepTimerProvider", () => {
     rerender(false, null);
     act(() => vi.advanceTimersByTime(30 * 60_000));
     expect(timer().remainingMs).toBe(10 * 60_000);
+  });
+
+  it("excludes a disabled target from counting and another player's expiration", () => {
+    const { timer, playerFade, radioFade, rerender } = setup();
+    rerender(false, true, false);
+    act(() => timer().start(15));
+    act(() => vi.advanceTimersByTime(30 * 60_000));
+    expect(timer().remainingMs).toBe(15 * 60_000);
+
+    rerender(true, true, false);
+    act(() => vi.advanceTimersByTime(15 * 60_000));
+    expect(radioFade).toHaveBeenCalledTimes(1);
+    expect(playerFade).not.toHaveBeenCalled();
+  });
+
+  it("unregisters a playing target when disabled and registers it again when enabled", () => {
+    const { timer, playerFade, rerender } = setup();
+    rerender(false, true);
+    act(() => timer().start(15));
+    act(() => vi.advanceTimersByTime(5 * 60_000));
+
+    rerender(false, true, false);
+    act(() => vi.advanceTimersByTime(30 * 60_000));
+    expect(timer().remainingMs).toBe(10 * 60_000);
+    expect(playerFade).not.toHaveBeenCalled();
+
+    rerender(false, true);
+    act(() => vi.advanceTimersByTime(10 * 60_000));
+    expect(playerFade).toHaveBeenCalledTimes(1);
+    expect(timer().remainingMs).toBeNull();
   });
 
   it("stops a running fade when the listener sets the timer again or turns it off", () => {

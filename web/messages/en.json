@@ -575,6 +575,8 @@
     "previousContext": "Before:",
     "audio": {
       "playSpan": "Play span",
+      "pauseSpan": "Pause span",
+      "resumeSpan": "Resume span",
       "previousRegion": "Previous part",
       "repeatRegion": "Repeat part",
       "nextRegion": "Next part",

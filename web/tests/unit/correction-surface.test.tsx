@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useImperativeHandle } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CorrectionSurface } from "@/components/correction/correction-surface";
+import type { AudioPlayerProps } from "@/components/player/audio-player-types";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import { ReloadSafetyProvider, useReloadSafety } from "@/contexts/reload-safety-context";
 import { CorrectionDraftsProvider } from "@/contexts/correction-drafts-context";
@@ -30,11 +32,20 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 
-const mocks = vi.hoisted(() => ({ audioPlayer: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  audioPlayer: vi.fn(),
+  controls: {
+    play: vi.fn(),
+    pause: vi.fn(),
+    getCurrentTime: vi.fn(() => 0),
+    isPlayRequested: vi.fn(() => false),
+  },
+}));
 
 vi.mock("@/components/player/audio-player", () => ({
-  AudioPlayer: (props: unknown) => {
+  AudioPlayer: (props: AudioPlayerProps) => {
     mocks.audioPlayer(props);
+    useImperativeHandle(props.ref, () => mocks.controls, []);
     return <div data-testid="audio-player" />;
   },
 }));
@@ -123,6 +134,10 @@ beforeEach(() => {
   sessionStorage.clear();
   fetchJsonMock.mockReset();
   mocks.audioPlayer.mockClear();
+  mocks.controls.play.mockReset();
+  mocks.controls.pause.mockReset();
+  mocks.controls.getCurrentTime.mockReset().mockReturnValue(0);
+  mocks.controls.isPlayRequested.mockReset().mockReturnValue(false);
 });
 
 function lastPlayerProps() {
@@ -155,6 +170,123 @@ describe("CorrectionSurface", () => {
       throw new Error(`unexpected ${url}`);
     });
   }
+
+  it("selects another span while playing by pausing and positioning it without autoplay", async () => {
+    serveDraftSpans();
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    expect(lastPlayerProps().sleepTimerEnabled).toBe(false);
+    await act(async () => {
+      (lastPlayerProps().onPlayingChange as (playing: boolean) => void)(true);
+    });
+    mocks.controls.pause.mockClear();
+
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+
+    expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
+    expect(mocks.controls.pause).toHaveBeenCalledTimes(1);
+    expect(lastPlayerProps()).toMatchObject({ seekTo: 10, playbackEnd: 20, autoPlayOnSeek: false });
+    expect(mocks.controls.play).not.toHaveBeenCalled();
+  });
+
+  it("synchronizes the span toggle with media events, resumes in place and replays a finished span", async () => {
+    serveDraftSpans();
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    const controls = within(screen.getByTestId("correction-span-audio"));
+    const seekKey = lastPlayerProps().seekKey;
+    await userEvent.click(controls.getByRole("button", { name: "playSpan" }));
+    expect(mocks.controls.play).toHaveBeenLastCalledWith(10);
+
+    mocks.controls.isPlayRequested.mockReturnValue(true);
+    mocks.controls.getCurrentTime.mockReturnValue(4.25);
+    await act(async () => {
+      (lastPlayerProps().onPlayRequestChange as (requested: boolean) => void)(true);
+      (lastPlayerProps().onPlayingChange as (playing: boolean) => void)(true);
+    });
+    await userEvent.click(controls.getByRole("button", { name: "pauseSpan" }));
+    expect(mocks.controls.pause).toHaveBeenCalledTimes(1);
+
+    mocks.controls.isPlayRequested.mockReturnValue(false);
+    await act(async () => {
+      (lastPlayerProps().onPlayRequestChange as (requested: boolean) => void)(false);
+      (lastPlayerProps().onPlayingChange as (playing: boolean) => void)(false);
+    });
+    await userEvent.click(controls.getByRole("button", { name: "resumeSpan" }));
+    expect(mocks.controls.play).toHaveBeenCalledTimes(2);
+    expect(mocks.controls.play).toHaveBeenLastCalledWith(10);
+    expect(lastPlayerProps().seekKey).toBe(seekKey);
+
+    mocks.controls.getCurrentTime.mockReturnValue(10);
+    await act(async () => {
+      (lastPlayerProps().onPlayingChange as (playing: boolean) => void)(false);
+    });
+    await userEvent.click(controls.getByRole("button", { name: "playSpan" }));
+    expect(lastPlayerProps()).toMatchObject({ seekTo: 0, playbackEnd: 10, autoPlayOnSeek: true });
+  });
+
+  it("shows a queued play as pausable and cancels it on a second span-button click", async () => {
+    serveDraftSpans();
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    const controls = within(screen.getByTestId("correction-span-audio"));
+    await userEvent.click(controls.getByRole("button", { name: "playSpan" }));
+    // Queued for metadata or a reconnect: no play event yet, but a request.
+    mocks.controls.isPlayRequested.mockReturnValue(true);
+    await act(async () => {
+      (lastPlayerProps().onPlayRequestChange as (requested: boolean) => void)(true);
+    });
+    const heard = within(screen.getByTestId("correction-heard"));
+    expect(heard.getByRole("button", { name: "audio.pauseSpan" })).toBeInTheDocument();
+    await userEvent.click(controls.getByRole("button", { name: "pauseSpan" }));
+    expect(mocks.controls.play).toHaveBeenCalledTimes(1);
+    expect(mocks.controls.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers resuming from the listening prompt too, after a pause mid-span", async () => {
+    serveDraftSpans();
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    const heard = within(screen.getByTestId("correction-heard"));
+    expect(heard.getByRole("button", { name: "audio.playSpan" })).toBeInTheDocument();
+    mocks.controls.getCurrentTime.mockReturnValue(4.25);
+    await act(async () => {
+      (lastPlayerProps().onTimeUpdate as (time: number) => void)(4.25);
+    });
+    await userEvent.click(heard.getByRole("button", { name: "audio.resumeSpan" }));
+    expect(mocks.controls.play).toHaveBeenLastCalledWith(10);
+  });
+
+  it("keeps the position and playback when the selected span is clicked again", async () => {
+    serveDraftSpans();
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    const seekKey = lastPlayerProps().seekKey;
+    await userEvent.click(screen.getByRole("button", { name: /machine 0/ }));
+    expect(mocks.controls.pause).not.toHaveBeenCalled();
+    expect(lastPlayerProps().seekKey).toBe(seekKey);
+  });
+
+  it("follows the playback time on a newly selected span", async () => {
+    serveDraftSpans();
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await act(async () => {
+      (lastPlayerProps().onTimeUpdate as (time: number) => void)(4.25);
+    });
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+    await screen.findByDisplayValue("machine 1");
+    // The real player announces the applied seek; the mock does it by hand.
+    await act(async () => {
+      (lastPlayerProps().onTimeUpdate as (time: number) => void)(10);
+    });
+    const controls = within(screen.getByTestId("correction-span-audio"));
+    expect(controls.getByRole("button", { name: "playSpan" })).toBeInTheDocument();
+    await act(async () => {
+      (lastPlayerProps().onTimeUpdate as (time: number) => void)(12);
+    });
+    expect(controls.getByRole("button", { name: "resumeSpan" })).toBeInTheDocument();
+  });
 
   it("keeps an empty text draft and a comment when switching spans", async () => {
     serveDraftSpans();
@@ -707,7 +839,7 @@ describe("CorrectionSurface", () => {
   });
 
   // "Next to resolve" has to reach a segment that is not in the loaded pages,
-  // and it has to play it, or the person lands on a silent, unrelated list.
+  // and prepare it without starting playback.
   it("jumps to the next segment that wants this person, loading its page", async () => {
     fetchJsonMock.mockImplementation(async (input) => {
       const url = String(input);
@@ -725,12 +857,12 @@ describe("CorrectionSurface", () => {
 
     expect(await screen.findByDisplayValue("machine 230")).toBeInTheDocument();
     await waitFor(() => {
-      expect(lastPlayerProps().autoPlayOnSeek).toBe(true);
+      expect(lastPlayerProps().autoPlayOnSeek).toBe(false);
       expect(lastPlayerProps().seekTo).toBe(2300);
     });
   });
 
-  it("jumps from the strip to a segment and plays it", async () => {
+  it("jumps from the strip to a segment without playing it", async () => {
     fetchJsonMock.mockImplementation(async (input) => {
       const url = String(input);
       if (url.endsWith("/strip")) {
@@ -760,7 +892,7 @@ describe("CorrectionSurface", () => {
     await userEvent.click(buckets[buckets.length - 1]);
 
     expect(await screen.findByDisplayValue("machine 2")).toBeInTheDocument();
-    await waitFor(() => expect(lastPlayerProps().autoPlayOnSeek).toBe(true));
+    await waitFor(() => expect(lastPlayerProps().autoPlayOnSeek).toBe(false));
   });
 
   // The jump buttons count from the strip and ask the server for the next

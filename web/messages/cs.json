@@ -575,6 +575,8 @@
     "previousContext": "Předtím:",
     "audio": {
       "playSpan": "Přehrát úsek",
+      "pauseSpan": "Pozastavit úsek",
+      "resumeSpan": "Pokračovat v úseku",
       "previousRegion": "Předchozí část",
       "repeatRegion": "Zopakovat část",
       "nextRegion": "Další část",
