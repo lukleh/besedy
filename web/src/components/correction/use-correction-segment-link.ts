@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import { buildCorrectionPagePath } from "@/lib/api/recording-urls";
 
@@ -80,7 +80,9 @@ export function useCorrectionSegmentLink({ catalogId, hash, resume, spans, statu
       setLocation((current) => ({ ...current, pending: null, missing: !target }));
     }
   }
-  useEffect(() => {
+  // Stop current playback before the child's passive seek effect applies an
+  // external URL selection, so a seek cannot count as listened-to audio.
+  useLayoutEffect(() => {
     if (navigationVersion > 0) onNavigate();
   }, [navigationVersion, onNavigate]);
 
