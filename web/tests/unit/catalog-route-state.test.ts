@@ -33,20 +33,24 @@ describe("catalog route state helpers", () => {
     expect(result.backTargetLabel).toBe("Back to catalog");
   });
 
-  it.each([undefined, "/catalog/c1/recording/hash123", "/catalog/another/correction"])(
-    "returns from the correction workspace to its catalog's overview with origin %s",
-    (backToPath) => {
-      const result = buildCatalogRouteState(
-        "/catalog/c1/recording/hash123/correction",
-        LABELS,
-        { backToPath }
-      );
+  it("returns from the correction workspace to its catalog's overview", () => {
+    const result = buildCatalogRouteState("/catalog/c1/recording/hash123/correction", LABELS);
 
-      expect(result.routeGroupId).toBe("c1");
-      expect(result.backTargetUrl).toBe("/catalog/c1/correction");
-      expect(result.backTargetLabel).toBe("Correction overview");
-    }
-  );
+    expect(result.routeGroupId).toBe("c1");
+    expect(result.backTargetUrl).toBe("/catalog/c1/correction");
+    expect(result.backTargetLabel).toBe("Correction overview");
+  });
+
+  it("honours an explicit origin on the correction workspace like any other page", () => {
+    const result = buildCatalogRouteState(
+      "/catalog/c1/recording/hash123/correction",
+      LABELS,
+      { backToPath: "/catalog/c1/recording/hash123" }
+    );
+
+    expect(result.backTargetUrl).toBe("/catalog/c1/recording/hash123");
+    expect(result.backTargetLabel).toBe("Back");
+  });
 
   it("uses an explicit back target for recording detail routes", () => {
     const result = buildCatalogRouteState(

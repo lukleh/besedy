@@ -43,8 +43,6 @@ export interface CatalogRouteStateOptions {
 interface BackTarget {
   url: string | null;
   label: keyof CatalogRouteLabels;
-  /** The page always returns to this parent, whatever origin the link gave. */
-  ignoresOrigin?: boolean;
 }
 
 /**
@@ -71,12 +69,8 @@ function resolveParent(
     case "recording":
       if (!id) return null;
       if (segments.length === 5 && segments[4] === "correction") {
-        // The correction workspace always returns to its catalog's queue.
-        return {
-          url: buildCorrectionOverviewPath(catalogId),
-          label: "backToCorrectionOverview",
-          ignoresOrigin: true,
-        };
+        // Correctors work through their catalog's queue, so it is the parent.
+        return { url: buildCorrectionOverviewPath(catalogId), label: "backToCorrectionOverview" };
       }
       return segments.length > 4
         ? { url: buildRecordingPagePath(catalogId, id), label: "backToRecording" }
@@ -114,8 +108,7 @@ export function buildCatalogRouteState(
       : null;
 
   const parent = resolveParent(pathSegments, options?.downloadsIsHome ?? false);
-  const origin =
-    parent && !parent.ignoresOrigin ? resolveBackToPath(options?.backToPath) : null;
+  const origin = parent ? resolveBackToPath(options?.backToPath) : null;
   const originPathname = origin ? pathnameOf(origin) : null;
   const originUsable =
     originPathname !== null &&
