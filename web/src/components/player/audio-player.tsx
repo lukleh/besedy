@@ -1044,20 +1044,22 @@ export function AudioPlayer({
     }
   };
 
+  // Where playback is, for relative seeks and for controls outside the player.
   // A retry's reload empties the element, which then reports position 0 until
-  // metadata returns. A relative seek in that window starts from where the
-  // listener was, which the retry state holds.
+  // the recovery seek; until then the retry state holds where the listener was.
   const relativeSeekBase = useCallback((audio: HTMLAudioElement) => {
     // Without metadata the element reports 0 wherever the listener is: a
     // queued seek (saved position, ?seek=, handoff, transport switch) is the
-    // position, and during a retry's reload so is the retry's restore target.
-    if (audio.readyState < 1) {
-      const pending = pendingSeekRef.current;
-      if (pending) return pending.time;
-      const retry = retryStateRef.current;
-      if (retry.phase === 'scheduled' || retry.phase === 'reloading') {
-        return retry.savedPosition;
-      }
+    // position.
+    if (audio.readyState < 1 && pendingSeekRef.current) {
+      return pendingSeekRef.current.time;
+    }
+    // Until a reconnect recovers, its restore target is the position. The
+    // reload resets the element to 0, and metadata can return before the
+    // recovery seek, so readyState alone does not tell.
+    const retry = retryStateRef.current;
+    if (retry.phase === 'scheduled' || retry.phase === 'reloading') {
+      return retry.savedPosition;
     }
     return audio.currentTime;
   }, []);

@@ -279,6 +279,31 @@ describe("AudioPlayer external controls", () => {
     expect(handle().isPlayRequested()).toBe(true);
   });
 
+  it.each(["before", "after"])(
+    "resumes from the reconnect position after a pause during reload, %s metadata returns",
+    async (stage) => {
+      vi.useFakeTimers();
+      const { audio, handle, metadata, fail } = setup({ seekTo: 10 });
+      act(metadata);
+      await act(async () => handle().play(30));
+      audio.currentTime = 23.375;
+      act(fail);
+      act(() => vi.advanceTimersByTime(1_000));
+      act(() => handle().pause());
+      // The reload has emptied the element; metadata may already be back
+      // while the data needed to recover is not.
+      if (stage === "after") act(metadata);
+      expect(audio.currentTime).toBe(0);
+      expect(handle().getCurrentTime()).toBe(23.375);
+
+      await act(async () => handle().play(30));
+      if (stage === "before") act(metadata);
+      await act(async () => audio.dispatchEvent(new Event("canplay")));
+      expect(audio.currentTime).toBe(23.375);
+      expect(audio.paused).toBe(false);
+    }
+  );
+
   it("keeps Space as play/pause on a focused player button", async () => {
     const { audio, handle, metadata, getAllByRole } = setup();
     act(metadata);
