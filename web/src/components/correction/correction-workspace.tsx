@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { ChevronLeft, Loader2, RotateCcw, Send, Undo2 } from "lucide-react";
+import { Loader2, RotateCcw, Send, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,7 +19,6 @@ import {
   buildCorrectionPublicationUrl,
   buildCorrectionUrl,
   buildRecordingEntryUrl,
-  buildRecordingPagePath,
 } from "@/lib/api/recording-urls";
 import { formatHoursMinutes } from "@/lib/correction/format";
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
@@ -157,8 +156,8 @@ export function CorrectionWorkspace({
           {t("landscapeOnlyDescription")}
         </p>
         <Button asChild variant="outline" className="mt-6">
-          <Link href={buildRecordingPagePath(catalogId, hash)}>
-            {t("backToRecording")}
+          <Link href={buildCorrectionOverviewPath(catalogId)}>
+            {t("overviewLink")}
           </Link>
         </Button>
       </div>
@@ -178,15 +177,7 @@ export function CorrectionWorkspace({
       >
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <Link
-              href={buildCorrectionOverviewPath(catalogId)}
-              className="inline-flex items-center gap-0.5 hover:text-foreground hover:underline"
-              data-testid="correction-overview-link"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
-              {t("overviewLink")}
-            </Link>
-            <span aria-hidden="true">/</span>
+            {/* The header back control leads to the correction overview. */}
             <span>{t("pageTitle")}</span>
           </div>
           <h1 className="break-words text-lg font-medium">{recordingTitle}</h1>
@@ -246,49 +237,7 @@ export function CorrectionWorkspace({
               className="space-y-1.5"
               data-testid="publication-card"
             >
-              <div className="flex flex-col-reverse items-start gap-1.5 lg:items-end">
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">
-                    {state.publication.eligible
-                      ? t("publishEligible")
-                      : t("publishBlocked")}
-                  </p>
-                  {state.workspace.readerPublicationId && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {t("unpublishedKeepsSearch")}
-                    </p>
-                  )}
-                  {state.activePublication &&
-                    !state.activePublication.error &&
-                    state.activePublication.status !== "PENDING" && (
-                      <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        {state.activePublication.status === "ROLLING_BACK"
-                          ? t("rollbackInFlight")
-                          : t("publishInFlight")}
-                      </p>
-                    )}
-                  {state.activePublication?.error && (
-                    <p
-                      className="mt-1 text-xs text-destructive"
-                      data-testid="publication-error"
-                    >
-                      {t("publishStalled", {
-                        code: state.activePublication.error.code,
-                        message: state.activePublication.error.message,
-                      })}
-                    </p>
-                  )}
-                  {state.activePublication?.status === "PENDING" &&
-                    !state.activePublication.error && (
-                      <p
-                        className="mt-1 text-xs text-destructive"
-                        data-testid="publication-error"
-                      >
-                        {t("publishInterrupted")}
-                      </p>
-                    )}
-                </div>
+              <div className="flex flex-col items-start gap-1.5 lg:items-end">
                 <div className="flex flex-wrap items-center gap-2">
                   {/*
                     Publishing runs inside the request, so a PENDING row the page
@@ -346,6 +295,48 @@ export function CorrectionWorkspace({
                       {t("unpublish")}
                     </Button>
                   )}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">
+                    {state.publication.eligible
+                      ? t("publishEligible")
+                      : t("publishBlocked")}
+                  </p>
+                  {state.workspace.readerPublicationId && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("unpublishedKeepsSearch")}
+                    </p>
+                  )}
+                  {state.activePublication &&
+                    !state.activePublication.error &&
+                    state.activePublication.status !== "PENDING" && (
+                      <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        {state.activePublication.status === "ROLLING_BACK"
+                          ? t("rollbackInFlight")
+                          : t("publishInFlight")}
+                      </p>
+                    )}
+                  {state.activePublication?.error && (
+                    <p
+                      className="mt-1 text-xs text-destructive"
+                      data-testid="publication-error"
+                    >
+                      {t("publishStalled", {
+                        code: state.activePublication.error.code,
+                        message: state.activePublication.error.message,
+                      })}
+                    </p>
+                  )}
+                  {state.activePublication?.status === "PENDING" &&
+                    !state.activePublication.error && (
+                      <p
+                        className="mt-1 text-xs text-destructive"
+                        data-testid="publication-error"
+                      >
+                        {t("publishInterrupted")}
+                      </p>
+                    )}
                 </div>
               </div>
             </div>

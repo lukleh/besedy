@@ -27,8 +27,10 @@ vi.mock("@/contexts/service-worker-context", () => ({
   }),
 }));
 
+const layout = vi.hoisted(() => ({ supported: true as boolean | null }));
+
 vi.mock("@/components/correction/use-landscape-workspace", () => ({
-  useLandscapeWorkspace: () => true,
+  useLandscapeWorkspace: () => layout.supported,
 }));
 
 vi.mock("@/components/correction/correction-surface", () => ({
@@ -118,6 +120,16 @@ function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unk
 
 beforeEach(() => {
   fetchJsonMock.mockReset();
+  layout.supported = true;
+});
+
+it("sends a narrow screen to the correction overview, like the header back control", () => {
+  layout.supported = false;
+  renderWorkspace(state({}));
+
+  expect(screen.getByRole("link", { name: "overviewLink" })).toHaveAttribute(
+    "href", `/catalog/${CATALOG_ID}/correction`
+  );
 });
 
 it("leaves source disclosure activation to the browser without toggling audio", async () => {
@@ -159,10 +171,35 @@ describe("CorrectionWorkspace publication card", () => {
     expect(await screen.findByRole("heading", { name: "Beseda v knihovně" })).toBeInTheDocument();
     expect(screen.getByText("19.2.2005 · Městská knihovna")).toBeInTheDocument();
     expect(screen.getByText(/progressSummary/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "overviewLink" })).toHaveAttribute(
-      "href", `/catalog/${CATALOG_ID}/correction`
-    );
+    // The app header's back control is the way back to the overview.
+    expect(screen.queryByRole("link", { name: "overviewLink" })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "publishTitle" })).not.toBeInTheDocument();
+  });
+
+  it("shows the duration and keeps the frozen source in a disclosure", async () => {
+    const base = state({});
+    renderWorkspace(state({ workspace: { ...base.workspace, spanDurationSeconds: 3720 } }));
+
+    const header = await screen.findByTestId("correction-header");
+    expect(await within(header).findByText("1 h 2 min")).toBeInTheDocument();
+    const source = within(header).getByText(
+      `frozenSource ${JSON.stringify({ backend: base.workspace.sourceBackend })}`
+    );
+    const disclosure = source.closest("details");
+    expect(disclosure).not.toBeNull();
+    expect(disclosure).not.toHaveAttribute("open");
+    expect(within(disclosure!).getByText("sourceDetails").tagName).toBe("SUMMARY");
+  });
+
+  it("puts the publication controls before their status in reading order", async () => {
+    renderWorkspace(state({}));
+
+    const publication = await screen.findByRole("group", { name: "publishTitle" });
+    const button = within(publication).getByRole("button", { name: "republish" });
+    const status = within(publication).getByText("publishEligible");
+    expect(
+      button.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
   });
 
   it("offers publishing when nothing is in flight", async () => {
