@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CorrectionWorkspace } from "@/components/correction/correction-workspace";
+import { AudioPlayer } from "@/components/player/audio-player";
 import { fetchJson } from "@/lib/api/fetch-json";
 
 vi.mock("next-intl", () => ({
@@ -16,6 +17,14 @@ vi.mock("@/lib/api/fetch-json", () => ({
 
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
+}));
+
+vi.mock("@/contexts/service-worker-context", () => ({
+  useServiceWorker: () => ({
+    isSupported: false,
+    postMessage: vi.fn(() => false),
+    subscribe: vi.fn(() => () => {}),
+  }),
 }));
 
 vi.mock("@/components/correction/use-landscape-workspace", () => ({
@@ -109,6 +118,30 @@ function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unk
 
 beforeEach(() => {
   fetchJsonMock.mockReset();
+});
+
+it("leaves source disclosure activation to the browser without toggling audio", async () => {
+  renderWorkspace(state({}));
+  const summary = await screen.findByText("sourceDetails");
+  const { container } = render(<AudioPlayer src="/audio.wav" />);
+  const audio = container.querySelector("audio")!;
+  audio.play = vi.fn().mockResolvedValue(undefined);
+  audio.pause = vi.fn();
+  audio.load = vi.fn();
+  summary.focus();
+
+  const space = new KeyboardEvent("keydown", {
+    key: " ", code: "Space", bubbles: true, cancelable: true,
+  });
+  await act(async () => { summary.dispatchEvent(space); });
+
+  expect(space.defaultPrevented).toBe(false);
+  expect(audio.play).not.toHaveBeenCalled();
+  expect(audio.pause).not.toHaveBeenCalled();
+
+  // The player shortcut still works away from the disclosure.
+  await act(async () => { fireEvent.keyDown(document.body, { key: " ", code: "Space" }); });
+  expect(audio.play).toHaveBeenCalledTimes(1);
 });
 
 describe("CorrectionWorkspace publication card", () => {

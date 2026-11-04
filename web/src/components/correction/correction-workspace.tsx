@@ -198,7 +198,13 @@ export function CorrectionWorkspace({
                   {formatHoursMinutes(state.workspace.spanDurationSeconds)}
                 </span>
                 <details className="max-w-full text-xs">
-                  <summary className="cursor-pointer hover:text-foreground">
+                  <summary
+                    className="cursor-pointer hover:text-foreground"
+                    onKeyDown={(event) => {
+                      // Keep native activation instead of the player's Space shortcut.
+                      if (event.code === "Space") event.stopPropagation();
+                    }}
+                  >
                     {t("sourceDetails")}
                   </summary>
                   <p className="mt-1 max-w-lg break-all">
