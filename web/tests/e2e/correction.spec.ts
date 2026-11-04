@@ -102,7 +102,7 @@ test.describe("transcript correction", () => {
       await expect(editor).toHaveValue("Oprava v paměti.");
       await expect(comment).toHaveValue("Poznámka v paměti.");
 
-      await page.getByTestId("correction-overview-link").click();
+      await page.getByTestId("header-back").click();
       await expect(page).toHaveURL(`/catalog/${TEST_CATALOG_ID}/correction`);
       await page.locator(`a[href="${correctionPath}"]`).first().click();
       await expect(strip).toBeVisible();

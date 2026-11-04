@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { buildRecordingPagePath } from "@/lib/api/recording-urls";
+import { buildCorrectionOverviewPath, buildRecordingPagePath } from "@/lib/api/recording-urls";
 import { BACK_TO_PARAM, pathnameOf, resolveBackToPath } from "@/lib/navigation/back-to";
 import { resolveLocalRoute } from "@/lib/offline/local-route";
 
@@ -12,6 +12,7 @@ export interface CatalogRouteLabels {
   backToCatalog: string;
   backToRecording: string;
   backToEvent: string;
+  backToCorrectionOverview: string;
 }
 
 export interface CatalogRouteState {
@@ -67,6 +68,10 @@ function resolveParent(
   switch (section) {
     case "recording":
       if (!id) return null;
+      if (segments.length === 5 && segments[4] === "correction") {
+        // Correctors work through their catalog's queue, so it is the parent.
+        return { url: buildCorrectionOverviewPath(catalogId), label: "backToCorrectionOverview" };
+      }
       return segments.length > 4
         ? { url: buildRecordingPagePath(catalogId, id), label: "backToRecording" }
         : { url: catalogUrl, label: "backToCatalog" };
@@ -127,6 +132,7 @@ export function useCatalogRouteState(
   const searchParams = useSearchParams();
   const tNav = useTranslations("nav");
   const tRecording = useTranslations("recording");
+  const tCorrection = useTranslations("correction");
   const backToPath = searchParams.get(BACK_TO_PARAM);
   const downloadsIsHome = options?.downloadsIsHome ?? false;
   const offline = options?.offline ?? false;
@@ -140,9 +146,10 @@ export function useCatalogRouteState(
           backToCatalog: tRecording("backToCatalog"),
           backToRecording: tRecording("backToRecording"),
           backToEvent: tRecording("backToEvent"),
+          backToCorrectionOverview: tCorrection("overviewLink"),
         },
         { backToPath, downloadsIsHome, offline }
       ),
-    [backToPath, downloadsIsHome, offline, pathname, tNav, tRecording]
+    [backToPath, downloadsIsHome, offline, pathname, tNav, tRecording, tCorrection]
   );
 }

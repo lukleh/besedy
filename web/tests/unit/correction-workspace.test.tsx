@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CorrectionWorkspace } from "@/components/correction/correction-workspace";
+import { AudioPlayer } from "@/components/player/audio-player";
 import { fetchJson } from "@/lib/api/fetch-json";
 
 vi.mock("next-intl", () => ({
@@ -18,8 +19,18 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 
+vi.mock("@/contexts/service-worker-context", () => ({
+  useServiceWorker: () => ({
+    isSupported: false,
+    postMessage: vi.fn(() => false),
+    subscribe: vi.fn(() => () => {}),
+  }),
+}));
+
+const layout = vi.hoisted(() => ({ supported: true as boolean | null }));
+
 vi.mock("@/components/correction/use-landscape-workspace", () => ({
-  useLandscapeWorkspace: () => true,
+  useLandscapeWorkspace: () => layout.supported,
 }));
 
 vi.mock("@/components/correction/correction-surface", () => ({
@@ -78,7 +89,7 @@ const fetchJsonMock = vi.mocked(fetchJson);
 
 const ACCEPTED = { consent: { accepted: true, version: "v", text: "terms" } };
 
-function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unknown = ACCEPTED) {
+function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unknown = ACCEPTED, canPublish = true) {
   fetchJsonMock.mockImplementation(async (input) => {
     const url = String(input);
     if (url.endsWith("/correction")) return correctionState;
@@ -86,7 +97,15 @@ function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unk
       if (consent instanceof Error) throw consent;
       return consent;
     }
-    if (url.endsWith("/entry")) return { entry: { hash: HASH, title: "Recording" } };
+    if (url.endsWith("/entry")) return {
+      entry: {
+        hash: HASH,
+        title: "Recording",
+        curatedTitle: "Beseda v knihovně",
+        curatedDate: "19.2.2005",
+        album: { name: "Městská knihovna" },
+      },
+    };
     throw new Error(`unexpected ${url}`);
   });
   const queryClient = new QueryClient({
@@ -94,16 +113,95 @@ function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unk
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <CorrectionWorkspace catalogId={CATALOG_ID} hash={HASH} userId="user-1" canPublish />
+      <CorrectionWorkspace catalogId={CATALOG_ID} hash={HASH} userId="user-1" canPublish={canPublish} />
     </QueryClientProvider>
   );
 }
 
 beforeEach(() => {
   fetchJsonMock.mockReset();
+  layout.supported = true;
+});
+
+it("sends a narrow screen to the correction overview, like the header back control", () => {
+  layout.supported = false;
+  renderWorkspace(state({}));
+
+  expect(screen.getByRole("link", { name: "overviewLink" })).toHaveAttribute(
+    "href", `/catalog/${CATALOG_ID}/correction`
+  );
+});
+
+it("leaves source disclosure activation to the browser without toggling audio", async () => {
+  renderWorkspace(state({}));
+  const summary = await screen.findByText("sourceDetails");
+  const { container } = render(<AudioPlayer src="/audio.wav" />);
+  const audio = container.querySelector("audio")!;
+  audio.play = vi.fn().mockResolvedValue(undefined);
+  audio.pause = vi.fn();
+  audio.load = vi.fn();
+  summary.focus();
+
+  const space = new KeyboardEvent("keydown", {
+    key: " ", code: "Space", bubbles: true, cancelable: true,
+  });
+  await act(async () => { summary.dispatchEvent(space); });
+
+  expect(space.defaultPrevented).toBe(false);
+  expect(audio.play).not.toHaveBeenCalled();
+  expect(audio.pause).not.toHaveBeenCalled();
+
+  // The player shortcut still works away from the disclosure.
+  await act(async () => { fireEvent.keyDown(document.body, { key: " ", code: "Space" }); });
+  expect(audio.play).toHaveBeenCalledTimes(1);
 });
 
 describe("CorrectionWorkspace publication card", () => {
+  it("keeps an ineligible publication disabled and explains why", async () => {
+    renderWorkspace(state({ publication: { ...state({}).publication, eligible: false } }));
+
+    const publication = await screen.findByRole("group", { name: "publishTitle" });
+    expect(within(publication).getByRole("button", { name: "republish" })).toBeDisabled();
+    expect(within(publication).getByText("publishBlocked")).toBeInTheDocument();
+  });
+
+  it("shows recording identity and progress without publication permission", async () => {
+    renderWorkspace(state({}), ACCEPTED, false);
+
+    expect(await screen.findByRole("heading", { name: "Beseda v knihovně" })).toBeInTheDocument();
+    expect(screen.getByText("19.2.2005 · Městská knihovna")).toBeInTheDocument();
+    expect(screen.getByText(/progressSummary/)).toBeInTheDocument();
+    // The app header's back control is the way back to the overview.
+    expect(screen.queryByRole("link", { name: "overviewLink" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "publishTitle" })).not.toBeInTheDocument();
+  });
+
+  it("shows the duration and keeps the frozen source in a disclosure", async () => {
+    const base = state({});
+    renderWorkspace(state({ workspace: { ...base.workspace, spanDurationSeconds: 3720 } }));
+
+    const header = await screen.findByTestId("correction-header");
+    expect(await within(header).findByText("1 h 2 min")).toBeInTheDocument();
+    const source = within(header).getByText(
+      `frozenSource ${JSON.stringify({ backend: base.workspace.sourceBackend })}`
+    );
+    const disclosure = source.closest("details");
+    expect(disclosure).not.toBeNull();
+    expect(disclosure).not.toHaveAttribute("open");
+    expect(within(disclosure!).getByText("sourceDetails").tagName).toBe("SUMMARY");
+  });
+
+  it("puts the publication controls before their status in reading order", async () => {
+    renderWorkspace(state({}));
+
+    const publication = await screen.findByRole("group", { name: "publishTitle" });
+    const button = within(publication).getByRole("button", { name: "republish" });
+    const status = within(publication).getByText("publishEligible");
+    expect(
+      button.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
   it("offers publishing when nothing is in flight", async () => {
     renderWorkspace(state({}));
 

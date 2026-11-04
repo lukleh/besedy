@@ -7,6 +7,7 @@ const LABELS = {
   backToCatalog: "Back to catalog",
   backToRecording: "Back to recording",
   backToEvent: "Back to event",
+  backToCorrectionOverview: "Correction overview",
 };
 
 describe("catalog route state helpers", () => {
@@ -30,6 +31,25 @@ describe("catalog route state helpers", () => {
     expect(result.routeGroupId).toBe("20260101_120000");
     expect(result.backTargetUrl).toBe("/catalog/20260101_120000?tab=events");
     expect(result.backTargetLabel).toBe("Back to catalog");
+  });
+
+  it("returns from the correction workspace to its catalog's overview", () => {
+    const result = buildCatalogRouteState("/catalog/c1/recording/hash123/correction", LABELS);
+
+    expect(result.routeGroupId).toBe("c1");
+    expect(result.backTargetUrl).toBe("/catalog/c1/correction");
+    expect(result.backTargetLabel).toBe("Correction overview");
+  });
+
+  it("honours an explicit origin on the correction workspace like any other page", () => {
+    const result = buildCatalogRouteState(
+      "/catalog/c1/recording/hash123/correction",
+      LABELS,
+      { backToPath: "/catalog/c1/recording/hash123" }
+    );
+
+    expect(result.backTargetUrl).toBe("/catalog/c1/recording/hash123");
+    expect(result.backTargetLabel).toBe("Back");
   });
 
   it("uses an explicit back target for recording detail routes", () => {
@@ -69,7 +89,7 @@ describe("catalog route state helpers", () => {
     ["/catalog/c1/deep-search/job-1", "/catalog/c1/deep-search"],
     ["/catalog/c1/events/unassigned", "/catalog/c1?tab=events"],
     ["/catalog/c1/event/7/artwork", "/catalog/c1/event/7"],
-    ["/catalog/c1/recording/hash123/correction", "/catalog/c1/recording/hash123"],
+    ["/catalog/c1/recording/hash123/correction", "/catalog/c1/correction"],
   ])("leads back from %s to its parent %s", (pathname, parent) => {
     const result = buildCatalogRouteState(pathname, LABELS);
 
