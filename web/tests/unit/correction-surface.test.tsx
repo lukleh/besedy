@@ -221,6 +221,37 @@ describe("CorrectionSurface", () => {
     expect(lastPlayerProps().autoPlayOnSeek).toBe(false);
   });
 
+  it.each(["resume", "link"])("does not replay an old autoplay request after missing-link recovery via %s", async (recovery) => {
+    serveDraftSpans();
+    renderSurface({ spanId: "span-0", ordinal: 0 });
+    await screen.findByDisplayValue("machine 0");
+
+    const controls = within(screen.getByTestId("correction-span-audio"));
+    await userEvent.click(controls.getByRole("button", { name: "repeatRegion" }));
+    expect(lastPlayerProps()).toMatchObject({ seekTo: 0, playbackEnd: 10, autoPlayOnSeek: true });
+    const seekKey = lastPlayerProps().seekKey;
+
+    act(() => {
+      window.history.replaceState(null, "", `${window.location.pathname}?segment=missing`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(await screen.findByText("segmentLinkMissing")).toBeInTheDocument();
+    expect(screen.queryByTestId("audio-player")).not.toBeInTheDocument();
+
+    if (recovery === "resume") {
+      await userEvent.click(screen.getByRole("button", { name: "segmentLinkResume" }));
+    } else {
+      act(() => {
+        window.history.replaceState(null, "", `${window.location.pathname}?segment=span-0`);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+    }
+    expect(await screen.findByDisplayValue("machine 0")).toBeInTheDocument();
+    expect(screen.getByTestId("audio-player")).toBeInTheDocument();
+    expect(lastPlayerProps()).toMatchObject({ seekTo: 0, playbackEnd: 10, seekKey, autoPlayOnSeek: false });
+    expect(mocks.controls.play).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])("copies a canonical segment URL and handles clipboard failure (%s)", async (fail) => {
     window.history.replaceState(null, "", `${window.location.pathname}?backTo=%2Fsettings&filter=mine#notes`);
     const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");

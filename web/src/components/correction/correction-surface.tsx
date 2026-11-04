@@ -313,6 +313,9 @@ export function CorrectionSurface({
     playerRef.current?.pause();
     playingRef.current = false;
     setPlayRequested(false);
+    // A blocked link unmounts the player; recovery must not replay its old
+    // autoplay request when the same segment's player mounts again.
+    setSeekRequest((current) => current?.autoPlay ? { ...current, autoPlay: false } : current);
     playback.interrupt();
   }, [playback]);
   const stripQuery = useQuery({
