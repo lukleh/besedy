@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useImperativeHandle } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,10 @@ import { CorrectionDraftsProvider } from "@/contexts/correction-drafts-context";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
+}));
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 
 vi.mock("@/lib/api/fetch-json", () => ({
@@ -29,10 +33,11 @@ vi.mock("@/lib/api/fetch-json", () => ({
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: mocks.toast }),
 }));
 
 const mocks = vi.hoisted(() => ({
+  toast: vi.fn(),
   audioPlayer: vi.fn(),
   controls: {
     play: vi.fn(),
@@ -131,9 +136,11 @@ function renderSurface(resume: { spanId: string; ordinal: number } | null, initi
 const fetchJsonMock = vi.mocked(fetchJson);
 
 beforeEach(() => {
+  window.history.replaceState(null, "", `/catalog/${CATALOG_ID}/recording/${HASH}/correction`);
   sessionStorage.clear();
   fetchJsonMock.mockReset();
   mocks.audioPlayer.mockClear();
+  mocks.toast.mockReset();
   mocks.controls.play.mockReset();
   mocks.controls.pause.mockReset();
   mocks.controls.getCurrentTime.mockReset().mockReturnValue(0);
@@ -165,11 +172,76 @@ describe("CorrectionSurface", () => {
   function serveDraftSpans(readPage = () => page(0, 2, 2)) {
     fetchJsonMock.mockImplementation(async (input) => {
       const url = String(input);
+      if (url.endsWith("/strip")) return {
+        workspaceId: WORKSPACE.id,
+        spans: readPage().spans.map((span) => ({
+          spanId: span.id, ordinal: span.ordinal,
+          startSeconds: span.startSeconds, endSeconds: span.endSeconds,
+          state: span.state, wantsMe: true,
+        })),
+      };
       if (url.includes("/spans?offset=0")) return readPage();
       if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
       throw new Error(`unexpected ${url}`);
     });
   }
+
+  it("resolves a shared segment before requesting its page instead of loading the resume page", async () => {
+    window.history.replaceState(null, "", `${window.location.pathname}?segment=span-230`);
+    let finishStrip!: (value: unknown) => void;
+    const strip = new Promise((resolve) => { finishStrip = resolve; });
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return strip;
+      if (url.includes("/spans?offset=200")) return page(200, 50, 250);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+    renderSurface({ spanId: "span-0", ordinal: 0 });
+    expect(screen.getByText("segmentLinkLoading")).toBeInTheDocument();
+    expect(fetchJsonMock.mock.calls.some(([url]) => String(url).includes("/spans?"))).toBe(false);
+    await act(async () => finishStrip({ workspaceId: WORKSPACE.id, spans: [{
+      spanId: "span-230", ordinal: 230, startSeconds: 2300, endSeconds: 2310,
+      state: "not_reviewed", wantsMe: true,
+    }] }));
+    expect(await screen.findByDisplayValue("machine 230")).toBeInTheDocument();
+    expect(lastPlayerProps()).toMatchObject({ seekTo: 2300, autoPlayOnSeek: false });
+    expect(fetchJsonMock.mock.calls.some(([url]) => String(url).includes("/spans?offset=0"))).toBe(false);
+  });
+
+  it("explains a missing link and only opens the resume segment after explicit recovery", async () => {
+    window.history.replaceState(null, "", `${window.location.pathname}?segment=missing`);
+    serveDraftSpans();
+    renderSurface({ spanId: "span-1", ordinal: 1 });
+    expect(await screen.findByText("segmentLinkMissing")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(fetchJsonMock.mock.calls.some(([url]) => String(url).includes("/spans?"))).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "segmentLinkResume" }));
+    expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
+    expect(lastPlayerProps().autoPlayOnSeek).toBe(false);
+  });
+
+  it.each([false, true])("copies a canonical segment URL and handles clipboard failure (%s)", async (fail) => {
+    window.history.replaceState(null, "", `${window.location.pathname}?backTo=%2Fsettings&filter=mine#notes`);
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    const writeText = fail ? vi.fn().mockRejectedValue(new Error("unavailable")) : vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    try {
+      serveDraftSpans();
+      renderSurface(null);
+      await screen.findByDisplayValue("machine 0");
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "copySegmentLink" })); });
+      expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/catalog/${CATALOG_ID}/recording/${HASH}/correction?segment=span-0`);
+      expect(mocks.toast).toHaveBeenCalledWith(fail
+        ? { description: "segmentLinkCopyFailed", variant: "destructive" }
+        : { description: "segmentLinkCopied" });
+      expect(window.location.search).toContain("backTo=");
+      expect(window.location.hash).toBe("#notes");
+    } finally {
+      if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
 
   it("selects another span while playing by pausing and positioning it without autoplay", async () => {
     serveDraftSpans();
@@ -472,6 +544,8 @@ describe("CorrectionSurface", () => {
     await screen.findByDisplayValue("machine 1");
     first.unmount();
     renderSurface(null);
+    await screen.findByDisplayValue("machine 1");
+    await userEvent.click(screen.getByRole("button", { name: /saved correction/ }));
     expect(await screen.findByDisplayValue("saved correction")).toBeInTheDocument();
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("unsubmitted note");

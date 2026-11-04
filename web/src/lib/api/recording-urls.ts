@@ -194,6 +194,8 @@ export function buildCorrectionPublicationUrl(catalogId: string, hash: string): 
   return `${buildCorrectionUrl(catalogId, hash)}/publication`;
 }
 
-export function buildCorrectionPagePath(catalogId: string, hash: string): string {
-  return `/catalog/${catalogId}/recording/${hash}/correction`;
+export function buildCorrectionPagePath(catalogId: string, hash: string, spanId?: string | null): string {
+  const path = `/catalog/${catalogId}/recording/${hash}/correction`;
+  if (!spanId) return path;
+  return `${path}?${new URLSearchParams({ segment: spanId })}`;
 }

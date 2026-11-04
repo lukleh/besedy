@@ -18,8 +18,9 @@ const correctionPath = `/catalog/${TEST_CATALOG_ID}/recording/${recording.hash}/
 test.describe("transcript correction", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("a corrector consents, starts and works through spans @smoke", async ({ page }, testInfo) => {
+  test("a corrector consents, starts and works through spans @smoke", async ({ page, browser }, testInfo) => {
     test.skip(testInfo.project.name !== "Desktop Chrome", "The correction page needs a large landscape screen");
+    test.setTimeout(90_000);
 
     // A workspace starts only once the catalog has its own guide.
     await loginAs(page, "superadmin");
@@ -48,8 +49,14 @@ test.describe("transcript correction", () => {
     }
     await expect(strip).toBeVisible({ timeout: 20000 });
     const spanList = page.locator("aside");
+    const spanResponse = await page.request.get(`/api/catalogs/${TEST_CATALOG_ID}/recordings/${recording.hash}/correction/spans`);
+    expect(spanResponse.ok()).toBeTruthy();
+    const { spans } = await spanResponse.json() as {
+      spans: Array<{ id: string; startSeconds: number }>;
+    };
     await spanList.getByRole("button", { name: /^0:00/ }).first().click();
     await expect(page.getByRole("textbox").first()).toHaveValue("Dobrý den, vítejte.");
+    await expect(page).toHaveURL((url) => url.searchParams.get("segment") === spans[0].id);
     const audio = page.locator("audio").first();
     const spanControls = page.getByTestId("correction-span-audio");
     await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
@@ -72,6 +79,68 @@ test.describe("transcript correction", () => {
     await expect(page.getByTestId("correction-region-without-text")).toHaveCount(1);
     await expect(page.getByTestId("correction-speech-without-text")).toBeVisible();
     await expect(page.getByTestId("correction-previous-context")).toContainText("vítejte");
+    await expect(page).toHaveURL((url) => url.searchParams.get("segment") === spans[1].id);
+
+    // Copy a canonical link without the current page's return target or hash.
+    await page.evaluate((backTo) => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("backTo", backTo);
+      url.hash = "notes";
+      window.history.replaceState(null, "", url);
+    }, `/catalog/${TEST_CATALOG_ID}/correction`);
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: new URL(page.url()).origin,
+    });
+    await page.evaluate(() => navigator.clipboard.writeText(""));
+    await page.getByRole("button", { name: /^(Kopírovat odkaz|Copy link)$/ }).click();
+    const sharedPath = `${correctionPath}?${new URLSearchParams({ segment: spans[1].id })}`;
+    const expectedSharedUrl = new URL(sharedPath, page.url()).href;
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expectedSharedUrl);
+    const sharedUrl = await page.evaluate(() => navigator.clipboard.readText());
+
+    // A fresh page shares authentication, but has no editor state to select
+    // the segment for it. The URL must select it and leave playback paused.
+    const linkedPage = await page.context().newPage();
+    try {
+      await linkedPage.goto(sharedUrl);
+      await expect(linkedPage.getByTestId("correction-span-audio")).toBeVisible({ timeout: 20000 });
+      await expect(linkedPage.getByRole("textbox").first()).toHaveValue("Dnes budeme mluvit.");
+      await expect(linkedPage).toHaveURL((url) => url.searchParams.get("segment") === spans[1].id);
+      const linkedAudio = linkedPage.locator("audio").first();
+      await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
+      await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBe(spans[1].startSeconds);
+
+      const missingId = "00000000-0000-4000-8000-000000000000";
+      await linkedPage.goto(`${correctionPath}?segment=${missingId}`);
+      const missingLink = linkedPage.getByRole("alert").filter({
+        hasText: /Odkazovaný segment v této korektuře neexistuje|The linked segment does not exist in this correction workspace/,
+      });
+      await expect(missingLink).toBeVisible();
+      await expect(linkedPage.locator("textarea")).toHaveCount(0);
+      await expect(linkedPage.getByTestId("correction-span-audio")).toHaveCount(0);
+      await expect(linkedPage).toHaveURL((url) => url.searchParams.get("segment") === missingId);
+      await missingLink.getByRole("button", { name: /Pokračovat v korektuře|Continue correcting/ }).click();
+      await expect(linkedPage.getByTestId("correction-span-audio")).toBeVisible();
+      await expect(linkedPage.getByRole("textbox").first()).toBeVisible();
+      await expect(linkedPage).toHaveURL((url) => url.searchParams.get("segment") !== missingId);
+      await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
+    } finally {
+      await linkedPage.close();
+    }
+
+    // No session is copied into this context: sign-in must retain the exact
+    // recording and segment as its callback rather than return to the catalog.
+    const signedOutContext = await browser.newContext();
+    try {
+      const signedOutPage = await signedOutContext.newPage();
+      await signedOutPage.goto(sharedUrl);
+      await expect(signedOutPage).toHaveURL((url) => url.pathname === "/auth/signin");
+      const callback = new URL(new URL(signedOutPage.url()).searchParams.get("callbackUrl")!, sharedUrl);
+      expect(callback.pathname).toBe(correctionPath);
+      expect(callback.searchParams.get("segment")).toBe(spans[1].id);
+    } finally {
+      await signedOutContext.close();
+    }
 
     // Unsubmitted work survives both span navigation and a page reload, and
     // remains local: saving a draft must never approve text on the server.

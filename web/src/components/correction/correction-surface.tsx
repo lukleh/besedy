@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { Check, Eraser, MessageSquare, Pause, Play, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
+import { Check, Eraser, Link as LinkIcon, MessageSquare, Pause, Play, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +16,7 @@ import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import {
   buildAudioUrl,
   buildCorrectionNextUrl,
+  buildCorrectionPagePath,
   buildCorrectionSpanCommentsUrl,
   buildCorrectionSpanUrl,
   buildCorrectionSpansUrl,
@@ -32,6 +33,7 @@ import {
 import { CorrectionStrip } from "./correction-strip";
 import { CorrectionFlags } from "./correction-flags";
 import { CorrectionGuideDialog } from "./correction-guide-dialog";
+import { CORRECTION_PAGE_SIZE as PAGE_SIZE, useCorrectionSegmentLink } from "./use-correction-segment-link";
 import { useCorrectionDrafts } from "@/contexts/correction-drafts-context";
 import {
   CorrectionSpanAudio,
@@ -56,8 +58,6 @@ import {
   type StripSpan,
   type WorkspaceSummary,
 } from "./correction-types";
-
-const PAGE_SIZE = 200;
 
 const KINDS = spanKindSchema.options;
 
@@ -207,18 +207,6 @@ export function CorrectionSurface({
   const queryClient = useQueryClient();
   const localDrafts = useCorrectionDrafts(userId, workspace.id);
 
-  // Nobody finishes a three-hour recording in a sitting, so the surface opens
-  // on the first span that still wants this person rather than on the first
-  // span of the recording.
-  const [selectedSpanId, setSelectedSpanId] = useState<string | null>(
-    resume?.spanId ?? null
-  );
-  // Where the list starts. Captured at first: the resume position moves as
-  // work is done, and following it would restart the list from a different
-  // page under the person. Only a deliberate jump moves it.
-  const [anchorOffset, setAnchorOffset] = useState(() =>
-    resume ? Math.floor(resume.ordinal / PAGE_SIZE) * PAGE_SIZE : 0
-  );
   const [draft, setDraft] = useState("");
   // Whether the selected span still needs listening before it can be
   // approved. The share itself is shown by HeardMeter, which follows the
@@ -307,6 +295,7 @@ export function CorrectionSurface({
     autoPlay: boolean;
   } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const selectedListItemRef = useRef<HTMLButtonElement | null>(null);
   // The span on screen, for callbacks that outlive the render they came from.
   const selectedIdRef = useRef<string | null>(null);
   // A command whose outcome is not known yet: the response was lost, or the
@@ -320,6 +309,26 @@ export function CorrectionSurface({
     key: string;
   } | null>(null);
 
+  const pauseForNavigation = useCallback(() => {
+    playerRef.current?.pause();
+    playingRef.current = false;
+    setPlayRequested(false);
+    playback.interrupt();
+  }, [playback]);
+  const stripQuery = useQuery({
+    queryKey: ["correction-strip", catalogId, hash, workspace.id],
+    queryFn: async () =>
+      fetchJson(buildCorrectionStripUrl(catalogId, hash), { schema: spanStripSchema }),
+  });
+  const segmentLink = useCorrectionSegmentLink({
+    catalogId, hash, resume,
+    spans: stripQuery.data?.spans,
+    status: stripQuery.status,
+    onNavigate: pauseForNavigation,
+  });
+  const { selectedSpanId, anchorOffset } = segmentLink;
+  const selectLinkedSegment = segmentLink.select;
+
   // The list always holds the whole recording, so the segment being worked on
   // is always in it. Finding the segments that want attention is the job of
   // "next" and the strip, not of a narrower list whose members would change
@@ -327,6 +336,7 @@ export function CorrectionSurface({
   const spansQuery = useInfiniteQuery<SpanPage>({
     queryKey: ["correction-spans", catalogId, hash, workspace.id, anchorOffset],
     initialPageParam: anchorOffset,
+    enabled: !segmentLink.pending && !segmentLink.missing,
     queryFn: async ({ pageParam }) =>
       fetchJson<SpanPage>(
         buildCorrectionSpansUrl(catalogId, hash, {
@@ -351,9 +361,17 @@ export function CorrectionSurface({
   );
 
   const selected = useMemo(
-    () => spans.find((span) => span.id === selectedSpanId) ?? spans[0] ?? null,
-    [spans, selectedSpanId]
+    () => segmentLink.pending || segmentLink.missing ? null
+      : spans.find((span) => span.id === selectedSpanId) ?? (!segmentLink.hasLink ? spans[0] ?? null : null),
+    [spans, selectedSpanId, segmentLink.pending, segmentLink.missing, segmentLink.hasLink]
   );
+  const syncSegmentUrl = segmentLink.syncUrl;
+  useEffect(() => {
+    if (selected) syncSegmentUrl(selected.id);
+  }, [selected, syncSegmentUrl]);
+  useEffect(() => {
+    selectedListItemRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [selected?.id]);
 
   // A fresh selection restores any local draft and positions the audio on
   // the span without playing it. When the revision moves under the same span
@@ -528,9 +546,7 @@ export function CorrectionSurface({
       // The span on screen keeps its position and playback: clicking it
       // again must not throw away where the person paused.
       if (span.id === selectedIdRef.current) return;
-      playerRef.current?.pause();
-      playback.interrupt();
-      setSelectedSpanId(span.id);
+      selectLinkedSegment({ spanId: span.id, ordinal: span.ordinal });
       setSeekRequest((previous) => ({
         spanId: span.id,
         time: span.startSeconds,
@@ -539,14 +555,8 @@ export function CorrectionSurface({
         autoPlay: false,
       }));
     },
-    [playback]
+    [selectLinkedSegment]
   );
-
-  const stripQuery = useQuery({
-    queryKey: ["correction-strip", catalogId, hash, workspace.id],
-    queryFn: async () =>
-      fetchJson(buildCorrectionStripUrl(catalogId, hash), { schema: spanStripSchema }),
-  });
 
   const kindCounts = useMemo(() => countKinds(stripQuery.data?.spans ?? []), [stripQuery.data]);
 
@@ -559,12 +569,9 @@ export function CorrectionSurface({
         selectSpan(loaded);
         return;
       }
-      playerRef.current?.pause();
-      playback.interrupt();
-      setAnchorOffset(Math.floor(target.ordinal / PAGE_SIZE) * PAGE_SIZE);
-      setSelectedSpanId(target.spanId);
+      selectLinkedSegment(target, { reanchor: true });
     },
-    [spans, selectSpan, playback]
+    [spans, selectSpan, selectLinkedSegment]
   );
 
   // Move on from the span a command was issued on. Anchored on that span
@@ -836,6 +843,40 @@ export function CorrectionSurface({
         : null
     : null;
 
+  const missingSegment = segmentLink.missing || (
+    segmentLink.hasLink && !segmentLink.pending && spansQuery.isSuccess && !selected
+  );
+  const linkBlocked = segmentLink.pending || missingSegment;
+  const copySegmentLink = async () => {
+    if (!selected) return;
+    const href = new URL(buildCorrectionPagePath(catalogId, hash, selected.id), window.location.origin).href;
+    try {
+      await navigator.clipboard.writeText(href);
+      toast({ description: t("segmentLinkCopied") });
+    } catch {
+      toast({ description: t("segmentLinkCopyFailed"), variant: "destructive" });
+    }
+  };
+
+  if (linkBlocked) {
+    return (
+      <div className="rounded-lg border bg-muted/50 p-4" role={missingSegment || stripQuery.isError ? "alert" : "status"}>
+        <p className="text-sm">
+          {missingSegment ? t("segmentLinkMissing") : stripQuery.isError ? t("segmentLinkLoadFailed") : t("segmentLinkLoading")}
+        </p>
+        {missingSegment ? (
+          <Button className="mt-3" variant="outline" onClick={segmentLink.reset} data-native-space>
+            {t("segmentLinkResume")}
+          </Button>
+        ) : stripQuery.isError && (
+          <Button className="mt-3" variant="outline" onClick={() => stripQuery.refetch()} data-native-space>
+            {t("consentRetry")}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
       <div className="lg:col-span-2">
@@ -883,6 +924,7 @@ export function CorrectionSurface({
         {spans.map((span) => (
           <button
             key={span.id}
+            ref={span.id === selected?.id ? selectedListItemRef : undefined}
             type="button"
             onClick={() => selectSpan(span)}
             className={`w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted ${
@@ -969,8 +1011,11 @@ export function CorrectionSurface({
                         : "stateNotReviewed"
                 )}
               </Badge>
-              {/* Between the player and the text, where the work happens. */}
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={copySegmentLink} data-native-space>
+                  <LinkIcon className="h-4 w-4" aria-hidden="true" />
+                  {t("copySegmentLink")}
+                </Button>
                 <CorrectionGuideDialog body={guide} />
               </div>
             </div>
