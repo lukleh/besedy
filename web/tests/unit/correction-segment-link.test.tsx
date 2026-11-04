@@ -1,4 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
+import { useInsertionEffect, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCorrectionSegmentLink } from "@/components/correction/use-correction-segment-link";
 
@@ -17,7 +18,21 @@ const FAR = { spanId: "far-span", ordinal: 489 };
 const OTHER = { spanId: "other-span", ordinal: 15 };
 const SPANS = [OTHER, RESUME, FAR];
 
-function setup(overrides: Partial<Options> = {}) {
+// Next's HistoryUpdater writes a router navigation's URL with pushState in an
+// insertion effect: after the render that saw the new query, before layout
+// effects, and without a popstate event.
+function RouterHistory({ children }: { children: ReactNode }) {
+  useInsertionEffect(() => {
+    if (navigation.search === null) return;
+    const target = `${PATH}${navigation.search}`;
+    if (`${window.location.pathname}${window.location.search}` !== target) {
+      window.history.pushState(null, "", target);
+    }
+  });
+  return children;
+}
+
+function setup(overrides: Partial<Options> = {}, wrapper?: (props: { children: ReactNode }) => ReactNode) {
   const onNavigate = vi.fn();
   const options: Options = {
     catalogId: CATALOG_ID,
@@ -28,7 +43,7 @@ function setup(overrides: Partial<Options> = {}) {
     onNavigate,
     ...overrides,
   };
-  const view = renderHook((props: Options) => useCorrectionSegmentLink(props), { initialProps: options });
+  const view = renderHook((props: Options) => useCorrectionSegmentLink(props), { initialProps: options, wrapper });
   return { ...view, options, onNavigate };
 }
 
@@ -164,6 +179,37 @@ describe("useCorrectionSegmentLink", () => {
     expect(result.current.anchorOffset).toBe(400);
     expect(result.current.pending).toBe(false);
     expect(result.current.missing).toBe(false);
+  });
+
+  it("follows a router navigation whose URL Next writes to history only during the commit", () => {
+    window.history.replaceState(null, "", `${PATH}?segment=${RESUME.spanId}`);
+    navigation.search = window.location.search;
+    const { result, rerender, options, onNavigate } = setup({}, RouterHistory);
+    onNavigate.mockClear();
+
+    navigation.search = `?segment=${FAR.spanId}`;
+    rerender({ ...options });
+    expect(window.location.search).toBe(`?segment=${FAR.spanId}`);
+    expect(result.current.selectedSpanId).toBe(FAR.spanId);
+    expect(result.current.anchorOffset).toBe(400);
+    expect(result.current.linked).toBe(true);
+    expect(result.current.pending).toBe(false);
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks only selections that came from an opened address as linked", () => {
+    window.history.replaceState(null, "", `${PATH}?segment=${FAR.spanId}`);
+    const { result } = setup();
+    expect(result.current.linked).toBe(true);
+
+    act(() => result.current.select(OTHER));
+    expect(result.current.linked).toBe(false);
+
+    act(() => result.current.reset());
+    expect(result.current.linked).toBe(false);
+    act(() => result.current.syncUrl(RESUME.spanId));
+    expect(result.current.linked).toBe(false);
+    expect(new URLSearchParams(window.location.search).get("segment")).toBe(RESUME.spanId);
   });
 
   it("does not treat a delayed router query snapshot after internal replaceState as external navigation", () => {

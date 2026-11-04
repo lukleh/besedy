@@ -504,6 +504,7 @@
     "segmentLinkMissing": "Odkazovaný segment v této korektuře neexistuje.",
     "segmentLinkLoadFailed": "Odkazovaný segment se nepodařilo načíst. Zkuste to znovu.",
     "segmentLinkResume": "Pokračovat v korektuře",
+    "segmentLinkRetry": "Zkusit znovu",
     "jump": {
       "label": "Přejít na další segment",
       "mine_open": "Čeká na mě",

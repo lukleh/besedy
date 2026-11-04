@@ -6,12 +6,7 @@ import {
   getAllowlistRejectionParam,
   sanitizePostAuthCallbackPath,
 } from "@/lib/auth/oauth-routing";
-
-type SearchParams = Record<string, string | string[] | undefined>;
-
-function getFirstSearchParamValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
+import { getFirstSearchParamValue, type PageSearchParams as SearchParams } from "@/lib/navigation/search-params";
 
 type AuthCompletePageProps = {
   searchParams?: Promise<SearchParams>;

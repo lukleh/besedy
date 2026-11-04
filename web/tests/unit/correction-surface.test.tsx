@@ -274,6 +274,43 @@ describe("CorrectionSurface", () => {
     }
   });
 
+  it("falls back to the first span when the selected span leaves the list during ordinary work", async () => {
+    let readPage = () => page(0, 2, 2);
+    serveDraftSpans(() => readPage());
+    const { queryClient } = renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+    expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
+
+    readPage = () => page(0, 1, 1);
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["correction-spans"] });
+    });
+    expect(await screen.findByDisplayValue("machine 0")).toBeInTheDocument();
+    expect(screen.queryByText("segmentLinkMissing")).not.toBeInTheDocument();
+  });
+
+  it("brings the selected span into view by scrolling only the segment list", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+    try {
+      serveDraftSpans(() => page(0, 3, 3));
+      renderSurface(null);
+      await screen.findByDisplayValue("machine 0");
+      const item = screen.getByRole("button", { name: /machine 2/ });
+      const list = item.closest("aside")!;
+      vi.spyOn(list, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 300, 100));
+      vi.spyOn(item, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 130, 300, 30));
+
+      await userEvent.click(item);
+      expect(await screen.findByDisplayValue("machine 2")).toBeInTheDocument();
+      expect(list.scrollTop).toBe(60);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
+
   it("selects another span while playing by pausing and positioning it without autoplay", async () => {
     serveDraftSpans();
     renderSurface(null);

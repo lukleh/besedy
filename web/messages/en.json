@@ -504,6 +504,7 @@
     "segmentLinkMissing": "The linked segment does not exist in this correction workspace.",
     "segmentLinkLoadFailed": "Could not load the linked segment. Please try again.",
     "segmentLinkResume": "Continue correcting",
+    "segmentLinkRetry": "Try again",
     "jump": {
       "label": "Go to the next segment",
       "mine_open": "Waiting for me",

@@ -5,12 +5,7 @@ import { CorrectionWorkspace } from "@/components/correction/correction-workspac
 import { buildCorrectionPagePath } from "@/lib/api/recording-urls";
 import { sanitizePostAuthCallbackPath } from "@/lib/auth/oauth-routing";
 import { BACK_TO_PARAM, resolveBackToPath, withBackTo } from "@/lib/navigation/back-to";
-
-type SearchParams = Record<string, string | string[] | undefined>;
-
-function getFirstSearchParamValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
+import { getFirstSearchParamValue, type PageSearchParams as SearchParams } from "@/lib/navigation/search-params";
 
 interface CorrectionPageProps {
   params: Promise<{ catalogId: string; hash: string }>;

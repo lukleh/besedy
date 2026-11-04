@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
+import { copyToClipboard } from "@/lib/clipboard";
 import {
   buildAudioUrl,
   buildCorrectionNextUrl,
@@ -60,6 +61,16 @@ import {
 } from "./correction-types";
 
 const KINDS = spanKindSchema.options;
+
+// Scroll only the segment list. Element.scrollIntoView() would also scroll
+// the page, which on a phone pulls the editor below the list out of view on
+// every move to another segment.
+function revealInList(list: HTMLElement, item: HTMLElement) {
+  const listRect = list.getBoundingClientRect();
+  const itemRect = item.getBoundingClientRect();
+  if (itemRect.top < listRect.top) list.scrollTop -= listRect.top - itemRect.top;
+  else if (itemRect.bottom > listRect.bottom) list.scrollTop += itemRect.bottom - listRect.bottom;
+}
 
 /**
  * How many spans of each kind the strip holds. `wantsMe` comes from the
@@ -295,6 +306,7 @@ export function CorrectionSurface({
     autoPlay: boolean;
   } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const listRef = useRef<HTMLElement | null>(null);
   const selectedListItemRef = useRef<HTMLButtonElement | null>(null);
   // The span on screen, for callbacks that outlive the render they came from.
   const selectedIdRef = useRef<string | null>(null);
@@ -365,15 +377,17 @@ export function CorrectionSurface({
 
   const selected = useMemo(
     () => segmentLink.pending || segmentLink.missing ? null
-      : spans.find((span) => span.id === selectedSpanId) ?? (!segmentLink.hasLink ? spans[0] ?? null : null),
-    [spans, selectedSpanId, segmentLink.pending, segmentLink.missing, segmentLink.hasLink]
+      : spans.find((span) => span.id === selectedSpanId) ?? (!segmentLink.linked ? spans[0] ?? null : null),
+    [spans, selectedSpanId, segmentLink.pending, segmentLink.missing, segmentLink.linked]
   );
   const syncSegmentUrl = segmentLink.syncUrl;
   useEffect(() => {
     if (selected) syncSegmentUrl(selected.id);
   }, [selected, syncSegmentUrl]);
   useEffect(() => {
-    selectedListItemRef.current?.scrollIntoView?.({ block: "nearest" });
+    if (listRef.current && selectedListItemRef.current) {
+      revealInList(listRef.current, selectedListItemRef.current);
+    }
   }, [selected?.id]);
 
   // A fresh selection restores any local draft and positions the audio on
@@ -847,14 +861,14 @@ export function CorrectionSurface({
     : null;
 
   const missingSegment = segmentLink.missing || (
-    segmentLink.hasLink && !segmentLink.pending && spansQuery.isSuccess && !selected
+    segmentLink.linked && !segmentLink.pending && spansQuery.isSuccess && !selected
   );
   const linkBlocked = segmentLink.pending || missingSegment;
   const copySegmentLink = async () => {
     if (!selected) return;
     const href = new URL(buildCorrectionPagePath(catalogId, hash, selected.id), window.location.origin).href;
     try {
-      await navigator.clipboard.writeText(href);
+      await copyToClipboard(href);
       toast({ description: t("segmentLinkCopied") });
     } catch {
       toast({ description: t("segmentLinkCopyFailed"), variant: "destructive" });
@@ -873,7 +887,7 @@ export function CorrectionSurface({
           </Button>
         ) : stripQuery.isError && (
           <Button className="mt-3" variant="outline" onClick={() => stripQuery.refetch()} data-native-space>
-            {t("consentRetry")}
+            {t("segmentLinkRetry")}
           </Button>
         )}
       </div>
@@ -889,7 +903,7 @@ export function CorrectionSurface({
           onJump={(span: StripSpan) => jumpTo(span)}
         />
       </div>
-      <aside className="max-h-[70vh] space-y-1 overflow-y-auto rounded-lg border p-2">
+      <aside ref={listRef} className="max-h-[70vh] space-y-1 overflow-y-auto rounded-lg border p-2">
         <div
           role="group"
           aria-label={t("jump.label")}
