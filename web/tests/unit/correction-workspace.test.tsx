@@ -78,7 +78,7 @@ const fetchJsonMock = vi.mocked(fetchJson);
 
 const ACCEPTED = { consent: { accepted: true, version: "v", text: "terms" } };
 
-function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unknown = ACCEPTED) {
+function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unknown = ACCEPTED, canPublish = true) {
   fetchJsonMock.mockImplementation(async (input) => {
     const url = String(input);
     if (url.endsWith("/correction")) return correctionState;
@@ -86,7 +86,15 @@ function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unk
       if (consent instanceof Error) throw consent;
       return consent;
     }
-    if (url.endsWith("/entry")) return { entry: { hash: HASH, title: "Recording" } };
+    if (url.endsWith("/entry")) return {
+      entry: {
+        hash: HASH,
+        title: "Recording",
+        curatedTitle: "Beseda v knihovně",
+        curatedDate: "19.2.2005",
+        album: { name: "Městská knihovna" },
+      },
+    };
     throw new Error(`unexpected ${url}`);
   });
   const queryClient = new QueryClient({
@@ -94,7 +102,7 @@ function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unk
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <CorrectionWorkspace catalogId={CATALOG_ID} hash={HASH} userId="user-1" canPublish />
+      <CorrectionWorkspace catalogId={CATALOG_ID} hash={HASH} userId="user-1" canPublish={canPublish} />
     </QueryClientProvider>
   );
 }
@@ -104,6 +112,26 @@ beforeEach(() => {
 });
 
 describe("CorrectionWorkspace publication card", () => {
+  it("keeps an ineligible publication disabled and explains why", async () => {
+    renderWorkspace(state({ publication: { ...state({}).publication, eligible: false } }));
+
+    const publication = await screen.findByRole("group", { name: "publishTitle" });
+    expect(within(publication).getByRole("button", { name: "republish" })).toBeDisabled();
+    expect(within(publication).getByText("publishBlocked")).toBeInTheDocument();
+  });
+
+  it("shows recording identity and progress without publication permission", async () => {
+    renderWorkspace(state({}), ACCEPTED, false);
+
+    expect(await screen.findByRole("heading", { name: "Beseda v knihovně" })).toBeInTheDocument();
+    expect(screen.getByText("19.2.2005 · Městská knihovna")).toBeInTheDocument();
+    expect(screen.getByText(/progressSummary/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "overviewLink" })).toHaveAttribute(
+      "href", `/catalog/${CATALOG_ID}/correction`
+    );
+    expect(screen.queryByRole("group", { name: "publishTitle" })).not.toBeInTheDocument();
+  });
+
   it("offers publishing when nothing is in flight", async () => {
     renderWorkspace(state({}));
 

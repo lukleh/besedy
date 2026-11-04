@@ -171,47 +171,181 @@ export function CorrectionWorkspace({
   const needsConsent = consent !== undefined && !consent.accepted;
 
   return (
-    <div className="container mx-auto space-y-6 px-4 py-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div>
+    <div className="container mx-auto space-y-4 px-4 py-4">
+      <header
+        className="flex flex-col gap-3 border-b pb-3 lg:flex-row lg:items-start lg:justify-between lg:gap-6"
+        data-testid="correction-header"
+      >
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <Link
               href={buildCorrectionOverviewPath(catalogId)}
-              className="mb-1 inline-flex items-center gap-0.5 text-sm text-muted-foreground hover:text-foreground hover:underline"
+              className="inline-flex items-center gap-0.5 hover:text-foreground hover:underline"
               data-testid="correction-overview-link"
             >
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
               {t("overviewLink")}
             </Link>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              {t("pageTitle")}
-            </p>
-            <h1 className="text-lg font-medium">{recordingTitle}</h1>
-            {recordingSubtitle && (
-              <p className="text-sm text-muted-foreground">{recordingSubtitle}</p>
+            <span aria-hidden="true">/</span>
+            <span>{t("pageTitle")}</span>
+          </div>
+          <h1 className="break-words text-lg font-medium">{recordingTitle}</h1>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+            {recordingSubtitle && <p>{recordingSubtitle}</p>}
+            {state?.workspace && (
+              <>
+                <span>
+                  {formatHoursMinutes(state.workspace.spanDurationSeconds)}
+                </span>
+                <details className="max-w-full text-xs">
+                  <summary className="cursor-pointer hover:text-foreground">
+                    {t("sourceDetails")}
+                  </summary>
+                  <p className="mt-1 max-w-lg break-all">
+                    {t("frozenSource", {
+                      backend: state.workspace.sourceBackend,
+                    })}
+                  </p>
+                </details>
+              </>
             )}
           </div>
         </div>
 
-        {state?.workspace && state.progress && (
-          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span>
-              {t("progressSummary", {
-                done: state.progress.doneSpanCount,
-                total: state.progress.spanCount,
-              })}
-            </span>
-            {state.progress.blockedSpanCount > 0 && (
-              <Badge variant="destructive">
-                {t("blockedSummary", { count: state.progress.blockedSpanCount })}
-              </Badge>
-            )}
-            {state.workspace.readerPublicationId && (
-              <Badge>{t("published")}</Badge>
-            )}
-          </div>
-        )}
-      </div>
+        <div className="flex flex-col items-start gap-2 lg:max-w-md lg:shrink-0 lg:items-end lg:text-right">
+          {state?.workspace && state.progress && (
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span>
+                {t("progressSummary", {
+                  done: state.progress.doneSpanCount,
+                  total: state.progress.spanCount,
+                })}
+              </span>
+              {state.progress.blockedSpanCount > 0 && (
+                <Badge variant="destructive">
+                  {t("blockedSummary", {
+                    count: state.progress.blockedSpanCount,
+                  })}
+                </Badge>
+              )}
+              {state.workspace.readerPublicationId && (
+                <Badge>{t("published")}</Badge>
+              )}
+            </div>
+          )}
+          {canPublish && state?.workspace && state.publication && (
+            <div
+              role="group"
+              aria-label={t("publishTitle")}
+              className="space-y-1.5"
+              data-testid="publication-card"
+            >
+              <div className="flex flex-col-reverse items-start gap-1.5 lg:items-end">
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">
+                    {state.publication.eligible
+                      ? t("publishEligible")
+                      : t("publishBlocked")}
+                  </p>
+                  {state.workspace.readerPublicationId && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("unpublishedKeepsSearch")}
+                    </p>
+                  )}
+                  {state.activePublication &&
+                    !state.activePublication.error &&
+                    state.activePublication.status !== "PENDING" && (
+                      <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        {state.activePublication.status === "ROLLING_BACK"
+                          ? t("rollbackInFlight")
+                          : t("publishInFlight")}
+                      </p>
+                    )}
+                  {state.activePublication?.error && (
+                    <p
+                      className="mt-1 text-xs text-destructive"
+                      data-testid="publication-error"
+                    >
+                      {t("publishStalled", {
+                        code: state.activePublication.error.code,
+                        message: state.activePublication.error.message,
+                      })}
+                    </p>
+                  )}
+                  {state.activePublication?.status === "PENDING" &&
+                    !state.activePublication.error && (
+                      <p
+                        className="mt-1 text-xs text-destructive"
+                        data-testid="publication-error"
+                      >
+                        {t("publishInterrupted")}
+                      </p>
+                    )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/*
+                    Publishing runs inside the request, so a PENDING row the page
+                    sees is a leftover from a crash between manifest and render:
+                    nothing is running, and the retry picks it up like an error.
+                  */}
+                  {state.activePublication &&
+                  state.activePublication.status !== "ROLLING_BACK" &&
+                  (state.activePublication.error ||
+                    state.activePublication.status === "PENDING") ? (
+                    <Button
+                      className="gap-2"
+                      disabled={publish.isPending}
+                      onClick={() => publish.mutate()}
+                    >
+                      {publish.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-4 w-4" />
+                      )}
+                      {t("retryPublish")}
+                    </Button>
+                  ) : (
+                    <Button
+                      className="gap-2"
+                      disabled={
+                        !state.publication.eligible ||
+                        publish.isPending ||
+                        state.activePublication !== null
+                      }
+                      onClick={() => publish.mutate()}
+                    >
+                      {publish.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                      {state.workspace.readerPublicationId
+                        ? t("republish")
+                        : t("publish")}
+                    </Button>
+                  )}
+                  {state.workspace.readerPublicationId && (
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      // Serialized behind an in-flight publication on the
+                      // server; disabled here so the refusal is not a surprise.
+                      disabled={
+                        unpublish.isPending || state.activePublication !== null
+                      }
+                      onClick={() => unpublish.mutate()}
+                    >
+                      <Undo2 className="h-4 w-4" />
+                      {t("unpublish")}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </header>
 
       {stateQuery.isLoading && <Skeleton className="h-64 w-full" />}
 
@@ -272,109 +406,6 @@ export function CorrectionWorkspace({
 
       {state?.workspace && (
         <>
-          {canPublish && state.publication && (
-            <div className="rounded-lg border p-4" data-testid="publication-card">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="font-medium">{t("publishTitle")}</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {state.publication.eligible ? t("publishEligible") : t("publishBlocked")}
-                  </p>
-                  {state.workspace.readerPublicationId && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {t("unpublishedKeepsSearch")}
-                    </p>
-                  )}
-                  {state.activePublication &&
-                    !state.activePublication.error &&
-                    state.activePublication.status !== "PENDING" && (
-                    <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      {state.activePublication.status === "ROLLING_BACK"
-                        ? t("rollbackInFlight")
-                        : t("publishInFlight")}
-                    </p>
-                  )}
-                  {state.activePublication?.error && (
-                    <p
-                      className="mt-1 text-xs text-destructive"
-                      data-testid="publication-error"
-                    >
-                      {t("publishStalled", {
-                        code: state.activePublication.error.code,
-                        message: state.activePublication.error.message,
-                      })}
-                    </p>
-                  )}
-                  {state.activePublication?.status === "PENDING" && !state.activePublication.error && (
-                    <p className="mt-1 text-xs text-destructive" data-testid="publication-error">
-                      {t("publishInterrupted")}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {/*
-                    Publishing runs inside the request, so a PENDING row the page
-                    sees is a leftover from a crash between manifest and render:
-                    nothing is running, and the retry picks it up like an error.
-                  */}
-                  {state.activePublication &&
-                  state.activePublication.status !== "ROLLING_BACK" &&
-                  (state.activePublication.error || state.activePublication.status === "PENDING") ? (
-                    <Button
-                      className="gap-2"
-                      disabled={publish.isPending}
-                      onClick={() => publish.mutate()}
-                    >
-                      {publish.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <RotateCcw className="h-4 w-4" />
-                      )}
-                      {t("retryPublish")}
-                    </Button>
-                  ) : (
-                    <Button
-                      className="gap-2"
-                      disabled={
-                        !state.publication.eligible ||
-                        publish.isPending ||
-                        state.activePublication !== null
-                      }
-                      onClick={() => publish.mutate()}
-                    >
-                      {publish.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Send className="h-4 w-4" />
-                      )}
-                      {state.workspace.readerPublicationId ? t("republish") : t("publish")}
-                    </Button>
-                  )}
-                  {state.workspace.readerPublicationId && (
-                    <Button
-                      variant="outline"
-                      className="gap-2"
-                      // Serialized behind an in-flight publication on the
-                      // server; disabled here so the refusal is not a surprise.
-                      disabled={unpublish.isPending || state.activePublication !== null}
-                      onClick={() => unpublish.mutate()}
-                    >
-                      <Undo2 className="h-4 w-4" />
-                      {t("unpublish")}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-
-          <p className="text-xs text-muted-foreground">
-            {t("frozenSource", { backend: state.workspace.sourceBackend })} ·{" "}
-            {formatHoursMinutes(state.workspace.spanDurationSeconds)}
-          </p>
-
           {consent?.accepted && (
             <CorrectionSurface
               key={`${state.workspace.id}:${userId}`}
