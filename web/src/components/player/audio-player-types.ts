@@ -22,6 +22,12 @@ export interface AudioPlayerProps {
   onTimeUpdate?: (time: number) => void;
   onDurationChange?: (duration: number) => void;
   onPlayingChange?: (isPlaying: boolean) => void;
+  /**
+   * Whether playback is wanted: playing, queued until metadata arrives, or
+   * waiting for a reconnect to resume it. Unlike onPlayingChange it stays
+   * true while a requested play has not started yet.
+   */
+  onPlayRequestChange?: (requested: boolean) => void;
   onSeek?: (time: number) => void;
   onEnded?: (duration: number) => void;
   seekTo?: number;

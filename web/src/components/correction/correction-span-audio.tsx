@@ -51,9 +51,24 @@ export function regionIndexAt(regions: readonly SpanAudioRegion[], time: number)
   return next >= 0 ? next : Math.max(0, regions.length - 1);
 }
 
+/** Whether a stop at `time` leaves the span part-way heard, to go on from. */
+export function canResumeSpan(span: SpanView, time: number | null): boolean {
+  return time !== null && time > span.startSeconds && time < span.endSeconds;
+}
+
+/** What the span's play button does next; also its translation key. */
+export function spanPlaybackAction(
+  playRequested: boolean,
+  resumable: boolean
+): "pauseSpan" | "resumeSpan" | "playSpan" {
+  if (playRequested) return "pauseSpan";
+  return resumable ? "resumeSpan" : "playSpan";
+}
+
 interface CorrectionSpanAudioProps {
   span: SpanView;
-  isPlaying: boolean;
+  /** Playing, or about to: queued for metadata or a reconnect. */
+  playRequested: boolean;
   onTogglePlay: () => void;
   subscribeTime: TimeSubscription;
   rate: number;
@@ -65,7 +80,7 @@ interface CorrectionSpanAudioProps {
 
 export function CorrectionSpanAudio({
   span,
-  isPlaying,
+  playRequested,
   onTogglePlay,
   subscribeTime,
   rate,
@@ -84,17 +99,18 @@ export function CorrectionSpanAudio({
   const position = (seconds: number) =>
     `${Math.min(100, Math.max(0, ((seconds - windowStart) / windowLength) * 100))}%`;
   const inSpan = time !== null && time >= span.startSeconds && time <= span.endSeconds;
-  const canResume = inSpan && time > span.startSeconds && time < span.endSeconds;
-  const playbackLabel = isPlaying ? t("pauseSpan") : canResume ? t("resumeSpan") : t("playSpan");
+  const playbackAction = spanPlaybackAction(playRequested, canResumeSpan(span, time));
   const speechWithoutText = regions.filter((region) => region.wordCount === 0).length;
   const rateLabel = rate === 1 ? "1×" : `${rate.toLocaleString()}×`;
 
   return (
-    <div className="space-y-2 rounded-md border p-3" data-testid="correction-span-audio">
+    // Space on these buttons clicks them rather than toggling the player, so
+    // the span button keeps its own pause/resume/restart behaviour.
+    <div className="space-y-2 rounded-md border p-3" data-testid="correction-span-audio" data-native-space>
       <div className="flex flex-wrap items-center gap-1">
         <Button size="sm" variant="outline" className="gap-1.5" onClick={onTogglePlay}>
-          {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-          {playbackLabel}
+          {playRequested ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+          {t(playbackAction)}
         </Button>
         <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => onRegion("previous")} aria-label={t("previousRegion")}>
           <ChevronLeft className="h-3.5 w-3.5" />

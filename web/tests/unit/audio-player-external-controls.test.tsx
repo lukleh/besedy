@@ -125,8 +125,47 @@ describe("AudioPlayer external controls", () => {
 
     act(metadata);
     expect(audio.currentTime).toBe(7.25);
-    expect(audio.play).not.toHaveBeenCalled();
+    // The play inside the click is the only one: the pause cancelled the queue.
+    expect(audio.play).toHaveBeenCalledTimes(1);
+    expect(audio.paused).toBe(true);
     expect(handle().isPlayRequested()).toBe(false);
+  });
+
+  it("starts playback inside the click even while a seek waits for metadata", async () => {
+    const onPlayRequestChange = vi.fn();
+    const { audio, handle, metadata, getByTestId } = setup({ seekTo: 31.5, onPlayRequestChange });
+    await act(async () => fireEvent.click(getByTestId("audio-play-button")));
+    expect(audio.play).toHaveBeenCalledTimes(1);
+    expect(onPlayRequestChange).toHaveBeenLastCalledWith(true);
+    // Until metadata arrives the element reports 0; the handle reports the target.
+    expect(handle().getCurrentTime()).toBe(31.5);
+
+    act(metadata);
+    expect(audio.currentTime).toBe(31.5);
+    expect(audio.paused).toBe(false);
+  });
+
+  it("reports the reconnect restore position and a held play request while offline", async () => {
+    vi.useFakeTimers();
+    const onPlayRequestChange = vi.fn();
+    const { audio, handle, metadata, fail } = setup({ onPlayRequestChange });
+    act(metadata);
+    await act(async () => handle().play());
+    audio.currentTime = 17.75;
+    act(fail);
+    // Paused by the error, but the reconnect will resume it.
+    expect(onPlayRequestChange).toHaveBeenLastCalledWith(true);
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(audio.currentTime).toBe(0);
+    expect(handle().getCurrentTime()).toBe(17.75);
+
+    const playsBefore = vi.mocked(audio.play).mock.calls.length;
+    act(() => handle().pause());
+    expect(onPlayRequestChange).toHaveBeenLastCalledWith(false);
+    await act(async () => handle().play(25));
+    // Queued for the reconnect rather than played on the failed element.
+    expect(audio.play).toHaveBeenCalledTimes(playsBefore);
+    expect(onPlayRequestChange).toHaveBeenLastCalledWith(true);
   });
 
   it.each(["scheduled", "reloading"])(
@@ -209,13 +248,16 @@ describe("AudioPlayer external controls", () => {
     expect(audio.pause).toHaveBeenCalledTimes(1);
   });
 
-  it("leaves Space on an external button to its native action and keeps body Space playback shortcuts", async () => {
+  it("leaves Space on an opted-in button to its native action and keeps body Space playback shortcuts", async () => {
     const { audio, handle, metadata, container } = setup();
     act(metadata);
+    const nativeArea = document.createElement("div");
+    nativeArea.setAttribute("data-native-space", "");
     const externalButton = document.createElement("button");
     externalButton.type = "button";
     externalButton.textContent = "Play segment";
-    container.append(externalButton);
+    nativeArea.append(externalButton);
+    container.append(nativeArea);
     externalButton.focus();
     expect(document.activeElement).toBe(externalButton);
     const buttonSpace = new KeyboardEvent("keydown", {
@@ -233,6 +275,21 @@ describe("AudioPlayer external controls", () => {
     });
     await act(async () => { document.body.dispatchEvent(bodySpace); });
     expect(bodySpace.defaultPrevented).toBe(true);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+    expect(handle().isPlayRequested()).toBe(true);
+  });
+
+  it("keeps Space as play/pause on a focused player button", async () => {
+    const { audio, handle, metadata, getAllByRole } = setup();
+    act(metadata);
+    const [skip] = getAllByRole("button", { name: messages.player.skipForward });
+    skip.focus();
+    expect(document.activeElement).toBe(skip);
+    const space = new KeyboardEvent("keydown", {
+      key: " ", code: "Space", bubbles: true, cancelable: true,
+    });
+    await act(async () => { skip.dispatchEvent(space); });
+    expect(space.defaultPrevented).toBe(true);
     expect(audio.play).toHaveBeenCalledTimes(1);
     expect(handle().isPlayRequested()).toBe(true);
   });

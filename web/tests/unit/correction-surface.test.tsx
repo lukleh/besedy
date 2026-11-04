@@ -201,6 +201,7 @@ describe("CorrectionSurface", () => {
     mocks.controls.isPlayRequested.mockReturnValue(true);
     mocks.controls.getCurrentTime.mockReturnValue(4.25);
     await act(async () => {
+      (lastPlayerProps().onPlayRequestChange as (requested: boolean) => void)(true);
       (lastPlayerProps().onPlayingChange as (playing: boolean) => void)(true);
     });
     await userEvent.click(controls.getByRole("button", { name: "pauseSpan" }));
@@ -208,6 +209,7 @@ describe("CorrectionSurface", () => {
 
     mocks.controls.isPlayRequested.mockReturnValue(false);
     await act(async () => {
+      (lastPlayerProps().onPlayRequestChange as (requested: boolean) => void)(false);
       (lastPlayerProps().onPlayingChange as (playing: boolean) => void)(false);
     });
     await userEvent.click(controls.getByRole("button", { name: "resumeSpan" }));
@@ -223,16 +225,67 @@ describe("CorrectionSurface", () => {
     expect(lastPlayerProps()).toMatchObject({ seekTo: 0, playbackEnd: 10, autoPlayOnSeek: true });
   });
 
-  it("cancels a queued play request on a second span-button click", async () => {
+  it("shows a queued play as pausable and cancels it on a second span-button click", async () => {
     serveDraftSpans();
     renderSurface(null);
     await screen.findByDisplayValue("machine 0");
     const controls = within(screen.getByTestId("correction-span-audio"));
     await userEvent.click(controls.getByRole("button", { name: "playSpan" }));
+    // Queued for metadata or a reconnect: no play event yet, but a request.
     mocks.controls.isPlayRequested.mockReturnValue(true);
-    await userEvent.click(controls.getByRole("button", { name: "playSpan" }));
+    await act(async () => {
+      (lastPlayerProps().onPlayRequestChange as (requested: boolean) => void)(true);
+    });
+    const heard = within(screen.getByTestId("correction-heard"));
+    expect(heard.getByRole("button", { name: "audio.pauseSpan" })).toBeInTheDocument();
+    await userEvent.click(controls.getByRole("button", { name: "pauseSpan" }));
     expect(mocks.controls.play).toHaveBeenCalledTimes(1);
     expect(mocks.controls.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers resuming from the listening prompt too, after a pause mid-span", async () => {
+    serveDraftSpans();
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    const heard = within(screen.getByTestId("correction-heard"));
+    expect(heard.getByRole("button", { name: "audio.playSpan" })).toBeInTheDocument();
+    mocks.controls.getCurrentTime.mockReturnValue(4.25);
+    await act(async () => {
+      (lastPlayerProps().onTimeUpdate as (time: number) => void)(4.25);
+    });
+    await userEvent.click(heard.getByRole("button", { name: "audio.resumeSpan" }));
+    expect(mocks.controls.play).toHaveBeenLastCalledWith(10);
+  });
+
+  it("keeps the position and playback when the selected span is clicked again", async () => {
+    serveDraftSpans();
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    const seekKey = lastPlayerProps().seekKey;
+    await userEvent.click(screen.getByRole("button", { name: /machine 0/ }));
+    expect(mocks.controls.pause).not.toHaveBeenCalled();
+    expect(lastPlayerProps().seekKey).toBe(seekKey);
+  });
+
+  it("follows the playback time on a newly selected span", async () => {
+    serveDraftSpans();
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await act(async () => {
+      (lastPlayerProps().onTimeUpdate as (time: number) => void)(4.25);
+    });
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+    await screen.findByDisplayValue("machine 1");
+    // The real player announces the applied seek; the mock does it by hand.
+    await act(async () => {
+      (lastPlayerProps().onTimeUpdate as (time: number) => void)(10);
+    });
+    const controls = within(screen.getByTestId("correction-span-audio"));
+    expect(controls.getByRole("button", { name: "playSpan" })).toBeInTheDocument();
+    await act(async () => {
+      (lastPlayerProps().onTimeUpdate as (time: number) => void)(12);
+    });
+    expect(controls.getByRole("button", { name: "resumeSpan" })).toBeInTheDocument();
   });
 
   it("keeps an empty text draft and a comment when switching spans", async () => {
