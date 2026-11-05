@@ -1134,6 +1134,7 @@ def sync_colbert_index(
             backend_key=backend_key,
             transcripts_root=transcripts_root,
             chunk_tokenizer_model=effective_chunk_tokenizer_model,
+            target_audio_hash=normalized_target_audio_hash if not rebuild else None,
         )
         current_sources = {source.audio_hash: source for source in source_build.sources}
         discovered_count = 1 if normalized_target_audio_hash is not None else len(current_sources)
@@ -1148,6 +1149,28 @@ def sync_colbert_index(
         def _full_rebuild(sync_mode: str, *, reason: str) -> ColbertIndexResult:
             _emit_sync_progress(
                 progress_callback, f"ColBERT sync falling back to full rebuild: {reason}"
+            )
+            # A targeted request can still bootstrap or rebuild the whole
+            # scope. Its summary must describe every source the build consumes.
+            rebuild_sources = current_sources
+            if normalized_target_audio_hash is not None and not rebuild:
+                full_source_build = discover_transcript_sources(
+                    workflow_group_id=workflow_group_id,
+                    backend_key=backend_key,
+                    transcripts_root=source_build.transcripts_root,
+                    chunk_tokenizer_model=effective_chunk_tokenizer_model,
+                )
+                rebuild_sources = {
+                    source.audio_hash: source for source in full_source_build.sources
+                }
+            # Explicit bundle paths are replaced in place by the rebuild, so
+            # snapshot their old source state before publishing the new bundle.
+            previous_rows = (
+                read_source_state(
+                    resolve_colbert_bundle_artifacts(existing_bundle_dir).source_state_path
+                )
+                if existing_bundle_dir is not None
+                else {}
             )
             full_result = build_colbert_index(
                 workflow_group_id=workflow_group_id,
@@ -1165,30 +1188,23 @@ def sync_colbert_index(
                 runtime=runtime,
                 progress_callback=progress_callback,
             )
-            previous_rows = (
-                read_source_state(
-                    resolve_colbert_bundle_artifacts(existing_bundle_dir).source_state_path
-                )
-                if existing_bundle_dir is not None
-                else {}
-            )
             removed_hashes = 0
             if sync_mode == "bootstrap":
-                added_hashes = len(current_sources)
+                added_hashes = len(rebuild_sources)
                 updated_hashes = 0
             else:
                 added_hashes = sum(
-                    1 for audio_hash in current_sources if audio_hash not in previous_rows
+                    1 for audio_hash in rebuild_sources if audio_hash not in previous_rows
                 )
-                updated_hashes = len(current_sources) - added_hashes
+                updated_hashes = len(rebuild_sources) - added_hashes
                 removed_hashes = sum(
-                    1 for audio_hash in previous_rows if audio_hash not in current_sources
+                    1 for audio_hash in previous_rows if audio_hash not in rebuild_sources
                 )
             return replace(
                 full_result,
                 sync_mode=sync_mode,
                 target_audio_hash=normalized_target_audio_hash,
-                hashes_discovered=len(current_sources),
+                hashes_discovered=len(rebuild_sources),
                 hashes_added=added_hashes,
                 hashes_updated=updated_hashes,
                 hashes_removed=removed_hashes,

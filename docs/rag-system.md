@@ -196,6 +196,13 @@ Sync discovery runs in two layers:
 
 If the computed `bundle_fingerprint` differs from the active bundle, targeted `--hash` refresh is not allowed and sync falls back to full rebuild.
 
+A targeted refresh reads and fingerprints only the requested recording's
+effective transcript. Filename discovery and correction-pointer validation still
+cover the scope; a broken publication pointer continues to stop the operation.
+Bootstrap and compatibility rebuilds consume the full scope and report full-scope
+counts. Bundle copying, chunk-manifest rewriting, and the final token audit still
+scale with the bundle; targeted source discovery does not change that cost.
+
 ### Mutation model
 
 The update unit is one `audio_hash` (not individual chunks). When a transcript changes:
