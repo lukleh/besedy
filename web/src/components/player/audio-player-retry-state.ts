@@ -33,7 +33,11 @@ export type RetryState =
       savedPosition: number;
       wasPlaying: boolean;
     }
-  | { phase: 'exhausted' };
+  | {
+      phase: 'exhausted';
+      /** Where the listener was; a manual retry reloads there. */
+      savedPosition: number;
+    };
 
 export type RetryAction =
   | { type: 'RESET' }
@@ -90,9 +94,7 @@ export function retryReducer(
       };
 
     case 'SEEK_REQUESTED':
-      if (state.phase !== 'scheduled' && state.phase !== 'reloading') {
-        return state;
-      }
+      if (state.phase === 'idle') return state;
       return { ...state, savedPosition: action.time };
 
     case 'RECOVERED':
@@ -102,7 +104,7 @@ export function retryReducer(
       if (state.phase !== 'reloading') return state;
       const nextAttempt = state.attempt + 1;
       if (nextAttempt > MAX_RETRY_ATTEMPTS) {
-        return { phase: 'exhausted' };
+        return { phase: 'exhausted', savedPosition: state.savedPosition };
       }
       return {
         phase: 'scheduled',

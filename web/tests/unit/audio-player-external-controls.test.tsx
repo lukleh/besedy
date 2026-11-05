@@ -320,6 +320,45 @@ describe("AudioPlayer custom segment controls", () => {
     expect(controls().isBuffering).toBe(false);
   });
 
+  it("shows full volume on the slider after unmuting a volume dragged to zero", () => {
+    const { audio, controls } = setupCustom();
+    act(() => controls().setVolume(0));
+    expect(controls().isMuted).toBe(true);
+    act(() => controls().toggleMute());
+    expect(audio.volume).toBe(1);
+    expect(controls().volume).toBe(1);
+    expect(controls().isMuted).toBe(false);
+  });
+
+  it("reports a source that failed before any interaction only once playback is requested", async () => {
+    const { handle, fail, controls } = setupCustom({
+      seekTo: 10,
+      playbackRange: { start: 10, end: 20 },
+    });
+    act(() => fail(4));
+    expect(controls().hasError).toBe(false);
+    expect(controls().isBuffering).toBe(false);
+    await act(async () => handle().play());
+    expect(controls().hasError).toBe(true);
+  });
+
+  it("ends the loading state of a paused retry once metadata arrives without canplay", async () => {
+    const { audio, handle, metadata, fail, controls } = setupCustom({
+      seekTo: 10,
+      playbackRange: { start: 10, end: 20 },
+    });
+    act(metadata);
+    await act(async () => handle().play());
+    audio.currentTime = 14.5;
+    act(() => fail(3));
+    act(() => controls().retry());
+    expect(controls().isBuffering).toBe(true);
+    act(metadata);
+    expect(audio.currentTime).toBe(14.5);
+    expect(audio.paused).toBe(true);
+    expect(controls().isBuffering).toBe(false);
+  });
+
   it("offers an explicit paused retry after a terminal media failure", async () => {
     const { audio, handle, metadata, fail, controls } = setupCustom({
       seekTo: 10,

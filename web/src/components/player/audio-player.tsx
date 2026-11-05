@@ -76,7 +76,12 @@ function createSourceEvent(id: number, src: string): DebugEvent {
   };
 }
 
-/** Keep custom controls in a render boundary; actions run from their events. */
+/**
+ * Renders the page's controls as an element rather than calling the render
+ * prop inline: the actions read refs, which may only happen from their events,
+ * not during this render. Not memoised; time reaches the controls through the
+ * page's subscription, not through these props.
+ */
 function CustomControls({ render, controls }: {
   render: NonNullable<AudioPlayerProps['renderControls']>;
   controls: AudioPlayerControls;
@@ -239,9 +244,6 @@ export function AudioPlayer({
   // Updated synchronously by `dispatchRetry` below so there's no lag window
   // between a dispatch and a handler observing the new phase.
   const retryStateRef = useRef<RetryState>(INITIAL_RETRY_STATE);
-  // Exhaustion drops the reducer's restore target; a manual retry still needs
-  // that position after audio.load() has reset the element to zero.
-  const failedPositionRef = useRef<number | null>(null);
   // Pending retry timer. Held in a ref (not the retry-driving effect's local
   // closure) so it can be cancelled synchronously from any transition out of
   // `scheduled` — RECOVERED, RESET, RELOAD_FAILED — without waiting for React
@@ -305,20 +307,13 @@ export function AudioPlayer({
       // against the same source.
       if (action.type === 'RESET' || action.type === 'RECOVERED') {
         retrySrcRef.current = null;
-        failedPositionRef.current = null;
       }
       // Actions that may start a schedule carry a fresh id; see scheduleId.
       const stamped: RetryAction =
         action.type === 'ERROR_DETECTED' || action.type === 'RELOAD_FAILED'
           ? { ...action, scheduleId: ++retryScheduleCounterRef.current }
           : action;
-      const previous = retryStateRef.current;
-      const next = retryReducer(previous, stamped);
-      if (next.phase === 'exhausted') {
-        if (previous.phase === 'reloading') failedPositionRef.current = previous.savedPosition;
-        else if (action.type === 'SEEK_REQUESTED') failedPositionRef.current = action.time;
-      }
-      retryStateRef.current = next;
+      retryStateRef.current = retryReducer(retryStateRef.current, stamped);
       reactDispatchRetry(stamped);
       syncPlayRequest();
     },
@@ -622,7 +617,6 @@ export function AudioPlayer({
       (phase === 'idle' || phase === 'exhausted')
     ) {
       setIsBuffering(false);
-      setHasMediaError(true);
       return;
     }
 
@@ -805,6 +799,9 @@ export function AudioPlayer({
     const handleLoadedMetadata = () => {
       metadataLoadedRef.current = true;
       setHasMediaError(false);
+      // A paused load stops once it has metadata, often before canplay; a
+      // play queued below shows its own buffering from the play event.
+      if (audio.paused) setIsBuffering(false);
       updateDuration('Metadata loaded');
 
       // Apply any pending seek that was queued before metadata loaded
@@ -1032,8 +1029,8 @@ export function AudioPlayer({
     playIntentRef.current = true;
     if (rangeStart !== undefined && rangeEnd !== undefined) {
       const retry = retryStateRef.current;
-      const time = pendingSeekRef.current?.time ?? failedPositionRef.current ??
-        (isRetrying(retry) && 'savedPosition' in retry ? retry.savedPosition : audio.currentTime);
+      const time = pendingSeekRef.current?.time ??
+        (retry.phase === 'idle' ? audio.currentTime : retry.savedPosition);
       if (time < rangeStart || time >= rangeEnd) seekFromControls(rangeStart);
       playbackEndRef.current = Math.min(end ?? rangeEnd, rangeEnd);
     } else if (end !== undefined) {
@@ -1041,6 +1038,9 @@ export function AudioPlayer({
     }
     // A queued seek still applies its position when metadata arrives.
     if (pendingSeekRef.current) pendingSeekRef.current.autoPlay = true;
+    // A source that failed to load before anyone asked for it refuses to
+    // play; that is reported now, when someone does.
+    if (audio.error?.code === 4 && !isRetrying(retryStateRef.current)) setHasMediaError(true);
     dispatchRetry({ type: 'PLAY_INTENT_CHANGED', playing: true });
     // A reconnect resumes on its own once the connection is back. Otherwise
     // play now, inside the click: browsers that require a user gesture
@@ -1086,7 +1086,10 @@ export function AudioPlayer({
     cancelSleepFade();
 
     if (isMuted) {
+      // Muted by dragging to zero leaves no level to return to; unmuting
+      // then restores full volume, and the slider must show it.
       audio.volume = volume || 1;
+      setVolume(audio.volume);
       setIsMuted(false);
     } else {
       audio.volume = 0;
@@ -1107,14 +1110,9 @@ export function AudioPlayer({
     // Until a reconnect recovers, its restore target is the position. The
     // reload resets the element to 0, and metadata can return before the
     // recovery seek, so readyState alone does not tell.
+    // After giving up, the element was reset by the last reload as well.
     const retry = retryStateRef.current;
-    if (retry.phase === 'exhausted' && failedPositionRef.current !== null) {
-      return failedPositionRef.current;
-    }
-    if (retry.phase === 'scheduled' || retry.phase === 'reloading') {
-      return retry.savedPosition;
-    }
-    return audio.currentTime;
+    return retry.phase === 'idle' ? audio.currentTime : retry.savedPosition;
   }, []);
 
   const retry = () => {
@@ -1227,6 +1225,7 @@ export function AudioPlayer({
           cancelSleepFade();
           if (isMuted) {
             audio.volume = volume || 1;
+            setVolume(audio.volume);
             setIsMuted(false);
           } else {
             audio.volume = 0;

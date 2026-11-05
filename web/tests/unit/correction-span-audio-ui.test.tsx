@@ -141,6 +141,30 @@ describe("CorrectionSpanAudio controls", () => {
     expect(onTogglePlay).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the status line's place while nothing is loading", () => {
+    const { rerenderControls } = setup();
+    const status = screen.getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+    rerenderControls({ isBuffering: true });
+    expect(screen.getByRole("status")).toBe(status);
+    expect(status).toHaveTextContent("Loading audio…");
+    rerenderControls({ isBuffering: false });
+    expect(status).toBeEmptyDOMElement();
+  });
+
+  it("follows playback with the playhead, current word and resume action", () => {
+    const { publish, container } = setup();
+    const word = screen.getByRole("button", { name: "Dnes" });
+    expect(word).not.toHaveClass("bg-primary/20");
+    expect(screen.getByRole("button", { name: "Play span" })).toBeInTheDocument();
+    publish(10.5);
+    expect(word).toHaveClass("bg-primary/20");
+    expect(container.querySelector(".bg-foreground")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume span" })).toBeInTheDocument();
+    publish(11);
+    expect(word).not.toHaveClass("bg-primary/20");
+  });
+
   it("reports a terminal failure and retries only on request", () => {
     const { controls, onTogglePlay } = setup({ hasError: true });
     expect(screen.getByRole("alert")).toHaveTextContent("Audio could not be played.");
