@@ -9,7 +9,7 @@ import {
 } from "@/components/correction/correction-overview";
 import type { OverviewItem } from "@/components/correction/correction-types";
 import { fetchJson } from "@/lib/api/fetch-json";
-import { formatClock, formatHoursMinutes } from "@/lib/correction/format";
+import { formatClock, formatClockTenths, formatHoursMinutes } from "@/lib/correction/format";
 import {
   deriveReaderState,
   deriveWorkStage,
@@ -150,6 +150,15 @@ describe("formatting", () => {
     expect(formatClock(3600)).toBe("1:00:00");
     expect(formatClock(3 * 3600 + 7 * 60 + 5)).toBe("3:07:05");
     expect(formatClock(-4)).toBe("0:00");
+  });
+
+  it("writes a segment position to the tenth without rounding up", () => {
+    expect(formatClockTenths(0)).toBe("0:00.0");
+    expect(formatClockTenths(12.3 - 12)).toBe("0:00.3");
+    expect(formatClockTenths(2.39)).toBe("0:02.3");
+    expect(formatClockTenths(59.99)).toBe("0:59.9");
+    expect(formatClockTenths(65.4)).toBe("1:05.4");
+    expect(formatClockTenths(-1)).toBe("0:00.0");
   });
 
   it("writes as much of the event date as is known, as the event cards do", () => {

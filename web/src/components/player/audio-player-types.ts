@@ -1,4 +1,17 @@
-import type { Ref } from "react";
+import type { ReactNode, Ref } from "react";
+
+/** Transport state/actions for a page-specific set of player controls. */
+export interface AudioPlayerControls {
+  volume: number;
+  isMuted: boolean;
+  isBuffering: boolean;
+  isReconnecting: boolean;
+  hasError: boolean;
+  seek: (time: number) => void;
+  setVolume: (volume: number) => void;
+  toggleMute: () => void;
+  retry: () => void;
+}
 
 /** Controls for an additional UI operating the same media element. */
 export interface AudioPlayerHandle {
@@ -36,6 +49,10 @@ export interface AudioPlayerProps {
   autoPlayOnSeek?: boolean;
   /** Playback speed; 1 when omitted. The correction page slows passages down. */
   playbackRate?: number;
+  /** Bound transport controls to this range; an empty range disables playback. */
+  playbackRange?: { start: number; end: number };
+  /** Replaces the standard visible controls while retaining the media engine. */
+  renderControls?: (controls: AudioPlayerControls) => ReactNode;
   /** Opt out of both sleep-timer controls and its effect on this player. */
   sleepTimerEnabled?: boolean;
   /** What the lock screen and media notification show for this recording. */

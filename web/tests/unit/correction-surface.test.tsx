@@ -51,7 +51,10 @@ vi.mock("@/components/player/audio-player", () => ({
   AudioPlayer: (props: AudioPlayerProps) => {
     mocks.audioPlayer(props);
     useImperativeHandle(props.ref, () => mocks.controls, []);
-    return <div data-testid="audio-player" />;
+    return <div data-testid="audio-player">{props.renderControls?.({
+      volume: 1, isMuted: false, isBuffering: false, isReconnecting: false, hasError: false,
+      seek: vi.fn(), setVolume: vi.fn(), toggleMute: vi.fn(), retry: vi.fn(),
+    })}</div>;
   },
 }));
 

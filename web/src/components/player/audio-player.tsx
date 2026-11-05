@@ -42,6 +42,7 @@ import {
 } from './audio-player-retry-state';
 import type {
   AudioPlayerProps,
+  AudioPlayerControls,
   DebugEvent,
   DebugEventType,
 } from './audio-player-types';
@@ -75,6 +76,19 @@ function createSourceEvent(id: number, src: string): DebugEvent {
   };
 }
 
+/**
+ * Renders the page's controls as an element rather than calling the render
+ * prop inline: the actions read refs, which may only happen from their events,
+ * not during this render. Not memoised; time reaches the controls through the
+ * page's subscription, not through these props.
+ */
+function CustomControls({ render, controls }: {
+  render: NonNullable<AudioPlayerProps['renderControls']>;
+  controls: AudioPlayerControls;
+}) {
+  return render(controls);
+}
+
 export function AudioPlayer({
   ref,
   src,
@@ -96,9 +110,14 @@ export function AudioPlayer({
   mediaMetadata,
   markers,
   onBookmark,
+  playbackRange,
+  renderControls,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [hasMediaError, setHasMediaError] = useState(false);
+  const rangeStart = playbackRange?.start;
+  const rangeEnd = playbackRange?.end;
 
   // The recording identity drives download state; fall back to the API URL
   // shape when the caller did not name it.
@@ -319,7 +338,11 @@ export function AudioPlayer({
       return;
     }
 
-    const savedPosition = getSavedPlaybackPosition(hash);
+    // A correction range has its own position; the listener's saved position
+    // for the whole recording may belong to an unrelated passage.
+    const savedPosition = rangeStart !== undefined && rangeEnd !== undefined
+      ? Math.max(rangeStart, Math.min(rangeEnd, lastTimeRef.current))
+      : getSavedPlaybackPosition(hash);
     if (!savedPosition || savedPosition <= 0) {
       return;
     }
@@ -342,7 +365,7 @@ export function AudioPlayer({
       'Queued saved position after resume',
       `To ${savedPosition.toFixed(1)}s`,
     );
-  }, [hash, onTimeUpdate, logDebugEvent, setCurrentTime]);
+  }, [hash, rangeStart, rangeEnd, onTimeUpdate, logDebugEvent, setCurrentTime]);
 
   // Drive the retry machine. When phase transitions to "scheduled", schedule
   // the reload; when it transitions to "exhausted", log and clear transient
@@ -423,8 +446,10 @@ export function AudioPlayer({
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         const audio = audioRef.current;
-        if (audio) setCurrentTime(audio.currentTime);
         restoreSavedPositionAfterResume();
+        // A discarded element reports 0. Restore (or queue) the logical
+        // position before replacing the clock with that reset native value.
+        if (audio && !pendingSeekRef.current) setCurrentTime(audio.currentTime);
       }
     };
 
@@ -502,6 +527,7 @@ export function AudioPlayer({
     // Reset UI state - deferred to avoid synchronous setState in effect body
     queueMicrotask(() => {
       setIsBuffering(false);
+      setHasMediaError(false);
       setCurrentTime(restoreAfterSourceSwitch?.time ?? 0);
       setDuration(0);
       setIsPlaying(false);
@@ -512,62 +538,6 @@ export function AudioPlayer({
       onPlayingChange?.(false);
     });
   }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics, cancelSleepFade, setCurrentTime, syncPlayRequest]);
-
-  // Consume each external request once. Callback changes and the page clearing
-  // autoPlayOnSeek must not replay an old handoff over a later user seek. The
-  // recording identity survives transport changes; the source-switch effect
-  // above restores the latest position before a genuinely new request is read.
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio || seekTo === undefined || !Number.isFinite(seekTo) || seekTo < 0) {
-      lastExternalSeekRef.current = null;
-      return;
-    }
-    const recording = hash ?? src;
-    const previous = lastExternalSeekRef.current;
-    if (
-      previous?.recording === recording &&
-      previous.time === seekTo &&
-      previous.key === seekKey
-    ) {
-      return;
-    }
-    lastExternalSeekRef.current = { recording, time: seekTo, key: seekKey };
-    dispatchRetry({ type: 'SEEK_REQUESTED', time: seekTo });
-    // Each request re-arms its excerpt end. A finished excerpt clears the end,
-    // and asking for the same excerpt again passes the same prop, which the
-    // effect that tracks it would not see; the replay then ran on unstopped.
-    playbackEndRef.current = resolvePlaybackEnd(playbackEnd);
-
-    if (audio.readyState >= 1) {
-      // A newer request also supersedes a seek queued before metadata arrived.
-      pendingSeekRef.current = null;
-      audio.currentTime = seekTo;
-      setCurrentTime(seekTo);
-      onTimeUpdate?.(seekTo);
-      logDebugEvent(
-        'seek',
-        'External seek applied',
-        `To ${seekTo.toFixed(1)}s (readyState=${audio.readyState})`,
-      );
-      if (autoPlayOnSeek) {
-        userInitiatedRef.current = true;
-        safePlay(audio, 'auto-play after external seek', logDebugEvent);
-      }
-    } else {
-      pendingSeekRef.current = { time: seekTo, autoPlay: !!autoPlayOnSeek };
-      logDebugEvent(
-        'seek',
-        'External seek queued',
-        `To ${seekTo.toFixed(1)}s (waiting for metadata, readyState=${audio.readyState})`,
-      );
-    }
-    syncPlayRequest();
-  }, [src, hash, seekTo, seekKey, playbackEnd, onTimeUpdate, autoPlayOnSeek, logDebugEvent, dispatchRetry, setCurrentTime, syncPlayRequest]);
-
-  // NOTE: PerformanceObserver was removed because it only fires when HTTP requests complete.
-  // For streaming audio, the request stays open until the entire file downloads, so it's not
-  // useful for tracking progress. Buffer growth tracking (in updateBasicBufferInfo) is used instead.
 
   // Handle `error` events — dispatch the retry reducer. The scheduling and
   // reload itself live in the retry-driving effect above.
@@ -649,6 +619,8 @@ export function AudioPlayer({
       setIsPlaying(false);
       onPlayingChange?.(false);
     } else {
+      setHasMediaError(true);
+      setIsBuffering(false);
       logDebugEvent(
         'error',
         'Media error',
@@ -656,6 +628,83 @@ export function AudioPlayer({
       );
     }
   }, [dispatchRetry, isPlaying, onPlayingChange, logDebugEvent]);
+
+  // An error during the unattended preload was left alone (see handleError),
+  // and the element does not report it again: play() does not reload a failed
+  // element. Every playback the listener asks for, from the play control or a
+  // seek that plays, hands that error to handleError first: a network error
+  // reconnects and then plays, anything else offers Retry and plays nothing.
+  // Returns whether it took over, in which case the caller does not play.
+  const recordedErrorTakesOverPlay = useCallback((audio: HTMLAudioElement) => {
+    if (!audio.error || retryStateRef.current.phase !== 'idle') return false;
+    userInitiatedRef.current = true;
+    playIntentRef.current = true;
+    handleError();
+    if (!isRetrying(retryStateRef.current)) {
+      playIntentRef.current = false;
+      if (pendingSeekRef.current) pendingSeekRef.current.autoPlay = false;
+      syncPlayRequest();
+    }
+    return true;
+  }, [handleError, syncPlayRequest]);
+
+  // Consume each external request once. Callback changes and the page clearing
+  // autoPlayOnSeek must not replay an old handoff over a later user seek. The
+  // recording identity survives transport changes; the source-switch effect
+  // above restores the latest position before a genuinely new request is read.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || seekTo === undefined || !Number.isFinite(seekTo) || seekTo < 0) {
+      lastExternalSeekRef.current = null;
+      return;
+    }
+    const recording = hash ?? src;
+    const previous = lastExternalSeekRef.current;
+    if (
+      previous?.recording === recording &&
+      previous.time === seekTo &&
+      previous.key === seekKey
+    ) {
+      return;
+    }
+    lastExternalSeekRef.current = { recording, time: seekTo, key: seekKey };
+    dispatchRetry({ type: 'SEEK_REQUESTED', time: seekTo });
+    // Each request re-arms its excerpt end. A finished excerpt clears the end,
+    // and asking for the same excerpt again passes the same prop, which the
+    // effect that tracks it would not see; the replay then ran on unstopped.
+    playbackEndRef.current = resolvePlaybackEnd(playbackEnd);
+
+    if (audio.readyState >= 1) {
+      // A newer request also supersedes a seek queued before metadata arrived.
+      pendingSeekRef.current = null;
+      audio.currentTime = seekTo;
+      setCurrentTime(seekTo);
+      onTimeUpdate?.(seekTo);
+      logDebugEvent(
+        'seek',
+        'External seek applied',
+        `To ${seekTo.toFixed(1)}s (readyState=${audio.readyState})`,
+      );
+      if (autoPlayOnSeek && !recordedErrorTakesOverPlay(audio)) {
+        userInitiatedRef.current = true;
+        safePlay(audio, 'auto-play after external seek', logDebugEvent);
+      }
+    } else {
+      pendingSeekRef.current = { time: seekTo, autoPlay: !!autoPlayOnSeek };
+      logDebugEvent(
+        'seek',
+        'External seek queued',
+        `To ${seekTo.toFixed(1)}s (waiting for metadata, readyState=${audio.readyState})`,
+      );
+      // Metadata never arrives for a source that already failed.
+      if (autoPlayOnSeek) recordedErrorTakesOverPlay(audio);
+    }
+    syncPlayRequest();
+  }, [src, hash, seekTo, seekKey, playbackEnd, onTimeUpdate, autoPlayOnSeek, logDebugEvent, dispatchRetry, recordedErrorTakesOverPlay, setCurrentTime, syncPlayRequest]);
+
+  // NOTE: PerformanceObserver was removed because it only fires when HTTP requests complete.
+  // For streaming audio, the request stays open until the entire file downloads, so it's not
+  // useful for tracking progress. Buffer growth tracking (in updateBasicBufferInfo) is used instead.
 
   // Handle `canplay` events mid-retry:
   //   - "reloading": our scheduled retry's audio.load() finished successfully
@@ -770,6 +819,10 @@ export function AudioPlayer({
 
     const handleLoadedMetadata = () => {
       metadataLoadedRef.current = true;
+      setHasMediaError(false);
+      // A paused load stops once it has metadata, often before canplay; a
+      // play queued below shows its own buffering from the play event.
+      if (audio.paused) setIsBuffering(false);
       updateDuration('Metadata loaded');
 
       // Apply any pending seek that was queued before metadata loaded
@@ -849,6 +902,7 @@ export function AudioPlayer({
     };
 
     const handleCanPlay = () => {
+      if (!audio.error) setHasMediaError(false);
       setIsBuffering(false);
       // Check if we're recovering from a network error
       handleCanPlayAfterError();
@@ -957,14 +1011,55 @@ export function AudioPlayer({
     };
   }, []);
 
+  const seekFromControls = useCallback((time: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (rangeStart !== undefined && rangeEnd !== undefined && rangeEnd <= rangeStart) return;
+
+    if (!Number.isFinite(time)) return;
+    time = Math.max(rangeStart ?? 0, rangeEnd !== undefined ? Math.min(rangeEnd, time) : time);
+    playbackEndRef.current = rangeEnd ?? null;
+    // Interrupt listening coverage before reporting the new position.
+    onSeek?.(time);
+    // A user seek supersedes a restore still waiting for metadata. Keep its
+    // play intent, but never let the old position replace the user's target.
+    const pendingSeek = pendingSeekRef.current;
+    if (pendingSeek) {
+      pendingSeekRef.current = audio.readyState >= 1 ? null : { ...pendingSeek, time };
+    } else if (rangeStart !== undefined && audio.readyState < 1) {
+      pendingSeekRef.current = { time, autoPlay: playIntentRef.current };
+    }
+    dispatchRetry({ type: 'SEEK_REQUESTED', time });
+    if (rangeStart === undefined || audio.readyState >= 1) audio.currentTime = time;
+    setCurrentTime(time);
+    if (rangeStart !== undefined) onTimeUpdate?.(time);
+    if (audio.readyState >= 1 && pendingSeek?.autoPlay) {
+      userInitiatedRef.current = true;
+      safePlay(audio, 'auto-play after control seek', logDebugEvent);
+    }
+    syncPlayRequest();
+  }, [rangeStart, rangeEnd, onSeek, onTimeUpdate, dispatchRetry, logDebugEvent, setCurrentTime, syncPlayRequest]);
+
   // Every play and pause control goes through these two, so a deliberate
   // pause also cancels a play queued for metadata or a reconnect.
   const play = useCallback((end?: number) => {
     const audio = audioRef.current;
     if (!audio) return;
+    if (rangeStart !== undefined && rangeEnd !== undefined && rangeEnd <= rangeStart) return;
     userInitiatedRef.current = true;
     playIntentRef.current = true;
-    if (end !== undefined) playbackEndRef.current = resolvePlaybackEnd(end);
+    if (rangeStart !== undefined && rangeEnd !== undefined) {
+      const retry = retryStateRef.current;
+      const time = pendingSeekRef.current?.time ??
+        (retry.phase === 'idle' ? audio.currentTime : retry.savedPosition);
+      if (time < rangeStart || time >= rangeEnd) seekFromControls(rangeStart);
+      playbackEndRef.current = Math.min(end ?? rangeEnd, rangeEnd);
+    } else if (end !== undefined) {
+      playbackEndRef.current = resolvePlaybackEnd(end);
+    }
+    // A failed source that cannot reconnect plays nothing; a reconnect
+    // resumes playback below once it recovers.
+    if (recordedErrorTakesOverPlay(audio) && !isRetrying(retryStateRef.current)) return;
     // A queued seek still applies its position when metadata arrives.
     if (pendingSeekRef.current) pendingSeekRef.current.autoPlay = true;
     dispatchRetry({ type: 'PLAY_INTENT_CHANGED', playing: true });
@@ -976,7 +1071,7 @@ export function AudioPlayer({
       safePlay(audio, 'playback requested', logDebugEvent);
     }
     syncPlayRequest();
-  }, [dispatchRetry, logDebugEvent, syncPlayRequest]);
+  }, [rangeStart, rangeEnd, seekFromControls, recordedErrorTakesOverPlay, dispatchRetry, logDebugEvent, syncPlayRequest]);
 
   const pause = useCallback(() => {
     userInitiatedRef.current = true;
@@ -989,33 +1084,9 @@ export function AudioPlayer({
 
   // Media events remain the source of truth for both sets of controls.
   const togglePlay = useCallback(() => {
-    if (isPlaying) pause();
+    if (rangeStart !== undefined ? isPlayRequested() : isPlaying) pause();
     else play();
-  }, [isPlaying, play, pause]);
-
-  const seekFromControls = useCallback((time: number) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    playbackEndRef.current = null;
-    // A user seek supersedes a restore still waiting for metadata. Keep its
-    // play intent, but never let the old position replace the user's target.
-    const pendingSeek = pendingSeekRef.current;
-    if (pendingSeek) {
-      pendingSeekRef.current = audio.readyState >= 1
-        ? null
-        : { ...pendingSeek, time };
-    }
-    dispatchRetry({ type: 'SEEK_REQUESTED', time });
-    audio.currentTime = time;
-    setCurrentTime(time);
-    onSeek?.(time);
-    if (audio.readyState >= 1 && pendingSeek?.autoPlay) {
-      userInitiatedRef.current = true;
-      safePlay(audio, 'auto-play after control seek', logDebugEvent);
-    }
-    syncPlayRequest();
-  }, [onSeek, dispatchRetry, logDebugEvent, setCurrentTime, syncPlayRequest]);
+  }, [rangeStart, isPlayRequested, isPlaying, play, pause]);
 
   const handleSeek = (value: number[]) => seekFromControls(value[0]);
 
@@ -1023,7 +1094,7 @@ export function AudioPlayer({
     const audio = audioRef.current;
     if (!audio) return;
 
-    const newVolume = value[0];
+    const newVolume = Math.max(0, Math.min(1, value[0]));
     cancelSleepFade();
     audio.volume = newVolume;
     setVolume(newVolume);
@@ -1036,7 +1107,10 @@ export function AudioPlayer({
     cancelSleepFade();
 
     if (isMuted) {
+      // Muted by dragging to zero leaves no level to return to; unmuting
+      // then restores full volume, and the slider must show it.
       audio.volume = volume || 1;
+      setVolume(audio.volume);
       setIsMuted(false);
     } else {
       audio.volume = 0;
@@ -1057,12 +1131,26 @@ export function AudioPlayer({
     // Until a reconnect recovers, its restore target is the position. The
     // reload resets the element to 0, and metadata can return before the
     // recovery seek, so readyState alone does not tell.
+    // After giving up, the element was reset by the last reload as well.
     const retry = retryStateRef.current;
-    if (retry.phase === 'scheduled' || retry.phase === 'reloading') {
-      return retry.savedPosition;
-    }
-    return audio.currentTime;
+    return retry.phase === 'idle' ? audio.currentTime : retry.savedPosition;
   }, []);
+
+  const retry = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const time = Math.max(rangeStart ?? 0, rangeEnd !== undefined
+      ? Math.min(rangeEnd, relativeSeekBase(audio)) : relativeSeekBase(audio));
+    pause();
+    dispatchRetry({ type: 'RESET' });
+    metadataLoadedRef.current = false;
+    pendingSeekRef.current = { time, autoPlay: false };
+    playbackEndRef.current = rangeEnd ?? playbackEndRef.current;
+    setHasMediaError(false);
+    setIsBuffering(true);
+    audio.load();
+    syncPlayRequest();
+  };
 
   const skipBackward = () => {
     const audio = audioRef.current;
@@ -1089,7 +1177,7 @@ export function AudioPlayer({
       if (!isReconnecting) play();
     },
     onPause: () => {
-      if (!isReconnecting) pause();
+      if (rangeStart !== undefined || !isReconnecting) pause();
     },
     onSkipBackward: skipBackward,
     onSkipForward: skipForward,
@@ -1158,6 +1246,7 @@ export function AudioPlayer({
           cancelSleepFade();
           if (isMuted) {
             audio.volume = volume || 1;
+            setVolume(audio.volume);
             setIsMuted(false);
           } else {
             audio.volume = 0;
@@ -1191,12 +1280,22 @@ export function AudioPlayer({
 
   return (
     <div
-      className="rounded-lg border border-foreground/35 bg-card p-4"
+      className={renderControls ? undefined : "rounded-lg border border-foreground/35 bg-card p-4"}
       translate="no"
     >
       <audio ref={audioRef} src={src} preload="metadata" />
 
-      <AudioPlayerChrome
+      {renderControls ? <CustomControls render={renderControls} controls={{
+        volume,
+        isMuted,
+        isBuffering,
+        isReconnecting,
+        hasError: retryState.phase === 'exhausted' || (hasMediaError && !isReconnecting),
+        seek: seekFromControls,
+        setVolume: (value) => handleVolumeChange([value]),
+        toggleMute,
+        retry,
+      }} /> : <AudioPlayerChrome
         bufferInfo={bufferInfo}
         catalogId={catalogId}
         clock={timeClock}
@@ -1220,7 +1319,7 @@ export function AudioPlayer({
         showDebug={showDebug}
         sleepTimerEnabled={sleepTimerEnabled}
         volume={volume}
-      />
+      />}
 
       {/* Debug info panel */}
       {showDebug && (

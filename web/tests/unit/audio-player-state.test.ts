@@ -86,8 +86,12 @@ describe('audio retry state', () => {
     }
 
     state = retryReducer(state, { type: 'TIMER_FIRED' });
-    expect(retryReducer(state, { type: 'RELOAD_FAILED', scheduleId: 2 })).toEqual({
+    const exhausted = retryReducer(state, { type: 'RELOAD_FAILED', scheduleId: 2 });
+    expect(exhausted).toEqual({ phase: 'exhausted', savedPosition: 42 });
+    // A seek after giving up moves where a manual retry reloads.
+    expect(retryReducer(exhausted, { type: 'SEEK_REQUESTED', time: 7 })).toEqual({
       phase: 'exhausted',
+      savedPosition: 7,
     });
   });
 
@@ -113,7 +117,7 @@ describe('audio retry state', () => {
     expect(retryReducer(scheduled, { type: 'RECOVERED' })).toBe(
       INITIAL_RETRY_STATE,
     );
-    expect(isRetrying({ phase: 'exhausted' } satisfies RetryState)).toBe(false);
+    expect(isRetrying({ phase: 'exhausted', savedPosition: 0 } satisfies RetryState)).toBe(false);
   });
 });
 

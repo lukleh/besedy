@@ -52,7 +52,7 @@ test.describe("transcript correction", () => {
     const spanResponse = await page.request.get(`/api/catalogs/${TEST_CATALOG_ID}/recordings/${recording.hash}/correction/spans`);
     expect(spanResponse.ok()).toBeTruthy();
     const { spans } = await spanResponse.json() as {
-      spans: Array<{ id: string; startSeconds: number }>;
+      spans: Array<{ id: string; startSeconds: number; endSeconds: number }>;
     };
     await spanList.getByRole("button", { name: /^0:00/ }).first().click();
     await expect(page.getByRole("textbox").first()).toHaveValue("Dobrý den, vítejte.");
@@ -60,8 +60,37 @@ test.describe("transcript correction", () => {
     await expect(page).toHaveURL((url) => !url.searchParams.has("segment"));
     const audio = page.locator("audio").first();
     const spanControls = page.getByTestId("correction-span-audio");
+    await expect(page.locator("audio")).toHaveCount(1);
+    await expect(page.getByTestId("audio-play-button")).toHaveCount(0);
     await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
     await expect(page.getByTestId("sleep-timer-button")).toHaveCount(0);
+
+    // The segment has its own precise, keyboard-accessible timeline and
+    // volume controls; moving its paused position must not start playback.
+    const seek = page.getByTestId("correction-span-seek").getByRole("slider");
+    await seek.focus();
+    await seek.press("End");
+    await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBe(spans[0].endSeconds);
+    await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
+    await seek.press("Home");
+    await seek.press("ArrowRight");
+    await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBeCloseTo(spans[0].startSeconds + 0.1, 2);
+    await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
+    const volume = page.getByTestId("correction-volume").getByRole("slider");
+    await volume.focus();
+    await volume.press("Home");
+    await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.volume)).toBe(0);
+    await page.getByTestId("correction-mute").click();
+    await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.volume)).toBeGreaterThan(0);
+    await volume.focus();
+    await volume.press("End");
+    await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.volume)).toBe(1);
+    await seek.focus();
+    await seek.press("Home");
+    await testInfo.attach("correction-segment-player", {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
 
     await spanControls.getByRole("button", { name: /^(Přehrát úsek|Play span)$/ }).click();
     const pauseSpan = spanControls.getByRole("button", { name: /Pozastavit úsek|Pause span/ });
@@ -112,6 +141,21 @@ test.describe("transcript correction", () => {
       const linkedAudio = linkedPage.locator("audio").first();
       await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
       await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBe(spans[1].startSeconds);
+
+      // Space restarts a finished segment, and seeking to its end while
+      // playing still stops there instead of spilling into another segment.
+      const linkedSeek = linkedPage.getByTestId("correction-span-seek").getByRole("slider");
+      await linkedSeek.focus();
+      await linkedSeek.press("End");
+      await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBe(spans[1].endSeconds);
+      await linkedSeek.blur();
+      await linkedPage.keyboard.press("Space");
+      await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(false);
+      await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBeLessThan(spans[1].startSeconds + 1);
+      await linkedSeek.focus();
+      await linkedSeek.press("End");
+      await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
+      await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBe(spans[1].endSeconds);
 
       const missingId = "00000000-0000-4000-8000-000000000000";
       await linkedPage.goto(`${correctionPath}?segment=${missingId}`);
