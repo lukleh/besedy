@@ -418,7 +418,9 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
     )
 
     result = handle_loudness(loudness_args)
-    if result != 0:
+    if result == EXIT_ROWS_SKIPPED:
+        skipped_steps.append("loudness")
+    elif result != 0:
         failures.append(("loudness", "Loudness analysis failed"))
         if not continue_on_error:
             print(f"\nPipeline stopped: loudness failed with exit code {result}")

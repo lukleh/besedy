@@ -26,6 +26,7 @@ from besedy.commands.catalog.file_processing import AddFilesResult
 from besedy.commands.catalog.loudness import LoudnessRequest, handle_loudness
 from besedy.commands.catalog.stage import StageAudioRequest, handle_stage_audio
 from besedy.lib.catalog.manager import AUDIO_HASH_ALGORITHM, FileRecord, write_merged_csv
+from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 
 TS = "20260101_120000"
 HASH_A = "a" * 64
@@ -136,7 +137,8 @@ class TestLoudness:
 
         monkeypatch.setattr(loudness_command, "get_loudness_metrics", analyze)
 
-        assert handle_loudness(LoudnessRequest(csv=catalog, no_color=True)) == 0
+        expected = EXIT_ROWS_SKIPPED if with_new_analysis else 0
+        assert handle_loudness(LoudnessRequest(csv=catalog, no_color=True)) == expected
 
         actual = {row["Hash"]: row for row in _read_rows(loudness_csv)}
         assert actual[HASH_A]["Full Path"] == str(moved)
@@ -242,7 +244,10 @@ class TestLoudness:
             loudness_command, "get_loudness_metrics", lambda *_args: (None, "no audio stream")
         )
 
-        assert handle_loudness(LoudnessRequest(csv=catalog, parallel=1, no_color=True)) == 0
+        assert (
+            handle_loudness(LoudnessRequest(csv=catalog, parallel=1, no_color=True))
+            == EXIT_ROWS_SKIPPED
+        )
 
         rows = {row["Hash"]: row for row in _read_rows(loudness_csv)}
         assert set(rows) == {HASH_A, HASH_B}

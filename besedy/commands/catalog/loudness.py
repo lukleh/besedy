@@ -36,6 +36,7 @@ from besedy.core.symlinks import (
 )
 from besedy.lib.catalog.manager import check_ffmpeg, check_ffprobe, load_csv
 from besedy.lib.data.atomic_io import atomic_path
+from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 
 
 @dataclass
@@ -118,6 +119,9 @@ Required before stage-audio. Takes time as each file must be fully decoded.
 Example:
   catalog loudness                # Analyze all files
   catalog loudness --parallel 16  # Override default workers
+
+Exit status: 0 when every row is measured or reused; 2 when rows are skipped;
+1 when the command itself fails.
 """,
         formatter_class=formatter_class,
     )
@@ -310,18 +314,24 @@ def handle_loudness(
     # Prepare work items: (row_index, row, file_path) - skip files with existing data
     work_items: list[tuple[int, dict[str, str], Path]] = []
     skipped_existing = 0
+    errors: list[tuple[int, str, str]] = []
     for idx, row in enumerate(rows):
-        file_path_str = row.get(path_column, "").strip()
-        if not file_path_str:
-            continue
-        file_path = Path(file_path_str)
-        if not file_path.exists():
-            continue
         row_hash = row.get(hash_column, "").strip()
         if row_hash in existing_loudness:
             skipped_existing += 1
             continue
+        file_path_str = row.get(path_column, "").strip()
+        if not file_path_str:
+            errors.append((idx, row_hash, "source path is blank"))
+            continue
+        file_path = Path(file_path_str)
+        if not file_path.exists():
+            errors.append((idx, file_path_str, "source file not found"))
+            continue
         work_items.append((idx, row, file_path))
+
+    for _, source, error in errors:
+        print(f"Skipping {source}: {error}", file=sys.stderr)
 
     if skipped_existing > 0:
         print(f"Skipping {skipped_existing} files with existing loudness data")
@@ -334,7 +344,6 @@ def handle_loudness(
     # === Phase 3: Parallel Execution ===
     # Track processed rows and errors
     processed_indices: set[int] = set()
-    errors: list[tuple[int, str, str]] = []
     write_lock = threading.Lock()
     analyzed_count = 0
 
@@ -389,6 +398,8 @@ def handle_loudness(
                             metrics = None
                             error = str(exc)
 
+                        if metrics is None and not error:
+                            error = "loudness analysis returned no measurements"
                         if error:
                             errors.append((idx, file_path.name, error))
                             progress.console.print(
@@ -456,4 +467,4 @@ def handle_loudness(
     if errors:
         print(f"  Errors: {len(errors)}")
 
-    return 0
+    return EXIT_ROWS_SKIPPED if errors else 0

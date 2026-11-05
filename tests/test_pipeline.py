@@ -158,7 +158,14 @@ def test_run_pipeline_owns_speaker_clustering(
     assert len(cluster_calls) == expected_cluster_calls
 
 
-PER_ROW_STEPS = ("stage-audio", "archive", "transcribe", "diarize", "export-transcripts")
+PER_ROW_STEPS = (
+    "loudness",
+    "stage-audio",
+    "archive",
+    "transcribe",
+    "diarize",
+    "export-transcripts",
+)
 
 
 def _stub_every_step(

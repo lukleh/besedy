@@ -1531,8 +1531,7 @@ def handle_archive(
         print(f"  Symlink:    {get_default_archived_symlink()}")
     print()
 
-    # Rows that failed to encode are skipped; the step itself ran.
-    has_errors = any(
-        s.reason not in ("output already exists", "source file not found") for s in skipped
-    )
+    # Existing output satisfies the row; missing sources and encoding failures
+    # leave requested work incomplete even though the command itself ran.
+    has_errors = any(s.reason != "output already exists" for s in skipped)
     return EXIT_ROWS_SKIPPED if has_errors else 0
