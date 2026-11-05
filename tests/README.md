@@ -14,6 +14,9 @@ uv run pytest tests/test_cli_parser.py::TestCatalogParserStructure::test_subcomm
 
 # Skip slower or environment-heavy cases
 uv run pytest -m "not slow and not integration and not gpu"
+
+# Jobs API, ingest, correction indexing, and runtime integration coverage
+just test-jobs -q
 ```
 
 ## Suite Layout
@@ -32,6 +35,11 @@ Markers live in `pytest.ini`:
 - `gpu`: needs CUDA
 - `slow`: long-running scenarios
 - `e2e`: end-to-end pipeline coverage
+- `jobs`: jobs API, host-worker, and runtime coverage, selected by the jobs CI lane
+
+Tests that require the jobs extra carry both `jobs` and `optional_dependency`.
+Keep new jobs integration tests marked `jobs` so CI and `just test-jobs`
+pick them up through the same selector.
 
 Examples:
 

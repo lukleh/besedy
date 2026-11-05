@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pytest
 
-pytestmark = pytest.mark.optional_dependency
+pytestmark = [pytest.mark.optional_dependency, pytest.mark.jobs]
 pytest.importorskip("prefect", reason="requires the optional jobs extra")
 
 from besedy.lib.prefect_jobs import deploy as deploy_module  # noqa: E402
