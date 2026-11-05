@@ -429,6 +429,28 @@ export async function listSpans(
   };
 }
 
+/**
+ * Where the page holding a span starts when the list is paged by `limit`, or
+ * null when the span is not in this workspace. The position is counted in
+ * the list's own order rather than read from the ordinal, so the offset
+ * always names the page `listSpans` returns with that span on it.
+ */
+export async function locateSpanPage(
+  workspaceId: string,
+  spanId: string,
+  limit: number
+): Promise<number | null> {
+  const span = await prisma.transcriptSpan.findFirst({
+    where: { id: spanId, workspaceId },
+    select: { ordinal: true },
+  });
+  if (!span) return null;
+  const before = await prisma.transcriptSpan.count({
+    where: { workspaceId, ordinal: { lt: span.ordinal } },
+  });
+  return Math.floor(before / limit) * limit;
+}
+
 function toSpanView(span: SpanSummaryRow, commentCount: number, flags: SpanFlag[]): SpanView {
   const revision = span.currentRevision;
   return {

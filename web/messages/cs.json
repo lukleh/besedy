@@ -497,6 +497,13 @@
     "nextOpen": "Další k řešení",
     "nothingLeft": "Nic dalšího na vás nečeká.",
     "overviewLink": "Přehled korektur",
+    "shareSegment": "Sdílet segment",
+    "segmentLinkCopied": "Odkaz na segment byl zkopírován.",
+    "segmentLinkCopyFailed": "Odkaz se nepodařilo zkopírovat. Zkopírujte adresu z adresního řádku.",
+    "segmentLinkMissing": "Odkazovaný segment v této korektuře neexistuje.",
+    "segmentLinkLoadFailed": "Odkazovaný segment se nepodařilo načíst. Zkuste to znovu.",
+    "segmentLinkResume": "Pokračovat v korektuře",
+    "segmentLinkRetry": "Zkusit znovu",
     "jump": {
       "label": "Přejít na další segment",
       "mine_open": "Čeká na mě",

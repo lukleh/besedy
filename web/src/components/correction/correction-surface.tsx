@@ -7,15 +7,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { Check, Eraser, MessageSquare, Pause, Play, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { Check, Eraser, MessageSquare, Pause, Play, Share2, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
+import { shareOrCopyLink } from "@/lib/share-link";
 import {
   buildAudioUrl,
   buildCorrectionNextUrl,
+  buildCorrectionPagePath,
   buildCorrectionSpanCommentsUrl,
   buildCorrectionSpanUrl,
   buildCorrectionSpansUrl,
@@ -58,6 +61,35 @@ import {
 } from "./correction-types";
 
 const PAGE_SIZE = 200;
+
+/** Where the list starts: at a page offset, or on the page holding a linked segment. */
+type SpanListAnchor = { offset: number } | { segment: string };
+
+function pageOffsetOf(ordinal: number): number {
+  return Math.floor(ordinal / PAGE_SIZE) * PAGE_SIZE;
+}
+
+/**
+ * Drop a shared link from the address once it has opened its segment, so the
+ * address does not keep naming a segment the person has since left.
+ */
+function dropSegmentLink() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("segment")) return;
+  url.searchParams.delete("segment");
+  // Next copies its internal history state and updates useSearchParams.
+  // Passing the existing Next state would bypass that notification.
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+// Scroll only the segment list. Element.scrollIntoView() would also scroll
+// the page whenever the list item is outside the viewport.
+function revealInList(list: HTMLElement, item: HTMLElement) {
+  const listRect = list.getBoundingClientRect();
+  const itemRect = item.getBoundingClientRect();
+  if (itemRect.top < listRect.top) list.scrollTop -= listRect.top - itemRect.top;
+  else if (itemRect.bottom > listRect.bottom) list.scrollTop += itemRect.bottom - listRect.bottom;
+}
 
 const KINDS = spanKindSchema.options;
 
@@ -207,17 +239,23 @@ export function CorrectionSurface({
   const queryClient = useQueryClient();
   const localDrafts = useCorrectionDrafts(userId, workspace.id);
 
-  // Nobody finishes a three-hour recording in a sitting, so the surface opens
-  // on the first span that still wants this person rather than on the first
-  // span of the recording.
+  // A shared link, `?segment=<span ID>`, opens on that segment. It is read
+  // when the page opens and never written: the share button, not the
+  // address, is how a segment is shared.
+  const searchParams = useSearchParams();
+  const [linkedSpanId] = useState(() => searchParams.get("segment") || null);
+  // Nobody finishes a three-hour recording in a sitting, so without a link
+  // the surface opens on the first span that still wants this person rather
+  // than on the first span of the recording.
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(
-    resume?.spanId ?? null
+    linkedSpanId ?? resume?.spanId ?? null
   );
   // Where the list starts. Captured at first: the resume position moves as
   // work is done, and following it would restart the list from a different
-  // page under the person. Only a deliberate jump moves it.
-  const [anchorOffset, setAnchorOffset] = useState(() =>
-    resume ? Math.floor(resume.ordinal / PAGE_SIZE) * PAGE_SIZE : 0
+  // page under the person. Only a deliberate jump moves it. For a link the
+  // server finds the page holding the segment.
+  const [anchor, setAnchor] = useState<SpanListAnchor>(() =>
+    linkedSpanId ? { segment: linkedSpanId } : { offset: resume ? pageOffsetOf(resume.ordinal) : 0 }
   );
   const [draft, setDraft] = useState("");
   // Whether the selected span still needs listening before it can be
@@ -307,6 +345,8 @@ export function CorrectionSurface({
     autoPlay: boolean;
   } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const listRef = useRef<HTMLElement | null>(null);
+  const selectedListItemRef = useRef<HTMLButtonElement | null>(null);
   // The span on screen, for callbacks that outlive the render they came from.
   const selectedIdRef = useRef<string | null>(null);
   // A command whose outcome is not known yet: the response was lost, or the
@@ -325,24 +365,24 @@ export function CorrectionSurface({
   // "next" and the strip, not of a narrower list whose members would change
   // with every decision.
   const spansQuery = useInfiniteQuery<SpanPage>({
-    queryKey: ["correction-spans", catalogId, hash, workspace.id, anchorOffset],
-    initialPageParam: anchorOffset,
+    queryKey: ["correction-spans", catalogId, hash, workspace.id, anchor],
+    initialPageParam: anchor,
     queryFn: async ({ pageParam }) =>
       fetchJson<SpanPage>(
         buildCorrectionSpansUrl(catalogId, hash, {
-          offset: pageParam as number,
+          ...(pageParam as SpanListAnchor),
           limit: PAGE_SIZE,
         }),
         { schema: spanPageSchema }
       ),
-    getNextPageParam: (lastPage) => {
+    getNextPageParam: (lastPage): SpanListAnchor | undefined => {
       const next = lastPage.offset + lastPage.spans.length;
-      return next < lastPage.total ? next : undefined;
+      return next < lastPage.total ? { offset: next } : undefined;
     },
     // The list can start in the middle of the recording, so it loads in both
     // directions: pages before the resume position are reachable too.
-    getPreviousPageParam: (firstPage) =>
-      firstPage.offset > 0 ? Math.max(0, firstPage.offset - PAGE_SIZE) : undefined,
+    getPreviousPageParam: (firstPage): SpanListAnchor | undefined =>
+      firstPage.offset > 0 ? { offset: Math.max(0, firstPage.offset - PAGE_SIZE) } : undefined,
   });
 
   const spans = useMemo(
@@ -354,6 +394,14 @@ export function CorrectionSurface({
     () => spans.find((span) => span.id === selectedSpanId) ?? spans[0] ?? null,
     [spans, selectedSpanId]
   );
+  useEffect(() => {
+    if (linkedSpanId && selected?.id === linkedSpanId) dropSegmentLink();
+  }, [linkedSpanId, selected?.id]);
+  useEffect(() => {
+    if (listRef.current && selectedListItemRef.current) {
+      revealInList(listRef.current, selectedListItemRef.current);
+    }
+  }, [selected?.id]);
 
   // A fresh selection restores any local draft and positions the audio on
   // the span without playing it. When the revision moves under the same span
@@ -561,7 +609,7 @@ export function CorrectionSurface({
       }
       playerRef.current?.pause();
       playback.interrupt();
-      setAnchorOffset(Math.floor(target.ordinal / PAGE_SIZE) * PAGE_SIZE);
+      setAnchor({ offset: pageOffsetOf(target.ordinal) });
       setSelectedSpanId(target.spanId);
     },
     [spans, selectSpan, playback]
@@ -836,6 +884,43 @@ export function CorrectionSurface({
         : null
     : null;
 
+  const shareSegment = async () => {
+    if (!selected) return;
+    const href = new URL(buildCorrectionPagePath(catalogId, hash, selected.id), window.location.origin).href;
+    try {
+      if (await shareOrCopyLink(href) === "copied") toast({ description: t("segmentLinkCopied") });
+    } catch {
+      toast({ description: t("segmentLinkCopyFailed"), variant: "destructive" });
+    }
+  };
+
+  // A link whose page did not load: the segment is not in this workspace,
+  // or the request failed. Either way the person can carry on without it.
+  if ("segment" in anchor && spansQuery.isError && !spansQuery.data) {
+    const missing = spansQuery.error instanceof ApiError
+      && (spansQuery.error.payload as { code?: unknown } | undefined)?.code === "SPAN_NOT_FOUND";
+    const continueWithoutLink = () => {
+      dropSegmentLink();
+      setSelectedSpanId(resume?.spanId ?? null);
+      setAnchor({ offset: resume ? pageOffsetOf(resume.ordinal) : 0 });
+    };
+    return (
+      <div className="rounded-lg border bg-muted/50 p-4" role="alert">
+        <p className="text-sm">{t(missing ? "segmentLinkMissing" : "segmentLinkLoadFailed")}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {!missing && (
+            <Button variant="outline" onClick={() => spansQuery.refetch()} data-native-space>
+              {t("segmentLinkRetry")}
+            </Button>
+          )}
+          <Button variant="outline" onClick={continueWithoutLink} data-native-space>
+            {t("segmentLinkResume")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
       <div className="lg:col-span-2">
@@ -845,7 +930,7 @@ export function CorrectionSurface({
           onJump={(span: StripSpan) => jumpTo(span)}
         />
       </div>
-      <aside className="max-h-[70vh] space-y-1 overflow-y-auto rounded-lg border p-2">
+      <aside ref={listRef} className="max-h-[70vh] space-y-1 overflow-y-auto rounded-lg border p-2">
         <div
           role="group"
           aria-label={t("jump.label")}
@@ -883,6 +968,7 @@ export function CorrectionSurface({
         {spans.map((span) => (
           <button
             key={span.id}
+            ref={span.id === selected?.id ? selectedListItemRef : undefined}
             type="button"
             onClick={() => selectSpan(span)}
             className={`w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted ${
@@ -970,7 +1056,11 @@ export function CorrectionSurface({
                 )}
               </Badge>
               {/* Between the player and the text, where the work happens. */}
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={shareSegment} data-native-space>
+                  <Share2 className="h-4 w-4" aria-hidden="true" />
+                  {t("shareSegment")}
+                </Button>
                 <CorrectionGuideDialog body={guide} />
               </div>
             </div>

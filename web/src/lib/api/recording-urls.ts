@@ -144,10 +144,11 @@ export function buildCorrectionUrl(catalogId: string, hash: string): string {
 export function buildCorrectionSpansUrl(
   catalogId: string,
   hash: string,
-  options: { offset?: number; limit?: number } = {}
+  options: { offset?: number; segment?: string; limit?: number } = {}
 ): string {
   const params = new URLSearchParams();
   if (options.offset !== undefined) params.set("offset", String(options.offset));
+  if (options.segment !== undefined) params.set("segment", options.segment);
   if (options.limit !== undefined) params.set("limit", String(options.limit));
   const query = params.toString();
   return `${buildCorrectionUrl(catalogId, hash)}/spans${query ? `?${query}` : ""}`;
@@ -194,6 +195,8 @@ export function buildCorrectionPublicationUrl(catalogId: string, hash: string): 
   return `${buildCorrectionUrl(catalogId, hash)}/publication`;
 }
 
-export function buildCorrectionPagePath(catalogId: string, hash: string): string {
-  return `/catalog/${catalogId}/recording/${hash}/correction`;
+export function buildCorrectionPagePath(catalogId: string, hash: string, spanId?: string | null): string {
+  const path = `/catalog/${catalogId}/recording/${hash}/correction`;
+  if (!spanId) return path;
+  return `${path}?${new URLSearchParams({ segment: spanId })}`;
 }

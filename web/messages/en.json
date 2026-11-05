@@ -497,6 +497,13 @@
     "nextOpen": "Next to resolve",
     "nothingLeft": "Nothing else is waiting for you.",
     "overviewLink": "Correction overview",
+    "shareSegment": "Share segment",
+    "segmentLinkCopied": "Segment link copied.",
+    "segmentLinkCopyFailed": "Could not copy the link. Copy the address from the address bar.",
+    "segmentLinkMissing": "The linked segment does not exist in this correction workspace.",
+    "segmentLinkLoadFailed": "Could not load the linked segment. Please try again.",
+    "segmentLinkResume": "Continue correcting",
+    "segmentLinkRetry": "Try again",
     "jump": {
       "label": "Go to the next segment",
       "mine_open": "Waiting for me",

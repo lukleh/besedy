@@ -134,6 +134,13 @@ describe("copyToClipboard", () => {
       expect(execCommandMock).toHaveBeenCalledWith("copy");
     });
 
+    it("rejects and still removes the textarea when the browser refuses the copy", async () => {
+      execCommandMock.mockReturnValue(false);
+
+      await expect(copyToClipboard("refused")).rejects.toThrow("refused");
+      expect(removeChildMock).toHaveBeenCalledWith(mockTextarea);
+    });
+
     it("handles long text", async () => {
       const longText = "a".repeat(10000);
       await copyToClipboard(longText);

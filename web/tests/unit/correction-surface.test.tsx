@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useImperativeHandle } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,10 @@ import { CorrectionDraftsProvider } from "@/contexts/correction-drafts-context";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
+}));
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 
 vi.mock("@/lib/api/fetch-json", () => ({
@@ -29,10 +33,11 @@ vi.mock("@/lib/api/fetch-json", () => ({
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: mocks.toast }),
 }));
 
 const mocks = vi.hoisted(() => ({
+  toast: vi.fn(),
   audioPlayer: vi.fn(),
   controls: {
     play: vi.fn(),
@@ -131,9 +136,11 @@ function renderSurface(resume: { spanId: string; ordinal: number } | null, initi
 const fetchJsonMock = vi.mocked(fetchJson);
 
 beforeEach(() => {
+  window.history.replaceState(null, "", `/catalog/${CATALOG_ID}/recording/${HASH}/correction`);
   sessionStorage.clear();
   fetchJsonMock.mockReset();
   mocks.audioPlayer.mockClear();
+  mocks.toast.mockReset();
   mocks.controls.play.mockReset();
   mocks.controls.pause.mockReset();
   mocks.controls.getCurrentTime.mockReset().mockReturnValue(0);
@@ -165,11 +172,145 @@ describe("CorrectionSurface", () => {
   function serveDraftSpans(readPage = () => page(0, 2, 2)) {
     fetchJsonMock.mockImplementation(async (input) => {
       const url = String(input);
+      if (url.endsWith("/strip")) return {
+        workspaceId: WORKSPACE.id,
+        spans: readPage().spans.map((span) => ({
+          spanId: span.id, ordinal: span.ordinal,
+          startSeconds: span.startSeconds, endSeconds: span.endSeconds,
+          state: span.state, wantsMe: true,
+        })),
+      };
       if (url.includes("/spans?offset=0")) return readPage();
+      const linked = new URL(url, "http://test").searchParams.get("segment");
+      if (linked !== null) return linkedPage(readPage(), linked);
       if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
       throw new Error(`unexpected ${url}`);
     });
   }
+
+  // The server answers a linked segment with the page holding it.
+  function linkedPage(served: ReturnType<typeof page>, spanId: string) {
+    if (served.spans.some((span) => span.id === spanId)) return served;
+    throw new ApiError("Span not found in this workspace", 404, { code: "SPAN_NOT_FOUND" });
+  }
+
+  it("opens a shared segment beyond the first page in one request, without waiting for the strip", async () => {
+    window.history.replaceState(null, "", `${window.location.pathname}?segment=span-230&filter=mine#notes`);
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return new Promise(() => {});
+      if (url.includes("/spans?segment=span-230")) return page(200, 50, 250);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+    renderSurface({ spanId: "span-0", ordinal: 0 });
+    expect(await screen.findByDisplayValue("machine 230")).toBeInTheDocument();
+    expect(lastPlayerProps()).toMatchObject({ seekTo: 2300, autoPlayOnSeek: false });
+    await waitFor(() => expect(window.location.search).toBe("?filter=mine"));
+    expect(window.location.hash).toBe("#notes");
+    expect(fetchJsonMock.mock.calls.some(([url]) => String(url).includes("/spans?offset="))).toBe(false);
+  });
+
+  it("offers a retry and the resume position when a linked segment's page fails to load", async () => {
+    window.history.replaceState(null, "", `${window.location.pathname}?segment=span-1`);
+    let fail = true;
+    serveDraftSpans();
+    const reads = fetchJsonMock.getMockImplementation()!;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      if (fail && String(input).includes("/spans?segment=")) throw new ApiError("Unavailable", 503);
+      return reads(input, init);
+    });
+    renderSurface({ spanId: "span-0", ordinal: 0 });
+    expect(await screen.findByText("segmentLinkLoadFailed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "segmentLinkResume" })).toBeInTheDocument();
+
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: "segmentLinkRetry" }));
+    expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
+    await waitFor(() => expect(window.location.search).toBe(""));
+  });
+
+  it("explains a missing link and only opens the resume segment after explicit recovery", async () => {
+    window.history.replaceState(null, "", `${window.location.pathname}?segment=missing`);
+    serveDraftSpans();
+    renderSurface({ spanId: "span-1", ordinal: 1 });
+    expect(await screen.findByText("segmentLinkMissing")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "segmentLinkRetry" })).not.toBeInTheDocument();
+    expect(window.location.search).toBe("?segment=missing");
+    expect(fetchJsonMock.mock.calls.some(([url]) => String(url).includes("/spans?offset="))).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "segmentLinkResume" }));
+    expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
+    expect(lastPlayerProps().autoPlayOnSeek).toBe(false);
+  });
+
+  it.each([false, true])("shares a canonical segment URL by copying it on a desktop (copy fails: %s)", async (fail) => {
+    window.history.replaceState(null, "", `${window.location.pathname}?backTo=%2Fsettings&filter=mine#notes`);
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    const writeText = fail ? vi.fn().mockRejectedValue(new Error("unavailable")) : vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    try {
+      serveDraftSpans();
+      renderSurface(null);
+      await screen.findByDisplayValue("machine 0");
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "shareSegment" })); });
+      expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/catalog/${CATALOG_ID}/recording/${HASH}/correction?segment=span-0`);
+      expect(mocks.toast).toHaveBeenCalledWith(fail
+        ? { description: "segmentLinkCopyFailed", variant: "destructive" }
+        : { description: "segmentLinkCopied" });
+      expect(window.location.search).toContain("backTo=");
+      expect(window.location.hash).toBe("#notes");
+    } finally {
+      if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
+
+  it("opens the system share sheet on a touch device without a copy toast", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
+    });
+    try {
+      serveDraftSpans();
+      renderSurface(null);
+      await screen.findByDisplayValue("machine 0");
+      await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+      await screen.findByDisplayValue("machine 1");
+      expect(window.location.search).toBe("");
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "shareSegment" })); });
+      expect(share).toHaveBeenCalledWith({
+        url: `${window.location.origin}/catalog/${CATALOG_ID}/recording/${HASH}/correction?segment=span-1`,
+      });
+      expect(mocks.toast).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(navigator, "share");
+      Reflect.deleteProperty(window, "matchMedia");
+    }
+  });
+
+  it("brings the selected span into view by scrolling only the segment list", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+    try {
+      serveDraftSpans(() => page(0, 3, 3));
+      renderSurface(null);
+      await screen.findByDisplayValue("machine 0");
+      const item = screen.getByRole("button", { name: /machine 2/ });
+      const list = item.closest("aside")!;
+      vi.spyOn(list, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 300, 100));
+      vi.spyOn(item, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 130, 300, 30));
+
+      await userEvent.click(item);
+      expect(await screen.findByDisplayValue("machine 2")).toBeInTheDocument();
+      expect(list.scrollTop).toBe(60);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
 
   it("selects another span while playing by pausing and positioning it without autoplay", async () => {
     serveDraftSpans();
