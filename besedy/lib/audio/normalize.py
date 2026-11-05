@@ -41,6 +41,7 @@ from besedy.lib.audio.normalize_stage_helpers import (
     reuse_existing_staged_entry,
     run_stage_conversion,
 )
+from besedy.lib.audio.staged_measurements import StagedAudioMeasurements
 from besedy.lib.audio.types import (
     CONVERSION_LOG_DIR,
     STAGED_AUDIO_EXTENSION,
@@ -70,6 +71,7 @@ def stage_audio_files(
     aggressive_normalization: bool = True,
     verbose: bool = False,
     protected: Mapping[Path, ProtectedStagedAudio] | None = None,
+    cached_measurements: Mapping[tuple[str, Path], StagedAudioMeasurements] | None = None,
 ) -> tuple[list[PreparedEntry], list[SkippedEntry]]:
     """Stage audio files by converting to normalized 16kHz mono WAV.
 
@@ -80,6 +82,7 @@ def stage_audio_files(
     if protected is None and not reuse_existing:
         protected = load_protected_staged_audio()
     protected = protected or {}
+    cached_measurements = cached_measurements or {}
     prepared: list[PreparedEntry] = []
     skipped: list[SkippedEntry] = []
     seen_hashes: dict[str, Path] = {}
@@ -143,7 +146,7 @@ def stage_audio_files(
                     f"  [dim]↻[/dim] {rich_escape(source.name)} ({status_suffix})",
                     highlight=False,
                 )
-            entry, existing_size_bytes, existing_metrics = reuse_existing_staged_entry(
+            entry, existing_size_bytes, existing_measurements = reuse_existing_staged_entry(
                 row=row,
                 source=source,
                 staged_path=staged_path,
@@ -152,11 +155,17 @@ def stage_audio_files(
                 analysis_ffmpeg_bin=analysis_ffmpeg_bin,
                 analysis_ffprobe_bin=analysis_ffprobe_bin,
                 continue_on_error=continue_on_error,
+                cached_measurements=cached_measurements.get(
+                    (row.sha256.strip().lower(), staged_path.absolute())
+                ),
             )
             manifest_writer.write_entry(
                 entry,
                 size_bytes=existing_size_bytes,
-                metrics=existing_metrics,
+                metrics=existing_measurements.metrics if existing_measurements else None,
+                measurement_fingerprint=(
+                    existing_measurements.fingerprint if existing_measurements else ""
+                ),
             )
             prepared.append(entry)
             continue
@@ -166,12 +175,6 @@ def stage_audio_files(
             if not continue_on_error:
                 raise RuntimeError(f"Audio file not found: {resolved_str}")
             continue
-
-        if staged_path.exists() or staged_path.is_symlink():
-            try:
-                staged_path.unlink()
-            except FileNotFoundError:
-                pass
 
         conversions.append((index, row, source, staged_path, duration_seconds))
         seen_hashes[hash_component] = source
@@ -282,6 +285,7 @@ def stage_audio_files(
                             result.prepared,
                             size_bytes=result.size_bytes,
                             metrics=result.metrics,
+                            measurement_fingerprint=result.measurement_fingerprint,
                         )
                         prepared.append(result.prepared)
                         has_warnings = any(m.is_error for m in (result.messages or ()))

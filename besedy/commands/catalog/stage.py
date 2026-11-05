@@ -22,6 +22,7 @@ from besedy.core.symlinks import (
     validate_symlink_can_be_created,
 )
 from besedy.lib.audio.normalize import stage_audio_files
+from besedy.lib.audio.staged_measurements import load_staged_measurements
 from besedy.lib.audio.types import ManifestWriter
 from besedy.lib.data.atomic_io import atomic_path
 from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
@@ -238,47 +239,44 @@ def handle_stage_audio(
         print(f"Created staging directory: {staging_dir}")
 
     include_analysis = not request.skip_audio_analysis
+    cached_measurements = load_staged_measurements(normalized_csv_path) if include_analysis else {}
 
     # Create the staging symlink immediately (points to "current data set")
     if not request.no_symlink and staging_symlink is not None:
         create_or_update_symlink(staging_symlink, staging_dir, description="staged audio")
 
-    # The manifest is written into a temp file that replaces the previous one
-    # when staging ends, so a killed run leaves the previous manifest intact.
-    # A failed run still publishes the rows it staged: with --overwrite it has
-    # already deleted the staged files the previous manifest lists.
-    staging_error: RuntimeError | None = None
-    with atomic_path(normalized_csv_path) as temp_manifest_path:
-        manifest_writer = ManifestWriter(
-            temp_manifest_path,
-            include_analysis=include_analysis,
-        )
-        try:
-            prepared, skipped = stage_audio_files(
-                rows,
-                staging_dir,
-                manifest_writer=manifest_writer,
-                include_audio_analysis=include_analysis,
-                analysis_ffmpeg=str(request.ffmpeg_binary),
-                analysis_ffprobe=str(request.ffprobe_binary),
-                continue_on_error=request.continue_on_error,
-                reuse_existing=reuse_existing,
-                aggressive_normalization=not request.no_aggressive_normalization,
-                verbose=request.verbose,
+    # WAV replacements and this manifest are published only after their own
+    # writes succeed. A failed or interrupted run keeps the previous manifest.
+    try:
+        with atomic_path(normalized_csv_path) as temp_manifest_path:
+            manifest_writer = ManifestWriter(
+                temp_manifest_path,
+                include_analysis=include_analysis,
             )
-        except RuntimeError as exc:
-            staging_error = exc
-        finally:
-            manifest_writer.close()
+            try:
+                prepared, skipped = stage_audio_files(
+                    rows,
+                    staging_dir,
+                    manifest_writer=manifest_writer,
+                    include_audio_analysis=include_analysis,
+                    analysis_ffmpeg=str(request.ffmpeg_binary),
+                    analysis_ffprobe=str(request.ffprobe_binary),
+                    continue_on_error=request.continue_on_error,
+                    reuse_existing=reuse_existing,
+                    aggressive_normalization=not request.no_aggressive_normalization,
+                    verbose=request.verbose,
+                    cached_measurements=cached_measurements,
+                )
+            finally:
+                manifest_writer.close()
+    except RuntimeError as exc:
+        print(f"Error while staging audio: {exc}", file=sys.stderr)
+        return 1
 
     if need_symlink:
         create_or_update_symlink(
             normalized_symlink, normalized_csv_path, description="normalized catalog"
         )
-
-    if staging_error is not None:
-        print(f"Error while staging audio: {staging_error}", file=sys.stderr)
-        return 1
 
     print(f"Wrote staged manifest CSV to {normalized_csv_path}")
     print(f"Staged audio directory: {staging_dir}")

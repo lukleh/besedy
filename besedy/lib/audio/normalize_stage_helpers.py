@@ -10,10 +10,12 @@ import shutil
 import subprocess
 import tempfile
 import threading
-from dataclasses import dataclass, field
+import wave
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from besedy.config.settings import config
+from besedy.core.paths import validate_mono_wav_16k
 from besedy.lib.audio.decode import decode_to_temp_wav
 from besedy.lib.audio.probe import probe_media_duration_seconds
 from besedy.lib.audio.quality import (
@@ -21,6 +23,10 @@ from besedy.lib.audio.quality import (
     analyze_audio_file,
     determine_needs_normalization,
     needs_declipping,
+)
+from besedy.lib.audio.staged_measurements import (
+    StagedAudioMeasurements,
+    staged_measurement_fingerprint,
 )
 from besedy.lib.audio.types import (
     DECLIP_THRESHOLD_DBTP,
@@ -38,6 +44,7 @@ from besedy.lib.audio.types import (
     PreparedEntry,
     SkippedEntry,
 )
+from besedy.lib.data.atomic_io import atomic_path
 from besedy.lib.subprocess_utils import safe_decode
 from besedy.lib.workflow.common import CsvAudioRow
 
@@ -82,11 +89,12 @@ def reuse_existing_staged_entry(
     analysis_ffmpeg_bin: str,
     analysis_ffprobe_bin: str,
     continue_on_error: bool,
-) -> tuple[PreparedEntry, int, AudioQualityMetrics | None]:
+    cached_measurements: StagedAudioMeasurements | None = None,
+) -> tuple[PreparedEntry, int, StagedAudioMeasurements | None]:
     entry = PreparedEntry(row.sha256, source, staged_path, "existing", duration_seconds)
 
     existing_size_bytes = 0
-    existing_metrics: AudioQualityMetrics | None = None
+    existing_measurements: StagedAudioMeasurements | None = None
     try:
         existing_size_bytes = staged_path.stat().st_size
     except OSError as size_exc:
@@ -96,18 +104,18 @@ def reuse_existing_staged_entry(
             size_exc,
         )
 
-    has_metrics_from_csv = bool(
-        row.integrated_loudness_lufs and row.true_peak_db and row.loudness_range_lu
-    )
-
-    if include_audio_analysis and not has_metrics_from_csv:
+    # This row describes the original source, whose loudness changes during
+    # normalization. Only measurements of the staged file belong in its manifest.
+    if include_audio_analysis:
         try:
-            existing_metrics = analyze_audio_file(
-                staged_path,
-                timeout=None,
-                ffmpeg_binary=analysis_ffmpeg_bin,
-                ffprobe_binary=analysis_ffprobe_bin,
-            )
+            if cached_measurements is not None and cached_measurements.matches(staged_path):
+                existing_measurements = cached_measurements
+            else:
+                existing_measurements = _measure_staged_audio(
+                    staged_path,
+                    ffmpeg_binary=analysis_ffmpeg_bin,
+                    ffprobe_binary=analysis_ffprobe_bin,
+                )
         except Exception as exc:
             logging.warning(
                 "[stage_audio_files] audio analysis failed for existing file %s: %s",
@@ -116,23 +124,46 @@ def reuse_existing_staged_entry(
             )
             if not continue_on_error:
                 raise RuntimeError(f"audio analysis failed for {staged_path}: {exc}") from exc
-    elif has_metrics_from_csv:
-        try:
-            existing_metrics = AudioQualityMetrics(
-                integrated_loudness_lufs=row.integrated_loudness_lufs or "",
-                true_peak_db=row.true_peak_db or "",
-                loudness_range_lu=row.loudness_range_lu or "",
-                input_thresh=row.input_thresh or "",
-                target_offset=row.target_offset or "",
-            )
-        except (ValueError, TypeError) as metric_exc:
-            logging.warning(
-                "[stage_audio_files] failed to parse metrics from CSV for %s: %s",
-                staged_path,
-                metric_exc,
-            )
+    return entry, existing_size_bytes, existing_measurements
 
-    return entry, existing_size_bytes, existing_metrics
+
+def _measure_staged_audio(
+    path: Path, *, ffmpeg_binary: str, ffprobe_binary: str
+) -> StagedAudioMeasurements:
+    before = staged_measurement_fingerprint(path)
+    metrics = analyze_audio_file(
+        path, timeout=None, ffmpeg_binary=ffmpeg_binary, ffprobe_binary=ffprobe_binary
+    )
+    if staged_measurement_fingerprint(path) != before:
+        raise RuntimeError(f"Staged audio changed while measuring {path}")
+    return StagedAudioMeasurements(metrics, before)
+
+
+def _validate_staged_wav(path: Path, expected_duration: float) -> None:
+    """Reject empty, truncated, or incompatible WAVs before publishing them."""
+    with wave.open(str(path), "rb") as audio:
+        validate_mono_wav_16k(path, audio.getframerate(), audio.getnchannels())
+        frames = audio.getnframes()
+        if audio.getsampwidth() != 2 or frames <= 0:
+            raise ValueError("staged WAV must contain 16-bit PCM audio")
+        audio.setpos(frames - 1)
+        if len(audio.readframes(1)) != 2:
+            raise ValueError("staged WAV contains truncated audio")
+        duration = frames / audio.getframerate()
+    tolerance = max(
+        DURATION_TOLERANCE_MIN_SECONDS, expected_duration * DURATION_TOLERANCE_PERCENTAGE
+    )
+    if abs(duration - expected_duration) > tolerance:
+        raise ValueError(
+            f"duration mismatch (expected {expected_duration:.2f}s, got {duration:.2f}s)"
+        )
+
+
+class _SkippedConversion(Exception):
+    """Roll back an atomic output when the conversion returned a skipped row."""
+
+    def __init__(self, result: ConversionResult) -> None:
+        self.result = result
 
 
 def run_stage_conversion(
@@ -146,7 +177,63 @@ def run_stage_conversion(
     aggressive_normalization: bool,
     log_notice_state: ConversionLogNoticeState,
 ) -> ConversionResult:
-    """Convert one input row into a staged WAV plus optional analysis metrics."""
+    """Publish a staged WAV only after conversion and validation succeed."""
+    index, row, source, staged_path, duration_seconds = item
+    try:
+        with atomic_path(staged_path, follow_symlinks=False, replace_symlink=True) as candidate:
+            result = _convert_stage_audio(
+                (index, row, source, candidate, duration_seconds),
+                ffmpeg_binary=ffmpeg_binary,
+                include_audio_analysis=include_audio_analysis,
+                analysis_ffmpeg_bin=analysis_ffmpeg_bin,
+                analysis_ffprobe_bin=analysis_ffprobe_bin,
+                continue_on_error=continue_on_error,
+                aggressive_normalization=aggressive_normalization,
+                log_notice_state=log_notice_state,
+            )
+            if result.prepared is None:
+                raise _SkippedConversion(result)
+            prepared = result.prepared
+            _validate_staged_wav(candidate, result.prepared.duration_seconds)
+            if result.measurement_fingerprint and (
+                result.measurement_fingerprint != staged_measurement_fingerprint(candidate)
+            ):
+                result = replace(result, metrics=None, measurement_fingerprint="")
+        if result.measurement_fingerprint:
+            published_fingerprint = staged_measurement_fingerprint(staged_path)
+            # chmod/rename update ctime during publication; the measured inode,
+            # size and mtime must still match before recording the new ctime.
+            if (
+                published_fingerprint.rsplit(":", 1)[0]
+                == result.measurement_fingerprint.rsplit(":", 1)[0]
+            ):
+                result = replace(result, measurement_fingerprint=published_fingerprint)
+            else:
+                result = replace(result, metrics=None, measurement_fingerprint="")
+    except _SkippedConversion as exc:
+        return exc.result
+    except (OSError, ValueError, wave.Error, EOFError) as exc:
+        return ConversionResult(
+            None,
+            SkippedEntry(row.sha256, source, f"staged audio publication failed: {exc}"),
+            (ConversionLogMessage(str(exc), is_error=True),),
+            (),
+        )
+    return replace(result, prepared=replace(prepared, staged=staged_path))
+
+
+def _convert_stage_audio(
+    item: tuple[int, CsvAudioRow, Path, Path, float],
+    *,
+    ffmpeg_binary: str,
+    include_audio_analysis: bool,
+    analysis_ffmpeg_bin: str,
+    analysis_ffprobe_bin: str,
+    continue_on_error: bool,
+    aggressive_normalization: bool,
+    log_notice_state: ConversionLogNoticeState,
+) -> ConversionResult:
+    """Convert into an unpublished candidate, keeping a valid linear fallback."""
 
     _index, row, source, staged_path, duration_seconds = item
     effective_duration = duration_seconds
@@ -649,32 +736,20 @@ def run_stage_conversion(
                     str(staged_path),
                 ]
 
-                messages.append(
-                    ConversionLogMessage(
-                        f"[stage_audio_files] compression retry command: {shlex.join(retry_cmd)}"
-                    )
-                )
-
                 try:
-                    retry_result = subprocess.run(retry_cmd, capture_output=True)
-                    if retry_result.returncode == 0:
+                    with atomic_path(staged_path, follow_symlinks=False) as retry_path:
+                        retry_cmd[-1] = str(retry_path)
                         messages.append(
                             ConversionLogMessage(
-                                f"[stage_audio_files] compression retry succeeded for {source}"
+                                "[stage_audio_files] compression retry command: "
+                                f"{shlex.join(retry_cmd)}"
                             )
                         )
-                        log_lines.append("CompressionRetry: yes")
-                    else:
-                        retry_stderr = safe_decode(retry_result.stderr)
-                        messages.append(
-                            ConversionLogMessage(
-                                f"[stage_audio_files] compression retry failed for {source}, "
-                                f"keeping linear-normalized result: {retry_stderr[:100]}",
-                                is_error=True,
-                            )
-                        )
-                        log_lines.append("CompressionRetry: failed (kept linear result)")
-                except FileNotFoundError as retry_exc:
+                        retry_result = subprocess.run(retry_cmd, capture_output=True)
+                        if retry_result.returncode != 0:
+                            raise RuntimeError(safe_decode(retry_result.stderr)[:100])
+                        _validate_staged_wav(retry_path, effective_duration)
+                except (OSError, RuntimeError, ValueError, wave.Error, EOFError) as retry_exc:
                     messages.append(
                         ConversionLogMessage(
                             f"[stage_audio_files] compression retry failed for {source}, "
@@ -683,8 +758,16 @@ def run_stage_conversion(
                         )
                     )
                     log_lines.append("CompressionRetry: failed (kept linear result)")
+                else:
+                    messages.append(
+                        ConversionLogMessage(
+                            f"[stage_audio_files] compression retry succeeded for {source}"
+                        )
+                    )
+                    log_lines.append("CompressionRetry: yes")
 
             analysis_metrics: AudioQualityMetrics | None = None
+            measurement_fingerprint = ""
             file_size_bytes = 0
             if include_audio_analysis:
                 try:
@@ -699,12 +782,13 @@ def run_stage_conversion(
                     )
 
                 try:
-                    analysis_metrics = analyze_audio_file(
+                    measurements = _measure_staged_audio(
                         staged_path,
-                        timeout=None,
                         ffmpeg_binary=analysis_ffmpeg_bin,
                         ffprobe_binary=analysis_ffprobe_bin,
                     )
+                    analysis_metrics = measurements.metrics
+                    measurement_fingerprint = measurements.fingerprint
                 except Exception as analysis_exc:
                     messages.append(
                         ConversionLogMessage(
@@ -737,6 +821,7 @@ def run_stage_conversion(
                 tuple(log_lines),
                 metrics=analysis_metrics,
                 size_bytes=file_size_bytes,
+                measurement_fingerprint=measurement_fingerprint,
             )
 
         failure_lines = [
