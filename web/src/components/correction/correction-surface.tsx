@@ -1016,6 +1016,37 @@ export function CorrectionSurface({
       </aside>
 
       <section className="space-y-4">
+        {selected && (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span>
+              {t("spanOf", {
+                index: selected.ordinal + 1,
+                total: workspace.spanCount,
+              })}
+            </span>
+            <span className="font-mono">
+              {formatClock(selected.startSeconds)}–{formatClock(selected.endSeconds)}
+            </span>
+            <Badge variant={stateVariant(selected.state)}>
+              {t(
+                selected.state === "done"
+                  ? "stateDone"
+                  : selected.state === "needs_attention"
+                    ? "stateNeedsAttention"
+                    : selected.state === "needs_second_approval"
+                      ? "stateNeedsSecondApproval"
+                      : "stateNotReviewed"
+              )}
+            </Badge>
+            <div className="ml-auto flex items-center gap-2">
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={shareSegment} data-native-space>
+                <Share2 className="h-4 w-4" aria-hidden="true" />
+                {t("shareSegment")}
+              </Button>
+              <CorrectionGuideDialog body={guide} />
+            </div>
+          </div>
+        )}
         <AudioPlayer
           ref={playerRef}
           src={buildAudioUrl(catalogId, hash, "archived", [])}
@@ -1025,47 +1056,11 @@ export function CorrectionSurface({
           playbackEnd={seekRequest?.end}
           autoPlayOnSeek={seekRequest?.autoPlay ?? false}
           playbackRate={rate}
-          sleepTimerEnabled={false}
-          onTimeUpdate={handlePlayerTime}
-          onPlayingChange={handlePlayerPlaying}
-          onPlayRequestChange={setPlayRequested}
-          onSeek={handlePlayerSeek}
-        />
-
-        {selected ? (
-          <>
-            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <span>
-                {t("spanOf", {
-                  index: selected.ordinal + 1,
-                  total: workspace.spanCount,
-                })}
-              </span>
-              <span className="font-mono">
-                {formatClock(selected.startSeconds)}–{formatClock(selected.endSeconds)}
-              </span>
-              <Badge variant={stateVariant(selected.state)}>
-                {t(
-                  selected.state === "done"
-                    ? "stateDone"
-                    : selected.state === "needs_attention"
-                      ? "stateNeedsAttention"
-                      : selected.state === "needs_second_approval"
-                        ? "stateNeedsSecondApproval"
-                        : "stateNotReviewed"
-                )}
-              </Badge>
-              {/* Between the player and the text, where the work happens. */}
-              <div className="ml-auto flex items-center gap-2">
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={shareSegment} data-native-space>
-                  <Share2 className="h-4 w-4" aria-hidden="true" />
-                  {t("shareSegment")}
-                </Button>
-                <CorrectionGuideDialog body={guide} />
-              </div>
-            </div>
-
+          playbackRange={selected ? { start: selected.startSeconds, end: selected.endSeconds } : { start: 0, end: 0 }}
+          renderControls={(controls) => selected ? (
             <CorrectionSpanAudio
+              key={selected.id}
+              controls={controls}
               span={selected}
               playRequested={playRequested}
               onTogglePlay={() => toggleSpanPlayback(selected)}
@@ -1076,7 +1071,16 @@ export function CorrectionSurface({
               onBack={() => playBack(selected)}
               onCycleRate={cycleRate}
             />
+          ) : null}
+          sleepTimerEnabled={false}
+          onTimeUpdate={handlePlayerTime}
+          onPlayingChange={handlePlayerPlaying}
+          onPlayRequestChange={setPlayRequested}
+          onSeek={handlePlayerSeek}
+        />
 
+        {selected ? (
+          <>
             {previousSpan && previousSpan.text && (
               <p className="text-sm text-muted-foreground" data-testid="correction-previous-context">
                 <span className="text-xs uppercase">{t("previousContext")}</span>{" "}

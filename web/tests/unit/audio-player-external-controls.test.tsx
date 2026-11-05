@@ -3,7 +3,7 @@ import { createRef } from "react";
 import { act, fireEvent, render } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { AudioPlayer } from "@/components/player/audio-player";
-import type { AudioPlayerHandle, AudioPlayerProps } from "@/components/player/audio-player-types";
+import type { AudioPlayerControls, AudioPlayerHandle, AudioPlayerProps } from "@/components/player/audio-player-types";
 import messages from "../../messages/en.json";
 
 vi.mock("@/contexts/service-worker-context", () => ({
@@ -16,11 +16,12 @@ vi.mock("@/contexts/service-worker-context", () => ({
 
 function setup(props: Partial<AudioPlayerProps> = {}) {
   const ref = createRef<AudioPlayerHandle>();
-  const view = render(
+  const tree = (nextProps: Partial<AudioPlayerProps>) => (
     <NextIntlClientProvider locale="en" messages={messages}>
-      <AudioPlayer src="https://example.com/audio.mp3" {...props} ref={ref} />
+      <AudioPlayer src="https://example.com/audio.mp3" {...nextProps} ref={ref} />
     </NextIntlClientProvider>
   );
+  const view = render(tree(props));
   const audio = view.container.querySelector("audio")!;
   let paused = true;
   let rejectPlay = false;
@@ -58,13 +59,48 @@ function setup(props: Partial<AudioPlayerProps> = {}) {
     audio,
     handle: () => ref.current!,
     metadata,
-    fail: () => {
+    fail: (code = 2) => {
       paused = true;
       audio.dispatchEvent(new Event("pause"));
-      setError({ code: 2 });
+      setError({ code });
       audio.dispatchEvent(new Event("error"));
     },
     rejectPlay: (value: boolean) => { rejectPlay = value; },
+    rerenderPlayer: (nextProps: Partial<AudioPlayerProps>) => view.rerender(tree({ ...props, ...nextProps })),
+  };
+}
+
+function setupCustom(props: Partial<AudioPlayerProps> = {}) {
+  let controls: AudioPlayerControls;
+  const view = setup({
+    ...props,
+    renderControls: (value) => {
+      controls = value;
+      return <div data-testid="custom-controls">Segment controls</div>;
+    },
+  });
+  return { ...view, controls: () => controls };
+}
+
+function mockMediaSession() {
+  const handlers = new Map<MediaSessionAction, () => void>();
+  const original = Object.getOwnPropertyDescriptor(navigator, "mediaSession");
+  Object.defineProperty(navigator, "mediaSession", {
+    configurable: true,
+    value: {
+      playbackState: "none",
+      setActionHandler: (action: MediaSessionAction, handler: (() => void) | null) => {
+        if (handler) handlers.set(action, handler);
+        else handlers.delete(action);
+      },
+    },
+  });
+  return {
+    handlers,
+    restore: () => {
+      if (original) Object.defineProperty(navigator, "mediaSession", original);
+      else Reflect.deleteProperty(navigator, "mediaSession");
+    },
   };
 }
 
@@ -80,6 +116,259 @@ afterAll(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("AudioPlayer custom segment controls", () => {
+  it("replaces the full controls and keeps the same audio element when the segment changes", () => {
+    const { audio, container, queryByTestId, rerenderPlayer } = setupCustom({
+      seekTo: 10,
+      playbackRange: { start: 10, end: 20 },
+    });
+    expect(queryByTestId("custom-controls")).toBeInTheDocument();
+    expect(queryByTestId("audio-play-button")).not.toBeInTheDocument();
+    expect(queryByTestId("sleep-timer-button")).not.toBeInTheDocument();
+    expect(container.querySelectorAll("audio")).toHaveLength(1);
+
+    rerenderPlayer({ seekTo: 30, seekKey: 1, playbackRange: { start: 30, end: 40 } });
+    expect(container.querySelector("audio")).toBe(audio);
+    expect(queryByTestId("custom-controls")).toBeInTheDocument();
+    expect(queryByTestId("audio-play-button")).not.toBeInTheDocument();
+  });
+
+  it.each([false, true])("clamps custom seeks without changing playing=%s and rearms the segment end", async (playing) => {
+    const onSeek = vi.fn();
+    const onTimeUpdate = vi.fn();
+    const { audio, handle, metadata, controls } = setupCustom({
+      seekTo: 10,
+      playbackRange: { start: 10, end: 20 },
+      onSeek,
+      onTimeUpdate,
+    });
+    act(metadata);
+    if (playing) await act(async () => handle().play(15));
+    const playCalls = vi.mocked(audio.play).mock.calls.length;
+    onTimeUpdate.mockClear();
+    act(() => controls().seek(1));
+    expect(audio.currentTime).toBe(10);
+    expect(audio.paused).toBe(!playing);
+    expect(audio.play).toHaveBeenCalledTimes(playCalls);
+    expect(onSeek).toHaveBeenLastCalledWith(10);
+    expect(onTimeUpdate).toHaveBeenLastCalledWith(10);
+    expect(onSeek.mock.invocationCallOrder.at(-1)).toBeLessThan(onTimeUpdate.mock.invocationCallOrder.at(-1)!);
+
+    act(() => controls().seek(14));
+    if (!playing) await act(async () => handle().play());
+    audio.currentTime = 16;
+    act(() => fireEvent.timeUpdate(audio));
+    expect(audio.paused).toBe(false);
+    audio.currentTime = 20.2;
+    act(() => fireEvent.timeUpdate(audio));
+    expect(audio.currentTime).toBe(20);
+    expect(audio.paused).toBe(true);
+
+    act(() => controls().seek(100));
+    expect(audio.currentTime).toBe(20);
+    expect(onSeek).toHaveBeenLastCalledWith(20);
+    expect(audio.paused).toBe(true);
+  });
+
+  it.each([undefined, 10])("queues a paused seek before metadata with initial position %s", (seekTo) => {
+    const { audio, handle, controls, metadata } = setupCustom({
+      seekTo,
+      playbackRange: { start: 10, end: 20 },
+    });
+    act(() => controls().seek(200));
+    expect(handle().getCurrentTime()).toBe(20);
+    expect(handle().isPlayRequested()).toBe(false);
+    act(metadata);
+    expect(audio.currentTime).toBe(20);
+    expect(audio.play).not.toHaveBeenCalled();
+  });
+
+  it.each(["pageshow", "visibilitychange"])("restores the paused segment position after %s instead of a recording-wide position", (event) => {
+    const { audio, controls, metadata } = setupCustom({
+      recordingHash: "a".repeat(64),
+      seekTo: 10,
+      playbackRange: { start: 10, end: 20 },
+    });
+    act(metadata);
+    act(() => controls().seek(14.5));
+    // A suspended tab can return with its media element reset to zero.
+    audio.currentTime = 0;
+    act(() => {
+      if (event === "pageshow") window.dispatchEvent(new Event(event));
+      else {
+        Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+        document.dispatchEvent(new Event(event));
+      }
+    });
+    expect(audio.currentTime).toBe(14.5);
+    expect(audio.paused).toBe(true);
+    expect(audio.play).not.toHaveBeenCalled();
+  });
+
+  it("keeps a changed seek position and paused intent through reconnect", async () => {
+    vi.useFakeTimers();
+    const { audio, handle, controls, metadata, fail } = setupCustom({
+      seekTo: 10,
+      playbackRange: { start: 10, end: 20 },
+    });
+    act(metadata);
+    await act(async () => handle().play());
+    audio.currentTime = 12;
+    act(fail);
+    expect(controls().isReconnecting).toBe(true);
+    act(() => handle().pause());
+    act(() => controls().seek(18.5));
+    act(() => vi.advanceTimersByTime(1_000));
+    act(metadata);
+    act(() => audio.dispatchEvent(new Event("canplay")));
+    expect(handle().getCurrentTime()).toBe(18.5);
+    expect(audio.paused).toBe(true);
+    expect(handle().isPlayRequested()).toBe(false);
+    expect(controls().isReconnecting).toBe(false);
+  });
+
+  it("uses Space and arrow keys within the segment and restarts a finished segment", async () => {
+    const { audio, controls, metadata } = setupCustom({
+      seekTo: 10,
+      playbackRange: { start: 10, end: 20 },
+    });
+    act(metadata);
+    act(() => fireEvent.keyDown(document.body, { code: "ArrowLeft" }));
+    expect(audio.currentTime).toBe(10);
+    act(() => controls().seek(19));
+    act(() => fireEvent.keyDown(document.body, { code: "ArrowRight" }));
+    expect(audio.currentTime).toBe(20);
+    expect(audio.paused).toBe(true);
+
+    await act(async () => fireEvent.keyDown(document.body, { code: "Space" }));
+    expect(audio.currentTime).toBe(10);
+    expect(audio.paused).toBe(false);
+    audio.currentTime = 20.1;
+    act(() => fireEvent.timeUpdate(audio));
+    expect(audio.paused).toBe(true);
+    expect(audio.currentTime).toBe(20);
+  });
+
+  it("keeps lock-screen seek and play actions within the segment", async () => {
+    const { handlers, restore } = mockMediaSession();
+    try {
+      const { audio, metadata } = setupCustom({ seekTo: 10, playbackRange: { start: 10, end: 20 } });
+      act(metadata);
+      act(() => handlers.get("seekbackward")!());
+      expect(audio.currentTime).toBe(10);
+      act(() => handlers.get("seekforward")!());
+      expect(audio.currentTime).toBe(20);
+      await act(async () => handlers.get("play")!());
+      expect(audio.currentTime).toBe(10);
+      expect(audio.paused).toBe(false);
+      audio.currentTime = 20.2;
+      act(() => fireEvent.timeUpdate(audio));
+      expect(audio.currentTime).toBe(20);
+      expect(audio.paused).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+
+  it("ignores keyboard, media-session and custom playback seeks while no segment range is available", async () => {
+    const { handlers, restore } = mockMediaSession();
+    try {
+      const onSeek = vi.fn();
+      const { audio, metadata, controls, handle } = setupCustom({
+        playbackRange: { start: 0, end: 0 },
+        onSeek,
+      });
+      act(metadata);
+      audio.currentTime = 35;
+      await act(async () => {
+        fireEvent.keyDown(document.body, { code: "Space" });
+        fireEvent.keyDown(document.body, { code: "ArrowLeft" });
+        fireEvent.keyDown(document.body, { code: "ArrowRight" });
+        handlers.get("play")!();
+        handlers.get("seekbackward")!();
+        handlers.get("seekforward")!();
+        controls().seek(12);
+        handle().play(20);
+      });
+      expect(audio.play).not.toHaveBeenCalled();
+      expect(audio.currentTime).toBe(35);
+      expect(audio.paused).toBe(true);
+      expect(handle().isPlayRequested()).toBe(false);
+      expect(onSeek).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it("exposes volume, mute and buffering state to the replacement controls", () => {
+    const { audio, controls } = setupCustom();
+    act(() => controls().setVolume(0.35));
+    expect(audio.volume).toBe(0.35);
+    expect(controls().volume).toBe(0.35);
+    expect(controls().isMuted).toBe(false);
+    act(() => controls().toggleMute());
+    expect(audio.volume).toBe(0);
+    expect(controls().isMuted).toBe(true);
+    act(() => controls().toggleMute());
+    expect(audio.volume).toBe(0.35);
+    expect(controls().isMuted).toBe(false);
+    act(() => fireEvent.waiting(audio));
+    expect(controls().isBuffering).toBe(true);
+    act(() => fireEvent.canPlay(audio));
+    expect(controls().isBuffering).toBe(false);
+  });
+
+  it("offers an explicit paused retry after a terminal media failure", async () => {
+    const { audio, handle, metadata, fail, controls } = setupCustom({
+      seekTo: 10,
+      playbackRange: { start: 10, end: 20 },
+    });
+    act(metadata);
+    await act(async () => handle().play());
+    audio.currentTime = 14.5;
+    act(() => fail(3));
+    expect(controls().hasError).toBe(true);
+    expect(controls().isReconnecting).toBe(false);
+
+    act(() => controls().retry());
+    expect(audio.load).toHaveBeenCalledTimes(1);
+    expect(handle().getCurrentTime()).toBe(14.5);
+    expect(handle().isPlayRequested()).toBe(false);
+    expect(controls().hasError).toBe(false);
+    act(metadata);
+    act(() => fireEvent.canPlay(audio));
+    expect(audio.currentTime).toBe(14.5);
+    expect(audio.paused).toBe(true);
+    expect(audio.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("exposes exhausted retries as an error and allows a fresh paused retry", async () => {
+    vi.useFakeTimers();
+    const { audio, handle, metadata, fail, controls } = setupCustom({
+      seekTo: 10,
+      playbackRange: { start: 10, end: 20 },
+    });
+    act(metadata);
+    await act(async () => handle().play());
+    audio.currentTime = 14.5;
+    act(() => fireEvent.timeUpdate(audio));
+    act(fail);
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      act(() => vi.advanceTimersByTime(Math.min(1_000 * 2 ** attempt, 30_000)));
+      act(() => fail(4));
+    }
+    expect(controls().isReconnecting).toBe(false);
+    expect(controls().hasError).toBe(true);
+    act(() => controls().retry());
+    expect(controls().hasError).toBe(false);
+    expect(handle().getCurrentTime()).toBe(14.5);
+    expect(handle().isPlayRequested()).toBe(false);
+    act(metadata);
+    expect(audio.currentTime).toBe(14.5);
+    expect(audio.paused).toBe(true);
+  });
 });
 
 describe("AudioPlayer external controls", () => {

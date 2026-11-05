@@ -4,10 +4,13 @@
 // machine words placed in them, and speech the model wrote nothing for. The
 // playback time arrives through a subscription so only this part re-renders.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { ChevronLeft, ChevronRight, Gauge, Pause, Play, Repeat, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Gauge, Loader2, Pause, Play, Repeat, RotateCcw, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import type { AudioPlayerControls } from "@/components/player/audio-player-types";
+import { formatClock } from "@/lib/correction/format";
 import { speechRegionsInSeconds } from "@/lib/correction/playback-coverage";
 import { regionIndexForMidpoint } from "@/lib/correction/segmentation";
 import type { SpanView } from "./correction-types";
@@ -67,6 +70,7 @@ export function spanPlaybackAction(
 
 interface CorrectionSpanAudioProps {
   span: SpanView;
+  controls: AudioPlayerControls;
   /** Playing, or about to: queued for metadata or a reconnect. */
   playRequested: boolean;
   onTogglePlay: () => void;
@@ -80,6 +84,7 @@ interface CorrectionSpanAudioProps {
 
 export function CorrectionSpanAudio({
   span,
+  controls,
   playRequested,
   onTogglePlay,
   subscribeTime,
@@ -91,11 +96,19 @@ export function CorrectionSpanAudio({
 }: CorrectionSpanAudioProps) {
   const t = useTranslations("correction.audio");
   const [time, setTime] = useState<number | null>(null);
+  const [scrubTime, setScrubTime] = useState<number | null>(null);
+  const draggingRef = useRef(false);
   useEffect(() => subscribeTime(setTime), [subscribeTime]);
 
   const regions = useMemo(() => spanAudioRegions(span), [span]);
   const windowStart = span.startSeconds;
   const windowLength = Math.max(0.001, span.endSeconds - span.startSeconds);
+  const clampTime = (value: number) => Math.min(span.endSeconds, Math.max(windowStart, Number.isFinite(value) ? value : windowStart));
+  const shownTime = clampTime(scrubTime ?? time ?? windowStart);
+  const localTime = (seconds: number) => {
+    const tenths = Math.max(0, Math.floor(seconds * 10 + 1e-6));
+    return `${formatClock(tenths / 10)}.${tenths % 10}`;
+  };
   const position = (seconds: number) =>
     `${Math.min(100, Math.max(0, ((seconds - windowStart) / windowLength) * 100))}%`;
   const inSpan = time !== null && time >= span.startSeconds && time <= span.endSeconds;
@@ -109,7 +122,8 @@ export function CorrectionSpanAudio({
     <div className="space-y-2 rounded-md border p-3" data-testid="correction-span-audio" data-native-space>
       <div className="flex flex-wrap items-center gap-1">
         <Button size="sm" variant="outline" className="gap-1.5" onClick={onTogglePlay}>
-          {playRequested ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+          {controls.isBuffering || controls.isReconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            : playRequested ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
           {t(playbackAction)}
         </Button>
         <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => onRegion("previous")} aria-label={t("previousRegion")}>
@@ -137,7 +151,73 @@ export function CorrectionSpanAudio({
           <Gauge className="h-3.5 w-3.5" />
           {rateLabel}
         </Button>
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8"
+            data-testid="correction-mute"
+            onClick={controls.toggleMute}
+            aria-label={t(controls.isMuted ? "unmute" : "mute")}
+            title={t(controls.isMuted ? "unmute" : "mute")}
+          >
+            {controls.isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+          </Button>
+          <Slider
+            value={[controls.isMuted ? 0 : controls.volume]}
+            min={0}
+            max={1}
+            step={0.01}
+            onValueChange={([value]) => controls.setVolume(value)}
+            className="min-h-8 w-20"
+            data-testid="correction-volume"
+            aria-label={t("volume")}
+          />
+        </div>
       </div>
+
+      <div className="flex items-center gap-3">
+        <Slider
+          value={[shownTime]}
+          min={windowStart}
+          max={span.endSeconds}
+          step={0.1}
+          disabled={span.endSeconds <= windowStart}
+          onValueChange={([value]) => {
+            if (draggingRef.current) setScrubTime(clampTime(value));
+          }}
+          onValueCommit={([value]) => {
+            setScrubTime(null);
+            controls.seek(clampTime(value));
+          }}
+          onPointerDown={() => { draggingRef.current = true; }}
+          onPointerUp={() => {
+            draggingRef.current = false;
+            setScrubTime(null);
+          }}
+          onPointerCancel={() => {
+            draggingRef.current = false;
+            setScrubTime(null);
+          }}
+          className="min-h-8 flex-1 cursor-pointer"
+          data-testid="correction-span-seek"
+          aria-label={t("position")}
+        />
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground" data-testid="correction-span-time">
+          {localTime(shownTime - windowStart)} / {localTime(span.endSeconds - windowStart)}
+        </span>
+      </div>
+
+      {controls.hasError ? (
+        <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-destructive">
+          <span>{t("playbackFailed")}</span>
+          <Button size="sm" variant="outline" onClick={controls.retry}>{t("retry")}</Button>
+        </div>
+      ) : (controls.isReconnecting || controls.isBuffering) && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {t(controls.isReconnecting ? "reconnecting" : "loading")}
+        </p>
+      )}
 
       <div className="relative h-6 rounded bg-muted" aria-hidden="true">
         {regions.map((region, index) => (
