@@ -6,6 +6,7 @@ import fs from 'fs/promises';
 import { syncCatalogEntries } from '@/lib/catalog-sync/entries';
 import { readSourceSnapshot } from '@/lib/catalog-sync/source-snapshot';
 import { rewritePath } from '@/lib/security/path-validation';
+import { HashSchema } from '@/lib/validation/schemas';
 
 type CsvRow = Record<string, string | undefined>;
 
@@ -217,25 +218,56 @@ function optionalPath(raw: string | undefined): string | null {
 }
 
 function normalizeHash(raw: string | undefined): string | null {
-  const hash = raw?.trim();
+  const hash = raw?.trim().toLowerCase();
   if (!hash) return null;
   return hash;
 }
 
-async function parseCsvRows(content: string): Promise<CsvRow[]> {
-  return new Promise((resolve, reject) => {
-    Papa.parse<CsvRow>(content, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        if (results.errors.length > 0) {
-          console.warn('CSV parse warnings:', results.errors);
-        }
-        resolve(results.data);
-      },
-      error: (error: Error) => reject(error),
-    });
+const REQUIRED_CSV_COLUMNS: Record<SourceKind, string[]> = {
+  metadata: ['Hash', 'Full Path'],
+  archived: ['Hash', 'Original Path', 'Compressed Path'],
+  duplicates: ['Hash', 'Original Path', 'Duplicate Path'],
+};
+
+function parseCsvRows(content: string, kind: SourceKind): CsvRow[] {
+  const results = Papa.parse<CsvRow>(content, {
+    header: true,
+    delimiter: ',',
+    skipEmptyLines: true,
+    transformHeader: normalizeHeader,
   });
+  const invalid = (detail: string) => new Error(`Invalid ${kind} catalog CSV: ${detail}`);
+  if (results.errors.length > 0) {
+    const error = results.errors[0];
+    throw invalid(`${error.code}: ${error.message}`);
+  }
+
+  // Papa renames duplicate headers before exposing fields; accepting the result
+  // would silently pick one of two competing identity or payload columns.
+  if (Object.keys(results.meta.renamedHeaders ?? {}).length > 0) {
+    throw invalid('duplicate column names');
+  }
+  const fields = results.meta.fields ?? [];
+  if (fields.includes('')) throw invalid('blank column name');
+  const required = REQUIRED_CSV_COLUMNS[kind];
+  const missing = required.filter((column) => !fields.includes(normalizeHeader(column)));
+  if (missing.length > 0) {
+    throw invalid(`missing required columns: ${missing.join(', ')}`);
+  }
+
+  const pathColumns = required.slice(1);
+  for (const [index, row] of results.data.entries()) {
+    const hash = normalizeHash(getRowValue(row, ['Hash']));
+    if (!HashSchema.safeParse(hash).success) {
+      throw invalid(`data row ${index + 1} must have a 64-character hexadecimal Hash`);
+    }
+    for (const column of pathColumns) {
+      if (!getRowValue(row, [column])?.trim()) {
+        throw invalid(`data row ${index + 1} has a blank ${column}`);
+      }
+    }
+  }
+  return results.data;
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -658,8 +690,8 @@ async function syncCatalogGroupAttempt(
         let unrecognizedHashAlgorithmRows = 0;
 
         if (baseChanged) {
-          metadataRows = await parseCsvRows(metadataState!.content!);
-          archivedRows = await parseCsvRows(archivedState!.content!);
+          metadataRows = parseCsvRows(metadataState!.content!, 'metadata');
+          archivedRows = parseCsvRows(archivedState!.content!, 'archived');
 
           unrecognizedHashAlgorithmRows =
             countUnrecognizedHashAlgorithms(metadataRows);
@@ -727,29 +759,15 @@ async function syncCatalogGroupAttempt(
 
         if (duplicatesChanged) {
           if (duplicatesState?.resolvedFilePath) {
-            const rows = await parseCsvRows(duplicatesState.content!);
-            duplicateRows = rows
-              .map((row) => {
-                const audioHash = normalizeHash(getRowValue(row, ['Hash']));
-                const originalPath = getRowValue(row, [
-                  'Original Path',
-                ])?.trim();
-                const duplicatePath = getRowValue(row, [
-                  'Duplicate Path',
-                ])?.trim();
-                if (!audioHash || !originalPath || !duplicatePath) {
-                  return null;
-                }
-                return {
-                  workflowGroupId: groupId,
-                  audioHash,
-                  originalPath,
-                  duplicatePath,
-                  duplicatePayload: toDuplicatePayload(row),
-                  duplicatePayloadVersion: 1,
-                };
-              })
-              .filter((row): row is NonNullable<typeof row> => row !== null);
+            const rows = parseCsvRows(duplicatesState.content!, 'duplicates');
+            duplicateRows = rows.map((row) => ({
+              workflowGroupId: groupId,
+              audioHash: normalizeHash(getRowValue(row, ['Hash']))!,
+              originalPath: getRowValue(row, ['Original Path'])!.trim(),
+              duplicatePath: getRowValue(row, ['Duplicate Path'])!.trim(),
+              duplicatePayload: toDuplicatePayload(row),
+              duplicatePayloadVersion: 1,
+            }));
           }
 
           rowCounts[duplicatesState!.descriptor.sourceKey] =

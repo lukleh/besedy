@@ -26,13 +26,14 @@ The discovery endpoint (`/api/catalogs/discover`) scans `BESEDY_BASE_DIR` for fi
 ### Sync Rules
 
 CSV-to-DB sync stores a versioned SHA-256 generation fingerprint for the exact
-source bytes that were parsed (`v4:sha256:<digest>`). Source snapshots are read
+source bytes that were parsed (`v5:sha256:<digest>`). Source snapshots are read
 once per reconciliation, before the database transaction and advisory lock, so
 fingerprinting and parsing cannot observe different file contents. Older
 stat-based fingerprints cause a one-time refresh after upgrade. The version is
 bumped when sync starts reading a column it ignored before, so every source is
 rebuilt once on the first sync after that deploy, even when its bytes are
-unchanged; `v4` added the AAC copy columns (#291).
+unchanged; `v5` revalidates sources under the stricter CSV and recording-identity
+checks below.
 
 | Condition                        | Effect                                                   |
 | -------------------------------- | -------------------------------------------------------- |
@@ -67,6 +68,17 @@ The columns the sync reads from each CSV kind are listed in
 Python writers emit them, and `web/tests/unit/catalog-csv-contract.test.ts`
 checks that the sync reads exactly them, so renaming a column on either side
 fails a test. Change the JSON together with both sides.
+
+Sync rejects CSV parsing errors, blank or duplicate column names, and sources
+missing their core identity columns: `Hash` and `Full Path` for metadata;
+`Hash`, `Original Path`, and `Compressed Path` for archives; `Hash`,
+`Original Path`, and `Duplicate Path` for duplicates. Every row must contain
+a full 64-character hexadecimal hash and nonblank values in those path columns.
+Headers ignore case and surrounding whitespace; hashes normalize to lowercase.
+Other columns, including the AAC copy columns, remain optional. Invalid input
+leaves the live projection and successful source fingerprints unchanged, even
+when the row-count-drop override is enabled. Header-only CSVs remain valid empty
+sources, subject to the existing row-count-drop guard.
 
 A metadata row whose `Hash Algorithm` is missing or not
 `pcm-s16le-16000hz-mono-sha256-v1` still syncs. The sync that parses the

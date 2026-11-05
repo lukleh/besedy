@@ -5,9 +5,9 @@ import fs from 'fs/promises';
  * Part of every stored fingerprint. Bump it when sync starts reading
  * something new from unchanged sources: the next sync then sees every source
  * as changed and rebuilds it once, instead of skipping a file whose bytes
- * are the same. v4: `compressed_aac_path` from `Compressed AAC Path` (#291).
+ * are the same. v5: reject malformed CSVs and invalid recording identities.
  */
-export const SOURCE_FINGERPRINT_VERSION = 'v4';
+export const SOURCE_FINGERPRINT_VERSION = 'v5';
 
 export interface SourceSnapshot {
   content: string;

@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
+import Papa from 'papaparse';
 
 // Must equal SOURCE_FINGERPRINT_VERSION (asserted below). A static import of
 // source-snapshot would run before the mock functions below are initialized,
 // because it loads fs/promises and this file's vi.mock factories are hoisted.
-const FINGERPRINT_VERSION = 'v4';
+const FINGERPRINT_VERSION = 'v5';
 
 function buildSourceFingerprint(
   content: string,
@@ -15,7 +16,7 @@ function buildSourceFingerprint(
 
 const mockAccess = vi.fn();
 const mockReadFile = vi.fn();
-const mockParse = vi.fn();
+const mockParse = vi.spyOn(Papa, 'parse');
 const mockRewritePath = vi.fn((input: string) => input);
 
 const mockReplaceLostPrimaryRecording = vi.fn();
@@ -63,12 +64,6 @@ vi.mock('fs/promises', () => ({
   readFile: mockReadFile,
 }));
 
-vi.mock('papaparse', () => ({
-  default: {
-    parse: mockParse,
-  },
-}));
-
 vi.mock('@/lib/security/path-validation', () => ({
   rewritePath: mockRewritePath,
 }));
@@ -83,8 +78,24 @@ vi.mock('@/lib/db', () => ({
 }));
 
 describe('catalog-sync', () => {
-  const emptyCsv = 'Hash\n';
+  const emptyCsv = 'Hash,Full Path,Original Path,Compressed Path\n';
   const emptyCsvFingerprint = buildSourceFingerprint(emptyCsv);
+
+  function csvRows(rows: Array<Record<string, string>>): string {
+    const defaults = {
+      'Full Path': '/data/original.wav',
+      'Original Path': '/data/original.wav',
+      'Compressed Path': '/data/audio.webm',
+    };
+    return Papa.unparse({
+      fields: [...new Set(['Hash', ...Object.keys(defaults), ...rows.flatMap(Object.keys)])],
+      data: rows.map((row) => ({ ...defaults, ...row })),
+    });
+  }
+
+  function readCsvRows(rowsByFile: Record<string, Array<Record<string, string>>>) {
+    mockReadFile.mockImplementation(async (file: string) => csvRows(rowsByFile[file] ?? []));
+  }
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -271,16 +282,6 @@ describe('catalog-sync', () => {
       },
     ]);
 
-    mockReadFile.mockResolvedValue('Hash\n');
-    mockParse.mockImplementation(
-      (
-        _content,
-        options: { complete: (result: { data: any[]; errors: any[] }) => void },
-      ) => {
-        options.complete({ data: [], errors: [] });
-      },
-    );
-
     const promotedHash = 'c'.repeat(64);
     mockTx.$queryRaw
       // Events with orphaned assignments.
@@ -417,20 +418,7 @@ describe('catalog-sync', () => {
         },
       ],
     };
-    mockReadFile.mockImplementation(async (file: string) => `content:${file}`);
-    mockParse.mockImplementation(
-      (
-        content: string,
-        options: {
-          complete: (result: { data: Array<Record<string, string>>; errors: unknown[] }) => void;
-        },
-      ) => {
-        options.complete({
-          data: rowsByFile[content.replace(/^content:/, '')] ?? [],
-          errors: [],
-        });
-      },
-    );
+    readCsvRows(rowsByFile);
 
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
     const result = await syncCatalogGroup('20251222_144441');
@@ -472,15 +460,6 @@ describe('catalog-sync', () => {
       { sourceKey: 'archived', filePath: '/data/archived.csv', fingerprint: buildSourceFingerprint(emptyCsv, 'v3') },
       { sourceKey: 'duplicates', filePath: '', fingerprint: '<missing>' },
     ]);
-    mockParse.mockImplementation(
-      (
-        _content: string,
-        options: { complete: (result: { data: Array<Record<string, string>>; errors: unknown[] }) => void },
-      ) => {
-        options.complete({ data: [], errors: [] });
-      },
-    );
-
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
     const result = await syncCatalogGroup('20251222_144441');
 
@@ -515,15 +494,6 @@ describe('catalog-sync', () => {
         fingerprint: '<missing>',
       },
     ]);
-
-    mockParse.mockImplementation(
-      (
-        _content,
-        options: { complete: (result: { data: any[]; errors: any[] }) => void },
-      ) => {
-        options.complete({ data: [], errors: [] });
-      },
-    );
 
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
     const result = await syncCatalogGroup('20251222_144441');
@@ -578,17 +548,9 @@ describe('catalog-sync', () => {
 
   function parseBaseRows(count: number) {
     const rows = Array.from({ length: count }, (_, i) => ({
-      Hash: `hash-${i}`,
+      Hash: i.toString(16).padStart(64, '0'),
     }));
-    mockReadFile.mockResolvedValue('Hash\n');
-    mockParse.mockImplementation(
-      (
-        _content,
-        options: { complete: (result: { data: any[]; errors: any[] }) => void },
-      ) => {
-        options.complete({ data: rows, errors: [] });
-      },
-    );
+    mockReadFile.mockResolvedValue(csvRows(rows));
   }
 
   it('refuses to wipe a populated catalog when the source CSV is empty', async () => {
@@ -627,6 +589,187 @@ describe('catalog-sync', () => {
     expect(result.status).toBe('success');
   });
 
+  it.each([
+    ['metadata', 'Hash,Full Path\n' + 'a'.repeat(64) + ',"unfinished', 'MissingQuotes'],
+    ['metadata', 'Hash,Full Path\n' + 'a'.repeat(64) + ',/source.wav,extra', 'TooManyFields'],
+    ['metadata', 'Hash,Full Path,title\n' + 'a'.repeat(64) + ',/source.wav', 'TooFewFields'],
+    ['metadata', 'Hash,Hash,Full Path\n', 'duplicate column names'],
+    ['metadata', 'Hash, hash ,Full Path\n', 'duplicate column names'],
+    ['metadata', 'Hash,,Full Path\n', 'blank column name'],
+    ['metadata', 'Full Path\n/source.wav', 'missing required columns: Hash'],
+    ['metadata', 'Hash\n' + 'a'.repeat(64), 'missing required columns: Full Path'],
+    ['metadata', 'Hash,Full Path\n,/source.wav', '64-character hexadecimal Hash'],
+    ['metadata', 'Hash,Full Path\nnot-a-hash,/source.wav', '64-character hexadecimal Hash'],
+    ['metadata', 'Hash,Full Path\n' + 'g'.repeat(64) + ',/source.wav', '64-character hexadecimal Hash'],
+    ['metadata', 'Hash,Full Path\n' + 'a'.repeat(64) + ',  ', 'blank Full Path'],
+    ['archived', 'Hash,Original Path\n', 'missing required columns: Compressed Path'],
+    ['archived', 'Hash,Original Path,Compressed Path\n' + 'a'.repeat(64) + ',,/audio.webm', 'blank Original Path'],
+    ['archived', 'Hash,Original Path,Compressed Path\n' + 'a'.repeat(64) + ',/source.wav,', 'blank Compressed Path'],
+    ['duplicates', 'Hash,Original Path\n', 'missing required columns: Duplicate Path'],
+    ['duplicates', 'Hash,Original Path,Duplicate Path\n,/source.wav,/duplicate.wav', '64-character hexadecimal Hash'],
+    ['duplicates', 'Hash,Original Path,Duplicate Path\n' + 'a'.repeat(64) + ',/source.wav,', 'blank Duplicate Path'],
+    ['duplicates', 'Hash,Original Path,Duplicate Path\n' + 'a'.repeat(64) + ',,/duplicate.wav', 'blank Original Path'],
+    ['metadata', '', 'missing required columns'],
+  ])('rejects invalid %s CSV before touching the live projection (%s)', async (kind, content, detail) => {
+    setupBaseChangedWithBaseline(100);
+    const group = {
+      id: '20251222_144441',
+      metadataCatalogPath: '/data/metadata.csv',
+      archivedCatalogPath: '/data/archived.csv',
+      duplicatesCatalogPath: '/data/duplicates.csv',
+    };
+    mockTx.workflowGroup.findUnique.mockResolvedValue(group);
+    mockReadFile.mockImplementation(async (file: string) =>
+      file === `/data/${kind}.csv`
+        ? content
+        : file === group.duplicatesCatalogPath
+          ? 'Hash,Original Path,Duplicate Path\n'
+          : emptyCsv,
+    );
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnLog = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+      // The row-count escape hatch must never bypass structural validation.
+      const result = await syncCatalogGroup(group.id, { allowRowCountDrop: true });
+
+      expect(result).toMatchObject({
+        status: 'error',
+        error: expect.stringContaining(`Invalid ${kind} catalog CSV:`),
+      });
+      expect(result.error).toContain(detail);
+      expect(mockTx.catalogEntry.deleteMany).not.toHaveBeenCalled();
+      expect(mockTx.catalogEntry.createMany).not.toHaveBeenCalled();
+      expect(mockTx.catalogEntry.updateMany).not.toHaveBeenCalled();
+      expect(mockTx.catalogDuplicate.deleteMany).not.toHaveBeenCalled();
+      expect(mockTx.catalogDuplicate.createMany).not.toHaveBeenCalled();
+      expect(mockTx.catalogSyncState.upsert).not.toHaveBeenCalled();
+      expect(mockTx.$executeRaw).toHaveBeenCalledTimes(1); // Advisory lock only.
+      expect(mockTx.$queryRaw).not.toHaveBeenCalled(); // No orphan cleanup.
+    } finally {
+      errorLog.mockRestore();
+      warnLog.mockRestore();
+    }
+  });
+
+  it('keeps header-only sources valid when an empty projection is explicitly allowed', async () => {
+    setupBaseChangedWithBaseline(100);
+    const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+
+    const result = await syncCatalogGroup('20251222_144441', { allowRowCountDrop: true });
+
+    expect(result.status).toBe('success');
+    expect(result.rowCounts).toEqual({ metadata: 0, archived: 0 });
+  });
+
+  it('accepts normalized headers, quoted paths and missing optional columns', async () => {
+    setupBaseChangedWithBaseline(0);
+    const hash = 'a'.repeat(64);
+    mockReadFile.mockImplementation(async (file: string) =>
+      file === '/data/meta.csv'
+        ? `\ufeff Hash , FULL PATH \n${hash.toUpperCase()},"/source, recording.wav"\n`
+        : `Hash,Original Path,Compressed Path\n${hash},"/source, recording.wav",/audio.webm\n`,
+    );
+    const warnLog = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+      const result = await syncCatalogGroup('20251222_144441');
+
+      expect(result.status).toBe('success');
+      expect(result.unrecognizedHashAlgorithmRows).toBe(1);
+      expect(mockTx.catalogEntry.createMany).toHaveBeenCalledWith({
+        data: [expect.objectContaining({
+          audioHash: hash,
+          originalPath: '/source, recording.wav',
+          compressedPath: '/audio.webm',
+          compressedAacPath: null,
+          hasMetadata: true,
+          hasArchived: true,
+        })],
+        skipDuplicates: true,
+      });
+    } finally {
+      warnLog.mockRestore();
+    }
+  });
+
+  it('rejects duplicate identities after normalizing hash case', async () => {
+    setupBaseChangedWithBaseline(0);
+    const hash = 'a'.repeat(64);
+    readCsvRows({
+      '/data/meta.csv': [{ Hash: hash }, { Hash: hash.toUpperCase() }],
+    });
+    const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+
+    const result = await syncCatalogGroup('20251222_144441');
+
+    expect(result.status).toBe('error');
+    expect(result.error).toContain('Duplicate Hash in metadata catalog');
+    expect(mockTx.catalogEntry.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('does not clear duplicate rows when only the duplicates source changed and is invalid', async () => {
+    setupBaseChangedWithBaseline(1);
+    mockTx.workflowGroup.findUnique.mockResolvedValue({
+      id: '20251222_144441',
+      metadataCatalogPath: '/data/meta.csv',
+      archivedCatalogPath: '/data/archived.csv',
+      duplicatesCatalogPath: '/data/duplicates.csv',
+    });
+    mockTx.catalogSyncState.findMany.mockResolvedValue([
+      { sourceKey: 'metadata', filePath: '/data/meta.csv', fingerprint: emptyCsvFingerprint, rowCount: 1 },
+      { sourceKey: 'archived', filePath: '/data/archived.csv', fingerprint: emptyCsvFingerprint, rowCount: 1 },
+      { sourceKey: 'duplicates', filePath: '/data/duplicates.csv', fingerprint: 'old', rowCount: 1 },
+    ]);
+    mockReadFile.mockImplementation(async (file: string) =>
+      file === '/data/duplicates.csv'
+        ? `Hash,Original Path,Duplicate Path\n${'a'.repeat(64)},/source.wav,\n`
+        : emptyCsv,
+    );
+    const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+
+    const result = await syncCatalogGroup('20251222_144441');
+
+    expect(result.status).toBe('error');
+    expect(result.changedSources).toEqual(['duplicates']);
+    expect(mockParse).toHaveBeenCalledTimes(1);
+    expect(mockTx.catalogDuplicate.deleteMany).not.toHaveBeenCalled();
+    expect(mockTx.catalogEntry.updateMany).not.toHaveBeenCalled();
+    expect(mockTx.catalogSyncState.upsert).not.toHaveBeenCalled();
+    expect(mockPrisma.catalogSyncState.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: { status: 'ERROR', syncedAt: expect.any(Date), lastError: result.error },
+      }),
+    );
+  });
+
+  it('accepts several duplicate paths for the same recording', async () => {
+    setupBaseChangedWithBaseline(0);
+    mockTx.workflowGroup.findUnique.mockResolvedValue({
+      id: '20251222_144441',
+      metadataCatalogPath: '/data/meta.csv',
+      archivedCatalogPath: '/data/archived.csv',
+      duplicatesCatalogPath: '/data/duplicates.csv',
+    });
+    const hash = 'a'.repeat(64);
+    readCsvRows({
+      '/data/meta.csv': [{ Hash: hash }],
+      '/data/archived.csv': [{ Hash: hash }],
+      '/data/duplicates.csv': [
+        { Hash: hash, 'Duplicate Path': '/copy1.wav' },
+        { Hash: hash, 'Duplicate Path': '/copy2.wav' },
+      ],
+    });
+    const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+
+    const result = await syncCatalogGroup('20251222_144441');
+
+    expect(result.status).toBe('success');
+    expect(result.rowCounts).toEqual({ metadata: 1, archived: 1, duplicates: 2 });
+    expect(mockTx.catalogDuplicate.createMany.mock.calls[0][0].data).toHaveLength(2);
+    expect(mockTx.catalogEntry.createMany.mock.calls[0][0].data[0].duplicateCount).toBe(2);
+  });
+
   it('syncs rows with a missing or unknown hash algorithm and reports how many', async () => {
     const known = 'a'.repeat(64);
     const unknown = 'b'.repeat(64);
@@ -654,20 +797,7 @@ describe('catalog-sync', () => {
         'Compressed Path': `/data/audio/${hash.slice(0, 8)}.webm`,
       })),
     };
-    mockReadFile.mockImplementation(async (file: string) => `content:${file}`);
-    mockParse.mockImplementation(
-      (
-        content: string,
-        options: {
-          complete: (result: { data: Array<Record<string, string>>; errors: unknown[] }) => void;
-        },
-      ) => {
-        options.complete({
-          data: rowsByFile[content.replace(/^content:/, '')] ?? [],
-          errors: [],
-        });
-      },
-    );
+    readCsvRows(rowsByFile);
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     try {
