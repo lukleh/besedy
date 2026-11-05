@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { Prisma } from "@/generated/prisma/client";
 import { requireAuth } from "@/lib/auth/permissions";
 import { getCatalogCapability } from "@/lib/access/capabilities";
 import { handlePrismaError, notFound, badRequest, forbidden, conflict } from "./errors";
@@ -11,7 +12,6 @@ import {
   TimestampIdSchema,
   UpdateEnumSchema,
 } from "@/lib/validation/schemas";
-import { loadCatalogHashes } from "@/lib/catalog";
 import { resolveCatalogWithAccess } from "@/lib/catalog/resolve-group";
 
 /** Params of `/api/catalogs/:id/metadata/<resource>`. */
@@ -26,11 +26,10 @@ interface ItemRouteParams {
 
 const CatalogItemParamSchema = z.object({ id: TimestampIdSchema, itemId: IntIdSchema });
 
-const EMPTY_SCOPE = { groupId: "", catalogHashes: new Set<string>(), canEdit: false };
+const EMPTY_SCOPE = { groupId: "", canEdit: false };
 
 interface CatalogScopeResolution {
   groupId: string;
-  catalogHashes: Set<string>;
   canEdit: boolean;
   response?: NextResponse;
 }
@@ -58,7 +57,6 @@ async function resolveCatalogScope(
 
   return {
     groupId: group.id,
-    catalogHashes: await loadCatalogHashes(group.id),
     canEdit: capability.canManageLookups,
   };
 }
@@ -77,6 +75,29 @@ async function resolveEditScope(
     };
   }
   return scope;
+}
+
+const LOOKUP_COLUMNS = {
+  recorder: Prisma.sql`m.recorder_id`,
+  location: Prisma.sql`m.location_id`,
+  album: Prisma.sql`m.album_id`,
+};
+
+/** Count only metadata whose recording is present in this catalog. */
+async function loadLookupCounts(
+  groupId: string,
+  lookup: keyof typeof LOOKUP_COLUMNS,
+): Promise<Map<number, number>> {
+  const column = LOOKUP_COLUMNS[lookup];
+  const counts = await prisma.$queryRaw<Array<{ id: number; count: number }>>(Prisma.sql`
+    SELECT ${column} AS id, COUNT(*)::int AS count
+    FROM audio_metadata m
+    JOIN catalog_entry e
+      ON e.workflow_group_id = m.workflow_group_id AND e.audio_hash = m.audio_hash
+    WHERE m.workflow_group_id = ${groupId} AND ${column} IS NOT NULL
+    GROUP BY ${column}
+  `);
+  return new Map(counts.map((row) => [row.id, row.count]));
 }
 
 // =============================================================================
@@ -101,13 +122,7 @@ export const recorderCollectionHandlers = {
         },
       });
 
-      // Count metadata records filtered by catalog hashes
-      const counts = await prisma.audioMetadata.groupBy({
-        by: ["recorderId"],
-        _count: { _all: true },
-        where: { audioHash: { in: Array.from(scope.catalogHashes) } },
-      });
-      const countMap = new Map(counts.map((c) => [c.recorderId, c._count._all]));
+      const countMap = await loadLookupCounts(scope.groupId, "recorder");
 
       // Merge counts into items
       const result = items.map((item) => ({
@@ -229,13 +244,7 @@ export const locationCollectionHandlers = {
         },
       });
 
-      // Count metadata records filtered by catalog hashes
-      const counts = await prisma.audioMetadata.groupBy({
-        by: ["locationId"],
-        _count: { _all: true },
-        where: { audioHash: { in: Array.from(scope.catalogHashes) } },
-      });
-      const countMap = new Map(counts.map((c) => [c.locationId, c._count._all]));
+      const countMap = await loadLookupCounts(scope.groupId, "location");
 
       // Merge counts into items
       const result = items.map((item) => ({
@@ -360,13 +369,7 @@ export const albumCollectionHandlers = {
         },
       });
 
-      // Count metadata records filtered by catalog hashes
-      const counts = await prisma.audioMetadata.groupBy({
-        by: ["albumId"],
-        _count: { _all: true },
-        where: { audioHash: { in: Array.from(scope.catalogHashes) } },
-      });
-      const countMap = new Map(counts.map((c) => [c.albumId, c._count._all]));
+      const countMap = await loadLookupCounts(scope.groupId, "album");
 
       // Merge counts into items
       const result = items.map((item) => ({

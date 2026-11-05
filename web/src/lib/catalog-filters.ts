@@ -3,7 +3,7 @@ import { parseDateFromString } from "./date-utils";
 import type {
   CatalogEntry,
   CatalogFilters,
-  EnrichedCatalogEntry,
+  CatalogSelectionEntry,
 } from "./catalog-types";
 import { EMPTY_FILTER, EMPTY_STRING_FILTER } from "./catalog-types";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
@@ -40,7 +40,7 @@ export function scopeCatalogEntriesForAccess<
   return scopeRecordingsForAccess(entries, catalogGrant);
 }
 
-export function extractDateParts(entry: EnrichedCatalogEntry): {
+export function extractDateParts(entry: Pick<CatalogSelectionEntry, "date" | "dateYear" | "dateMonth" | "dateDay">): {
   year?: number;
   month?: number;
   day?: number;
@@ -55,10 +55,10 @@ export function extractDateParts(entry: EnrichedCatalogEntry): {
   return parseDateFromString(entry.date);
 }
 
-export function applyFilters(
-  entries: EnrichedCatalogEntry[],
+export function applyFilters<T extends CatalogSelectionEntry>(
+  entries: T[],
   filters: CatalogFilters,
-): EnrichedCatalogEntry[] {
+): T[] {
   let filtered = entries;
 
   if (filters.status === "ready") {

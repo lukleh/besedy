@@ -187,6 +187,22 @@ walks through export, train, convert, eval and compare.
 
 Rows missing from one source still exist in `catalog_entry` but remain non-actionable.
 
+### Recording List Reads
+
+The recordings list and filter-options endpoint load a narrow selection of
+catalog and curated metadata fields for visibility, filtering, counts, and
+locale-aware ordering. Only the selected page then loads full recording details,
+including notes, tags, and filesystem paths. The explicit `limit=0` request still
+loads all selected recordings. Selection remains O(N), with O(N log N) sorting;
+this is bounded page enrichment, not database-side pagination. The existing
+JavaScript date fallback and numeric, accent-insensitive string ordering remain
+the contract for a future database query implementation.
+
+Lookup collection counts join `audio_metadata` to `catalog_entry` on both catalog
+ID and audio hash, so orphan metadata and other catalogs do not contribute.
+Single-lookup reads and mutations resolve catalog access without enumerating
+recordings.
+
 ### Audio Source Resolution
 
 When serving audio, the app resolves the source from the `source` query

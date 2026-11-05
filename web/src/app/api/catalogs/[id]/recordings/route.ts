@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   loadEnrichedCatalogEntries,
+  loadCatalogSelectionEntries,
   parseDuration,
   applyFilters,
   extractDateParts,
@@ -9,7 +10,7 @@ import {
   compareNumbersNullFirst,
   isCatalogEntryReady,
   scopeCatalogEntriesForAccess,
-  type EnrichedCatalogEntry,
+  type CatalogSelectionEntry,
   type CatalogFilters,
 } from "@/lib/catalog";
 import { findActiveCatalog } from "@/lib/catalog/resolve-group";
@@ -172,9 +173,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       effectiveStatusFilter = "ready";
     }
 
-    const enrichedEntries = await loadEnrichedCatalogEntries(group.id);
+    const selectionEntries = await loadCatalogSelectionEntries(group.id);
     const visibleEntries = scopeCatalogEntriesForAccess(
-      enrichedEntries,
+      selectionEntries,
       capability.catalogGrant
     );
 
@@ -221,8 +222,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // Sorting
     // Helper to compare dates as numeric keys (nulls always last)
     const compareDates = (
-      a: EnrichedCatalogEntry,
-      b: EnrichedCatalogEntry,
+      a: CatalogSelectionEntry,
+      b: CatalogSelectionEntry,
       direction: SortDirection
     ): number => {
       const aParts = extractDateParts(a);
@@ -326,6 +327,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const startIndex = limit === Infinity ? 0 : (page - 1) * limit;
     const endIndex = limit === Infinity ? total : startIndex + limit;
     const paginatedEntries = filteredEntries.slice(startIndex, endIndex);
+    const pageEntries = await loadEnrichedCatalogEntries(
+      group.id,
+      paginatedEntries.map((entry) => entry.hash),
+    );
+    // Visibility may have narrowed between selection and enrichment.
+    const visiblePageEntries = scopeCatalogEntriesForAccess(pageEntries, capability.catalogGrant);
+    // The enrichment loader orders by title; retain the selected page order.
+    const pageByHash = new Map(visiblePageEntries.map((entry) => [entry.hash, entry]));
+    const orderedPageEntries = paginatedEntries.flatMap((entry) => {
+      const enriched = pageByHash.get(entry.hash);
+      return enriched ? [enriched] : [];
+    });
 
     // Log catalog access
     await logCatalogViewed(userId, group.id, { entryCount: filteredEntries.length });
@@ -338,7 +351,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       total,
       actionable: visibleEntries.filter((e) => e.isActionable).length,
       verified: visibleEntries.filter((e) => e.verified).length,
-      entries: paginatedEntries.map(toCatalogEntryResponse),
+      entries: orderedPageEntries.map(toCatalogEntryResponse),
       filters: {
         parts: Array.from(partsSet).sort((a, b) => a - b),
         dateParts: Array.from(datePartsMap.values()).sort((a, b) => {

@@ -31,6 +31,7 @@ vi.mock("@/lib/catalog", async () => {
   );
   return {
     ...actual,
+    loadCatalogSelectionEntries: vi.fn(),
     loadEnrichedCatalogEntries: vi.fn(),
   };
 });
@@ -96,6 +97,7 @@ describe("catalog API routes (access gating)", () => {
   let getCatalogCapability: ReturnType<typeof vi.fn>;
   let findActiveCatalog: ReturnType<typeof vi.fn>;
   let loadEnrichedCatalogEntries: ReturnType<typeof vi.fn>;
+  let loadCatalogSelectionEntries: ReturnType<typeof vi.fn>;
   let prisma: {
     recorder: { findMany: ReturnType<typeof vi.fn> };
     location: { findMany: ReturnType<typeof vi.fn> };
@@ -114,8 +116,17 @@ describe("catalog API routes (access gating)", () => {
     const catalogModule = await import("@/lib/catalog");
     loadEnrichedCatalogEntries =
       catalogModule.loadEnrichedCatalogEntries as ReturnType<typeof vi.fn>;
+    loadCatalogSelectionEntries =
+      catalogModule.loadCatalogSelectionEntries as ReturnType<typeof vi.fn>;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
   });
+
+  function mockEntries(entries: EnrichedCatalogEntry[]) {
+    loadCatalogSelectionEntries.mockResolvedValue(entries);
+    loadEnrichedCatalogEntries.mockImplementation((_groupId: string, hashes: string[]) =>
+      entries.filter((entry) => hashes.includes(entry.hash))
+    );
+  }
 
   function mockAccessibleCatalog(entries: EnrichedCatalogEntry[]) {
     requireAuth.mockResolvedValue("user-1");
@@ -134,7 +145,7 @@ describe("catalog API routes (access gating)", () => {
       canBatchEditMetadata: true,
       canManageAccess: true,
     });
-    loadEnrichedCatalogEntries.mockResolvedValue(entries);
+    mockEntries(entries);
   }
 
   function createMatrixEntries(): EnrichedCatalogEntry[] {
@@ -254,7 +265,7 @@ describe("catalog API routes (access gating)", () => {
       canBatchEditMetadata: false,
       canManageAccess: false,
     });
-    loadEnrichedCatalogEntries.mockResolvedValue([
+    mockEntries([
       createEntry({
         hash: "a".repeat(64),
         part: 1,
@@ -319,7 +330,7 @@ describe("catalog API routes (access gating)", () => {
       catalogGrant: { role: "listener", extras: ["browse_recordings"] },
       canBrowseRecordings: true,
     });
-    loadEnrichedCatalogEntries.mockResolvedValue([
+    mockEntries([
       createEntry({
         hash: "a".repeat(64),
         recorderId: 1,
@@ -349,6 +360,101 @@ describe("catalog API routes (access gating)", () => {
     expect(body.options.recorders).toEqual([
       { id: 1, name: "Visible Recorder", count: 1 },
     ]);
+    expect(loadEnrichedCatalogEntries).not.toHaveBeenCalled();
+  });
+
+  it("enriches only the requested page and retains its selected order", async () => {
+    mockAccessibleCatalog(createMatrixEntries());
+    const response = await getCatalog(new NextRequest(
+      `http://localhost/api/catalogs/${CATALOG}/recordings?sort=title&dir=desc&page=1&limit=2`
+    ));
+    const body = await response.json();
+
+    expect(body.entries.map((entry: { hash: string }) => entry.hash)).toEqual([
+      "c".repeat(64), "b".repeat(64),
+    ]);
+    expect(loadEnrichedCatalogEntries).toHaveBeenCalledExactlyOnceWith(CATALOG, [
+      "c".repeat(64), "b".repeat(64),
+    ]);
+    expect(body).toMatchObject({ totalAll: 3, total: 3, actionable: 2, verified: 1 });
+    expect(body.pagination).toEqual({ page: 1, limit: 2, totalPages: 2, hasNextPage: true, hasPrevPage: false });
+    expect(body.filters.parts).toEqual([1, 2]);
+  });
+
+  it("keeps the explicit all-recordings request", async () => {
+    mockAccessibleCatalog(createMatrixEntries());
+    const response = await getCatalog(new NextRequest(
+      `http://localhost/api/catalogs/${CATALOG}/recordings?limit=0`
+    ));
+    const body = await response.json();
+    expect(body.entries).toHaveLength(3);
+    expect(loadEnrichedCatalogEntries).toHaveBeenCalledExactlyOnceWith(CATALOG, [
+      "b".repeat(64), "a".repeat(64), "c".repeat(64),
+    ]);
+    expect(body.pagination).toEqual({ page: 1, limit: 3, totalPages: 1, hasNextPage: false, hasPrevPage: false });
+  });
+
+  it("loads only the later page's details", async () => {
+    mockAccessibleCatalog(createMatrixEntries());
+    const response = await getCatalog(new NextRequest(
+      `http://localhost/api/catalogs/${CATALOG}/recordings?page=2&limit=2`
+    ));
+    const body = await response.json();
+    expect(body.entries.map((entry: { hash: string }) => entry.hash)).toEqual(["c".repeat(64)]);
+    expect(loadEnrichedCatalogEntries).toHaveBeenCalledExactlyOnceWith(CATALOG, ["c".repeat(64)]);
+    expect(body.pagination).toEqual({ page: 2, limit: 2, totalPages: 2, hasNextPage: false, hasPrevPage: true });
+  });
+
+  it.each([
+    ["asc", ["c", "b", "a"]],
+    ["desc", ["a", "b", "c"]],
+  ])("keeps natural, accent-insensitive source-title ordering %s", async (dir, hashes) => {
+    mockAccessibleCatalog([
+      createEntry({ hash: "a".repeat(64), title: "Talk 10", curatedTitle: "A" }),
+      createEntry({ hash: "b".repeat(64), title: "Tálk 2", curatedTitle: "Z" }),
+      createEntry({ hash: "c".repeat(64), title: undefined, filename: "Talk 1", curatedTitle: "Y" }),
+    ]);
+    const response = await getCatalog(new NextRequest(
+      `http://localhost/api/catalogs/${CATALOG}/recordings?sort=title&dir=${dir}`
+    ));
+    expect((await response.json()).entries.map((entry: { hash: string }) => entry.hash)).toEqual(
+      hashes.map((hash) => hash.repeat(64)),
+    );
+  });
+
+  it.each([
+    ["asc", ["a", "d", "c", "b"]],
+    ["desc", ["c", "d", "a", "b"]],
+  ])("keeps partial curated dates, source fallback, and missing dates last %s", async (dir, hashes) => {
+    mockAccessibleCatalog([
+      createEntry({ hash: "a".repeat(64), date: "2025-12-31", dateYear: 2020, dateMonth: null, dateDay: null }),
+      createEntry({ hash: "b".repeat(64), date: "2019-02-03", dateYear: null, dateMonth: 6, dateDay: null }),
+      createEntry({ hash: "c".repeat(64), date: "notes from 2024", dateYear: null, dateMonth: null, dateDay: null }),
+      createEntry({ hash: "d".repeat(64), date: "3.4.2023", dateYear: null, dateMonth: null, dateDay: null }),
+    ]);
+    const response = await getCatalog(new NextRequest(
+      `http://localhost/api/catalogs/${CATALOG}/recordings?sort=date&dir=${dir}`
+    ));
+    expect((await response.json()).entries.map((entry: { hash: string }) => entry.hash)).toEqual(
+      hashes.map((hash) => hash.repeat(64)),
+    );
+  });
+
+  it("rechecks recording visibility when publication changes after page selection", async () => {
+    mockAccessibleCatalog(createMatrixEntries());
+    getCatalogCapability.mockResolvedValue({
+      hasAccess: true,
+      catalogGrant: { role: "listener", extras: ["browse_recordings"] },
+      canBrowseRecordings: true,
+    });
+    loadEnrichedCatalogEntries.mockResolvedValue([
+      createEntry({ hash: "a".repeat(64), isPublished: false }),
+    ]);
+    const response = await getCatalog(new NextRequest(
+      `http://localhost/api/catalogs/${CATALOG}/recordings`
+    ));
+    expect((await response.json()).entries).toEqual([]);
+    expect(loadEnrichedCatalogEntries).toHaveBeenCalledExactlyOnceWith(CATALOG, ["a".repeat(64)]);
   });
 
   it.each([

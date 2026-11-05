@@ -24,8 +24,6 @@ vi.mock("@/lib/access/capabilities", () => ({
   getCatalogCapability: vi.fn(),
 }));
 
-vi.mock("@/lib/catalog", () => ({ loadCatalogHashes: vi.fn() }));
-
 vi.mock("@/lib/catalog/resolve-group", () => ({
   resolveCatalogWithAccess: vi.fn(),
 }));
@@ -59,7 +57,6 @@ describe("CRUD delete referential-integrity guards", () => {
     const asMock = (fn: unknown) => fn as ReturnType<typeof vi.fn>;
     const { requireAuth } = await import("@/lib/auth/permissions");
     const { getCatalogCapability } = await import("@/lib/access/capabilities");
-    const { loadCatalogHashes } = await import("@/lib/catalog");
     const { resolveCatalogWithAccess } = await import("@/lib/catalog/resolve-group");
     // Holds manage_lookups on the one catalog the row lives in; the guards
     // under test are referential, not authorizational.
@@ -68,7 +65,6 @@ describe("CRUD delete referential-integrity guards", () => {
       group: { id: "20251222_144441" },
       hasAccess: true,
     });
-    asMock(loadCatalogHashes).mockResolvedValue(new Set<string>());
     asMock(getCatalogCapability).mockResolvedValue({ canManageLookups: true });
     for (const model of [db.recorder, db.location, db.album]) {
       model.findFirst.mockResolvedValue({ id: 5 });

@@ -181,6 +181,16 @@ export interface EnrichedCatalogEntry extends CatalogEntry {
   duplicateCount: number;
 }
 
+/** Fields needed to select a recording page and compute its filter options. */
+export type CatalogSelectionEntry = Pick<
+  EnrichedCatalogEntry,
+  | "hash" | "filename" | "duration" | "title" | "artist" | "date"
+  | "isActionable" | "isPublished" | "curatedArtist"
+  | "dateYear" | "dateMonth" | "dateDay" | "verified"
+  | "recorderId" | "recorder" | "locationId" | "location"
+  | "albumId" | "album" | "part" | "duplicateCount"
+>;
+
 export const EMPTY_FILTER = -1;
 export const EMPTY_STRING_FILTER = "__empty__";
 
