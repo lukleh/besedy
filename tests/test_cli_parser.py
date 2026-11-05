@@ -57,6 +57,7 @@ class TestCatalogParserStructure:
             "join",
             "hash",
             "rag-colbert-index",
+            "rag-colbert-prune",
             "training-export",
             "training-eval",
         }

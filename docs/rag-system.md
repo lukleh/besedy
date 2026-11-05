@@ -247,6 +247,45 @@ One sync at a time per `(workflow_group_id, backend_key, colbert_model)`. A mode
 
 Sync output reports: hashes discovered, added, updated, removed, unchanged, failed; chunks inserted and deleted; sync mode (`incremental`, `forced`, or `rebuild`).
 
+### Retaining bundle generations
+
+Successful syncs retain previous complete bundles. Preview their cleanup with:
+
+```bash
+just catalog rag-colbert-prune --group 20260206_120000 \
+  --backend faster-whisper/large-v3@silero_vad_v6@lang-cs
+# Repeat with --execute to delete the eligible generations.
+```
+
+The command uses the configured ColBERT root and model; `--model` can select
+another model. It does not accept an arbitrary index-directory override.
+`--json` returns the same plan and reasons in machine-readable form.
+
+- `--keep 3` retains the newest three valid generations across chunk versions.
+  This includes active generations when they fall within that window; every
+  other referenced generation is kept in addition to the window.
+- `--min-age-hours 24` requires both the bundle's last modification and all
+  reference/directory activity under the configured root to be at least 24 hours old. Creation age alone
+  would not protect a long-lived bundle that was only just superseded. This
+  conservative root-wide grace period includes directory mtimes left by removed
+  references and pointer-file mtimes left by in-place repoints. Ongoing index or
+  reference changes anywhere under that root defer pruning until it has been
+  quiet long enough for old readers to finish, including readers from another scope.
+- Active JSON pointers and symlinks anywhere under the configured root protect
+  their targets, including another scope's custom reference. Malformed or
+  unresolved references stop the command. References and activity are read under
+  the selected scope's existing sync locks and checked again before each deletion.
+  Known directory changes from the command's own deletions permit multiple
+  eligible bundles to be removed in one run; other observed changes defer the
+  remaining deletions. A bundle containing a reference is also retained.
+- Only complete `index_YYYYMMDD_HHMMSS[_NN]` directories whose metadata matches
+  the selected catalog, backend, model, and chunk version are eligible. Unknown,
+  incomplete, or symlinked directories are kept with an explanation. Nothing
+  outside the configured root is deleted.
+
+No cleanup runs automatically during sync. The preview creates no output
+generation and deletes nothing; the existing scope lock files may be created.
+
 ### Non-goals
 
 - Reintroducing PostgreSQL tables (`rag_chunk`, `rag_source_state`).
@@ -302,7 +341,7 @@ same tree the web container mounts.
 
 | Phase | Scope |
 | --- | --- |
-| 5 | Maintenance rebuilds and cleanup: rebuild thresholds / manual controls, stale bundle pruning, operational guidance |
+| 5 | Maintenance rebuilds: rebuild thresholds / manual controls and further operational guidance (explicit stale-bundle pruning is available above) |
 
 Phase 5 is operational hardening. Core incremental sync is shipped and in use.
 Periodic full rebuilds are the key Phase 5 concern -- see "Engine caveats

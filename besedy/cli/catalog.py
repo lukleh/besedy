@@ -26,6 +26,7 @@ from besedy.commands.catalog import (
     merge,
     pipeline,
     rag_colbert_index,
+    rag_colbert_prune,
     remove,
     speakers,
     stage,
@@ -73,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     join.register_parser(subparsers, BesedyDefaultsHelpFormatter)
     hash_cmd.register_parser(subparsers, BesedyDefaultsHelpFormatter)
     rag_colbert_index.register_parser(subparsers, BesedyDefaultsHelpFormatter)
+    rag_colbert_prune.register_parser(subparsers, BesedyDefaultsHelpFormatter)
     training_export.register_parser(subparsers, BesedyDefaultsHelpFormatter)
     training_eval.register_parser(subparsers, BesedyDefaultsHelpFormatter)
 
