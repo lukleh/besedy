@@ -57,8 +57,8 @@ async function main() {
       '',
     ].join('\n'));
     await fs.writeFile(archivedPath, [
-      'Hash,Compressed Path,Compressed AAC Path',
-      ...hashes.map((audioHash) => `${audioHash},/audio/${audioHash}.webm,${withAac ? `/audio/${audioHash}.m4a` : ''}`),
+      'Hash,Original Path,Compressed Path,Compressed AAC Path',
+      ...hashes.map((audioHash) => `${audioHash},/audio/${audioHash}.wav,/audio/${audioHash}.webm,${withAac ? `/audio/${audioHash}.m4a` : ''}`),
       '',
     ].join('\n'));
   }
@@ -70,7 +70,8 @@ async function main() {
       data: { id: catalogId, metadataCatalogPath: metadataPath, archivedCatalogPath: archivedPath },
     });
     createdCatalog = true;
-    assert.equal((await syncCatalogGroup(catalogId)).status, 'success');
+    const initialSync = await syncCatalogGroup(catalogId);
+    assert.equal(initialSync.status, 'success', initialSync.error);
     const before = await client.catalogEntry.findUniqueOrThrow({
       where: { workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash: retainedHash } },
     });
@@ -98,11 +99,35 @@ async function main() {
     assert.equal(added.isPublished, false, 'new recordings must start unpublished');
     assert.equal(await client.catalogEntry.count({ where: { workflowGroupId: catalogId, audioHash: removedHash } }), 0);
 
+    // A parsed metadata source followed by a malformed archive must leave the
+    // entire committed projection and its successful fingerprints intact.
+    const entriesBeforeInvalid = await client.catalogEntry.findMany({
+      where: { workflowGroupId: catalogId }, orderBy: { audioHash: 'asc' },
+    });
+    const sourceGenerations = () => client.catalogSyncState.findMany({
+      where: { workflowGroupId: catalogId },
+      select: { sourceKey: true, fingerprint: true, rowCount: true },
+      orderBy: { sourceKey: 'asc' },
+    });
+    const generationsBeforeInvalid = await sourceGenerations();
+    await writeSources([retainedHash, addedHash], 'Rejected title', true);
+    await fs.writeFile(archivedPath,
+      `Hash,Original Path,Compressed Path\n${retainedHash},/audio/original.wav,"unfinished`,
+    );
+    const rejected = await syncCatalogGroup(catalogId, { force: true, allowRowCountDrop: true });
+    assert.equal(rejected.status, 'error');
+    assert.match(rejected.error ?? '', /Invalid archived catalog CSV: MissingQuotes/);
+    assert.deepEqual(await client.catalogEntry.findMany({
+      where: { workflowGroupId: catalogId }, orderBy: { audioHash: 'asc' },
+    }), entriesBeforeInvalid, 'malformed CSV must not change committed catalog rows');
+    assert.deepEqual(await sourceGenerations(), generationsBeforeInvalid,
+      'malformed CSV must not replace successful source generations');
+
     // Clearing an explicitly allowed empty catalog still removes every row.
     await writeSources([], '', false);
     assert.equal((await syncCatalogGroup(catalogId, { allowRowCountDrop: true })).status, 'success');
     assert.equal(await client.catalogEntry.count({ where: { workflowGroupId: catalogId } }), 0);
-    console.log('Catalog sync publication/concurrency checks passed');
+    console.log('Catalog sync publication/concurrency and CSV validation checks passed');
   } finally {
     try {
       if (createdCatalog) await client.workflowGroup.delete({ where: { id: catalogId } });
