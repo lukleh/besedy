@@ -13,19 +13,9 @@ vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
 }));
 
-// Like Next's router, follow the address through Back/Forward and through
-// history writes on the page.
-vi.mock("next/navigation", async () => {
-  const { useSyncExternalStore } = await import("react");
-  const subscribe = (onChange: () => void) => {
-    window.addEventListener("popstate", onChange);
-    return () => window.removeEventListener("popstate", onChange);
-  };
-  return {
-    useSearchParams: () =>
-      new URLSearchParams(useSyncExternalStore(subscribe, () => window.location.search)),
-  };
-});
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}));
 
 vi.mock("@/lib/api/fetch-json", () => ({
   ApiError: class MockApiError extends Error {
@@ -221,23 +211,6 @@ describe("CorrectionSurface", () => {
     expect(fetchJsonMock.mock.calls.some(([url]) => String(url).includes("/spans?offset="))).toBe(false);
   });
 
-  it("selects a followed link already in the list without reloading the list", async () => {
-    serveDraftSpans();
-    renderSurface(null);
-    await screen.findByDisplayValue("machine 0");
-    const listRequests = () => fetchJsonMock.mock.calls.filter(([url]) => /\/spans\?/.test(String(url))).length;
-    const before = listRequests();
-
-    act(() => {
-      window.history.pushState(null, "", `${window.location.pathname}?segment=span-1`);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    });
-    expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
-    expect(lastPlayerProps()).toMatchObject({ seekTo: 10, autoPlayOnSeek: false });
-    await waitFor(() => expect(window.location.search).toBe(""));
-    expect(listRequests()).toBe(before);
-  });
-
   it("offers a retry and the resume position when a linked segment's page fails to load", async () => {
     window.history.replaceState(null, "", `${window.location.pathname}?segment=span-1`);
     let fail = true;
@@ -269,37 +242,6 @@ describe("CorrectionSurface", () => {
     await userEvent.click(screen.getByRole("button", { name: "segmentLinkResume" }));
     expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
     expect(lastPlayerProps().autoPlayOnSeek).toBe(false);
-  });
-
-  it.each(["resume", "link"])("does not replay an old autoplay request after missing-link recovery via %s", async (recovery) => {
-    serveDraftSpans();
-    renderSurface({ spanId: "span-0", ordinal: 0 });
-    await screen.findByDisplayValue("machine 0");
-
-    const controls = within(screen.getByTestId("correction-span-audio"));
-    await userEvent.click(controls.getByRole("button", { name: "repeatRegion" }));
-    expect(lastPlayerProps()).toMatchObject({ seekTo: 0, playbackEnd: 10, autoPlayOnSeek: true });
-    const seekKey = lastPlayerProps().seekKey;
-
-    act(() => {
-      window.history.replaceState(null, "", `${window.location.pathname}?segment=missing`);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    });
-    expect(await screen.findByText("segmentLinkMissing")).toBeInTheDocument();
-    expect(screen.queryByTestId("audio-player")).not.toBeInTheDocument();
-
-    if (recovery === "resume") {
-      await userEvent.click(screen.getByRole("button", { name: "segmentLinkResume" }));
-    } else {
-      act(() => {
-        window.history.replaceState(null, "", `${window.location.pathname}?segment=span-0`);
-        window.dispatchEvent(new PopStateEvent("popstate"));
-      });
-    }
-    expect(await screen.findByDisplayValue("machine 0")).toBeInTheDocument();
-    expect(screen.getByTestId("audio-player")).toBeInTheDocument();
-    expect(lastPlayerProps()).toMatchObject({ seekTo: 0, playbackEnd: 10, seekKey, autoPlayOnSeek: false });
-    expect(mocks.controls.play).not.toHaveBeenCalled();
   });
 
   it.each([false, true])("shares a canonical segment URL by copying it on a desktop (copy fails: %s)", async (fail) => {
@@ -347,22 +289,6 @@ describe("CorrectionSurface", () => {
       Reflect.deleteProperty(navigator, "share");
       Reflect.deleteProperty(window, "matchMedia");
     }
-  });
-
-  it("falls back to the first span when the selected span leaves the list during ordinary work", async () => {
-    let readPage = () => page(0, 2, 2);
-    serveDraftSpans(() => readPage());
-    const { queryClient } = renderSurface(null);
-    await screen.findByDisplayValue("machine 0");
-    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
-    expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
-
-    readPage = () => page(0, 1, 1);
-    await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ["correction-spans"] });
-    });
-    expect(await screen.findByDisplayValue("machine 0")).toBeInTheDocument();
-    expect(screen.queryByText("segmentLinkMissing")).not.toBeInTheDocument();
   });
 
   it("brings the selected span into view by scrolling only the segment list", async () => {

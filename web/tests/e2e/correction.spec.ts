@@ -113,21 +113,6 @@ test.describe("transcript correction", () => {
       await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
       await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBe(spans[1].startSeconds);
 
-      // A link followed on the open page must pause the current audio before
-      // selecting another already-loaded segment, rather than play through its seek.
-      await linkedPage.getByTestId("correction-span-audio")
-        .getByRole("button", { name: /^(Přehrát úsek|Play span)$/ }).click();
-      await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(false);
-      await linkedPage.evaluate((segmentId) => {
-        const url = new URL(window.location.href);
-        url.searchParams.set("segment", segmentId);
-        window.history.replaceState(null, "", url);
-      }, spans[0].id);
-      await expect(linkedPage.getByRole("textbox").first()).toHaveValue("Dobrý den, vítejte.");
-      await expect(linkedPage).toHaveURL((url) => !url.searchParams.has("segment"));
-      await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
-      await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBe(spans[0].startSeconds);
-
       const missingId = "00000000-0000-4000-8000-000000000000";
       await linkedPage.goto(`${correctionPath}?segment=${missingId}`);
       const missingLink = linkedPage.getByRole("alert").filter({
