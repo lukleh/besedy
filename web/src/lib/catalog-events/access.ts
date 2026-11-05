@@ -1,8 +1,4 @@
 import { AuthError, requireAuth } from "@/lib/auth/permissions";
-import {
-  getLabsPreferenceForUser,
-  isFeatureEnabledForUser,
-} from "@/lib/features/capabilities";
 import { resolveCatalogActorContext } from "@/lib/policy/actor";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
@@ -77,10 +73,7 @@ export async function requireCatalogEventsAccess(
 ): Promise<CatalogEventsAccessResult> {
   const userId = await requireAuth();
 
-  const [actor, labsPreference] = await Promise.all([
-    resolveCatalogActorContext(catalogId, userId, options),
-    getLabsPreferenceForUser(userId),
-  ]);
+  const actor = await resolveCatalogActorContext(catalogId, userId, options);
 
   if (!actor.catalogExists) {
     throw new AuthError("Catalog not found", 404);
@@ -90,13 +83,7 @@ export async function requireCatalogEventsAccess(
     throw new AuthError("Portal access required", 403);
   }
 
-  const featureEnabled = isFeatureEnabledForUser("events", labsPreference.enabled);
-  if (!featureEnabled) {
-    throw new AuthError("Events feature is not enabled", 403);
-  }
-
   const policyContext: EventFeaturePolicyContext = {
-    featureEnabled,
     catalogExists: actor.catalogExists,
     canEnterPortal: actor.canEnterPortal,
     catalogGrant: actor.catalogGrant,

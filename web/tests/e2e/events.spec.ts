@@ -20,16 +20,6 @@ interface EventListItem {
   title: string | null;
 }
 
-async function setLabsEnabled(
-  request: APIRequestContext,
-  enabled: boolean
-): Promise<void> {
-  const response = await request.put("/api/preferences/labs", {
-    data: { enabled },
-  });
-  expect(response.ok()).toBeTruthy();
-}
-
 async function getEventIdByTitle(
   request: APIRequestContext,
   title: string
@@ -54,11 +44,10 @@ async function getEventIdByTitle(
 test.describe("Event Catalog", () => {
   test.describe.configure({ mode: "serial" });
 
-  test("admin with Labs sees Events tab and viewer without Labs does not", async ({
+  test("admin can switch catalog tabs while viewer stays on events", async ({
     page,
   }) => {
     await loginAs(page, "admin");
-    await setLabsEnabled(page.request, true);
     await page.goto(URLS.catalog);
     await waitForPageReady(page);
 
@@ -67,7 +56,6 @@ test.describe("Event Catalog", () => {
     });
 
     await loginAs(page, "viewer");
-    await setLabsEnabled(page.request, false);
     await page.goto(URLS.catalog);
     await waitForPageReady(page);
 
@@ -77,11 +65,10 @@ test.describe("Event Catalog", () => {
   test("viewer lands on events view but cannot create events", async ({
     page,
   }) => {
-    // With events rolled out publicly, viewers default to the events view
+    // Viewers default to the events view
     // without a tab switcher (tabs require canEdit). Verify the events list
     // loads and the Create Event control is absent.
     await loginAs(page, "viewer");
-    await setLabsEnabled(page.request, true);
     await page.goto(URLS.catalog);
     await waitForPageReady(page);
 
@@ -97,7 +84,6 @@ test.describe("Event Catalog", () => {
     // The legacy editor fixture is migrated to the curator role, which owns
     // editorial event work.
     await loginAs(page, "editor");
-    await setLabsEnabled(page.request, true);
     await page.goto(URLS.catalog);
     await waitForPageReady(page);
 
@@ -113,7 +99,6 @@ test.describe("Event Catalog", () => {
 
   test("events tab lists seeded events", async ({ page }) => {
     await loginAs(page, "admin");
-    await setLabsEnabled(page.request, true);
     await page.goto(URLS.catalogEvents);
     await waitForPageReady(page);
 
@@ -149,7 +134,6 @@ test.describe("Event Catalog", () => {
 
   test("event detail shows primary section and edit link", async ({ page }) => {
     await devLogin(page, "admin");
-    await setLabsEnabled(page.request, true);
     const eventId = await getEventIdByTitle(page.request, TEST_EVENTS[0].title);
 
     await page.goto(URLS.event(eventId));
@@ -179,7 +163,6 @@ test.describe("Event Catalog", () => {
 
   test("events tab selection persists after reload", async ({ page }) => {
     await loginAs(page, "admin");
-    await setLabsEnabled(page.request, true);
     await page.goto(URLS.catalog);
     await waitForPageReady(page);
 
@@ -212,7 +195,6 @@ test.describe("Event Catalog", () => {
     );
 
     await devLogin(page, "admin");
-    await setLabsEnabled(page.request, true);
 
     // All 5 seeded audio files are now attached to events (ab00003cab and
     // ab00004dab were added to "Archive Evening" for notification coverage),
@@ -275,7 +257,6 @@ test.describe("Event Catalog", () => {
     await resetEventReleaseState(TEST_CATALOG_ID, TEST_EVENTS[1].title);
 
     await devLogin(page, "admin");
-    await setLabsEnabled(page.request, true);
     const eventId = await getEventIdByTitle(page.request, TEST_EVENTS[1].title);
     const primaryHash = TEST_AUDIO_FILES[1].hash;
 
@@ -317,7 +298,6 @@ test.describe("Event Catalog", () => {
     page,
   }) => {
     await devLogin(page, "admin");
-    await setLabsEnabled(page.request, true);
     const response = await page.request.get(
       `/api/catalogs/${TEST_CATALOG_ID}/events/unassigned?limit=200`
     );

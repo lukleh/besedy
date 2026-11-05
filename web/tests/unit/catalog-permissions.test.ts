@@ -114,7 +114,6 @@ describe("roles", () => {
         "manage_event_artwork",
         "publish_event_artwork",
         "manage_event_sources",
-        "use_deep_search",
         "download_audio",
         "download_transcripts",
         "download_original_transcript",
@@ -139,7 +138,6 @@ describe("roles", () => {
         "manage_event_artwork",
         "publish_event_artwork",
         "manage_event_sources",
-        "use_deep_search",
         "manage_access",
         "manage_catalog_config",
         "correct_transcripts",
@@ -387,7 +385,6 @@ describe("event release", () => {
   // which side of the gate it falls on.
   const eventContext = (role: CatalogRole | null, isCatalogAdmin = false) => ({
     ...context(role, isCatalogAdmin),
-    featureEnabled: true,
   });
 
   it.each([...CATALOG_ROLES])(
@@ -422,9 +419,8 @@ describe("event release", () => {
     expect(canReleaseEvent(eventContext(null, true))).toBe(true);
   });
 
-  it("refuses release when the events feature is off or the catalog is closed", () => {
+  it("refuses release when the catalog or portal is closed", () => {
     const curator = eventContext("curator");
-    expect(canReleaseEvent({ ...curator, featureEnabled: false })).toBe(false);
     expect(canReleaseEvent({ ...curator, canEnterPortal: false })).toBe(false);
     expect(canReleaseEvent({ ...curator, catalogExists: false })).toBe(false);
   });

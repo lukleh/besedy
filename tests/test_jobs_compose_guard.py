@@ -21,36 +21,19 @@ SUFFIX = {"development": "dev", "test": "test", "production": "prod"}
 def rendered(mode: str) -> dict[str, object]:
     """A correctly wired rendered jobs project, as `docker compose config` prints it."""
     suffix = SUFFIX[mode]
-    pool = f"besedy-deep-search-{suffix}"
-    output_dir = f"/state/lukleh/besedy/deep-search/{suffix}"
     return {
         "name": f"besedy-jobs-{suffix}",
         "services": {
             "jobs-api": {
                 "container_name": f"besedy-{suffix}-jobs-api",
                 "environment": {
-                    "PREFECT_DEEP_SEARCH_WORK_POOL": pool,
                     "PREFECT_INGEST_WORK_POOL": f"besedy-ingest-{suffix}",
-                    "DEEP_SEARCH_OUTPUT_ENV": suffix,
-                    "DEEP_SEARCH_OUTPUT_DIR": output_dir,
-                    "PREFECT_DEEP_SEARCH_DEPLOYMENT_NAME": f"deep-search-{suffix}",
-                    "PREFECT_DEEP_SEARCH_FULL_DEPLOYMENT_NAME": f"deep_search_flow/deep-search-{suffix}",
                     "PREFECT_INGEST_DEPLOYMENT_NAME": f"ingest-{suffix}",
                     "PREFECT_INGEST_FULL_DEPLOYMENT_NAME": f"ingest_recording_flow/ingest-{suffix}",
                     "PREFECT_INGEST_REMOVE_DEPLOYMENT_NAME": f"ingest-remove-{suffix}",
                     "PREFECT_INGEST_REMOVE_FULL_DEPLOYMENT_NAME": f"remove_recording_flow/ingest-remove-{suffix}",
                     "PREFECT_CORRECTION_INDEX_DEPLOYMENT_NAME": f"correction-index-{suffix}",
                     "PREFECT_CORRECTION_INDEX_FULL_DEPLOYMENT_NAME": f"sync_correction_index_flow/correction-index-{suffix}",
-                },
-            },
-            "prefect-worker": {
-                "container_name": f"besedy-{suffix}-prefect-worker",
-                "command": ["prefect", "worker", "start", "--pool", pool, "--type", "process"],
-                "environment": {
-                    "PREFECT_DEEP_SEARCH_WORK_POOL": pool,
-                    "DEEP_SEARCH_OUTPUT_ENV": suffix,
-                    "DEEP_SEARCH_OUTPUT_DIR": output_dir,
-                    "BESEDY_INTERNAL_BASE_URL": f"http://besedy-{mode}-web:3000",
                 },
             },
         },
@@ -87,78 +70,29 @@ def test_validator_accepts_a_correctly_wired_project(mode: str) -> None:
 @pytest.mark.parametrize(
     ("mode", "service", "path", "value", "message"),
     [
-        # #192: the development values copied into the production env file.
         (
-            "production",
-            "prefect-worker",
-            "environment.BESEDY_INTERNAL_BASE_URL",
-            "http://besedy-development-web:3000",
-            "BESEDY_INTERNAL_BASE_URL is 'http://besedy-development-web:3000', "
-            "expected http://besedy-production-web:3000",
+            "production", "jobs-api", "environment.PREFECT_INGEST_WORK_POOL",
+            "besedy-ingest-dev", "PREFECT_INGEST_WORK_POOL is 'besedy-ingest-dev'",
         ),
         (
-            "development",
-            "prefect-worker",
-            "environment.BESEDY_INTERNAL_BASE_URL",
-            "http://besedy-production-web:3000",
-            "expected http://besedy-development-web:3000",
+            "development", "jobs-api", "environment.PREFECT_INGEST_WORK_POOL",
+            "besedy-ingest-prod", "expected a name ending in '-dev'",
         ),
         (
-            "test",
-            "prefect-worker",
-            "environment.BESEDY_INTERNAL_BASE_URL",
-            "http://web:3000",
-            "expected http://besedy-test-web:3000",
+            "test", "jobs-api", "environment.PREFECT_INGEST_WORK_POOL",
+            "besedy-ingest-prod", "expected a name ending in '-test'",
         ),
         (
-            "production",
-            "jobs-api",
-            "environment.PREFECT_DEEP_SEARCH_WORK_POOL",
-            "besedy-deep-search",
-            "jobs-api PREFECT_DEEP_SEARCH_WORK_POOL is 'besedy-deep-search', "
-            "expected a name ending in '-prod'",
+            "production", "jobs-api", "environment.PREFECT_INGEST_FULL_DEPLOYMENT_NAME",
+            "ingest_recording_flow/ingest-dev", "PREFECT_INGEST_FULL_DEPLOYMENT_NAME is 'ingest_recording_flow/ingest-dev'",
         ),
         (
-            "production",
-            "jobs-api",
-            "environment.PREFECT_INGEST_WORK_POOL",
-            "besedy-ingest-dev",
-            "PREFECT_INGEST_WORK_POOL is 'besedy-ingest-dev'",
+            "production", "jobs-api", "environment.PREFECT_CORRECTION_INDEX_FULL_DEPLOYMENT_NAME",
+            "sync_correction_index_flow/correction-index-test", "PREFECT_CORRECTION_INDEX_FULL_DEPLOYMENT_NAME is 'sync_correction_index_flow/correction-index-test'",
         ),
         (
-            "production",
-            "prefect-worker",
-            "command",
-            ["prefect", "worker", "start", "--pool", "besedy-deep-search-dev"],
-            "prefect-worker pool is 'besedy-deep-search-dev'",
-        ),
-        (
-            "production",
-            "jobs-api",
-            "environment.PREFECT_INGEST_FULL_DEPLOYMENT_NAME",
-            "ingest_recording_flow/ingest-dev",
-            "PREFECT_INGEST_FULL_DEPLOYMENT_NAME is 'ingest_recording_flow/ingest-dev'",
-        ),
-        (
-            "production",
-            "jobs-api",
-            "environment.DEEP_SEARCH_OUTPUT_ENV",
-            "dev",
-            "DEEP_SEARCH_OUTPUT_ENV is 'dev', expected 'prod'",
-        ),
-        (
-            "production",
-            "prefect-worker",
-            "environment.DEEP_SEARCH_OUTPUT_DIR",
-            "/state/lukleh/besedy/deep-search/dev",
-            "DEEP_SEARCH_OUTPUT_DIR is '/state/lukleh/besedy/deep-search/dev'",
-        ),
-        (
-            "test",
-            "jobs-api",
-            "container_name",
-            "besedy-dev-jobs-api",
-            "container name is 'besedy-dev-jobs-api', expected the prefix 'besedy-test-'",
+            "test", "jobs-api", "container_name", "besedy-dev-jobs-api",
+            "container name is 'besedy-dev-jobs-api', expected 'besedy-test-jobs-api'",
         ),
     ],
 )
@@ -173,20 +107,6 @@ def test_validator_refuses_values_of_another_environment(
     assert "/env/jobs.env" in result.stderr
 
 
-def test_validator_reads_the_pool_from_the_equals_form_too() -> None:
-    config = mutated(
-        "production", "prefect-worker", "command", ["prefect", "worker", "start", "--pool=besedy-deep-search-prod"]
-    )
-    assert validate(config, "production").returncode == 0
-
-    config = mutated(
-        "production", "prefect-worker", "command", ["prefect", "worker", "start", "--pool=besedy-deep-search-dev"]
-    )
-    result = validate(config, "production")
-    assert result.returncode == 1
-    assert "prefect-worker pool is 'besedy-deep-search-dev'" in result.stderr
-
-
 def test_validator_refuses_a_project_of_another_environment() -> None:
     config = rendered("production")
     config["name"] = "besedy-jobs-dev"
@@ -195,16 +115,6 @@ def test_validator_refuses_a_project_of_another_environment() -> None:
 
     assert result.returncode == 1
     assert "project is 'besedy-jobs-dev', expected 'besedy-jobs-prod'" in result.stderr
-
-
-def test_validator_refuses_a_missing_worker_url() -> None:
-    config = rendered("production")
-    del config["services"]["prefect-worker"]["environment"]["BESEDY_INTERNAL_BASE_URL"]  # type: ignore[index]
-
-    result = validate(config, "production")
-
-    assert result.returncode == 1
-    assert "BESEDY_INTERNAL_BASE_URL is not set" in result.stderr
 
 
 def _fake_docker(bin_dir: Path, config: dict[str, object] | None) -> Path:
@@ -275,15 +185,15 @@ def test_wrapper_refuses_before_running_any_command_when_a_value_names_another_e
 ) -> None:
     config = mutated(
         "production",
-        "prefect-worker",
-        "environment.BESEDY_INTERNAL_BASE_URL",
-        "http://besedy-development-web:3000",
+        "jobs-api",
+        "environment.PREFECT_INGEST_WORK_POOL",
+        "besedy-ingest-dev",
     )
 
     result, calls = run_wrapper(tmp_path, "production", config, "up", "-d")
 
     assert result.returncode == 1
-    assert "http://besedy-development-web:3000" in result.stderr
+    assert "besedy-ingest-dev" in result.stderr
     assert str(tmp_path / "jobs.env.production") in result.stderr
     # Only the render ran; `up` never did.
     assert len(calls) == 1
@@ -296,9 +206,9 @@ def test_wrapper_runs_stopping_and_inspecting_commands_even_for_a_mis_wired_proj
 ) -> None:
     config = mutated(
         "production",
-        "prefect-worker",
-        "environment.BESEDY_INTERNAL_BASE_URL",
-        "http://besedy-development-web:3000",
+        "jobs-api",
+        "environment.PREFECT_INGEST_WORK_POOL",
+        "besedy-ingest-dev",
     )
 
     result, calls = run_wrapper(tmp_path, "production", config, *command)
@@ -314,7 +224,7 @@ def test_wrapper_validates_every_command_that_creates_or_starts_containers(
     tmp_path: Path, command: str
 ) -> None:
     config = mutated(
-        "production", "jobs-api", "environment.DEEP_SEARCH_OUTPUT_ENV", "dev"
+        "production", "jobs-api", "environment.PREFECT_INGEST_WORK_POOL", "besedy-ingest-dev"
     )
 
     result, calls = run_wrapper(tmp_path, "production", config, command, "jobs-api")
@@ -330,21 +240,6 @@ def test_wrapper_reports_a_render_failure_with_the_env_file(tmp_path: Path) -> N
     assert "env var required but not set" in result.stderr
     assert str(tmp_path / "jobs.env.production") in result.stderr
     assert len(calls) == 1
-
-
-def test_wrapper_adds_the_codex_overlay_for_production_only(tmp_path: Path) -> None:
-    result, calls = run_wrapper(tmp_path, "production", rendered("production"), "--codex-auth", "up")
-
-    assert result.returncode == 0, result.stderr
-    assert all(
-        "-f jobs-service/docker-compose.jobs-prod.yml -f "
-        "jobs-service/docker-compose.jobs-codex-auth.yml" in call
-        for call in calls
-    )
-
-    result, _ = run_wrapper(tmp_path / "dev", "development", rendered("development"), "--codex-auth", "up")
-    assert result.returncode == 1
-    assert "--codex-auth is only valid for production" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -406,7 +301,7 @@ def _clean_env() -> dict[str, str]:
     return {
         name: value
         for name, value in os.environ.items()
-        if not name.startswith(("COMPOSE_", "PREFECT_", "DEEP_SEARCH_", "BESEDY_"))
+        if not name.startswith(("COMPOSE_", "PREFECT_", "BESEDY_"))
     }
 
 
@@ -453,12 +348,10 @@ def test_the_checked_in_compose_files_render_a_project_the_validator_accepts(
 
 
 @pytest.mark.skipif(not _real_compose_available(), reason="docker compose is not installed")
-def test_a_production_env_file_naming_the_development_web_is_refused(tmp_path: Path) -> None:
+def test_a_production_env_file_naming_the_development_pool_is_refused(tmp_path: Path) -> None:
     env_file = tmp_path / "jobs.env.prod"
     env_file.write_text(
-        "BESEDY_INTERNAL_BASE_URL=http://besedy-development-web:3000\n"
-        "PREFECT_DEEP_SEARCH_WORK_POOL=besedy-deep-search\n"
-        "DEEP_SEARCH_OUTPUT_ENV=dev\n",
+        "PREFECT_INGEST_WORK_POOL=besedy-ingest-dev\n",
         encoding="utf-8",
     )
     # Real `docker compose config`, but nothing else reaches Docker: a wrapper

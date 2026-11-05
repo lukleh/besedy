@@ -114,13 +114,7 @@ def check_idle(*, deployment_name: str | None = None, work_pool: str | None = No
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     target = parser.add_mutually_exclusive_group()
-    target.add_argument(
-        "--deployment-name",
-        default=os.getenv(
-            "PREFECT_DEEP_SEARCH_FULL_DEPLOYMENT_NAME",
-            "deep_search_flow/deep-search-prod",
-        ),
-    )
+    target.add_argument("--deployment-name")
     target.add_argument(
         "--work-pool",
         help="Check every deployment on this work pool instead of one deployment.",
@@ -130,7 +124,14 @@ def main(argv: list[str] | None = None) -> int:
         if not args.work_pool:
             parser.error("--work-pool must not be empty")
         return check_idle(work_pool=args.work_pool)
-    return check_idle(deployment_name=args.deployment_name)
+    if args.deployment_name is not None:
+        if not args.deployment_name:
+            parser.error("--deployment-name must not be empty")
+        return check_idle(deployment_name=args.deployment_name)
+    pool = os.getenv("PREFECT_INGEST_WORK_POOL", "besedy-ingest").strip()
+    if not pool:
+        parser.error("PREFECT_INGEST_WORK_POOL must not be empty")
+    return check_idle(work_pool=pool)
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entrypoint

@@ -34,21 +34,13 @@ describe("client response schemas", () => {
 
   it("defaults a missing RAG capability to false during rolling deploys", () => {
     const result = catalogFeaturesResponseSchema.safeParse({
-      labsEnabled: false,
       features: {
         events: {
-          rollout: "public",
-          enabled: true,
           canView: true,
           canEdit: false,
           showTabs: true,
           showAllColumns: false,
           showReleaseState: false,
-        },
-        deepSearch: {
-          rollout: "off",
-          enabled: false,
-          canView: false,
         },
       },
     });

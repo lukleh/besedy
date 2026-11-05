@@ -15,7 +15,7 @@ ColBERT, a GPU backend, a database) must not be able to pivot to:
 - the tailnet (`100.64.0.0/10`) and link-local (`169.254.0.0/16`);
 - anything over IPv6.
 
-Outbound internet stays open: OAuth, Web Push, OpenRouter and NVIDIA APIs,
+Outbound internet stays open: OAuth, Web Push,
 Hugging Face model downloads, and the npm registry for the OAuth mock.
 
 The policy covers **every** container on a Besedy network, in production,
@@ -146,7 +146,7 @@ over `besedy-internal` (step 2) before production web is checked.
    ```
 
 4. Verify: `just egress-check`, then web search, MCP search, sign-in, and a
-   deep-search job. Run `just egress-check` again after `sudo ufw reload`, a
+   recording ingest job. Run `just egress-check` again after `sudo ufw reload`, a
    Tailscale restart (`sudo systemctl restart tailscaled`), a Docker restart,
    and a reboot.
 

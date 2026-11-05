@@ -48,9 +48,7 @@ lists once per catalog, which is the situation the change exists to end.
 Lookup ids leave the system: MCP returns them from `list_locations` and
 `list_recorders` and accepts them back as search filters, so a client that
 remembered one across sessions would stop resolving it. Nothing inside Besedy
-persists them beyond the foreign keys the migration repoints — the deep-search
-job payload carries a query, instructions and two opaque configuration objects,
-not filters.
+persists them beyond the foreign keys the migration repoints.
 
 That makes the case for stability thinner than it first appears, but preserving
 ids costs nothing, so the migration keeps each original row and assigns it to

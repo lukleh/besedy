@@ -9,7 +9,6 @@ export interface EventListProps {
   showAllColumns: boolean;
   showReleaseState: boolean;
   canUseRagSearch: boolean;
-  deepSearchHref?: string;
 }
 
 export interface LocationItem {

@@ -54,14 +54,9 @@ jobs:
       - name: Audit locked Python dependencies
         run: |
           uv export --locked --quiet --all-extras --no-hashes --no-emit-project --output-file /tmp/requirements.txt
-          # DSPy uses DiskCache only in a worker-owned cache. Production sets
-          # DSPY_CACHEDIR on an ephemeral, non-root /tmp filesystem, so an
-          # attacker able to replace its pickle files already controls the
-          # worker UID. Remove this exception when DiskCache publishes a fix.
           uvx pip-audit==2.10.1 \
             --no-deps \
             --disable-pip \
-            --ignore-vuln PYSEC-2026-2447 \
             -r /tmp/requirements.txt
 
   python-311-syntax:
@@ -99,9 +94,10 @@ jobs:
       - run: >-
           uv run pytest
           tests/test_prefect_jobs.py
+          tests/test_prefect_ingest.py
+          tests/test_prefect_correction_index.py
           tests/test_prefect_jobs_maintenance.py
           tests/test_jobs_production_hardening.py
-          tests/test_rlm_integration.py
           -q
 
   web-typecheck:

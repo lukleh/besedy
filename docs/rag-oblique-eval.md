@@ -90,6 +90,6 @@ not be directly comparable to a standalone `--k` run.
 ## Next Experiments
 
 If strict recall is low but audio recall is high, inspect chunking and context
-windows first. If both are low, test deep-search query expansion before changing
+windows first. If both are low, test query expansion in the MCP client before changing
 the ColBERT model. If query expansion still misses targets, index auxiliary
 per-chunk "lens" text such as summaries, claims, metaphors, speakers, and themes.

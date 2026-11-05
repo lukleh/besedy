@@ -2,30 +2,18 @@ import { describe, expect, it } from "vitest";
 import { buildCatalogFeaturesResponse } from "@/lib/features/capabilities";
 import { grantForRole } from "@/lib/policy/catalog-permissions";
 
-function deepSearch(enabled: boolean, canView: boolean) {
-  return {
-    rollout: "labs",
-    enabled,
-    canView,
-  };
-}
-
 describe("event capabilities", () => {
   // Browsing recordings is a permission now, and no role below the curator
   // carries it, so these two have one surface and need no switch.
   it("keeps listeners on the events-first view without a tab switcher", () => {
     const result = buildCatalogFeaturesResponse(
       grantForRole("listener"),
-      false,
       false
     );
 
     expect(result).toEqual({
-      labsEnabled: false,
       features: {
         events: {
-          rollout: "public",
-          enabled: true,
           canView: true,
           canEdit: false,
           showTabs: false,
@@ -34,7 +22,6 @@ describe("event capabilities", () => {
           canUseRagSearch: false,
         },
         recordings: { canBrowse: false },
-        deepSearch: deepSearch(false, false),
       },
     });
   });
@@ -42,16 +29,12 @@ describe("event capabilities", () => {
   it("keeps readers on the events-first view without a tab switcher", () => {
     const result = buildCatalogFeaturesResponse(
       grantForRole("reader"),
-      false,
       false
     );
 
     expect(result).toEqual({
-      labsEnabled: false,
       features: {
         events: {
-          rollout: "public",
-          enabled: true,
           canView: true,
           canEdit: false,
           showTabs: false,
@@ -62,7 +45,6 @@ describe("event capabilities", () => {
           canUseRagSearch: true,
         },
         recordings: { canBrowse: false },
-        deepSearch: deepSearch(false, false),
       },
     });
   });
@@ -70,16 +52,12 @@ describe("event capabilities", () => {
   it("lets curators edit events and use both catalog tabs", () => {
     const result = buildCatalogFeaturesResponse(
       grantForRole("curator"),
-      false,
       false
     );
 
     expect(result).toEqual({
-      labsEnabled: false,
       features: {
         events: {
-          rollout: "public",
-          enabled: true,
           canView: true,
           canEdit: true,
           showTabs: true,
@@ -88,43 +66,16 @@ describe("event capabilities", () => {
           canUseRagSearch: true,
         },
         recordings: { canBrowse: true },
-        deepSearch: deepSearch(false, false),
       },
     });
-  });
-
-  it("lets curators use deep search only when Labs is enabled", () => {
-    const result = buildCatalogFeaturesResponse(
-      grantForRole("curator"),
-      true,
-      false
-    );
-
-    expect(result.features.deepSearch).toEqual(deepSearch(true, true));
-  });
-
-  it("requires transcript read permission for deep search", () => {
-    const result = buildCatalogFeaturesResponse(
-      {
-        role: "listener",
-        extras: ["use_deep_search"],
-      },
-      true,
-      false
-    );
-
-    expect(result.features.deepSearch).toEqual(deepSearch(true, false));
   });
 
   it("lets catalog admins browse and edit events without an explicit catalog grant", () => {
-    const result = buildCatalogFeaturesResponse(null, false, true);
+    const result = buildCatalogFeaturesResponse(null, true);
 
     expect(result).toEqual({
-      labsEnabled: false,
       features: {
         events: {
-          rollout: "public",
-          enabled: true,
           canView: true,
           canEdit: true,
           showTabs: true,
@@ -133,26 +84,16 @@ describe("event capabilities", () => {
           canUseRagSearch: true,
         },
         recordings: { canBrowse: true },
-        deepSearch: deepSearch(false, false),
       },
     });
   });
 
-  it("lets system catalog admins use deep search only when Labs is enabled", () => {
-    const result = buildCatalogFeaturesResponse(null, true, true);
-
-    expect(result.features.deepSearch).toEqual(deepSearch(true, true));
-  });
-
-  it("keeps rollout enabled while denying event access when the user lacks catalog access", () => {
-    const result = buildCatalogFeaturesResponse(null, false, false);
+  it("denies event access when the user lacks catalog access", () => {
+    const result = buildCatalogFeaturesResponse(null, false);
 
     expect(result).toEqual({
-      labsEnabled: false,
       features: {
         events: {
-          rollout: "public",
-          enabled: true,
           canView: false,
           canEdit: false,
           showTabs: false,
@@ -161,7 +102,6 @@ describe("event capabilities", () => {
           canUseRagSearch: false,
         },
         recordings: { canBrowse: false },
-        deepSearch: deepSearch(false, false),
       },
     });
   });
@@ -169,7 +109,6 @@ describe("event capabilities", () => {
   it("never reports event access when admission or catalog state is impossible", () => {
     const result = buildCatalogFeaturesResponse(
       grantForRole("listener"),
-      true,
       false,
       {
         catalogExists: false,
@@ -178,11 +117,8 @@ describe("event capabilities", () => {
     );
 
     expect(result).toEqual({
-      labsEnabled: true,
       features: {
         events: {
-          rollout: "public",
-          enabled: true,
           canView: false,
           canEdit: false,
           showTabs: false,
@@ -191,7 +127,6 @@ describe("event capabilities", () => {
           canUseRagSearch: false,
         },
         recordings: { canBrowse: false },
-        deepSearch: deepSearch(true, false),
       },
     });
   });

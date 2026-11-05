@@ -20,7 +20,7 @@ COMPOSE_FILES = sorted(
         capture_output=True,
         text=True,
     ).stdout.split("\0")
-    if line
+    if line and (REPO_ROOT / line).is_file()
 )
 
 

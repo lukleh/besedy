@@ -8,10 +8,6 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY --from=uv /uv /uvx /usr/local/bin/
 
 WORKDIR /app
@@ -23,7 +19,7 @@ COPY besedy ./besedy
 RUN uv sync --locked --no-dev --extra jobs --no-editable \
     && uv pip check --python /opt/venv/bin/python \
     && /opt/venv/bin/python -c \
-        'from besedy.lib.prefect_jobs.rlm_integration import BesedyDeepSearchSignature; from rlmbenchy.rlm import load_lm_profile, run_task' \
+        'from besedy.lib.prefect_jobs.api import PrefectJobsApiService' \
     && rm -rf /app/besedy
 
 FROM python:3.13-slim
@@ -38,12 +34,10 @@ ENV PYTHONUNBUFFERED=1 \
     XDG_CONFIG_HOME=/tmp/config \
     XDG_DATA_HOME=/tmp/data \
     XDG_STATE_HOME=/tmp/state \
-    DSPY_CACHEDIR=/tmp/cache/dspy \
     PREFECT_HOME=/tmp/prefect
 
 RUN groupadd --gid "${JOBS_GID}" besedy \
-    && useradd --uid "${JOBS_UID}" --gid "${JOBS_GID}" --create-home --shell /usr/sbin/nologin besedy \
-    && mkdir -p /run/besedy/config /run/codex
+    && useradd --uid "${JOBS_UID}" --gid "${JOBS_GID}" --create-home --shell /usr/sbin/nologin besedy
 
 COPY --from=builder /opt/venv /opt/venv
 

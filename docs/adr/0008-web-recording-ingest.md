@@ -33,7 +33,7 @@ Three constraints shape the design:
   `INGEST` job to the existing Prefect jobs facade. The job is a Prefect flow
   (`ingest_recording_flow`) in its own work pool with concurrency 1.
 - That pool is served by a **host-resident** Prefect process worker running as
-  the operator, beside the hardened container worker for deep search. The flow
+  the operator. The flow
   shells out to the same CLI the operator runs by hand.
 - The worker derives every path from the validated `catalog_id` and `intake_id`;
   no filesystem paths cross the web/worker boundary
@@ -64,8 +64,8 @@ Three constraints shape the design:
   below typical recording sizes. Each part is published atomically as an
   immutable file and the final source is assembled only after every part is
   durably present.
-- The ingest and deep-search workers can still contend for the GPU; the pool
-  limit only serialises ingests.
+- Ingest, removal, and correction indexing share the host worker pool with
+  concurrency 1. Manual GPU commands can still contend with that pool.
 - `run-pipeline` processes every pending catalog row, not just the upload; that
   is idempotent and acceptable. A cancelled or crashed run can leave partial
   artifacts that `catalog check` must surface.

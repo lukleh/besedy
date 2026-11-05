@@ -6,9 +6,7 @@ import {
   type CatalogPolicyContext,
 } from "@/lib/policy/catalog";
 
-export interface EventFeaturePolicyContext extends CatalogPolicyContext {
-  featureEnabled: boolean;
-}
+export type EventFeaturePolicyContext = CatalogPolicyContext;
 
 export interface ReleasedVisibleEventState {
   released: boolean;
@@ -48,7 +46,7 @@ export function canViewUnreleasedEvents(
  * through. Events are what an account with access to the catalog sees.
  */
 export function canBrowseEvents(context: EventFeaturePolicyContext): boolean {
-  return context.featureEnabled && hasCatalogAccess(context);
+  return hasCatalogAccess(context);
 }
 
 export function canViewCatalogEvents(context: EventFeaturePolicyContext): boolean {

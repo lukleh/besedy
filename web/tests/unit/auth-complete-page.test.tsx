@@ -55,7 +55,7 @@ describe("AuthCompletePage", () => {
       AuthCompletePage({
         searchParams: Promise.resolve({
           error: "not_authorized:user@example.com",
-          callbackUrl: "/labs",
+          callbackUrl: "/settings",
         }),
       })
     ).rejects.toThrow("NEXT_REDIRECT:/auth/unauthorized?error=not_authorized%3Auser%40example.com");
@@ -69,10 +69,10 @@ describe("AuthCompletePage", () => {
     await expect(
       AuthCompletePage({
         searchParams: Promise.resolve({
-          callbackUrl: "/labs",
+          callbackUrl: "/settings",
         }),
       })
-    ).rejects.toThrow("NEXT_REDIRECT:/labs");
+    ).rejects.toThrow("NEXT_REDIRECT:/settings");
   });
 
   it("normalizes callback targets before applying post-auth redirect rules", async () => {
@@ -102,7 +102,7 @@ describe("AuthCompletePage", () => {
   it("renders the client fallback when the server cannot see a session", async () => {
     const page = await AuthCompletePage({
       searchParams: Promise.resolve({
-        callbackUrl: "/labs/../../auth/signin",
+        callbackUrl: "/settings/../../auth/signin",
         state: "state_not_found",
       }),
     });

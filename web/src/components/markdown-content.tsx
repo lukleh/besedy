@@ -2,7 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 /**
- * Markdown shown in the app (deep-search results, the correction guide), with
+ * Markdown shown in the app (the correction guide), with
  * the app's typography. Raw HTML in the source is not rendered.
  */
 export function MarkdownContent({ markdown }: { markdown: string }) {

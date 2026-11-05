@@ -3,17 +3,9 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers } from "@/components/providers";
 
-const { useLabsSyncListener } = vi.hoisted(() => ({
-  useLabsSyncListener: vi.fn(),
-}));
-
 const { downloadManagerBridge, serviceWorkerProvider } = vi.hoisted(() => ({
   downloadManagerBridge: vi.fn(),
   serviceWorkerProvider: vi.fn(),
-}));
-
-vi.mock("@/hooks/use-labs", () => ({
-  useLabsSyncListener,
 }));
 
 vi.mock("next-themes", () => ({
@@ -56,14 +48,13 @@ describe("Providers", () => {
     window.history.replaceState({}, "", "/catalog");
   });
 
-  it("mounts global labs sync listener", () => {
+  it("mounts playback, download, and service-worker providers", () => {
     render(
       <Providers>
         <div data-testid="content">content</div>
       </Providers>
     );
 
-    expect(useLabsSyncListener).toHaveBeenCalledTimes(1);
     expect(downloadManagerBridge).toHaveBeenCalledTimes(1);
     expect(serviceWorkerProvider).toHaveBeenCalledWith({ passive: false });
     expect(screen.getByTestId("content")).toBeInTheDocument();

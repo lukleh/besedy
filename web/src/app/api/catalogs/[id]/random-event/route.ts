@@ -5,7 +5,6 @@ import { getCurrentUserId } from "@/lib/auth/permissions";
 import { getCatalogCapability } from "@/lib/access/capabilities";
 import { getPublishedVisibleEventIds } from "@/lib/catalog-events/visibility";
 import { deriveEventTitle } from "@/lib/catalog-events/utils";
-import { getLabsPreferenceForUser, isFeatureEnabledForUser } from "@/lib/features/capabilities";
 import { TimestampIdParamSchema } from "@/lib/validation/schemas";
 import { validateParams, notFound, forbidden, unauthorized } from "@/lib/api";
 import type { RandomEventResponse } from "@/types/api";
@@ -113,16 +112,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     total: 0,
     historyReset: false,
   };
-
-  // The radio is event-oriented and its banner links to the event page, so it
-  // requires the same events feature those pages enforce. Catalog access
-  // already covers the LISTENER+ requirement; the only remaining gap is the
-  // feature flag, so check it here and play nothing when events are disabled
-  // for this user (otherwise the banner's event link could be a dead end).
-  const labsPreference = await getLabsPreferenceForUser(userId);
-  if (!isFeatureEnabledForUser("events", labsPreference.enabled)) {
-    return NextResponse.json(emptyResponse, { status: 200 });
-  }
 
   // Parse exclude list from query params
   const { searchParams } = new URL(request.url);

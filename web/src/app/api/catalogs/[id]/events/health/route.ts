@@ -13,7 +13,7 @@ interface RouteParams {
 /**
  * GET /api/catalogs/:id/events/health
  * Admin event-health counters for catalog settings.
- * Labs-gated via requireCatalogEventsAccess.
+ * Authorized via requireCatalogEventsAccess.
  */
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {

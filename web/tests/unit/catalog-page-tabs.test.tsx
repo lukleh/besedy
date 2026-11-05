@@ -126,8 +126,6 @@ describe("CatalogPageTabs", () => {
       data: {
         features: {
           events: {
-            rollout: "public",
-            enabled: true,
             canView: true,
             canEdit: false,
             showTabs: false,
@@ -156,8 +154,6 @@ describe("CatalogPageTabs", () => {
       data: {
         features: {
           events: {
-            rollout: "public",
-            enabled: true,
             canView: true,
             canEdit: true,
             showTabs: true,
@@ -189,8 +185,6 @@ describe("CatalogPageTabs", () => {
       data: {
         features: {
           events: {
-            rollout: "public",
-            enabled: true,
             canView: true,
             canEdit: true,
             showTabs: true,
@@ -226,8 +220,6 @@ describe("CatalogPageTabs", () => {
       data: {
         features: {
           events: {
-            rollout: "public",
-            enabled: true,
             canView: true,
             canEdit: false,
             showTabs: false,

@@ -71,11 +71,6 @@ check "jobs test (jobs-service/docker-compose.jobs-test.yml)" \
   jobs_example .env.test.example jobs-service/docker-compose.jobs-test.yml
 check "jobs production (jobs-service/docker-compose.jobs-prod.yml)" \
   jobs_example .env.prod.example jobs-service/docker-compose.jobs-prod.yml
-# The Codex overlay requires an auth file path; the render does not read it.
-check "jobs production with the Codex overlay (jobs-service/docker-compose.jobs-codex-auth.yml)" \
-  env CODEX_HOST_AUTH_FILE=/nonexistent/auth.json bash -c \
-  "$(declare -f jobs_example); jobs_example .env.prod.example jobs-service/docker-compose.jobs-prod.yml jobs-service/docker-compose.jobs-codex-auth.yml"
-
 # Model serving: no env file, defaults only.
 check "rag services (rag-services/docker-compose.yml)" \
   docker compose -f rag-services/docker-compose.yml --profile '*' config -q

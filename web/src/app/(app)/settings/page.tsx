@@ -3,13 +3,11 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { Bell, BellOff, FlaskConical, Loader2, Palette, Languages, ALargeSmall } from "lucide-react";
+import { Bell, BellOff, Loader2, Palette, Languages, ALargeSmall } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useToast } from "@/hooks/use-toast";
-import { useLabs } from "@/hooks/use-labs";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
 import { useTextSize, type TextSize } from "@/contexts/text-size-context";
-import { getFeatureRollout } from "@/lib/features/rollout";
 import { routing, type Locale } from "@/i18n/routing";
 import {
   Card,
@@ -34,13 +32,11 @@ const NATIVE_NAMES: Record<Locale, string> = {
   en: "English",
   cs: "Čeština",
 };
-const SHOW_LABS_FEATURE_LIST = getFeatureRollout("events") === "labs";
 
 export default function SettingsPage() {
   const locale = useLocale() as Locale;
   const router = useRouter();
   const t = useTranslations("notifications");
-  const tLabs = useTranslations("labs");
   const tTheme = useTranslations("theme");
   const tLanguage = useTranslations("language");
   const tTextSize = useTranslations("textSize");
@@ -50,7 +46,6 @@ export default function SettingsPage() {
   const { textSize, setTextSize } = useTextSize();
   const [isLocalePending, startLocaleTransition] = useTransition();
   const [pendingLocale, setPendingLocale] = useState<Locale | null>(null);
-  const { labsEnabled, isUpdating, updateLabsEnabledAsync } = useLabs();
   const {
     permission,
     isSupported,
@@ -82,21 +77,6 @@ export default function SettingsPage() {
       if (success) {
         toast({ title: t("subscribedToast") });
       }
-    }
-  };
-
-  const handleLabsToggle = async (nextEnabled: boolean) => {
-    try {
-      await updateLabsEnabledAsync(nextEnabled);
-      toast({
-        title: nextEnabled ? tLabs("enabledToast") : tLabs("disabledToast"),
-      });
-    } catch (error) {
-      toast({
-        title: tLabs("updateFailed"),
-        description: error instanceof Error ? error.message : undefined,
-        variant: "destructive",
-      });
     }
   };
 
@@ -271,56 +251,6 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FlaskConical className="h-5 w-5" />
-              {tLabs("title")}
-            </CardTitle>
-            <CardDescription>{tLabs("description")}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="labs-toggle" className="text-base">
-                    {tLabs("toggleLabel")}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {tLabs("toggleDescription")}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {isUpdating && <Loader2 className="h-4 w-4 animate-spin" />}
-                  <Switch
-                    id="labs-toggle"
-                    checked={labsEnabled}
-                    onCheckedChange={handleLabsToggle}
-                    disabled={isUpdating}
-                  />
-                </div>
-              </div>
-
-              {SHOW_LABS_FEATURE_LIST ? (
-                <div className="border-t pt-4 space-y-2">
-                  <p className="text-sm font-medium">{tLabs("availableFeaturesTitle")}</p>
-                  <div className="rounded-lg border bg-muted/30 p-3">
-                    <p className="text-sm font-medium">{tLabs("eventsFeatureTitle")}</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {tLabs("eventsFeatureDescription")}
-                    </p>
-                    <ul className="mt-2 list-disc list-inside space-y-1 text-sm text-muted-foreground">
-                      <li>{tLabs("eventsFeatureViewDetail")}</li>
-                      <li>{tLabs("eventsFeatureEditDetail")}</li>
-                    </ul>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-
       </div>
     </div>
   );

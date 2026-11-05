@@ -49,12 +49,12 @@ def test_read_active_deployment_runs_scopes_deployment_and_active_states() -> No
     assert (
         maintenance.read_active_deployment_runs(
             client,
-            deployment_name="deep_search_flow/deep-search-prod",
+            deployment_name="ingest_recording_flow/ingest-prod",
         )
         == []
     )
 
-    assert client.deployment_name == "deep_search_flow/deep-search-prod"
+    assert client.deployment_name == "ingest_recording_flow/ingest-prod"
     flow_run_filter = client.read_kwargs["flow_run_filter"]
     assert isinstance(flow_run_filter, FlowRunFilter)
     assert flow_run_filter.deployment_id is not None
@@ -72,11 +72,11 @@ def test_read_active_deployment_runs_scopes_deployment_and_active_states() -> No
 
 
 def test_check_idle_refuses_maintenance_when_a_run_is_active(monkeypatch, capsys) -> None:
-    run = FakeFlowRun(uuid4(), "Running", "deep-search-test")
+    run = FakeFlowRun(uuid4(), "Running", "ingest-test")
     client = FakeClient([run])
     monkeypatch.setattr(maintenance, "get_client", lambda **_: nullcontext(client))
 
-    assert maintenance.check_idle(deployment_name="deep_search_flow/deep-search-prod") == 1
+    assert maintenance.check_idle(deployment_name="ingest_recording_flow/ingest-prod") == 1
     output = capsys.readouterr().out
     assert str(run.id) in output
     assert "Wait for these runs to finish or cancel them explicitly" in output
@@ -86,7 +86,7 @@ def test_check_idle_allows_maintenance_when_deployment_is_idle(monkeypatch, caps
     client = FakeClient()
     monkeypatch.setattr(maintenance, "get_client", lambda **_: nullcontext(client))
 
-    assert maintenance.check_idle(deployment_name="deep_search_flow/deep-search-prod") == 0
+    assert maintenance.check_idle(deployment_name="ingest_recording_flow/ingest-prod") == 0
     assert "deployment is idle" in capsys.readouterr().out
 
 
@@ -126,6 +126,29 @@ def test_check_idle_allows_an_idle_work_pool(monkeypatch, capsys) -> None:
     assert maintenance.main(["--work-pool", "besedy-ingest-prod"]) == 0
     assert "work pool is idle: besedy-ingest-prod" in capsys.readouterr().out
     assert "work_pool_filter" in client.read_kwargs
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_no_flags_checks_every_deployment_on_the_ingest_pool(monkeypatch, active) -> None:
+    client = FakeClient([FakeFlowRun(uuid4(), "Running", "correction-sync")] if active else [])
+    monkeypatch.setattr(maintenance, "get_client", lambda **_: nullcontext(client))
+    monkeypatch.setenv("PREFECT_INGEST_WORK_POOL", "besedy-ingest-prod")
+
+    assert maintenance.main([]) == (1 if active else 0)
+    assert client.deployment_name is None
+    pool_filter = client.read_kwargs["work_pool_filter"]
+    assert pool_filter.name.any_ == ["besedy-ingest-prod"]
+
+
+def test_default_pool_must_not_be_empty(monkeypatch) -> None:
+    client = FakeClient()
+    monkeypatch.setattr(maintenance, "get_client", lambda **_: nullcontext(client))
+    monkeypatch.setenv("PREFECT_INGEST_WORK_POOL", " ")
+
+    with pytest.raises(SystemExit) as exc_info:
+        maintenance.main([])
+    assert exc_info.value.code == 2
+    assert client.read_kwargs == {}
 
 
 def test_main_rejects_an_empty_work_pool(monkeypatch) -> None:

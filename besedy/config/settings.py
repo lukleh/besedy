@@ -138,10 +138,9 @@ class NemoConfig:
 
 @dataclass
 class WebConfig:
-    """Web-facing configuration shared with jobs that serve web workflows."""
+    """Web application configuration."""
 
     superadmin_email: str | None = None
-    deep_search_default_instructions: str | None = None
 
 
 @dataclass
@@ -266,7 +265,7 @@ class Config:
         transcription_workflows: Configured transcription workflow variants.
         vad: Voice Activity Detection settings.
         nemo: NeMo-specific settings.
-        web: Web-facing settings used by the web app and jobs service.
+        web: Web application settings.
         rag: RAG model settings (optional).
     """
 
@@ -338,13 +337,17 @@ def _load_config() -> Config:
 
     transcription_workflows = _load_transcription_workflows(data)
 
+    # Existing operator configurations may retain this retired setting.
+    web_settings = dict(data.get("web", {}))
+    web_settings.pop("deep_search_default_instructions", None)
+
     return Config(
         paths=PathsConfig(**data["paths"]),
         audio=AudioConfig(**data["audio"]),
         transcription_workflows=transcription_workflows,
         vad=VadConfig(**data["vad"]),
         nemo=NemoConfig(**data["nemo"]),
-        web=WebConfig(**data.get("web", {})),
+        web=WebConfig(**web_settings),
         rag=RagConfig(**data.get("rag", {})),
     )
 

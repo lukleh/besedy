@@ -20,6 +20,24 @@ def test_example_loads_without_retired_sections(tmp_path, monkeypatch):
     assert loaded.transcription_workflows
 
 
+def test_retired_web_instructions_do_not_break_existing_configs(tmp_path, monkeypatch):
+    example = Path(__file__).resolve().parents[1] / "besedy.toml.example"
+    config_path = tmp_path / "besedy.toml"
+    config_path.write_text(
+        example.read_text().replace(
+            'superadmin_email = ""',
+            'superadmin_email = "owner@example.org"\n'
+            'deep_search_default_instructions = "old deployment instructions"',
+        )
+    )
+    monkeypatch.setattr(settings, "resolve_config_path", lambda: config_path)
+
+    loaded = settings._load_config()
+
+    assert loaded.web.superadmin_email == "owner@example.org"
+    assert not hasattr(loaded.web, "deep_search_default_instructions")
+
+
 @pytest.mark.parametrize("section", ["diarization", "analysis", "unknown"])
 def test_config_rejects_unsupported_sections(tmp_path, monkeypatch, section):
     example = Path(__file__).resolve().parents[1] / "besedy.toml.example"

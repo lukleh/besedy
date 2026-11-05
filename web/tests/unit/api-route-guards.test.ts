@@ -19,9 +19,6 @@ const GUARDS = [
   "requireCorrectionAccess",
   "resolveCatalogRecordingRouteAccess",
   "resolveTranscriptRouteAccess",
-  "authorizeCatalogDeepSearch",
-  "authorizeCatalogDeepSearchRead",
-  "authorizeDeepSearchServiceRequest",
   "authorizeJobServiceRequest",
   "requireMcpAuth",
 ];

@@ -16,11 +16,6 @@ vi.mock("@/lib/catalog-events/visibility", () => ({
   getPublishedVisibleEventIds: vi.fn(),
 }));
 
-vi.mock("@/lib/features/capabilities", () => ({
-  getLabsPreferenceForUser: vi.fn(),
-  isFeatureEnabledForUser: vi.fn(),
-}));
-
 vi.mock("@/lib/catalog", async () => {
   const actual = await vi.importActual<typeof import("@/lib/catalog")>(
     "@/lib/catalog"
@@ -75,8 +70,6 @@ describe("catalog random event route", () => {
   let getCurrentUserId: ReturnType<typeof vi.fn>;
   let getCatalogCapability: ReturnType<typeof vi.fn>;
   let getPublishedVisibleEventIds: ReturnType<typeof vi.fn>;
-  let getLabsPreferenceForUser: ReturnType<typeof vi.fn>;
-  let isFeatureEnabledForUser: ReturnType<typeof vi.fn>;
   let getCatalogEntriesByHashes: ReturnType<typeof vi.fn>;
   let prisma: {
     catalogEvent: { findMany: ReturnType<typeof vi.fn> };
@@ -96,12 +89,6 @@ describe("catalog random event route", () => {
     ).getPublishedVisibleEventIds as ReturnType<typeof vi.fn>;
     getCatalogEntriesByHashes = (await import("@/lib/catalog")).getCatalogEntriesByHashes as ReturnType<typeof vi.fn>;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
-
-    const features = await import("@/lib/features/capabilities");
-    getLabsPreferenceForUser = features.getLabsPreferenceForUser as ReturnType<typeof vi.fn>;
-    isFeatureEnabledForUser = features.isFeatureEnabledForUser as ReturnType<typeof vi.fn>;
-    getLabsPreferenceForUser.mockResolvedValue({ enabled: false });
-    isFeatureEnabledForUser.mockReturnValue(true);
   });
 
   function callRoute() {
@@ -353,25 +340,6 @@ describe("catalog random event route", () => {
     expect(body.hash).toBe(HASH_B);
     expect(body.eventId).toBe(2);
     expect(body.total).toBe(1);
-  });
-
-  it("returns no track when the events feature is disabled for the user", async () => {
-    getCurrentUserId.mockResolvedValue("listener-1");
-    getCatalogCapability.mockResolvedValue({
-      catalogExists: true,
-      hasAccess: true,
-      catalogGrant: grantForRole("listener"),
-    });
-    isFeatureEnabledForUser.mockReturnValue(false);
-
-    const response = await callRoute();
-
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.hash).toBeNull();
-    // Gated before any event/catalog lookup, mirroring the event page's gate.
-    expect(getPublishedVisibleEventIds).not.toHaveBeenCalled();
-    expect(getCatalogEntriesByHashes).not.toHaveBeenCalled();
   });
 
   it("excludes recently played primaries and resets when all are excluded", async () => {

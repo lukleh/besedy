@@ -10,12 +10,6 @@ vi.mock("@/lib/features/capabilities", () => ({
   getCatalogFeaturesForUser: vi.fn(),
 }));
 
-const deepSearchCapability = {
-  rollout: "labs",
-  enabled: false,
-  canView: false,
-};
-
 describe("catalog features route", () => {
   let requireAuth: ReturnType<typeof vi.fn>;
   let getCatalogFeaturesForUser: ReturnType<typeof vi.fn>;
@@ -33,18 +27,14 @@ describe("catalog features route", () => {
     getCatalogFeaturesForUser.mockResolvedValue({
       catalogExists: false,
       data: {
-        labsEnabled: false,
         features: {
           events: {
-            rollout: "public",
-            enabled: false,
             canView: false,
             canEdit: false,
             showTabs: false,
             showAllColumns: false,
             showReleaseState: false,
           },
-          deepSearch: deepSearchCapability,
         },
       },
     });
@@ -62,21 +52,13 @@ describe("catalog features route", () => {
     getCatalogFeaturesForUser.mockResolvedValue({
       catalogExists: true,
       data: {
-        labsEnabled: false,
         features: {
           events: {
-            rollout: "public",
-            enabled: true,
             canView: true,
             canEdit: false,
             showTabs: false,
             showAllColumns: false,
             showReleaseState: false,
-          },
-          deepSearch: {
-            rollout: "labs",
-            enabled: true,
-            canView: true,
           },
         },
       },
@@ -95,21 +77,13 @@ describe("catalog features route", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toEqual({
-      labsEnabled: false,
       features: {
         events: {
-          rollout: "public",
-          enabled: true,
           canView: true,
           canEdit: false,
           showTabs: false,
           showAllColumns: false,
           showReleaseState: false,
-        },
-        deepSearch: {
-          rollout: "labs",
-          enabled: true,
-          canView: true,
         },
       },
     });
@@ -120,18 +94,14 @@ describe("catalog features route", () => {
     getCatalogFeaturesForUser.mockResolvedValue({
       catalogExists: true,
       data: {
-        labsEnabled: false,
         features: {
           events: {
-            rollout: "public",
-            enabled: true,
             canView: true,
             canEdit: true,
             showTabs: true,
             showAllColumns: true,
             showReleaseState: true,
           },
-          deepSearch: deepSearchCapability,
         },
       },
     });

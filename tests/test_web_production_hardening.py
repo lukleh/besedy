@@ -200,7 +200,6 @@ def test_every_jobs_runtime_start_checks_the_service_secret_first() -> None:
         "jobs-dev-up": "development",
         "jobs-test-up": "test",
         "jobs-prod-up": "production",
-        "jobs-prod-up-codex": "production",
     }
 
     for recipe, mode in expected.items():
@@ -215,21 +214,15 @@ COMPOSE_VARIABLE = re.compile(r"\$\{([A-Z0-9_]+)")
 # Each jobs compose file defaults these to the runtime it belongs to. A template
 # that assigned them would be a second source of truth for the same selection.
 RUNTIME_SELECTORS = {
-    "PREFECT_DEEP_SEARCH_WORK_POOL",
-    "PREFECT_DEEP_SEARCH_DEPLOYMENT_NAME",
-    "PREFECT_DEEP_SEARCH_FULL_DEPLOYMENT_NAME",
     "PREFECT_INGEST_WORK_POOL",
     "PREFECT_INGEST_DEPLOYMENT_NAME",
     "PREFECT_INGEST_FULL_DEPLOYMENT_NAME",
     "PREFECT_INGEST_REMOVE_DEPLOYMENT_NAME",
     "PREFECT_INGEST_REMOVE_FULL_DEPLOYMENT_NAME",
-    "BESEDY_INTERNAL_BASE_URL",
-    "DEEP_SEARCH_OUTPUT_ENV",
-    "DEEP_SEARCH_OUTPUT_DIR",
     "JOBS_SERVICE_HOST_PORT",
 }
 # Settings only the hardened production runtime reads.
-PRODUCTION_ONLY_SETTINGS = {"JOBS_CONTAINER_UID", "JOBS_CONTAINER_GID", "CODEX_HOST_AUTH_FILE"}
+PRODUCTION_ONLY_SETTINGS = {"JOBS_CONTAINER_UID", "JOBS_CONTAINER_GID"}
 
 
 def _env_assignments(path: Path) -> dict[str, str]:
@@ -250,8 +243,6 @@ def _compose_variables(*paths: Path) -> set[str]:
 
 def _runtime_compose_files(env: str) -> list[Path]:
     files = [JOBS_SERVICE / f"docker-compose.jobs-{env}.yml"]
-    if env == "prod":
-        files.append(JOBS_SERVICE / "docker-compose.jobs-codex-auth.yml")
     return files
 
 
@@ -264,17 +255,10 @@ def test_each_jobs_runtime_template_leaves_runtime_selection_to_compose(env: str
     # Everything a template assigns is something its runtime reads.
     unread = template.keys() - _compose_variables(*compose_files)
     assert not unread, unread
-    # The compose file alone selects the runtime, so renaming
-    # DEEP_SEARCH_OUTPUT_ENV keeps steering the output directory.
+    # The compose file alone selects each runtime's host-worker pool.
     shadowed = template.keys() & RUNTIME_SELECTORS
     assert not shadowed, shadowed
-    assert f":-besedy-deep-search-{env}}}" in compose
-    assert (
-        "${DEEP_SEARCH_OUTPUT_DIR:-/state/lukleh/besedy/deep-search/"
-        f"${{DEEP_SEARCH_OUTPUT_ENV:-{env}}}}}"
-    ) in compose
-    # Output ownership stays a per-host choice, so no template assigns it.
-    assert template.keys().isdisjoint({"BESEDY_OUTPUT_CHOWN_UID", "BESEDY_OUTPUT_CHOWN_GID"})
+    assert f":-besedy-ingest-{env}}}" in compose
 
 
 def test_jobs_runtime_templates_share_one_set_of_operator_settings() -> None:
@@ -382,9 +366,7 @@ def test_database_maintenance_never_starts_the_one_shot_backup() -> None:
     assert "running production backup dump to finish before restoring" in restore_recipe
 
 
-def test_rollback_preserves_optional_codex_auth_overlay() -> None:
+def test_rollback_restarts_the_exact_jobs_image() -> None:
     justfile = JUSTFILE.read_text(encoding="utf-8")
 
-    assert "prod-rollback-codex commit backup:" in justfile
-    assert 'just _prod-rollback jobs-prod-start-codex "$1" "$2"' in justfile
-    assert 'BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just "$jobs_start"' in justfile
+    assert 'BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just jobs-prod-start' in justfile
