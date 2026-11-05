@@ -1036,11 +1036,20 @@ export function AudioPlayer({
     } else if (end !== undefined) {
       playbackEndRef.current = resolvePlaybackEnd(end);
     }
+    // An error during the unattended preload was left alone, and the element
+    // does not report it again: play() does not reload a failed element. It
+    // is handled now as during playback: a network error reconnects and then
+    // plays, anything else offers Retry and plays nothing.
+    if (audio.error && retryStateRef.current.phase === 'idle') {
+      handleError();
+      if (!isRetrying(retryStateRef.current)) {
+        playIntentRef.current = false;
+        syncPlayRequest();
+        return;
+      }
+    }
     // A queued seek still applies its position when metadata arrives.
     if (pendingSeekRef.current) pendingSeekRef.current.autoPlay = true;
-    // A source that failed to load before anyone asked for it refuses to
-    // play; that is reported now, when someone does.
-    if (audio.error?.code === 4 && !isRetrying(retryStateRef.current)) setHasMediaError(true);
     dispatchRetry({ type: 'PLAY_INTENT_CHANGED', playing: true });
     // A reconnect resumes on its own once the connection is back. Otherwise
     // play now, inside the click: browsers that require a user gesture
@@ -1050,7 +1059,7 @@ export function AudioPlayer({
       safePlay(audio, 'playback requested', logDebugEvent);
     }
     syncPlayRequest();
-  }, [rangeStart, rangeEnd, seekFromControls, dispatchRetry, logDebugEvent, syncPlayRequest]);
+  }, [rangeStart, rangeEnd, seekFromControls, handleError, dispatchRetry, logDebugEvent, syncPlayRequest]);
 
   const pause = useCallback(() => {
     userInitiatedRef.current = true;

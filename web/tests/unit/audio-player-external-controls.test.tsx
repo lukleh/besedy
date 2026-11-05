@@ -330,16 +330,45 @@ describe("AudioPlayer custom segment controls", () => {
     expect(controls().isMuted).toBe(false);
   });
 
-  it("reports a source that failed before any interaction only once playback is requested", async () => {
-    const { handle, fail, controls } = setupCustom({
+  it.each([
+    { code: 3, withMetadata: true },
+    { code: 4, withMetadata: false },
+  ])("reports a terminal error $code from before any interaction once playback is requested", async ({ code, withMetadata }) => {
+    const { audio, handle, metadata, fail, controls } = setupCustom({
       seekTo: 10,
       playbackRange: { start: 10, end: 20 },
     });
-    act(() => fail(4));
+    if (withMetadata) act(metadata);
+    act(() => fail(code));
     expect(controls().hasError).toBe(false);
     expect(controls().isBuffering).toBe(false);
     await act(async () => handle().play());
     expect(controls().hasError).toBe(true);
+    expect(controls().isReconnecting).toBe(false);
+    expect(audio.play).not.toHaveBeenCalled();
+    expect(handle().isPlayRequested()).toBe(false);
+  });
+
+  it("reconnects and plays after a network error from before any interaction once playback is requested", async () => {
+    vi.useFakeTimers();
+    const { audio, handle, metadata, fail, controls } = setupCustom({
+      seekTo: 10,
+      playbackRange: { start: 10, end: 20 },
+    });
+    act(metadata);
+    act(() => fail(2));
+    expect(controls().isReconnecting).toBe(false);
+    await act(async () => handle().play());
+    expect(controls().isReconnecting).toBe(true);
+    expect(controls().hasError).toBe(false);
+    expect(handle().isPlayRequested()).toBe(true);
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(audio.load).toHaveBeenCalledTimes(1);
+    act(metadata);
+    await act(async () => audio.dispatchEvent(new Event("canplay")));
+    expect(controls().isReconnecting).toBe(false);
+    expect(audio.currentTime).toBe(10);
+    expect(audio.paused).toBe(false);
   });
 
   it("ends the loading state of a paused retry once metadata arrives without canplay", async () => {
