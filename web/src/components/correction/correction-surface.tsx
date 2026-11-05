@@ -685,13 +685,15 @@ export function CorrectionSurface({
           ? { ...current, revisionId: result.revisionId, baseText: result.text }
           : current
       );
-      setConflict(false);
+      // The sidebar stays usable while the command runs. Its result only
+      // settles the conflict on the span it was issued for.
+      if (selectedIdRef.current === variables.span.id) setConflict(false);
       await refresh();
       if (variables.action === "approve" || variables.action === "save_and_approve") {
         await advance(variables.span.id);
       }
     },
-    onError: async (error) => {
+    onError: async (error, variables) => {
       // A definite answer settles the command; a lost connection or a server
       // failure does not, and the key stays for a retry.
       if (error instanceof ApiError && error.status < 500) {
@@ -702,7 +704,7 @@ export function CorrectionSurface({
         if (payload?.code === "REVISION_CONFLICT") {
           // The refresh brings the newer revision; a dirty draft is then kept
           // and flagged, so the author decides whether their change applies.
-          setConflict(true);
+          if (selectedIdRef.current === variables.span.id) setConflict(true);
           await refresh();
           toast({ description: t("conflict"), variant: "destructive" });
           return;
