@@ -67,6 +67,7 @@ def workspace(tmp_path: Path) -> tuple[dict, Path]:
     row = {
         "id": WORKSPACE,
         "workflow_group_id": CATALOG,
+        "audio_hash": "a" * 64,
         "source_fingerprint": hashlib.sha256(source.encode("utf-8")).hexdigest(),
         "segmentation_version": segmentation.version,
         "segmentation_params": dict(segmentation.params),
@@ -88,6 +89,59 @@ def test_an_intact_workspace_passes(workspace) -> None:
     check = check_workspace(row, root)
     assert check.problems == []
     assert check.notes == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        ("schema_version", 99, "manifest unreadable"),
+        ("workspace_id", "another-workspace", "manifest workspace differs"),
+        ("workflow_group_id", "20260101_000000", "manifest catalog differs"),
+        ("audio_hash", "b" * 64, "manifest audio hash differs"),
+        ("segmentation_version", "chunks-v0", "manifest segmentation version differs"),
+        ("status", "archived", "manifest does not say active"),
+        ("staged_audio.path", "/wrong/audio.wav", "manifest staged audio path differs"),
+        ("staged_audio.path", "invalid\0path", "manifest staged audio path is invalid"),
+        ("staged_audio.size", 999, "manifest staged audio size differs"),
+        ("staged_audio.size", None, "manifest staged audio size differs"),
+        ("staged_audio.sha256", "0" * 64, "manifest names other staged audio"),
+        ("staged_audio", [], "manifest unreadable"),
+    ],
+)
+def test_manifest_drift_is_reported_even_without_audio_hashing(
+    workspace, field: str, value: object, expected: str
+) -> None:
+    row, root = workspace
+    path = root / f"corrections_{CATALOG}" / WORKSPACE / "workspace.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    target = manifest
+    *parents, key = field.split(".")
+    for parent in parents:
+        target = target[parent]
+    target[key] = value
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    problems = check_workspace(row, root, hash_audio=False).problems
+
+    assert any(expected in problem for problem in problems), problems
+
+
+def test_equivalent_staged_audio_paths_pass_with_path_mapping(workspace, tmp_path: Path) -> None:
+    row, root = workspace
+    audio = Path(row["staged_audio_path"])
+    alias = tmp_path / "audio-alias"
+    alias.symlink_to(audio.parent, target_is_directory=True)
+    path = root / f"corrections_{CATALOG}" / WORKSPACE / "workspace.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    row["staged_audio_path"] = f"/host/audio/{audio.name}"
+    manifest["staged_audio"]["path"] = f"/host/alias/{audio.name}"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    check = check_workspace(
+        row, root, path_map={"/host/audio": str(audio.parent), "/host/alias": str(alias)}
+    )
+
+    assert check.problems == []
 
 
 @pytest.mark.parametrize(
@@ -124,6 +178,10 @@ def test_each_kind_of_drift_is_reported(workspace, change, expected: str) -> Non
 def test_another_segmentation_version_is_noted_not_failed(workspace) -> None:
     row, root = workspace
     row = dict(copy.deepcopy(row), segmentation_version="chunks-v0", spans=[])
+    manifest_path = root / f"corrections_{CATALOG}" / WORKSPACE / "workspace.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["segmentation_version"] = "chunks-v0"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     check = check_workspace(row, root)
     assert check.problems == []
     assert any("chunks-v0" in note for note in check.notes)
