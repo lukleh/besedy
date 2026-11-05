@@ -539,62 +539,6 @@ export function AudioPlayer({
     });
   }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics, cancelSleepFade, setCurrentTime, syncPlayRequest]);
 
-  // Consume each external request once. Callback changes and the page clearing
-  // autoPlayOnSeek must not replay an old handoff over a later user seek. The
-  // recording identity survives transport changes; the source-switch effect
-  // above restores the latest position before a genuinely new request is read.
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio || seekTo === undefined || !Number.isFinite(seekTo) || seekTo < 0) {
-      lastExternalSeekRef.current = null;
-      return;
-    }
-    const recording = hash ?? src;
-    const previous = lastExternalSeekRef.current;
-    if (
-      previous?.recording === recording &&
-      previous.time === seekTo &&
-      previous.key === seekKey
-    ) {
-      return;
-    }
-    lastExternalSeekRef.current = { recording, time: seekTo, key: seekKey };
-    dispatchRetry({ type: 'SEEK_REQUESTED', time: seekTo });
-    // Each request re-arms its excerpt end. A finished excerpt clears the end,
-    // and asking for the same excerpt again passes the same prop, which the
-    // effect that tracks it would not see; the replay then ran on unstopped.
-    playbackEndRef.current = resolvePlaybackEnd(playbackEnd);
-
-    if (audio.readyState >= 1) {
-      // A newer request also supersedes a seek queued before metadata arrived.
-      pendingSeekRef.current = null;
-      audio.currentTime = seekTo;
-      setCurrentTime(seekTo);
-      onTimeUpdate?.(seekTo);
-      logDebugEvent(
-        'seek',
-        'External seek applied',
-        `To ${seekTo.toFixed(1)}s (readyState=${audio.readyState})`,
-      );
-      if (autoPlayOnSeek) {
-        userInitiatedRef.current = true;
-        safePlay(audio, 'auto-play after external seek', logDebugEvent);
-      }
-    } else {
-      pendingSeekRef.current = { time: seekTo, autoPlay: !!autoPlayOnSeek };
-      logDebugEvent(
-        'seek',
-        'External seek queued',
-        `To ${seekTo.toFixed(1)}s (waiting for metadata, readyState=${audio.readyState})`,
-      );
-    }
-    syncPlayRequest();
-  }, [src, hash, seekTo, seekKey, playbackEnd, onTimeUpdate, autoPlayOnSeek, logDebugEvent, dispatchRetry, setCurrentTime, syncPlayRequest]);
-
-  // NOTE: PerformanceObserver was removed because it only fires when HTTP requests complete.
-  // For streaming audio, the request stays open until the entire file downloads, so it's not
-  // useful for tracking progress. Buffer growth tracking (in updateBasicBufferInfo) is used instead.
-
   // Handle `error` events — dispatch the retry reducer. The scheduling and
   // reload itself live in the retry-driving effect above.
   const handleError = useCallback(() => {
@@ -684,6 +628,83 @@ export function AudioPlayer({
       );
     }
   }, [dispatchRetry, isPlaying, onPlayingChange, logDebugEvent]);
+
+  // An error during the unattended preload was left alone (see handleError),
+  // and the element does not report it again: play() does not reload a failed
+  // element. Every playback the listener asks for, from the play control or a
+  // seek that plays, hands that error to handleError first: a network error
+  // reconnects and then plays, anything else offers Retry and plays nothing.
+  // Returns whether it took over, in which case the caller does not play.
+  const recordedErrorTakesOverPlay = useCallback((audio: HTMLAudioElement) => {
+    if (!audio.error || retryStateRef.current.phase !== 'idle') return false;
+    userInitiatedRef.current = true;
+    playIntentRef.current = true;
+    handleError();
+    if (!isRetrying(retryStateRef.current)) {
+      playIntentRef.current = false;
+      if (pendingSeekRef.current) pendingSeekRef.current.autoPlay = false;
+      syncPlayRequest();
+    }
+    return true;
+  }, [handleError, syncPlayRequest]);
+
+  // Consume each external request once. Callback changes and the page clearing
+  // autoPlayOnSeek must not replay an old handoff over a later user seek. The
+  // recording identity survives transport changes; the source-switch effect
+  // above restores the latest position before a genuinely new request is read.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || seekTo === undefined || !Number.isFinite(seekTo) || seekTo < 0) {
+      lastExternalSeekRef.current = null;
+      return;
+    }
+    const recording = hash ?? src;
+    const previous = lastExternalSeekRef.current;
+    if (
+      previous?.recording === recording &&
+      previous.time === seekTo &&
+      previous.key === seekKey
+    ) {
+      return;
+    }
+    lastExternalSeekRef.current = { recording, time: seekTo, key: seekKey };
+    dispatchRetry({ type: 'SEEK_REQUESTED', time: seekTo });
+    // Each request re-arms its excerpt end. A finished excerpt clears the end,
+    // and asking for the same excerpt again passes the same prop, which the
+    // effect that tracks it would not see; the replay then ran on unstopped.
+    playbackEndRef.current = resolvePlaybackEnd(playbackEnd);
+
+    if (audio.readyState >= 1) {
+      // A newer request also supersedes a seek queued before metadata arrived.
+      pendingSeekRef.current = null;
+      audio.currentTime = seekTo;
+      setCurrentTime(seekTo);
+      onTimeUpdate?.(seekTo);
+      logDebugEvent(
+        'seek',
+        'External seek applied',
+        `To ${seekTo.toFixed(1)}s (readyState=${audio.readyState})`,
+      );
+      if (autoPlayOnSeek && !recordedErrorTakesOverPlay(audio)) {
+        userInitiatedRef.current = true;
+        safePlay(audio, 'auto-play after external seek', logDebugEvent);
+      }
+    } else {
+      pendingSeekRef.current = { time: seekTo, autoPlay: !!autoPlayOnSeek };
+      logDebugEvent(
+        'seek',
+        'External seek queued',
+        `To ${seekTo.toFixed(1)}s (waiting for metadata, readyState=${audio.readyState})`,
+      );
+      // Metadata never arrives for a source that already failed.
+      if (autoPlayOnSeek) recordedErrorTakesOverPlay(audio);
+    }
+    syncPlayRequest();
+  }, [src, hash, seekTo, seekKey, playbackEnd, onTimeUpdate, autoPlayOnSeek, logDebugEvent, dispatchRetry, recordedErrorTakesOverPlay, setCurrentTime, syncPlayRequest]);
+
+  // NOTE: PerformanceObserver was removed because it only fires when HTTP requests complete.
+  // For streaming audio, the request stays open until the entire file downloads, so it's not
+  // useful for tracking progress. Buffer growth tracking (in updateBasicBufferInfo) is used instead.
 
   // Handle `canplay` events mid-retry:
   //   - "reloading": our scheduled retry's audio.load() finished successfully
@@ -1036,18 +1057,9 @@ export function AudioPlayer({
     } else if (end !== undefined) {
       playbackEndRef.current = resolvePlaybackEnd(end);
     }
-    // An error during the unattended preload was left alone, and the element
-    // does not report it again: play() does not reload a failed element. It
-    // is handled now as during playback: a network error reconnects and then
-    // plays, anything else offers Retry and plays nothing.
-    if (audio.error && retryStateRef.current.phase === 'idle') {
-      handleError();
-      if (!isRetrying(retryStateRef.current)) {
-        playIntentRef.current = false;
-        syncPlayRequest();
-        return;
-      }
-    }
+    // A failed source that cannot reconnect plays nothing; a reconnect
+    // resumes playback below once it recovers.
+    if (recordedErrorTakesOverPlay(audio) && !isRetrying(retryStateRef.current)) return;
     // A queued seek still applies its position when metadata arrives.
     if (pendingSeekRef.current) pendingSeekRef.current.autoPlay = true;
     dispatchRetry({ type: 'PLAY_INTENT_CHANGED', playing: true });
@@ -1059,7 +1071,7 @@ export function AudioPlayer({
       safePlay(audio, 'playback requested', logDebugEvent);
     }
     syncPlayRequest();
-  }, [rangeStart, rangeEnd, seekFromControls, handleError, dispatchRetry, logDebugEvent, syncPlayRequest]);
+  }, [rangeStart, rangeEnd, seekFromControls, recordedErrorTakesOverPlay, dispatchRetry, logDebugEvent, syncPlayRequest]);
 
   const pause = useCallback(() => {
     userInitiatedRef.current = true;

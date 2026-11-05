@@ -371,6 +371,50 @@ describe("AudioPlayer custom segment controls", () => {
     expect(audio.paused).toBe(false);
   });
 
+  // Repeat region, a word and three seconds back play through a seek request.
+  it.each([
+    { code: 3, withMetadata: true },
+    { code: 4, withMetadata: false },
+  ])("reports a terminal error $code from before any interaction when a seek asks to play", ({ code, withMetadata }) => {
+    const { audio, handle, metadata, fail, controls, rerenderPlayer } = setupCustom({
+      seekTo: 10,
+      playbackRange: { start: 10, end: 20 },
+    });
+    if (withMetadata) act(metadata);
+    act(() => fail(code));
+    rerenderPlayer({ seekTo: 12, seekKey: 1, playbackEnd: 14, autoPlayOnSeek: true });
+    expect(controls().hasError).toBe(true);
+    expect(controls().isReconnecting).toBe(false);
+    expect(audio.play).not.toHaveBeenCalled();
+    expect(handle().isPlayRequested()).toBe(false);
+    expect(handle().getCurrentTime()).toBe(12);
+  });
+
+  it("reconnects and plays the requested part after a network error from before any interaction", async () => {
+    vi.useFakeTimers();
+    const { audio, handle, metadata, fail, controls, rerenderPlayer } = setupCustom({
+      seekTo: 10,
+      playbackRange: { start: 10, end: 20 },
+    });
+    act(metadata);
+    act(() => fail(2));
+    rerenderPlayer({ seekTo: 12, seekKey: 1, playbackEnd: 14, autoPlayOnSeek: true });
+    expect(controls().isReconnecting).toBe(true);
+    expect(controls().hasError).toBe(false);
+    expect(handle().isPlayRequested()).toBe(true);
+    expect(audio.play).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1_000));
+    act(metadata);
+    await act(async () => audio.dispatchEvent(new Event("canplay")));
+    expect(controls().isReconnecting).toBe(false);
+    expect(audio.currentTime).toBe(12);
+    expect(audio.paused).toBe(false);
+    audio.currentTime = 14.1;
+    act(() => fireEvent.timeUpdate(audio));
+    expect(audio.currentTime).toBe(14);
+    expect(audio.paused).toBe(true);
+  });
+
   it("ends the loading state of a paused retry once metadata arrives without canplay", async () => {
     const { audio, handle, metadata, fail, controls } = setupCustom({
       seekTo: 10,
