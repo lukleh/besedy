@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAudioUrl, buildCorrectionPagePath, type AudioSourceOption } from "@/lib/api/recording-urls";
+import { buildAudioUrl, buildCorrectionPagePath, buildCorrectionSpansUrl, type AudioSourceOption } from "@/lib/api/recording-urls";
 
 const BASE = "/api/catalogs/cat/recordings/abc/audio";
 const sources: AudioSourceOption[] = [
@@ -43,5 +43,17 @@ describe("buildCorrectionPagePath", () => {
     expect(url.searchParams.get("segment")).toBe(spanId);
     expect([...url.searchParams.keys()]).toEqual(["segment"]);
     expect(url.hash).toBe("");
+  });
+});
+
+describe("buildCorrectionSpansUrl", () => {
+  const base = "/api/catalogs/cat/recordings/abc/correction/spans";
+
+  it("pages by offset", () => {
+    expect(buildCorrectionSpansUrl("cat", "abc", { offset: 200, limit: 200 })).toBe(`${base}?offset=200&limit=200`);
+  });
+
+  it("asks for the page holding a linked segment", () => {
+    expect(buildCorrectionSpansUrl("cat", "abc", { segment: "a&b", limit: 200 })).toBe(`${base}?segment=a%26b&limit=200`);
   });
 });

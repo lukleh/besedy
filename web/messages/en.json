@@ -500,7 +500,6 @@
     "shareSegment": "Share segment",
     "segmentLinkCopied": "Segment link copied.",
     "segmentLinkCopyFailed": "Could not copy the link. Copy the address from the address bar.",
-    "segmentLinkLoading": "Loading the linked segment…",
     "segmentLinkMissing": "The linked segment does not exist in this correction workspace.",
     "segmentLinkLoadFailed": "Could not load the linked segment. Please try again.",
     "segmentLinkResume": "Continue correcting",

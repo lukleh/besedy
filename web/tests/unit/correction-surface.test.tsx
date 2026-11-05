@@ -191,33 +191,70 @@ describe("CorrectionSurface", () => {
         })),
       };
       if (url.includes("/spans?offset=0")) return readPage();
+      const linked = new URL(url, "http://test").searchParams.get("segment");
+      if (linked !== null) return linkedPage(readPage(), linked);
       if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
       throw new Error(`unexpected ${url}`);
     });
   }
 
-  it("resolves a shared segment before requesting its page instead of loading the resume page", async () => {
-    window.history.replaceState(null, "", `${window.location.pathname}?segment=span-230`);
-    let finishStrip!: (value: unknown) => void;
-    const strip = new Promise((resolve) => { finishStrip = resolve; });
+  // The server answers a linked segment with the page holding it.
+  function linkedPage(served: ReturnType<typeof page>, spanId: string) {
+    if (served.spans.some((span) => span.id === spanId)) return served;
+    throw new ApiError("Span not found in this workspace", 404, { code: "SPAN_NOT_FOUND" });
+  }
+
+  it("opens a shared segment beyond the first page in one request, without waiting for the strip", async () => {
+    window.history.replaceState(null, "", `${window.location.pathname}?segment=span-230&filter=mine#notes`);
     fetchJsonMock.mockImplementation(async (input) => {
       const url = String(input);
-      if (url.endsWith("/strip")) return strip;
-      if (url.includes("/spans?offset=200")) return page(200, 50, 250);
+      if (url.endsWith("/strip")) return new Promise(() => {});
+      if (url.includes("/spans?segment=span-230")) return page(200, 50, 250);
       if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
       throw new Error(`unexpected ${url}`);
     });
     renderSurface({ spanId: "span-0", ordinal: 0 });
-    expect(screen.getByText("segmentLinkLoading")).toBeInTheDocument();
-    expect(fetchJsonMock.mock.calls.some(([url]) => String(url).includes("/spans?"))).toBe(false);
-    await act(async () => finishStrip({ workspaceId: WORKSPACE.id, spans: [{
-      spanId: "span-230", ordinal: 230, startSeconds: 2300, endSeconds: 2310,
-      state: "not_reviewed", wantsMe: true,
-    }] }));
     expect(await screen.findByDisplayValue("machine 230")).toBeInTheDocument();
     expect(lastPlayerProps()).toMatchObject({ seekTo: 2300, autoPlayOnSeek: false });
+    await waitFor(() => expect(window.location.search).toBe("?filter=mine"));
+    expect(window.location.hash).toBe("#notes");
+    expect(fetchJsonMock.mock.calls.some(([url]) => String(url).includes("/spans?offset="))).toBe(false);
+  });
+
+  it("selects a followed link already in the list without reloading the list", async () => {
+    serveDraftSpans();
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    const listRequests = () => fetchJsonMock.mock.calls.filter(([url]) => /\/spans\?/.test(String(url))).length;
+    const before = listRequests();
+
+    act(() => {
+      window.history.pushState(null, "", `${window.location.pathname}?segment=span-1`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
+    expect(lastPlayerProps()).toMatchObject({ seekTo: 10, autoPlayOnSeek: false });
     await waitFor(() => expect(window.location.search).toBe(""));
-    expect(fetchJsonMock.mock.calls.some(([url]) => String(url).includes("/spans?offset=0"))).toBe(false);
+    expect(listRequests()).toBe(before);
+  });
+
+  it("offers a retry and the resume position when a linked segment's page fails to load", async () => {
+    window.history.replaceState(null, "", `${window.location.pathname}?segment=span-1`);
+    let fail = true;
+    serveDraftSpans();
+    const reads = fetchJsonMock.getMockImplementation()!;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      if (fail && String(input).includes("/spans?segment=")) throw new ApiError("Unavailable", 503);
+      return reads(input, init);
+    });
+    renderSurface({ spanId: "span-0", ordinal: 0 });
+    expect(await screen.findByText("segmentLinkLoadFailed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "segmentLinkResume" })).toBeInTheDocument();
+
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: "segmentLinkRetry" }));
+    expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
+    await waitFor(() => expect(window.location.search).toBe(""));
   });
 
   it("explains a missing link and only opens the resume segment after explicit recovery", async () => {
@@ -226,7 +263,9 @@ describe("CorrectionSurface", () => {
     renderSurface({ spanId: "span-1", ordinal: 1 });
     expect(await screen.findByText("segmentLinkMissing")).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    expect(fetchJsonMock.mock.calls.some(([url]) => String(url).includes("/spans?"))).toBe(false);
+    expect(screen.queryByRole("button", { name: "segmentLinkRetry" })).not.toBeInTheDocument();
+    expect(window.location.search).toBe("?segment=missing");
+    expect(fetchJsonMock.mock.calls.some(([url]) => String(url).includes("/spans?offset="))).toBe(false);
     await userEvent.click(screen.getByRole("button", { name: "segmentLinkResume" }));
     expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
     expect(lastPlayerProps().autoPlayOnSeek).toBe(false);

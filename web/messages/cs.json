@@ -500,7 +500,6 @@
     "shareSegment": "Sdílet segment",
     "segmentLinkCopied": "Odkaz na segment byl zkopírován.",
     "segmentLinkCopyFailed": "Odkaz se nepodařilo zkopírovat. Zkopírujte adresu z adresního řádku.",
-    "segmentLinkLoading": "Načítání odkazovaného segmentu…",
     "segmentLinkMissing": "Odkazovaný segment v této korektuře neexistuje.",
     "segmentLinkLoadFailed": "Odkazovaný segment se nepodařilo načíst. Zkuste to znovu.",
     "segmentLinkResume": "Pokračovat v korektuře",
