@@ -13,9 +13,19 @@ vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
 }));
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(window.location.search),
-}));
+// Like Next's router, follow the address through Back/Forward and through
+// history writes on the page.
+vi.mock("next/navigation", async () => {
+  const { useSyncExternalStore } = await import("react");
+  const subscribe = (onChange: () => void) => {
+    window.addEventListener("popstate", onChange);
+    return () => window.removeEventListener("popstate", onChange);
+  };
+  return {
+    useSearchParams: () =>
+      new URLSearchParams(useSyncExternalStore(subscribe, () => window.location.search)),
+  };
+});
 
 vi.mock("@/lib/api/fetch-json", () => ({
   ApiError: class MockApiError extends Error {
@@ -206,6 +216,7 @@ describe("CorrectionSurface", () => {
     }] }));
     expect(await screen.findByDisplayValue("machine 230")).toBeInTheDocument();
     expect(lastPlayerProps()).toMatchObject({ seekTo: 2300, autoPlayOnSeek: false });
+    await waitFor(() => expect(window.location.search).toBe(""));
     expect(fetchJsonMock.mock.calls.some(([url]) => String(url).includes("/spans?offset=0"))).toBe(false);
   });
 
@@ -252,7 +263,7 @@ describe("CorrectionSurface", () => {
     expect(mocks.controls.play).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])("copies a canonical segment URL and handles clipboard failure (%s)", async (fail) => {
+  it.each([false, true])("shares a canonical segment URL by copying it on a desktop (copy fails: %s)", async (fail) => {
     window.history.replaceState(null, "", `${window.location.pathname}?backTo=%2Fsettings&filter=mine#notes`);
     const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
     const writeText = fail ? vi.fn().mockRejectedValue(new Error("unavailable")) : vi.fn().mockResolvedValue(undefined);
@@ -261,7 +272,7 @@ describe("CorrectionSurface", () => {
       serveDraftSpans();
       renderSurface(null);
       await screen.findByDisplayValue("machine 0");
-      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "copySegmentLink" })); });
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "shareSegment" })); });
       expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/catalog/${CATALOG_ID}/recording/${HASH}/correction?segment=span-0`);
       expect(mocks.toast).toHaveBeenCalledWith(fail
         ? { description: "segmentLinkCopyFailed", variant: "destructive" }
@@ -271,6 +282,31 @@ describe("CorrectionSurface", () => {
     } finally {
       if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
       else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
+
+  it("opens the system share sheet on a touch device without a copy toast", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({ matches: query === "(pointer: coarse)" }) as MediaQueryList,
+    });
+    try {
+      serveDraftSpans();
+      renderSurface(null);
+      await screen.findByDisplayValue("machine 0");
+      await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+      await screen.findByDisplayValue("machine 1");
+      expect(window.location.search).toBe("");
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "shareSegment" })); });
+      expect(share).toHaveBeenCalledWith({
+        url: `${window.location.origin}/catalog/${CATALOG_ID}/recording/${HASH}/correction?segment=span-1`,
+      });
+      expect(mocks.toast).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(navigator, "share");
+      Reflect.deleteProperty(window, "matchMedia");
     }
   });
 
@@ -612,8 +648,6 @@ describe("CorrectionSurface", () => {
     await screen.findByDisplayValue("machine 1");
     first.unmount();
     renderSurface(null);
-    await screen.findByDisplayValue("machine 1");
-    await userEvent.click(screen.getByRole("button", { name: /saved correction/ }));
     expect(await screen.findByDisplayValue("saved correction")).toBeInTheDocument();
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("unsubmitted note");

@@ -56,7 +56,8 @@ test.describe("transcript correction", () => {
     };
     await spanList.getByRole("button", { name: /^0:00/ }).first().click();
     await expect(page.getByRole("textbox").first()).toHaveValue("Dobrý den, vítejte.");
-    await expect(page).toHaveURL((url) => url.searchParams.get("segment") === spans[0].id);
+    // Moving between segments never writes the address; sharing is the button's job.
+    await expect(page).toHaveURL((url) => !url.searchParams.has("segment"));
     const audio = page.locator("audio").first();
     const spanControls = page.getByTestId("correction-span-audio");
     await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
@@ -79,9 +80,9 @@ test.describe("transcript correction", () => {
     await expect(page.getByTestId("correction-region-without-text")).toHaveCount(1);
     await expect(page.getByTestId("correction-speech-without-text")).toBeVisible();
     await expect(page.getByTestId("correction-previous-context")).toContainText("vítejte");
-    await expect(page).toHaveURL((url) => url.searchParams.get("segment") === spans[1].id);
+    await expect(page).toHaveURL((url) => !url.searchParams.has("segment"));
 
-    // Copy a canonical link without the current page's return target or hash.
+    // Share a canonical link without the current page's return target or hash.
     await page.evaluate((backTo) => {
       const url = new URL(window.location.href);
       url.searchParams.set("backTo", backTo);
@@ -92,7 +93,8 @@ test.describe("transcript correction", () => {
       origin: new URL(page.url()).origin,
     });
     await page.evaluate(() => navigator.clipboard.writeText(""));
-    await page.getByRole("button", { name: /^(Kopírovat odkaz|Copy link)$/ }).click();
+    // A desktop pointer copies the link rather than opening a share sheet.
+    await page.getByRole("button", { name: /^(Sdílet segment|Share segment)$/ }).click();
     const sharedPath = `${correctionPath}?${new URLSearchParams({ segment: spans[1].id })}`;
     const expectedSharedUrl = new URL(sharedPath, page.url()).href;
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expectedSharedUrl);
@@ -105,13 +107,14 @@ test.describe("transcript correction", () => {
       await linkedPage.goto(sharedUrl);
       await expect(linkedPage.getByTestId("correction-span-audio")).toBeVisible({ timeout: 20000 });
       await expect(linkedPage.getByRole("textbox").first()).toHaveValue("Dnes budeme mluvit.");
-      await expect(linkedPage).toHaveURL((url) => url.searchParams.get("segment") === spans[1].id);
+      // Once open, the link leaves the address so it cannot go stale.
+      await expect(linkedPage).toHaveURL((url) => !url.searchParams.has("segment"));
       const linkedAudio = linkedPage.locator("audio").first();
       await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
       await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBe(spans[1].startSeconds);
 
-      // An external URL change must pause the current audio before selecting
-      // another already-loaded segment, rather than play through its seek.
+      // A link followed on the open page must pause the current audio before
+      // selecting another already-loaded segment, rather than play through its seek.
       await linkedPage.getByTestId("correction-span-audio")
         .getByRole("button", { name: /^(Přehrát úsek|Play span)$/ }).click();
       await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(false);
@@ -121,7 +124,7 @@ test.describe("transcript correction", () => {
         window.history.replaceState(null, "", url);
       }, spans[0].id);
       await expect(linkedPage.getByRole("textbox").first()).toHaveValue("Dobrý den, vítejte.");
-      await expect(linkedPage).toHaveURL((url) => url.searchParams.get("segment") === spans[0].id);
+      await expect(linkedPage).toHaveURL((url) => !url.searchParams.has("segment"));
       await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
       await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.currentTime)).toBe(spans[0].startSeconds);
 
@@ -137,7 +140,7 @@ test.describe("transcript correction", () => {
       await missingLink.getByRole("button", { name: /Pokračovat v korektuře|Continue correcting/ }).click();
       await expect(linkedPage.getByTestId("correction-span-audio")).toBeVisible();
       await expect(linkedPage.getByRole("textbox").first()).toBeVisible();
-      await expect(linkedPage).toHaveURL((url) => url.searchParams.get("segment") !== missingId);
+      await expect(linkedPage).toHaveURL((url) => !url.searchParams.has("segment"));
       await expect.poll(() => linkedAudio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
     } finally {
       await linkedPage.close();

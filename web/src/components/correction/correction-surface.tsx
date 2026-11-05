@@ -7,13 +7,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { Check, Eraser, Link as LinkIcon, MessageSquare, Pause, Play, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
+import { Check, Eraser, MessageSquare, Pause, Play, Share2, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
-import { copyToClipboard } from "@/lib/clipboard";
+import { shareOrCopyLink } from "@/lib/share-link";
 import {
   buildAudioUrl,
   buildCorrectionNextUrl,
@@ -336,7 +336,7 @@ export function CorrectionSurface({
       fetchJson(buildCorrectionStripUrl(catalogId, hash), { schema: spanStripSchema }),
   });
   const segmentLink = useCorrectionSegmentLink({
-    catalogId, hash, resume,
+    resume,
     spans: stripQuery.data?.spans,
     status: stripQuery.status,
     onNavigate: pauseForNavigation,
@@ -377,13 +377,9 @@ export function CorrectionSurface({
 
   const selected = useMemo(
     () => segmentLink.pending || segmentLink.missing ? null
-      : spans.find((span) => span.id === selectedSpanId) ?? (!segmentLink.linked ? spans[0] ?? null : null),
-    [spans, selectedSpanId, segmentLink.pending, segmentLink.missing, segmentLink.linked]
+      : spans.find((span) => span.id === selectedSpanId) ?? spans[0] ?? null,
+    [spans, selectedSpanId, segmentLink.pending, segmentLink.missing]
   );
-  const syncSegmentUrl = segmentLink.syncUrl;
-  useEffect(() => {
-    if (selected) syncSegmentUrl(selected.id);
-  }, [selected, syncSegmentUrl]);
   useEffect(() => {
     if (listRef.current && selectedListItemRef.current) {
       revealInList(listRef.current, selectedListItemRef.current);
@@ -860,16 +856,13 @@ export function CorrectionSurface({
         : null
     : null;
 
-  const missingSegment = segmentLink.missing || (
-    segmentLink.linked && !segmentLink.pending && spansQuery.isSuccess && !selected
-  );
+  const missingSegment = segmentLink.missing;
   const linkBlocked = segmentLink.pending || missingSegment;
-  const copySegmentLink = async () => {
+  const shareSegment = async () => {
     if (!selected) return;
     const href = new URL(buildCorrectionPagePath(catalogId, hash, selected.id), window.location.origin).href;
     try {
-      await copyToClipboard(href);
-      toast({ description: t("segmentLinkCopied") });
+      if (await shareOrCopyLink(href) === "copied") toast({ description: t("segmentLinkCopied") });
     } catch {
       toast({ description: t("segmentLinkCopyFailed"), variant: "destructive" });
     }
@@ -1029,9 +1022,9 @@ export function CorrectionSurface({
                 )}
               </Badge>
               <div className="ml-auto flex items-center gap-2">
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={copySegmentLink} data-native-space>
-                  <LinkIcon className="h-4 w-4" aria-hidden="true" />
-                  {t("copySegmentLink")}
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={shareSegment} data-native-space>
+                  <Share2 className="h-4 w-4" aria-hidden="true" />
+                  {t("shareSegment")}
                 </Button>
                 <CorrectionGuideDialog body={guide} />
               </div>

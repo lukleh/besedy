@@ -497,7 +497,7 @@
     "nextOpen": "Next to resolve",
     "nothingLeft": "Nothing else is waiting for you.",
     "overviewLink": "Correction overview",
-    "copySegmentLink": "Copy link",
+    "shareSegment": "Share segment",
     "segmentLinkCopied": "Segment link copied.",
     "segmentLinkCopyFailed": "Could not copy the link. Copy the address from the address bar.",
     "segmentLinkLoading": "Loading the linked segment…",
