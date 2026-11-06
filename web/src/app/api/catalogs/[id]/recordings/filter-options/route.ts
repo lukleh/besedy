@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import {
-  loadCatalogSelectionEntries,
+  loadEnrichedCatalogEntries,
   applyFilters,
   extractDateParts,
   isCatalogEntryReady,
@@ -9,7 +9,7 @@ import {
   EMPTY_FILTER,
   EMPTY_STRING_FILTER,
   scopeCatalogEntriesForAccess,
-  type CatalogSelectionEntry,
+  type EnrichedCatalogEntry,
   type CatalogFilters,
 } from "@/lib/catalog";
 import { findActiveCatalog } from "@/lib/catalog/resolve-group";
@@ -66,10 +66,10 @@ interface FilterOptionsResponse {
  * This allows showing what options are available if the user selects a value.
  */
 function computeOptionsForField<T>(
-  entries: CatalogSelectionEntry[],
+  entries: EnrichedCatalogEntry[],
   filters: CatalogFilters,
   fieldToExclude: keyof CatalogFilters,
-  extractor: (entry: CatalogSelectionEntry) => T | null | undefined
+  extractor: (entry: EnrichedCatalogEntry) => T | null | undefined
 ): Map<T, number> {
   // Apply all filters except the one we're computing options for
   const filtersWithoutField = { ...filters, [fieldToExclude]: undefined };
@@ -158,9 +158,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       filters.status = "ready";
     }
 
-    const selectionEntries = await loadCatalogSelectionEntries(group.id);
+    const enrichedEntries = await loadEnrichedCatalogEntries(group.id);
     const visibleEntries = scopeCatalogEntriesForAccess(
-      selectionEntries,
+      enrichedEntries,
       capability.catalogGrant
     );
 

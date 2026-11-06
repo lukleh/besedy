@@ -19,25 +19,6 @@ describe("loadEnrichedCatalogEntries", () => {
     vi.clearAllMocks();
   });
 
-  it("loads full details only for selected page hashes", async () => {
-    const { loadEnrichedCatalogEntries } = await import("@/lib/catalog");
-    mockCatalogEntryFindMany.mockResolvedValue([]);
-    mockAudioMetadataFindMany.mockResolvedValue([]);
-
-    await loadEnrichedCatalogEntries("catalog-1", ["a".repeat(64), "b".repeat(64)]);
-
-    expect(mockCatalogEntryFindMany).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-      where: { workflowGroupId: "catalog-1", audioHash: { in: ["a".repeat(64), "b".repeat(64)] } },
-    }));
-  });
-
-  it("does not query full details for an empty page", async () => {
-    const { loadEnrichedCatalogEntries } = await import("@/lib/catalog");
-    expect(await loadEnrichedCatalogEntries("catalog-1", [])).toEqual([]);
-    expect(mockCatalogEntryFindMany).not.toHaveBeenCalled();
-    expect(mockAudioMetadataFindMany).not.toHaveBeenCalled();
-  });
-
   it("uses catalog_entry duplicateCount values without loading duplicates rows", async () => {
     const { loadEnrichedCatalogEntries } = await import("@/lib/catalog");
 
@@ -82,7 +63,7 @@ describe("loadEnrichedCatalogEntries", () => {
       },
     ]);
 
-    const entries = await loadEnrichedCatalogEntries("catalog-1", ["b".repeat(64)]);
+    const entries = await loadEnrichedCatalogEntries("catalog-1");
 
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
@@ -97,9 +78,6 @@ describe("loadEnrichedCatalogEntries", () => {
       part: 7,
     });
     expect(mockCatalogEntryFindMany).toHaveBeenCalledTimes(1);
-    expect(mockCatalogEntryFindMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { workflowGroupId: "catalog-1", audioHash: { in: ["b".repeat(64)] } },
-    }));
     expect(mockAudioMetadataFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {

@@ -22,7 +22,6 @@ import type {
 // route handlers and page loaders.
 
 export * from "./catalog-types";
-export { loadCatalogSelectionEntries } from "./catalog-selection";
 export {
   buildArchivedPayloadFromRaw,
   buildDuplicatePayloadFromRaw,
@@ -272,14 +271,9 @@ export async function getFullCatalogEntry(
 
 export async function loadEnrichedCatalogEntries(
   groupId: string,
-  selectedHashes?: readonly string[],
 ): Promise<EnrichedCatalogEntry[]> {
-  if (selectedHashes?.length === 0) return [];
   const entryRows = await prisma.catalogEntry.findMany({
-    where: {
-      workflowGroupId: groupId,
-      ...(selectedHashes ? { audioHash: { in: [...selectedHashes] } } : {}),
-    },
+    where: { workflowGroupId: groupId },
     select: {
       audioHash: true,
       compressedPath: true,
