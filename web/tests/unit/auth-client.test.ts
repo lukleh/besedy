@@ -93,19 +93,19 @@ describe("auth client", () => {
       "@/lib/auth/client"
     );
 
-    expect(sanitizeAppRelativePath("/labs")).toBe("/labs");
+    expect(sanitizeAppRelativePath("/settings")).toBe("/settings");
     expect(sanitizeAppRelativePath("https://evil.example")).toBe("/catalog");
     expect(sanitizeAppRelativePath("//evil.example")).toBe("/catalog");
     expect(sanitizeAppRelativePath("/\\evil")).toBe("/catalog");
     expect(sanitizeAppRelativePath("/catalog/../api/auth/session")).toBe("/api/auth/session");
-    expect(sanitizeAppRelativePath("/labs/../../auth/signin")).toBe("/auth/signin");
-    expect(sanitizePostAuthCallbackPath("/labs")).toBe("/labs");
+    expect(sanitizeAppRelativePath("/settings/../../auth/signin")).toBe("/auth/signin");
+    expect(sanitizePostAuthCallbackPath("/settings")).toBe("/settings");
     expect(sanitizePostAuthCallbackPath("/auth")).toBe("/catalog");
     expect(sanitizePostAuthCallbackPath("/auth/signin")).toBe("/catalog");
     expect(sanitizePostAuthCallbackPath("/api")).toBe("/catalog");
     expect(sanitizePostAuthCallbackPath("/api/auth/session")).toBe("/catalog");
     expect(sanitizePostAuthCallbackPath("/catalog/../api/auth/session")).toBe("/catalog");
-    expect(sanitizePostAuthCallbackPath("/labs/../../auth/signin")).toBe("/catalog");
+    expect(sanitizePostAuthCallbackPath("/settings/../../auth/signin")).toBe("/catalog");
     expect(sanitizePostAuthCallbackPath("/%2e%2e/api/auth/session")).toBe("/catalog");
   });
 

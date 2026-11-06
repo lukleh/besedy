@@ -36,10 +36,6 @@ import {
   RagSearchResults,
 } from "@/components/catalog/catalog-list/components";
 import {
-  DeepSearchAction,
-  DeepSearchIconAction,
-} from "@/components/catalog/deep-search-action";
-import {
   useRagSearch,
   type RagSearchResult,
 } from "@/components/catalog/catalog-list/hooks";
@@ -94,7 +90,6 @@ export function EventList({
   showAllColumns,
   showReleaseState,
   canUseRagSearch,
-  deepSearchHref,
 }: EventListProps) {
   // Owns the query state and page behavior for catalog events. Data shapes and
   // localStorage plumbing live in adjacent modules so this file stays focused
@@ -659,13 +654,6 @@ export function EventList({
               <Search className="h-4 w-4" />
             </Button>
           ) : null}
-          {deepSearchHref ? (
-            <DeepSearchIconAction
-              href={deepSearchHref}
-              label={tCatalog("deepSearch.label")}
-              className="@[768px]/catalog:hidden landscape-mobile:inline-flex"
-            />
-          ) : null}
           {hasActiveFilters && (
             <Button
               variant="outline"
@@ -702,29 +690,21 @@ export function EventList({
         </div>
       </div>
 
-      {canUseRagSearch || deepSearchHref ? (
+      {canUseRagSearch ? (
         <div className="hidden items-stretch gap-3 @[768px]/catalog:flex landscape-mobile:hidden">
-          {canUseRagSearch ? (
-            <div className="min-w-0 flex-1">
-              <RagSearchBar
-                ragQuery={rag.ragQuery}
-                setRagQuery={rag.setRagQuery}
-                isRagMode={rag.isRagMode}
-                ragLoading={rag.ragLoading}
-                onSubmit={rag.handleRagSubmit}
-                onBack={() => rag.exitRagMode(false)}
-                onClear={() =>
-                  rag.isRagMode ? rag.exitRagMode(true) : rag.setRagQuery("")
-                }
-              />
-            </div>
-          ) : null}
-          {deepSearchHref ? (
-            <DeepSearchAction
-              href={deepSearchHref}
-              label={tCatalog("deepSearch.label")}
+          <div className="min-w-0 flex-1">
+            <RagSearchBar
+              ragQuery={rag.ragQuery}
+              setRagQuery={rag.setRagQuery}
+              isRagMode={rag.isRagMode}
+              ragLoading={rag.ragLoading}
+              onSubmit={rag.handleRagSubmit}
+              onBack={() => rag.exitRagMode(false)}
+              onClear={() =>
+                rag.isRagMode ? rag.exitRagMode(true) : rag.setRagQuery("")
+              }
             />
-          ) : null}
+          </div>
         </div>
       ) : null}
 

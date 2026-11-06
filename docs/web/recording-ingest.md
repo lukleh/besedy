@@ -194,10 +194,10 @@ revision that contains `run-worker.sh` first, then copy the unit and
 `systemctl --user daemon-reload` once. After that, the recipe refuses a
 rollback to a revision without the script (it prints the `git show` command
 that installs that revision's unit). The development recipe uses the same
-locked command, so it also runs with `--frozen`: run `uv lock` after changing
+locked command, so it refuses a stale lock: run `uv lock` after changing
 `pyproject.toml`.
 
-Register the pool and deployment together with deep search:
+Register the ingest, removal and correction-index deployments on the same pool:
 
 ```bash
 just jobs-dev-deploy    # or jobs-test-deploy / jobs-prod-deploy

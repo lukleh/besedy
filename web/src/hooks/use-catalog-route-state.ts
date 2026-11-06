@@ -86,9 +86,6 @@ function resolveParent(
         : null;
     case "settings":
       return segments.length === 3 ? { url: catalogUrl, label: "backToCatalog" } : null;
-    case "deep-search":
-      if (segments.length === 3) return { url: catalogUrl, label: "backToCatalog" };
-      return segments.length === 4 ? { url: `${catalogUrl}/deep-search`, label: "back" } : null;
     default:
       return null;
   }

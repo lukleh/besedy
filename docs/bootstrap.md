@@ -1,9 +1,9 @@
 # New Host Bootstrap
 
-> **Last Updated:** 2026-10-08
+> **Last Updated:** 2026-11-05
 
 The order of one-time steps that turn a fresh Linux host into a working Besedy
-deployment: production web, Deep Search jobs, ColBERT search, the GPU
+deployment: production web, ingestion/index jobs, ColBERT search, the GPU
 backends, and admin upload ingest. Each step links to the section that owns
 the details; this page adds what those sections assume. It was last walked
 end to end on Ubuntu 24.04 with an RTX 5070 Ti, starting from `git clone`.
@@ -53,10 +53,10 @@ end to end on Ubuntu 24.04 with an RTX 5070 Ti, starting from `git clone`.
    [preflight checklist](web/operations.md#deploy-preflight-checklist)); over
    plain `http://` every sign-in ends signed out without an error.
 8. **Prefect and the production jobs runtime:**
-   [Deep Search deploy order](web/operations.md#deploy-order), steps 2 and 3.
+   [Jobs deploy order](web/operations.md#deploy-order), steps 2 and 3.
    `just prefect-up` also needs `~/.config/lukleh/besedy/jobs.env.prefect`,
    copied from `jobs-service/.env.prefect.example`. `just jobs-prod-deploy`
-   registers both the deep-search and the ingest work pools.
+   registers ingest, removal and correction-index deployments on the ingest pool.
 9. **ColBERT query server:** `just colbert-up`. Optionally set
    `COLBERT_PRELOAD_INDEX_DIR` in `~/.config/lukleh/besedy/rag-services.env`
    (template `rag-services/.env.example`) so it loads the index before it
@@ -118,7 +118,7 @@ recordings can arrive through `/admin/ingest`.
 | GPU in containers | `docker run --rm --gpus all ubuntu:24.04 nvidia-smi -L` | lists the GPU |
 | Production env | `just env-check prod` | Compose accepts the env file |
 | Production web | `curl -s http://localhost:3000/api/health` | `"status":"ok"` (a degraded status also answers 200) |
-| Work pools | Prefect UI, or `POST http://127.0.0.1:4200/api/work_pools/filter` | `besedy-deep-search-prod` and `besedy-ingest-prod` |
+| Work pools | Prefect UI, or `POST http://127.0.0.1:4200/api/work_pools/filter` | `besedy-ingest-prod` with all three deployments |
 | ColBERT | `curl -s http://127.0.0.1:8192/health` | `"ready": true` (the server answers; search proves the index) |
 | Ingest worker | `systemctl --user is-active besedy-ingest-worker` | `active`, and an online worker on `besedy-ingest-prod` |
 | Egress | `just egress-check` | `Egress check: OK` |

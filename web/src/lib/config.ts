@@ -16,7 +16,6 @@ interface BesedyPathsConfig {
 
 interface BesedyWebConfig {
   superadmin_email?: string;
-  deep_search_default_instructions?: string;
 }
 
 interface BesedyConfig {
@@ -156,20 +155,4 @@ export function getSuperadminEmail(): string | null {
   const config = getBesedyConfig();
   const email = config.web?.superadmin_email?.toLowerCase().trim();
   return email || null;
-}
-
-export function getDeepSearchDefaultInstructions(): string {
-  const config = getBesedyConfig();
-  const instructions = config.web?.deep_search_default_instructions?.trim();
-  if (!instructions) {
-    throw new Error(
-      "web.deep_search_default_instructions is required in besedy.toml."
-    );
-  }
-  if (instructions.length > 4000) {
-    throw new Error(
-      "web.deep_search_default_instructions must be 4000 characters or fewer."
-    );
-  }
-  return instructions;
 }

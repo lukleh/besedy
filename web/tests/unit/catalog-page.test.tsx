@@ -49,8 +49,6 @@ describe("CatalogPage", () => {
       data: {
         features: {
           events: {
-            rollout: "public",
-            enabled: true,
             canView: true,
             canEdit: false,
             showTabs: false,
@@ -69,8 +67,6 @@ describe("CatalogPage", () => {
       data: {
         features: {
           events: {
-            rollout: "public",
-            enabled: true,
             canView: true,
             canEdit: false,
             showTabs: true,
@@ -103,8 +99,6 @@ describe("CatalogPage", () => {
       data: {
         features: {
           events: {
-            rollout: "public",
-            enabled: true,
             canView: true,
             canEdit: false,
             showTabs: false,

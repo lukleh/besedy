@@ -69,14 +69,14 @@ describe("SignInForm", () => {
   });
 
   it("starts OAuth with a safe callback target", async () => {
-    searchParamsMock.mockReturnValue(new URLSearchParams("callbackUrl=%2Flabs"));
+    searchParamsMock.mockReturnValue(new URLSearchParams("callbackUrl=%2Fsettings"));
 
     render(<SignInForm hasMockOAuth={false} />);
 
     fireEvent.click(screen.getByRole("button", { name: /sign in with google/i }));
 
     await waitFor(() => {
-      expect(signInWithOAuth).toHaveBeenCalledWith("/labs", { useMockOAuth: false });
+      expect(signInWithOAuth).toHaveBeenCalledWith("/settings", { useMockOAuth: false });
     });
   });
 

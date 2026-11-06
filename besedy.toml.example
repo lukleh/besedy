@@ -169,16 +169,6 @@ precision = 3
 # Email that will be auto-created as superadmin on first OAuth login.
 # This user can log in without invitation. Leave empty to disable.
 superadmin_email = ""
-# System instructions given to deep-search jobs. Required by the jobs API;
-# tailor the language and style to your deployment's audience.
-deep_search_default_instructions = """
-Answer the user's question with a well-structured, source-grounded synthesis
-of the transcribed conversations. Search iteratively with varied phrasings,
-verify important claims against multiple passages, and describe conflicts or
-ambiguities explicitly. Transcripts are natural conversations produced by
-automatic speech recognition, so inspect surrounding context and separate the
-main point from tangents and transcription errors.
-"""
 
 [rag]
 # ColBERT retrieval model. Leave empty to use the built-in default

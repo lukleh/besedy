@@ -1,18 +1,9 @@
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
-import prisma from "@/lib/db";
 import { getCatalogCapability } from "@/lib/access/capabilities";
-import {
-  type LabsPreference,
-  defaultLabsPreference,
-  readLabsPreferenceFromSettings,
-} from "@/lib/features/labs";
-import { type FeatureKey, getFeatureRollout } from "@/lib/features/rollout";
 import { type CatalogFeaturesResponse } from "@/lib/features/types";
 import {
   canBrowseRecordings,
   canUseCatalogRag,
-  canViewCatalogTranscripts,
-  hasCatalogPermission,
 } from "@/lib/policy/catalog";
 import { canBrowseEvents, canEditCatalogEvents } from "@/lib/policy/event";
 import {
@@ -21,51 +12,8 @@ import {
   canUseCatalogTabSwitcher,
 } from "@/lib/policy/ui";
 
-export function isFeatureEnabledForUser(
-  feature: FeatureKey,
-  labsEnabled: boolean
-): boolean {
-  const rollout = getFeatureRollout(feature);
-  if (rollout === "public") return true;
-  if (rollout === "off") return false;
-  return labsEnabled;
-}
-
-export interface UserFeaturePreferences {
-  activeGroupId: string | null;
-  labsPreference: LabsPreference;
-}
-
-export async function getUserFeaturePreferences(
-  userId: string
-): Promise<UserFeaturePreferences> {
-  const prefs = await prisma.userPreferences.findUnique({
-    where: { userId },
-    select: { activeGroupId: true, settings: true },
-  });
-
-  if (!prefs) {
-    return {
-      activeGroupId: null,
-      labsPreference: defaultLabsPreference(),
-    };
-  }
-
-  return {
-    activeGroupId: prefs.activeGroupId,
-    labsPreference: readLabsPreferenceFromSettings(prefs.settings),
-  };
-}
-
-export async function getLabsPreferenceForUser(
-  userId: string
-): Promise<LabsPreference> {
-  return (await getUserFeaturePreferences(userId)).labsPreference;
-}
-
 export function buildCatalogFeaturesResponse(
   catalogGrant: CatalogGrant | null,
-  labsEnabled: boolean,
   isCatalogAdmin: boolean,
   options: {
     catalogExists?: boolean;
@@ -76,10 +24,6 @@ export function buildCatalogFeaturesResponse(
     options.catalogExists ?? (catalogGrant !== null || isCatalogAdmin);
   const canEnterPortal =
     options.canEnterPortal ?? (catalogGrant !== null || isCatalogAdmin);
-  const rollout = getFeatureRollout("events");
-  const featureEnabled = isFeatureEnabledForUser("events", labsEnabled);
-  const deepSearchRollout = getFeatureRollout("deep-search");
-  const deepSearchEnabled = isFeatureEnabledForUser("deep-search", labsEnabled);
   const recordingBrowse = canBrowseRecordings({
     catalogExists,
     canEnterPortal,
@@ -92,12 +36,8 @@ export function buildCatalogFeaturesResponse(
     catalogGrant,
     isCatalogAdmin,
   };
-  const eventPolicyContext = {
-    featureEnabled,
-    ...catalogPolicyContext,
-  };
-  const canView = canBrowseEvents(eventPolicyContext);
-  const canEdit = canEditCatalogEvents(eventPolicyContext);
+  const canView = canBrowseEvents(catalogPolicyContext);
+  const canEdit = canEditCatalogEvents(catalogPolicyContext);
   const showTabs = canUseCatalogTabSwitcher({
     canBrowseRecordings: recordingBrowse,
     canBrowseEvents: canView,
@@ -105,11 +45,8 @@ export function buildCatalogFeaturesResponse(
   });
 
   return {
-    labsEnabled,
     features: {
       events: {
-        rollout,
-        enabled: featureEnabled,
         canView,
         canEdit,
         showTabs,
@@ -126,16 +63,6 @@ export function buildCatalogFeaturesResponse(
       recordings: {
         canBrowse: recordingBrowse,
       },
-      deepSearch: {
-        rollout: deepSearchRollout,
-        enabled: deepSearchEnabled,
-        canView:
-          deepSearchEnabled &&
-          catalogExists &&
-          canEnterPortal &&
-          canViewCatalogTranscripts(catalogPolicyContext) &&
-          hasCatalogPermission(catalogPolicyContext, "use_deep_search"),
-      },
     },
   };
 }
@@ -147,15 +74,12 @@ export async function getCatalogFeaturesForUser(
     activeCatalogOnly?: boolean;
   } = {}
 ): Promise<{ catalogExists: boolean; data: CatalogFeaturesResponse }> {
-  const [catalogCapability, labsPreference] = await Promise.all([
-    getCatalogCapability(catalogId, userId, options),
-    getLabsPreferenceForUser(userId),
-  ]);
+  const catalogCapability = await getCatalogCapability(catalogId, userId, options);
 
   if (!catalogCapability.catalogExists) {
     return {
       catalogExists: false,
-      data: buildCatalogFeaturesResponse(null, false, false),
+      data: buildCatalogFeaturesResponse(null, false),
     };
   }
 
@@ -163,7 +87,6 @@ export async function getCatalogFeaturesForUser(
     catalogExists: true,
     data: buildCatalogFeaturesResponse(
       catalogCapability.catalogGrant,
-      labsPreference.enabled,
       catalogCapability.isCatalogAdmin,
       {
         catalogExists: catalogCapability.catalogExists,
@@ -171,19 +94,4 @@ export async function getCatalogFeaturesForUser(
       }
     ),
   };
-}
-
-export async function canAccessCatalogDeepSearch(
-  userId: string,
-  catalogId: string,
-  options: {
-    activeCatalogOnly?: boolean;
-  } = {}
-): Promise<boolean> {
-  const { catalogExists, data } = await getCatalogFeaturesForUser(
-    catalogId,
-    userId,
-    options
-  );
-  return catalogExists && data.features.deepSearch.canView;
 }

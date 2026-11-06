@@ -1,6 +1,5 @@
 import prisma from '@/lib/db';
 import { listUserCatalogAccessEntries } from '@/lib/access/catalog-access-queries';
-import { getUserFeaturePreferences } from '@/lib/features/capabilities';
 import {
   resolvePortalActorContext,
   type PortalActorContext,
@@ -53,7 +52,10 @@ export async function getMcpAccessProfile(
   }
   const [actor, preferences] = await Promise.all([
     options.actor ?? resolvePortalActorContext(userId),
-    getUserFeaturePreferences(userId),
+    prisma.userPreferences.findUnique({
+      where: { userId },
+      select: { activeGroupId: true },
+    }),
   ]);
 
   if (!actor.canEnterPortal) {
@@ -77,7 +79,7 @@ export async function getMcpAccessProfile(
 
   const effectiveDefault = selectDefaultReadableGroup(
     groups,
-    preferences.activeGroupId,
+    preferences?.activeGroupId ?? null,
   );
   const catalogs = groups.map((group): McpCatalogAccess => ({
     id: group.id,

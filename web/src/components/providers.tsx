@@ -13,14 +13,8 @@ import { ReloadSafetyProvider } from "@/contexts/reload-safety-context";
 import { CorrectionDraftsProvider } from "@/contexts/correction-drafts-context";
 import { DownloadManagerBridge } from "@/components/offline/download-manager-bridge";
 import { RadioSleepTimerTarget } from "@/components/radio/radio-sleep-timer-target";
-import { useLabsSyncListener } from "@/hooks/use-labs";
 import { isDownloadsShellWarmup } from "@/lib/offline/downloads-shell";
 import { QUERY_CLIENT_DEFAULT_OPTIONS } from "@/lib/query/profiles";
-
-function LabsSyncListener() {
-  useLabsSyncListener();
-  return null;
-}
 
 export function Providers({
   children,
@@ -39,7 +33,6 @@ export function Providers({
 
   return (
     <QueryClientProvider client={queryClient}>
-      <LabsSyncListener />
       <ThemeProvider
         attribute="class"
         defaultTheme="system"

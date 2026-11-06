@@ -22,10 +22,9 @@ import {
 } from "@/lib/policy/ui";
 
 describe("event and ui policies", () => {
-  it("allows event browsing for listener+ grants when the feature is enabled", () => {
+  it("allows event browsing for listeners and catalog administrators", () => {
     expect(
       canBrowseEvents({
-        featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
         catalogGrant: grantForRole("listener"),
@@ -34,19 +33,17 @@ describe("event and ui policies", () => {
     ).toBe(true);
     expect(
       canViewCatalogEvents({
-        featureEnabled: false,
         catalogExists: true,
         canEnterPortal: true,
         catalogGrant: grantForRole("host"),
         isCatalogAdmin: true,
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("denies event browsing when catalog state or admission is missing", () => {
     expect(
       canBrowseEvents({
-        featureEnabled: true,
         catalogExists: false,
         canEnterPortal: true,
         catalogGrant: grantForRole("listener"),
@@ -55,7 +52,6 @@ describe("event and ui policies", () => {
     ).toBe(false);
     expect(
       canBrowseEvents({
-        featureEnabled: true,
         catalogExists: true,
         canEnterPortal: false,
         catalogGrant: grantForRole("host"),
@@ -64,9 +60,8 @@ describe("event and ui policies", () => {
     ).toBe(false);
   });
 
-  it("allows curator/admin event actions when the feature is enabled", () => {
+  it("allows curator/admin event actions", () => {
     const curatorContext = {
-      featureEnabled: true,
       catalogExists: true,
       canEnterPortal: true,
       catalogGrant: grantForRole("curator"),
@@ -93,7 +88,6 @@ describe("event and ui policies", () => {
     ).toBe(true);
     expect(
       canEditCatalogEvents({
-        featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
         catalogGrant: null,
@@ -113,7 +107,6 @@ describe("event and ui policies", () => {
     expect(
       canViewEvent(
         {
-          featureEnabled: true,
           catalogExists: true,
           canEnterPortal: true,
           catalogGrant: grantForRole("listener"),
@@ -125,7 +118,6 @@ describe("event and ui policies", () => {
     expect(
       canViewEvent(
         {
-          featureEnabled: true,
           catalogExists: true,
           canEnterPortal: true,
           catalogGrant: grantForRole("listener"),

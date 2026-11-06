@@ -108,7 +108,6 @@ describe("catalog events API", () => {
       userId: "admin-user",
       catalogGrant: grantForRole("curator"),
       policyContext: {
-        featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
         catalogGrant: grantForRole("curator"),
@@ -134,7 +133,6 @@ describe("catalog events API", () => {
       userId: "manager-1",
       catalogGrant: managesOnly,
       policyContext: {
-        featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
         catalogGrant: managesOnly,

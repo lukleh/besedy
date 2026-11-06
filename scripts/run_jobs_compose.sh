@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 
-# Run docker compose for one environment's jobs runtime (the jobs-api and
-# prefect-worker containers). Before a command that creates or starts
+# Run docker compose for one environment's jobs API runtime. Before a command that creates or starts
 # containers (up, create, run, start, restart, scale), the rendered project is
 # checked against that environment (validate_jobs_compose_config.sh), so a
 # wrong value in the jobs env file cannot silently point one environment's
-# jobs at another environment's web, work pool or output directory. Commands
+# jobs at another environment's work pool or deployment. Commands
 # that stop, inspect or build (down, stop, logs, ps, ...) always run: a
 # mis-wired stack has to stay stoppable.
 
 set -euo pipefail
 
-usage="Usage: $0 <development|production|test> [--codex-auth] <docker compose command and arguments...>"
+usage="Usage: $0 <development|production|test> <docker compose command and arguments...>"
 
 mode="${1:-}"
 if [[ -z "$mode" ]]; then
@@ -37,14 +36,6 @@ esac
 compose_files=(-f "$compose_file")
 while (( $# > 0 )); do
   case "$1" in
-    --codex-auth)
-      if [[ "$mode" != "production" ]]; then
-        echo "--codex-auth is only valid for production" >&2
-        exit 1
-      fi
-      compose_files+=(-f jobs-service/docker-compose.jobs-codex-auth.yml)
-      shift
-      ;;
     -p | -p?* | --project-name | --project-name=* | -f | -f?* | --file | --file=* | --env-file | --env-file=* | --project-directory | --project-directory=*)
       echo "Unsafe Docker Compose option '$1': project identity, Compose files, and env files are controlled by this wrapper" >&2
       exit 1

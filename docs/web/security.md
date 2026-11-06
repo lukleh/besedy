@@ -226,7 +226,6 @@ wildcard; system admins resolve the same way.
 | See unreleased material                         |    -     |   -    |     -     |  -   |    Y    |       Y       |
 | Browse recordings list                          |    -     |   -    |     -     |  -   |    Y    |       Y       |
 | Edit metadata, lookups, events, and publication |    -     |   -    |     -     |  -   |    Y    |       Y       |
-| Use deep search                                 |    -     |   -    |     -     |  -   |    Y    |       Y       |
 | Manage catalog access                           |    -     |   -    |     -     |  Y   |    -    |       Y       |
 | Manage catalog configuration (label)            |    -     |   -    |     -     |  -   |    -    |       Y       |
 | See transcript variants and speaker overlay     |    -     |   -    |     -     |  -   |    -    |       Y       |
@@ -244,7 +243,7 @@ set one could read another catalog. The settings form disables those fields for 
 See [ADR 0005](../adr/0005-catalog-permission-model.md#outside-the-catalog-scope).
 
 Catalog administrators may assign the curated extras `browse_recordings`,
-`use_deep_search`, `download_audio`, `download_original_audio`,
+`download_audio`, `download_original_audio`,
 `download_transcripts`, and `bulk_export_transcripts` to a named account.
 Delivery permissions never bypass the corresponding read/visibility gate.
 
@@ -259,7 +258,7 @@ routes deliver.
 | ---------------------------------------------------------------------------------------------------- | ---------------------- |
 | Admin panel, user management, audit log, MCP usage telemetry, transcript backend order, catalog sync | ADMIN                  |
 | Grant / revoke admin role                                                                            | SUPERADMIN             |
-| Labs toggle, notification preferences, playback progress                                             | any authenticated user |
+| Notification preferences, playback progress                                             | any authenticated user |
 | Own recording bookmarks (create needs access to the recording; listing hides inaccessible ones)      | any authenticated user |
 
 ### Listener role
@@ -277,7 +276,6 @@ The web UI is not the only read surface, and the surfaces do not agree:
 | ------------------ | ------------------------- | -------------------------------------------- | --------------------------------- |
 | Web UI / web API   | `curator` / catalog admin | `reader` and above by permission             | requester's role and extras       |
 | MCP                | nobody, including admins  | **every active grant, including `listener`** | uniform listener-visible material |
-| Deep-search worker | requester's visibility    | requester must be able to read               | requester's role and extras       |
 
 The MCP listener-transcript decision is deliberate and dated; see
 [mcp-server.md](mcp-server.md#design-decision-listener-transcript-access-through-mcp).
@@ -318,24 +316,14 @@ account revoking itself out of a catalog.
 
 ### Delivery and Background Jobs Are Scoped Like Reading
 
-Two paths used to hand over more than the account asking could read.
-
 **Bulk transcript export** exported every recording in the catalog. It now
 exports what the requester could have opened one recording at a time, using the
 same per-recording visibility as the single-transcript route. An administrator
 is unscoped and still gets everything.
 
-**Deep search** ran with no identity at all: the worker authenticated with the
-service secret and the internal search treated that as full visibility, so a
-report could quote unreleased material to someone who cannot read it. The job
-now carries the account it was asked for, and the internal search, citation and
-metadata routes scope to that account. A missing requester or a requester whose
-access was revoked is rejected; neither falls back to listener visibility.
-
-The service secret still says only that the caller is our own worker. It is
-shared by the web-to-jobs client, the jobs API and the worker-to-web client, so
-one leaked value is worth treating as a full compromise of job submission and
-retrieval.
+The service secret identifies our own services. It authenticates the
+web-to-jobs client, the jobs API and the worker-to-web callbacks for ingestion and correction indexing. The public
+routes still authorize the requesting account before submitting a job.
 
 ### The Transcript Publication Gate Is Not an Authorization Decision
 

@@ -29,7 +29,6 @@ function isListenerVisibleEventRow(row: EventVisibilityRow): boolean {
 
   return canViewEvent(
     {
-      featureEnabled: true,
       catalogExists: true,
       canEnterPortal: true,
       catalogGrant: grantForRole("listener"),

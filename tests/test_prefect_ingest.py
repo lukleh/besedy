@@ -147,8 +147,8 @@ def test_ingest_submit_request_validates_tokens() -> None:
 
 def test_job_kind_is_derived_from_tags() -> None:
     assert job_kind_from_tags(["job-kind:ingest", "catalog:x"]) == JobKind.INGEST
-    assert job_kind_from_tags(["job-kind:deep-search"]) == JobKind.DEEP_SEARCH
-    assert job_kind_from_tags(None) == JobKind.DEEP_SEARCH
+    assert job_kind_from_tags(["job-kind:deep-search"]) is None
+    assert job_kind_from_tags(None) is None
     assert build_ingest_flow_run_tags(
         catalog_id=CATALOG_ID, intake_id=INTAKE_ID, requested_by_id="Admin 1"
     ) == [
@@ -181,7 +181,7 @@ def test_normalize_ingest_flow_run_exposes_intake_payload(tmp_path: Path) -> Non
         state=SimpleNamespace(message=None),
         tags=["job-kind:ingest"],
     )
-    job = normalize_flow_run(flow_run, output_root_dir=tmp_path)
+    job = normalize_flow_run(flow_run)
     assert job["kind"] == "INGEST"
     assert job["status"] == JobStatus.RUNNING.value
     assert job["payload"] == {
@@ -201,7 +201,6 @@ def test_service_submits_and_lists_ingest_jobs(tmp_path: Path) -> None:
     fake_client = FakePrefectClient()
     service = PrefectJobsApiService(
         client=fake_client,
-        output_root_dir=tmp_path,
         ingest_deployment_name="ingest_recording_flow/ingest-test",
     )
 
@@ -220,7 +219,8 @@ def test_service_submits_and_lists_ingest_jobs(tmp_path: Path) -> None:
     assert [job["id"] for job in listed["jobs"]] == [fake_client.flow_run_id]
     assert fake_client.read_flow_runs_calls[-1]["tags"][0] == "job-kind:ingest"
 
-    assert service.list_jobs(raw_query="kind=DEEP_SEARCH")["jobs"] == []
+    with pytest.raises(ValueError, match="Unsupported kind"):
+        service.list_jobs(raw_query="kind=DEEP_SEARCH")
 
     with pytest.raises(ValueError):
         service.submit_ingest(
@@ -693,7 +693,7 @@ def test_service_maps_missing_prefect_run_to_not_found(tmp_path: Path) -> None:
         def read_flow_run(self, *, flow_run_id: str) -> object:
             raise ObjectNotFound(http_exc=RuntimeError("404"))
 
-    service = PrefectJobsApiService(client=MissingClient(), output_root_dir=tmp_path)
+    service = PrefectJobsApiService(client=MissingClient())
     with pytest.raises(FileNotFoundError):
         service.get_job(job_id=str(uuid4()))
 
@@ -738,7 +738,6 @@ def test_service_submits_removal_on_the_ingest_pool(tmp_path: Path) -> None:
     fake_client = FakePrefectClient()
     service = PrefectJobsApiService(
         client=fake_client,
-        output_root_dir=tmp_path,
         ingest_remove_deployment_name="remove_recording_flow/ingest-remove-test",
     )
     created = service.submit_ingest_removal(

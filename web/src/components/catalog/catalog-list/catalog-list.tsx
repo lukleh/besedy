@@ -1,14 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useTranslations } from "next-intl";
 import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  DeepSearchAction,
-  DeepSearchIconAction,
-} from "@/components/catalog/deep-search-action";
 import {
   EditModeToolbar,
   UnsavedChangesDialog,
@@ -36,10 +31,8 @@ const NotificationPromptBanner = dynamic(
   { ssr: false }
 );
 
-export function CatalogList({ catalogId, deepSearchHref }: CatalogListProps) {
+export function CatalogList({ catalogId }: CatalogListProps) {
   const controller = useCatalogListController({ catalogId });
-  const t = useTranslations("catalog");
-  const deepSearchLabel = t("deepSearch.label");
 
   if (controller.status === "loading") {
     return <CatalogSkeleton catalogName={controller.catalogName} />;
@@ -87,29 +80,17 @@ export function CatalogList({ catalogId, deepSearchHref }: CatalogListProps) {
               <Search className="h-4 w-4" />
             </Button>
           )}
-          {deepSearchHref ? (
-            <DeepSearchIconAction
-              href={deepSearchHref}
-              label={deepSearchLabel}
-              className="@[768px]/catalog:hidden landscape-mobile:inline-flex"
-            />
-          ) : null}
           <Toolbar {...controller.toolbarProps} />
         </div>
       </div>
 
       <NotificationPromptBanner />
 
-      {(controller.desktopRagSearchProps || deepSearchHref) && (
+      {controller.desktopRagSearchProps && (
         <div className="hidden items-stretch gap-3 @[768px]/catalog:flex landscape-mobile:hidden">
-          {controller.desktopRagSearchProps ? (
-            <div className="min-w-0 flex-1">
-              <RagSearchBar {...controller.desktopRagSearchProps} />
-            </div>
-          ) : null}
-          {deepSearchHref ? (
-            <DeepSearchAction href={deepSearchHref} label={deepSearchLabel} />
-          ) : null}
+          <div className="min-w-0 flex-1">
+            <RagSearchBar {...controller.desktopRagSearchProps} />
+          </div>
         </div>
       )}
 

@@ -10,7 +10,6 @@ const mocks = vi.hoisted(() => ({
   getCatalogCapability: vi.fn(),
   resolveReadableRecordingHashes: vi.fn(),
   resolveReadableEventIds: vi.fn(),
-  buildCatalogFeaturesResponse: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -29,11 +28,6 @@ vi.mock("@/lib/catalog-events/read-service", async (importOriginal) => ({
   resolveReadableRecordingHashes: mocks.resolveReadableRecordingHashes,
   resolveReadableEventIds: mocks.resolveReadableEventIds,
 }));
-vi.mock("@/lib/features/capabilities", () => ({
-  getLabsPreferenceForUser: vi.fn().mockResolvedValue({ enabled: false }),
-  buildCatalogFeaturesResponse: mocks.buildCatalogFeaturesResponse,
-}));
-
 const CATALOG = "20260101_120000";
 const REVOKED_CATALOG = "20250101_120000";
 const EVENT_HASH = "a".repeat(64);
@@ -54,7 +48,6 @@ function row(id: string, workflowGroupId: string, audioHash: string, positionSec
     workflowGroup: { label: `label ${workflowGroupId}` },
   };
 }
-
 
 describe("listUserBookmarks", () => {
   beforeEach(() => {
@@ -89,7 +82,6 @@ describe("listUserBookmarks", () => {
         location: { name: "Praha" },
       },
     ]);
-    mocks.buildCatalogFeaturesResponse.mockReturnValue({ features: { events: { canView: true } } });
     mocks.eventRecordingFindMany.mockResolvedValue([
       {
         audioHash: EVENT_HASH,
@@ -160,14 +152,14 @@ describe("listUserBookmarks", () => {
     );
   });
 
-  it("opens recordings directly when the user has no events view", async () => {
-    mocks.buildCatalogFeaturesResponse.mockReturnValue({ features: { events: { canView: false } } });
+  it("opens recordings directly when no readable event contains them", async () => {
+    mocks.eventRecordingFindMany.mockResolvedValue([]);
 
     const bookmarks = await listUserBookmarks("user-1");
 
     expect(bookmarks.map((bookmark) => bookmark.recording.eventId)).toEqual([null, null]);
     // Without the event, the date and place are the recording's own.
     expect(bookmarks[0].recording).toMatchObject({ dateDay: 12, locationName: "Praha" });
-    expect(mocks.eventRecordingFindMany).not.toHaveBeenCalled();
+    expect(mocks.eventRecordingFindMany).toHaveBeenCalled();
   });
 });

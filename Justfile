@@ -39,14 +39,6 @@ transcribe-oneoff *args:
 test *args:
     uv run --locked --all-extras pytest "$@"
 
-# Move the rlmbenchy pin in uv.lock to its latest default-branch commit, run the
-# jobs tests, and show the lock change to review and commit. Locks with the
-# jobs image's uv (jobs-service/Dockerfile) so unrelated markers stay put.
-bump-rlmbenchy:
-    uvx --from 'uv==0.9.26' uv lock --upgrade-package rlmbenchy
-    uv run --locked --extra jobs pytest tests/test_prefect_jobs.py tests/test_prefect_jobs_maintenance.py tests/test_jobs_production_hardening.py tests/test_rlm_integration.py -q
-    git diff -- uv.lock
-
 # Run ty against the full production package.
 ty *args:
     uv run ty check besedy training {{args}}
@@ -80,8 +72,6 @@ jobs_dev_compose := "bash scripts/run_jobs_compose.sh development"
 jobs_test_compose := "bash scripts/run_jobs_compose.sh test"
 
 jobs_prod_compose := "bash scripts/run_jobs_compose.sh production"
-
-jobs_prod_codex_compose := "bash scripts/run_jobs_compose.sh production --codex-auth"
 
 # The ColBERT state bind source, created as the invoking user; Docker would create it as root.
 _colbert-state-dir:
@@ -195,8 +185,8 @@ jobs-dev-up: (_jobs-secret-check "development")
     just prefect-up
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
-    {{ jobs_dev_compose }} build jobs-api prefect-worker
-    {{ jobs_dev_compose }} up -d --no-build
+    {{ jobs_dev_compose }} build jobs-api
+    {{ jobs_dev_compose }} up -d --no-build --remove-orphans
 
 jobs-dev-down:
     {{ jobs_dev_compose }} down
@@ -207,8 +197,8 @@ jobs-dev-logs:
 jobs-dev-rebuild:
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
-    {{ jobs_dev_compose }} build jobs-api prefect-worker
-    {{ jobs_dev_compose }} up -d --no-build jobs-api prefect-worker
+    {{ jobs_dev_compose }} build jobs-api
+    {{ jobs_dev_compose }} up -d --no-build --remove-orphans jobs-api
 
 jobs-dev-status:
     {{ jobs_dev_compose }} ps
@@ -222,8 +212,8 @@ jobs-test-up: (_jobs-secret-check "test")
     just prefect-up
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
-    {{ jobs_test_compose }} build jobs-api prefect-worker
-    {{ jobs_test_compose }} up -d --no-build
+    {{ jobs_test_compose }} build jobs-api
+    {{ jobs_test_compose }} up -d --no-build --remove-orphans
 
 jobs-test-down:
     {{ jobs_test_compose }} down
@@ -234,8 +224,8 @@ jobs-test-logs:
 jobs-test-rebuild:
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
-    {{ jobs_test_compose }} build jobs-api prefect-worker
-    {{ jobs_test_compose }} up -d --no-build jobs-api prefect-worker
+    {{ jobs_test_compose }} build jobs-api
+    {{ jobs_test_compose }} up -d --no-build --remove-orphans jobs-api
 
 jobs-test-status:
     {{ jobs_test_compose }} ps
@@ -250,16 +240,7 @@ jobs-prod-up: (_jobs-secret-check "production")
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
     just jobs-prod-build
-    {{ jobs_prod_compose }} up -d --no-build
-
-# Start production with the narrowly scoped Codex auth overlay for
-# model-chatgpt-* profiles.
-jobs-prod-up-codex: (_jobs-secret-check "production")
-    just prefect-up
-    {{ ensure_internal_network }}
-    {{ ensure_prefect_network }}
-    just jobs-prod-build
-    {{ jobs_prod_codex_compose }} up -d --no-build
+    {{ jobs_prod_compose }} up -d --no-build --remove-orphans
 
 jobs-prod-build:
     #!/usr/bin/env bash
@@ -283,10 +264,10 @@ jobs-prod-down:
 
 # Pause the production jobs writers without removing their containers.
 jobs-prod-stop:
-    {{ jobs_prod_compose }} stop jobs-api prefect-worker
+    {{ jobs_prod_compose }} stop jobs-api
 
 # Refuse coordinated maintenance while the production deployment has queued or
-# running work. Run this once before downtime and again after submissions stop.
+# running work on the host ingest pool. Check again after submissions stop.
 jobs-prod-check-idle:
     {{ jobs_prod_compose }} run --rm --no-deps jobs-api \
         python -m besedy.lib.prefect_jobs.maintenance
@@ -295,13 +276,7 @@ jobs-prod-check-idle:
 jobs-prod-start:
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
-    {{ jobs_prod_compose }} up -d --no-build jobs-api prefect-worker
-
-# Start production jobs with the narrowly scoped Codex auth overlay.
-jobs-prod-start-codex:
-    {{ ensure_internal_network }}
-    {{ ensure_prefect_network }}
-    {{ jobs_prod_codex_compose }} up -d --no-build jobs-api prefect-worker
+    {{ jobs_prod_compose }} up -d --no-build --remove-orphans jobs-api
 
 jobs-prod-logs:
     {{ jobs_prod_compose }} logs -f
@@ -310,13 +285,7 @@ jobs-prod-rebuild:
     {{ ensure_internal_network }}
     {{ ensure_prefect_network }}
     just jobs-prod-build
-    {{ jobs_prod_compose }} up -d --no-build jobs-api prefect-worker
-
-jobs-prod-rebuild-codex:
-    {{ ensure_internal_network }}
-    {{ ensure_prefect_network }}
-    just jobs-prod-build
-    {{ jobs_prod_codex_compose }} up -d --no-build jobs-api prefect-worker
+    {{ jobs_prod_compose }} up -d --no-build --remove-orphans jobs-api
 
 jobs-prod-status:
     {{ jobs_prod_compose }} ps
@@ -771,9 +740,9 @@ prod-deploy:
     just prod-apply
 
 # Quiesce web and the jobs API, verify that no run raced the initial idle check,
-# then stop the worker and apply the migration. If that second check finds work,
+# then apply the migration. If that second check finds work,
 # restart the unchanged containers and leave the database untouched.
-_prod-apply-with-jobs jobs_start:
+_prod-apply-with-jobs:
     #!/usr/bin/env bash
     set -euo pipefail
     just jobs-prod-check-idle
@@ -788,24 +757,17 @@ _prod-apply-with-jobs jobs_start:
         {{ prod_compose }} start web
         exit 1
     fi
-    {{ jobs_prod_compose }} stop prefect-worker
     just prod-apply
-    just {{ jobs_start }}
+    just jobs-prod-start
     just jobs-prod-deploy
 
 # Coordinated deployment for revisions that change both web and jobs contracts.
 # Both images are built before downtime. New submissions are stopped before the
-# worker, so active work is never abandoned by the deployment.
+# idle check, so active host work is never abandoned by the deployment.
 prod-deploy-with-jobs:
     just prod-build
     just jobs-prod-build
-    just _prod-apply-with-jobs jobs-prod-start
-
-# The same coordinated deployment for model-chatgpt-* production profiles.
-prod-deploy-with-jobs-codex:
-    just prod-build
-    just jobs-prod-build
-    just _prod-apply-with-jobs jobs-prod-start-codex
+    just _prod-apply-with-jobs
 
 # Create and validate an immediate production database backup. This uses the
 # same credentials and host-mounted backup directory as the scheduled service.
@@ -864,8 +826,8 @@ prod-restore *args:
         exit 1
     fi
     cd ..
-    if [ -n "$({{ jobs_prod_compose }} ps --services --status running jobs-api prefect-worker)" ]; then
-        echo "Stop the production jobs API and worker before restoring." >&2
+    if [ -n "$({{ jobs_prod_compose }} ps --services --status running jobs-api)" ]; then
+        echo "Stop the production jobs API before restoring." >&2
         exit 1
     fi
     cd web
@@ -883,15 +845,12 @@ prod-restore *args:
     ' sh "$backup"
 
 # Restore a retained database backup and restart the exact web/jobs images from
-# a previous coordinated deployment. The selected jobs start recipe preserves
-# whether production uses the Codex auth overlay. The confirmation binds both
-# user-provided inputs.
-_prod-rollback jobs_start commit backup:
+# a previous coordinated deployment. The confirmation binds both user-provided inputs.
+_prod-rollback commit backup:
     #!/usr/bin/env bash
     set -euo pipefail
-    jobs_start="$1"
-    commit="$2"
-    backup="$3"
+    commit="$1"
+    backup="$2"
     if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
         echo "Rollback requires the full 40-character source commit." >&2
         exit 2
@@ -906,14 +865,14 @@ _prod-rollback jobs_start commit backup:
     cd web
     {{ prod_compose }} stop web
     cd ..
-    {{ jobs_prod_compose }} stop jobs-api prefect-worker
+    {{ jobs_prod_compose }} stop jobs-api
     echo "Preserving the current failed state before restoring..."
     just prod-backup
     CONFIRM_PROD_RESTORE="$backup" just prod-restore "$backup"
     cd web
     BESEDY_WEB_IMAGE="besedy-web:$commit" {{ prod_compose }} up -d --no-deps --no-build web
     cd ..
-    BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just "$jobs_start"
+    BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just jobs-prod-start
     BESEDY_JOBS_IMAGE="besedy-jobs:$commit" just jobs-prod-deploy
     echo "Rollback complete. Verify web, jobs, and permissions before reopening maintenance."
 
@@ -938,13 +897,9 @@ prod-prune-images keep="5":
     mapfile -t commit_list <<< "$commits"
     bash scripts/prune_prod_images.sh "${commit_list[@]}"
 
-# Roll back a standard OpenRouter/NVIDIA production jobs deployment.
+# Roll back a coordinated production web/jobs deployment.
 prod-rollback commit backup:
-    just _prod-rollback jobs-prod-start "$1" "$2"
-
-# Roll back a model-chatgpt-* deployment while retaining its Codex auth mount.
-prod-rollback-codex commit backup:
-    just _prod-rollback jobs-prod-start-codex "$1" "$2"
+    just _prod-rollback "$1" "$2"
 
 # Check deployed version
 prod-version:

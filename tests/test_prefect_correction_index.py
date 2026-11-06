@@ -107,7 +107,7 @@ def test_job_kind_and_normalized_payload(tmp_path: Path) -> None:
         state=SimpleNamespace(message=None),
         tags=["job-kind:correction-index"],
     )
-    job = normalize_flow_run(flow_run, output_root_dir=tmp_path)
+    job = normalize_flow_run(flow_run)
     assert job["kind"] == "CORRECTION_INDEX"
     assert job["status"] == JobStatus.RUNNING.value
     assert job["payload"] == {
@@ -124,7 +124,6 @@ def test_service_submits_correction_index_sync(tmp_path: Path) -> None:
     fake_client = FakePrefectClient()
     service = PrefectJobsApiService(
         client=fake_client,
-        output_root_dir=tmp_path,
         correction_index_deployment_name="sync_correction_index_flow/correction-index-test",
     )
 

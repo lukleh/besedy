@@ -21,8 +21,6 @@ const MARK_ALL_READ_LABEL = /mark all read|mark all as read|označit vše jako p
 const SETTINGS_HEADING_LABEL = /settings|nastavení|notification settings|nastavení oznámení/i;
 const PUSH_NOTIFICATIONS_LABEL = /push notifications|push oznámení/i;
 const ABOUT_NOTIFICATIONS_LABEL = /about notifications|o oznámeních/i;
-const LABS_SECTION_LABEL = /besedy labs/i;
-const LABS_TOGGLE_LABEL = /enable besedy labs|zapnout besedy labs/i;
 const BACK_TO_CATALOG_LABEL = /back to catalog|zpět do katalogu/i;
 const PUSH_UNAVAILABLE_LABEL =
   /not supported|nepodporováno|permission denied|oprávnění.*zamítnuto|notifications blocked|zablokov/i;
@@ -278,17 +276,6 @@ test.describe("Notifications", () => {
       // About section should be visible
       const aboutHeading = page.getByRole("heading", { name: ABOUT_NOTIFICATIONS_LABEL });
       await expect(aboutHeading).toBeVisible({ timeout: 10000 });
-    });
-
-    test("shows Besedy Labs section and toggle", async ({ page }) => {
-      await loginAs(page, "viewer");
-      await page.goto("/settings");
-      await waitForPageReady(page);
-
-      await expect(page.getByRole("heading", { name: LABS_SECTION_LABEL })).toBeVisible({
-        timeout: 10000,
-      });
-      await expect(page.getByLabel(LABS_TOGGLE_LABEL)).toBeVisible({ timeout: 10000 });
     });
 
     test("back link returns to catalog", async ({ page }) => {

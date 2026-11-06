@@ -27,7 +27,6 @@ describe("catalog events health route", () => {
     requireCatalogEventsAccess.mockResolvedValue({
       userId: "owner-1",
       policyContext: {
-        featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
         catalogGrant: grantForRole("host"),

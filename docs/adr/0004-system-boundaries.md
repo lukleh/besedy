@@ -7,7 +7,7 @@
 ## Context
 
 Besedy combines local batch processing, heavyweight GPU runtimes, an interactive
-web application, and long-running deep-search jobs. Treating all code as one
+web application, and asynchronous ingestion and correction-indexing jobs. Treating all code as one
 runtime would couple lightweight catalog commands to ML and web dependencies.
 
 ## Decision
@@ -17,7 +17,7 @@ runtime would couple lightweight catalog commands to ML and web dependencies.
 - Backend containers own model-specific GPU dependency stacks.
 - The Next.js application owns interactive HTTP behavior, authorization,
   PostgreSQL serving models, and controlled filesystem delivery.
-- The jobs API and Prefect workers own asynchronous deep-search lifecycle and
+- The jobs API and Prefect workers own asynchronous job lifecycle and
   communicate with the web service through authenticated internal contracts.
 
 Inside Python, dependency direction is CLI → commands/workflows → reusable

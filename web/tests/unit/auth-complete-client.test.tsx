@@ -64,7 +64,7 @@ describe("AuthCompleteClient", () => {
 
     render(
       <AuthCompleteClient
-        callbackUrl="/labs"
+        callbackUrl="/settings"
         error={null}
         errorDescription={null}
         state={null}
@@ -78,7 +78,7 @@ describe("AuthCompleteClient", () => {
     });
 
     expect(getAuthCompletionStatus).toHaveBeenCalledTimes(2);
-    expect(mocks.replaceMock).toHaveBeenCalledWith("/labs");
+    expect(mocks.replaceMock).toHaveBeenCalledWith("/settings");
   });
 
   it("shows retry UI after the bounded recovery window is exhausted", async () => {
@@ -160,7 +160,7 @@ describe("AuthCompleteClient", () => {
 
     const { unmount } = render(
       <AuthCompleteClient
-        callbackUrl="/labs"
+        callbackUrl="/settings"
         error={null}
         errorDescription={null}
         state={null}

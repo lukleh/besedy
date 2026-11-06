@@ -26,7 +26,6 @@ export function CatalogPageTabs({ catalogId }: CatalogPageTabsProps) {
   const showAllColumns = featureData?.features.events.showAllColumns ?? false;
   const showReleaseState = featureData?.features.events.showReleaseState ?? false;
   const canUseRagSearch = featureData?.features.events.canUseRagSearch ?? false;
-  const canViewDeepSearch = featureData?.features.deepSearch?.canView ?? false;
   const canBrowseRecordings = featureData?.features.recordings?.canBrowse ?? false;
   const { activeTab, setActiveTab } = useCatalogTab(catalogId, showTabs);
   const tabFromUrl = searchParams.get("tab");
@@ -69,11 +68,7 @@ export function CatalogPageTabs({ catalogId }: CatalogPageTabsProps) {
     router.replace(nextUrl, { scroll: false });
   }
 
-  const deepSearchHref = canViewDeepSearch
-    ? `/catalog/${catalogId}/deep-search`
-    : undefined;
-
-  // Neither surface: the events feature is off for this account and it may not
+  // Neither surface: event access is unavailable for this account and it may not
   // browse recordings either. Rendering the list would fetch one the server
   // refuses, so say so instead.
   if (!canViewEvents && !canBrowseRecordings) {
@@ -83,7 +78,7 @@ export function CatalogPageTabs({ catalogId }: CatalogPageTabsProps) {
   }
 
   if (!canViewEvents) {
-    return <CatalogList catalogId={catalogId} deepSearchHref={deepSearchHref} />;
+    return <CatalogList catalogId={catalogId} />;
   }
 
   return (
@@ -92,7 +87,7 @@ export function CatalogPageTabs({ catalogId }: CatalogPageTabsProps) {
         <CatalogTabs activeTab={visibleTab} onChange={handleTabChange} />
       ) : null}
       {visibleTab === "recordings" ? (
-        <CatalogList catalogId={catalogId} deepSearchHref={deepSearchHref} />
+        <CatalogList catalogId={catalogId} />
       ) : (
         <EventList
           catalogId={catalogId}
@@ -100,7 +95,6 @@ export function CatalogPageTabs({ catalogId }: CatalogPageTabsProps) {
           showAllColumns={showAllColumns}
           showReleaseState={showReleaseState}
           canUseRagSearch={canUseRagSearch}
-          deepSearchHref={deepSearchHref}
         />
       )}
     </>

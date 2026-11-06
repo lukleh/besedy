@@ -1,6 +1,6 @@
 # Web Operations
 
-> **Last Updated:** 2026-09-19
+> **Last Updated:** 2026-11-05
 
 Operational reference for deploying, monitoring, and running the Besedy web app.
 For security hardening details see `docs/web/security.md`.
@@ -154,15 +154,11 @@ section in the order of a whole new host, GPU backends and ingest included.
    a command that creates or starts containers (`up`, `create`, `run`, `start`,
    `restart`, `scale`), it renders the project and refuses to continue when it
    points at another environment (`down`, `stop`, `logs`, `ps` and `build`
-   always run, so a mis-wired stack stays stoppable): `BESEDY_INTERNAL_BASE_URL` must name this
-   environment's web container (`besedy-<development|test|production>-web`),
-   the deep-search and ingest work pools, the worker's `--pool` and the Prefect
-   deployment names must end in `-dev`, `-test` or `-prod`, `DEEP_SEARCH_OUTPUT_ENV` and the last component of
-   `DEEP_SEARCH_OUTPUT_DIR` must be the same suffix, and the container names
-   and project must carry it too. The error names the variable, its value and
-   the env file to fix. The `docker-compose.jobs-*.yml` defaults already satisfy
-   these rules, so a minimal env file passes; only an override can fail.
-   `--codex-auth` adds the Codex overlay (production only).
+   always run, so a mis-wired stack stays stoppable). The ingest work pool and
+   every remaining deployment name must end in `-dev`, `-test` or `-prod`, and
+   the jobs API container/project must match the selected environment. The error
+   names the variable, its value and the env file to fix. The checked-in Compose
+   defaults already satisfy these rules; only an override can fail.
 
 3. **Host directories:** create every data directory named in `web.env.prod`.
    `WEB_LOGS_DIR` must be writable by container UID 1001. Prepare `ARTWORK_DIR`
@@ -186,8 +182,8 @@ section in the order of a whole new host, GPU backends and ingest included.
    database, applies every migration, and then starts web and the scheduled
    backup.
 
-Deep Search, recording ingest, and the Cloudflare Tunnel are set up separately
-(see [Deep Search Production Runtime](#deep-search-production-runtime),
+The jobs runtime, recording ingest, and the Cloudflare Tunnel are set up separately
+(see [Jobs Production Runtime](#jobs-production-runtime),
 [recording-ingest.md](recording-ingest.md), and
 [Cloudflare Tunnel](#cloudflare-tunnel)).
 
@@ -306,16 +302,16 @@ revoke. `just prod-backup` is available separately when an immediate verified
 backup is needed outside a deployment.
 
 For a release that changes the web/jobs contract, use
-`just prod-deploy-with-jobs`. It builds both images before downtime, stops the
-jobs API and worker, performs the web backup and migration, then starts web,
-jobs, and refreshes the Prefect deployment. Production profiles using
-`model-chatgpt-*` must use `just prod-deploy-with-jobs-codex` so the narrowly
-scoped Codex auth mount is retained. The coordinated recipes check the production
-Prefect deployment before downtime, then stop new submissions and check again
-before stopping the worker. If a run is queued or active, deployment refuses to
-continue; wait for it to finish or cancel it explicitly. If a run races the
-first check, the unchanged web and jobs API containers are restarted without
-migrating.
+`just prod-deploy-with-jobs`. It builds both images before downtime, checks the
+production ingest pool, stops new web/API submissions, and checks the entire
+pool again before backup and migration. A queued or active ingest, removal or
+correction-index run refuses deployment. If a run races the first check, the
+unchanged web and jobs API containers restart without migration. The host
+worker is deployed separately at the same revision with
+`just ingest-worker-deploy <sha>`.
+For a changed host-flow/callback contract, stop the idle host worker before the
+coordinated release and redeploy it before accepting new submissions; the image
+deployment recipe does not manage the systemd user service.
 
 ### Event artwork cutover
 
@@ -339,8 +335,7 @@ Completed September 2026; see [ADR 0011](../adr/0011-poster-to-artwork-rename.md
 `besedy.toml` rejects the retired `[diarization]` and `[analysis]` sections and
 `[paths].decoded_audio_dir`, while earlier revisions require both sections, so no
 configuration file works with both the old and the new code. One file is shared
-by the host CLI, the host ingest worker, the production jobs containers, and
-the RAG services; upgrade the file and all of them in one window:
+by the host CLI, the host ingest worker, and the RAG services; upgrade the file and all of them in one window:
 
 1. `just jobs-prod-check-idle && just jobs-prod-stop`. Once `/admin/ingest`
    shows no running ingest, `systemctl --user stop besedy-ingest-worker`;
@@ -411,8 +406,8 @@ migration (`20260921170000_drop_legacy_access_level`,
 [ADR 0005](../adr/0005-catalog-permission-model.md)). The step-by-step runbook
 was removed once that rollout finished. Use the same shape for any future
 change that cannot be applied additively: deploy it with
-`just prod-deploy-with-jobs` (or the `-codex` variant) so no old worker runs
-against the new schema. A migration that drops a column has no reverse
+`just prod-deploy-with-jobs`, with the idle host worker stopped as described
+above, so no old worker runs against the new schema. A migration that drops a column has no reverse
 migration, and the previous image alone cannot run against the migrated
 schema, so recover with the guarded `prod-rollback` recipe below, which
 restores the retained pre-migration backup together with the image.
@@ -534,14 +529,6 @@ CONFIRM_PROD_ROLLBACK="$previous_commit:$backup" \
   just prod-rollback "$previous_commit" "$backup"
 ```
 
-For a `model-chatgpt-*` production profile, retain the narrowly scoped Codex
-credential mount during rollback:
-
-```bash
-CONFIRM_PROD_ROLLBACK="$previous_commit:$backup" \
-  just prod-rollback-codex "$previous_commit" "$backup"
-```
-
 The recipe verifies both retained images and that Prefect is idle, stops all
 writers, creates another retained backup of the failed state, validates and
 restores the selected archive into a fresh database, then starts the exact
@@ -583,179 +570,107 @@ same image, which is common for jobs images.
 
 ---
 
-## Deep Search Production Runtime
+## Jobs Production Runtime
 
-Deep Search runs _outside_ the Next.js app: a shared Prefect control plane plus a
-per-environment jobs runtime (jobs API + worker), all joined to the
-`besedy-internal` Docker network alongside production web. See
-[docker-container-topology.md](docker-container-topology.md) for the full
-container/network map. **Prefect is shared across environments; the jobs runtime
-is not** -- dev and prod each run their own, so a production job never routes
-through the development runtime.
+The runtime consists of a shared Prefect control plane, one jobs API per web
+environment, and a host worker for ingestion, removal and correction indexing.
+The production jobs API is immutable and hardened; it has no host configuration,
+audio, output or credential mounts. See [docker-container-topology.md](docker-container-topology.md).
 
-### Deploy Order
+### Deploy order
 
-1. **Web + jobs contract changes** -- use `just prod-deploy-with-jobs` (or the
-   `-codex` variant for `model-chatgpt-*`). See Production Deploy above. This
-   coordinated path is required whenever a worker request/response contract or
-   its authorization context changes; do not migrate web while an old worker
-   can still issue writes or internal requests.
-   Set `JOBS_API_BASE_URL=http://besedy-prod-jobs-api:8390` in the production web
-   env file so web calls the production jobs API by container name. Do **not**
-   use `besedy-jobs-api` (that DNS alias belongs to the dev runtime) or
-   `http://jobs-api:8390`: every jobs runtime on `besedy-internal` answers to the
-   Compose service name `jobs-api`, so it picks one of them at random. The
-   compose wrapper defaults each mode to its own runtime's container and refuses
-   both shared names as well as another environment's `besedy-<env>-jobs-api`.
-   Web joins `besedy-internal` on container
-   (re)creation via the compose `networks:` block -- under either `prod-up` or
-   `prod-deploy`; use `prod-deploy` for a release because it also rebuilds the
-   image and runs migrations, not because it is the only recipe that joins the
-   network. `prod-up`, `prod-deploy`, and `jobs-prod-up` create the external
-   `besedy-internal` network if it is missing.
-2. **Initial shared Prefect + production runtime setup:**
-
-   Before the first hardened deployment, create the output root and make it
-   writable by `JOBS_CONTAINER_UID:JOBS_CONTAINER_GID` (defaults `1000:1000`):
+1. Set `BESEDY_JOB_SERVICE_SECRET` in `jobs.env.prod` to the production web
+   value. Web must call `http://besedy-prod-jobs-api:8390`; the shared `jobs-api`
+   service alias and another environment's container are rejected by the web
+   wrapper. `besedy-jobs-api` is a development-only alias.
+2. Start the control plane and API:
 
    ```bash
-   install -d -m 0750 ~/.local/state/lukleh/besedy/deep-search
-   chown -R 1000:1000 ~/.local/state/lukleh/besedy/deep-search
-   ```
-
-   If production uses a `model-chatgpt-*` profile, set
-   `CODEX_HOST_AUTH_FILE` to an existing `auth.json` and use
-   `just jobs-prod-up-codex`; only that file is mounted into the worker.
-   OpenRouter/NVIDIA profiles should use the regular `jobs-prod-up`, which does
-   not expose Codex credentials at all.
-
-   ```bash
-   just prefect-up      # shared Prefect control plane (keep its Postgres volume)
-   just jobs-prod-up    # locked image build + hardened API/worker startup
-   # or, only for model-chatgpt-* profiles:
-   just jobs-prod-up-codex
-   ```
-
-   `jobs-prod-up` refuses a dirty Besedy worktree, labels the image with the
-   Besedy revision and build time, then starts both services with `--no-build`.
-   The image build packages the `rlmbenchy` commit pinned in `uv.lock`, so the
-   image's Besedy revision label also identifies its `rlmbenchy` commit. Take a
-   newer `rlmbenchy` with `just bump-rlmbenchy` and commit the lock change
-   before rebuilding. Running containers
-   therefore execute immutable packaged image code rather than a mutable
-   repository bind mount.
-
-   The Python dependency audit has one explicit accepted-risk exception:
-   `PYSEC-2026-2447` for DiskCache's pickle serialization. DSPy uses DiskCache
-   only in the worker-owned cache at `DSPY_CACHEDIR`; production places that
-   cache on the ephemeral, non-root `/tmp` filesystem. Remove the exception
-   when DiskCache publishes a fixed release.
-
-3. **Register the Prefect deployment:**
-
-   ```bash
+   just prefect-up
+   just jobs-prod-up
    just jobs-prod-deploy
    ```
 
-   Registers/refreshes the `besedy-deep-search-prod` work pool and the
-   `deep_search_flow/deep-search-prod` deployment (concurrency from
-   `PREFECT_DEEP_SEARCH_CONCURRENCY_LIMIT`). Use `just jobs-dev-deploy` for
-   development.
-4. **Host ingest worker:** after every web release, `just ingest-worker-deploy
-   <sha>` at the commit production web now runs (`/api/version`), so the host
-   flows and the web completion callback agree. It is a separate step because
-   the worker runs on the host from `~/worktrees/besedy/prod-ingest`, not from
-   a container image; see [recording-ingest.md](recording-ingest.md#host-worker).
+   The first command uses `jobs-service/.env.prefect.example` copied to the
+   resolved Prefect env path. The jobs image uses locked dependencies, refuses
+   a dirty source checkout, and records its source commit/build time in OCI
+   labels. Startup uses the built image and removes obsolete jobs containers.
+3. Registering deployments creates the `besedy-ingest-prod` pool and its
+   `ingest-prod`, `ingest-remove-prod` and `correction-index-prod` deployments.
+   They share `PREFECT_INGEST_CONCURRENCY_LIMIT` (default 1). Development/test
+   have their own pool and deployment names.
+4. Install or redeploy the host worker at the same web revision using
+   `just ingest-worker-deploy <sha>`; follow [recording-ingest.md](recording-ingest.md#host-worker).
 
-### Prefect Version and State
+### Retiring the report-generation runtime
 
-- **Version.** The server image is set by the default in
-  `jobs-service/docker-compose.prefect.yml`. It must match the `prefect==`
-  pin in `pyproject.toml`, which the jobs images and the host ingest worker
-  install from `uv.lock`. `tests/test_web_production_hardening.py` enforces
-  this. Leave `PREFECT_IMAGE` unset in `jobs.env.prefect`: a copied value
-  silently pins the old server at the next bump. `just prefect-up` and
-  `just prefect-status` run `scripts/check_prefect_server_version.sh`, which
-  resolves the image through `docker compose config` and fails with both
-  versions when it differs from the pin; `prefect-status` also compares the
-  running server and shows the real error when the container cannot be queried.
-  An image without a comparable `X.Y.Z[-pythonN.N]` tag (a digest, a mirror
-  tag, a prerelease) counts as drift too. Export
-  `BESEDY_ALLOW_PREFECT_VERSION_DRIFT=1` in the shell to run a deliberately
-  different server (the mismatch is then only a warning); every `just` recipe
-  that calls `prefect-up` needs it.
-- **Upgrading.** The server is shared, so first make sure no flow run of any
-  deployment is running or pending (Prefect UI, or the `flow_runs/filter` API);
-  `just jobs-prod-check-idle` covers only the production Deep Search
-  deployment. Stop every Prefect worker (dev, test and prod jobs, and the host
-  ingest worker). Then stop the old server with `just prefect-down` (named
-  volumes are kept) and start the new one with `just prefect-up`: the
-  `prefect-db-upgrade` service migrates the database, one-way, before the
-  server starts. After that, upgrade the clients
-  (`just jobs-<env>-rebuild && just jobs-<env>-deploy`, using the `-codex`
-  variants for `model-chatgpt-*` profiles), then restart the ingest worker.
-- **State is disposable.** The Prefect database holds only:
-  - Deep Search job records (query, owner, state, logs);
-  - deployments and work pools, which `just jobs-<env>-deploy` re-creates;
-  - ingest runs, whose outcome is also recorded in `recording_intake`.
+Before the removal release:
 
-  Neither it nor the deep-search output directory is backed up. Losing them
-  empties the Deep Search history, which is accepted. To recover, run
-  `just prefect-down`, drop the Prefect Postgres volume
-  (`${BESEDY_PREFECT_POSTGRES_VOLUME:-besedy_prefect_postgres}`), run
-  `just prefect-up`, then `just jobs-<env>-deploy` for each environment.
+1. In the Prefect UI, finish or explicitly cancel every queued/active run on the
+   old `besedy-deep-search-<env>` pools. The surviving jobs API intentionally
+   cannot inspect or cancel those retired job kinds.
+2. Stop each existing dedicated worker, for example
+   `docker stop besedy-prod-prefect-worker` for production (dev/test use their
+   own `besedy-dev-prefect-worker` / `besedy-test-prefect-worker` containers).
+   This is distinct from the host ingest worker, which remains required.
+3. Check the remaining ingest pool with `just jobs-prod-check-idle`. Deploy
+   web and the jobs API using the coordinated recipe, then redeploy the host
+   worker at the same revision.
+4. Startup uses `--remove-orphans` to remove the stopped dedicated worker from
+   each jobs project. In Prefect, remove the retired `deep_search_flow/deep-search-<env>`
+   deployments and their old pools only after their runs have finished/cancelled.
+   Keep the shared control plane, its external database volume and the
+   `besedy-ingest-<env>` pools with all three remaining deployments.
+
+Historical Prefect run records and old output directories are not deleted by
+this rollout. Archive any desired results separately; remove those directories
+only after the operator has confirmed they are no longer needed.
+
+Remove obsolete provider/profile/output/auth settings from the operator's jobs
+env files after upgrading them from the source examples. No operator secret or
+old artifact is edited automatically. Do not use the removed credential-overlay
+recipes. Rolling the application back to a pre-removal revision does not restore
+that retired worker through the new runtime definitions; restoration of the old
+feature would require its old runtime definitions as well.
+
+### Prefect version and state
+
+The server image default in `jobs-service/docker-compose.prefect.yml` must
+match the `prefect==` pin installed from `uv.lock`. Leave `PREFECT_IMAGE` unset
+unless intentionally selecting another version. `just prefect-up` and
+`just prefect-status` check the rendered version; the latter also checks the
+running server. `BESEDY_ALLOW_PREFECT_VERSION_DRIFT=1` permits an intentional
+mismatch with a warning.
+
+The control plane is shared: before upgrading it, verify all environments'
+pools are idle and stop their host workers. `jobs-prod-check-idle` checks only
+the production ingest pool. Stop the old server with `just prefect-down` and
+start the new version with `just prefect-up`; the one-shot database-upgrade
+service migrates its database first. Upgrade/redeploy the API images and host
+workers to matching client versions.
+
+Keep the external Prefect database volume. Besedy stores logical intake and
+publication state in its web database, but losing Prefect state also loses
+queued executions and attempt history. Recreating deployments does not replay
+those runs: reconcile affected intakes/publications through their documented
+recovery paths before accepting new work. Do not erase the control-plane volume
+as an ordinary recovery step.
 
 ### Verification
 
 ```bash
-# web + jobs health
 curl -s http://localhost:3000/api/health
-curl -s http://localhost:3000/api/version | jq   # shows the newly deployed commit
-
-# production containers share besedy-internal
-docker network inspect besedy-internal \
-  | jq -r '.[].Containers | to_entries[] | .value.Name'
-# expect: besedy-production-web, besedy-prod-jobs-api, besedy-prod-prefect-worker
-
-# web -> jobs API reachability (network only -- does NOT check web's configured
-# JOBS_API_BASE_URL; prod container names, besedy-jobs-api is the dev runtime)
+curl -s http://localhost:3000/api/version | jq
 docker exec besedy-production-web wget -qO- http://besedy-prod-jobs-api:8390/health
-
-# worker -> web
-docker exec besedy-prod-prefect-worker python -c \
-  "from urllib.request import urlopen; print(urlopen('http://besedy-production-web:3000/api/health', timeout=5).read().decode())"
-
-# image provenance and runtime hardening
-docker image inspect besedy-jobs:prod \
-  --format '{{.Id}} {{index .Config.Labels "org.opencontainers.image.revision"}}'
-docker inspect besedy-prod-prefect-worker \
+docker inspect besedy-prod-jobs-api \
   --format 'user={{.Config.User}} readonly={{.HostConfig.ReadonlyRootfs}} caps={{json .HostConfig.CapDrop}}'
+systemctl --user status besedy-ingest-worker
 ```
 
-Then submit one small Deep Search job through the UI and confirm a
-`<flow-run-id>` directory appears under the configured deep-search state dir
-(e.g. `~/.local/state/lukleh/besedy/deep-search/prod/`).
-
-### Rollback
-
-- Jobs failed while web is healthy: `just jobs-prod-down`. Deep Search goes
-  offline while the catalog web app and dev runtime keep running.
-- The Deep Search share table is additive -- do not drop it manually unless
-  there is a concrete data or availability problem.
-
-### Known Risks
-
-- **Wrong runtime.** Reusing the dev runtime for production routes prod jobs
-  through development (wrong web target and output env). Share Prefect, not the
-  runtime.
-- **Secret mismatch.** `BESEDY_JOB_SERVICE_SECRET` must match between web and the
-  jobs runtime; a mismatch breaks calls in **both** directions.
-- **Web not recreated.** If production web is not recreated after a release it
-  will not join `besedy-internal`, and the worker cannot reach it.
-- **Host ownership mismatch.** The worker is deliberately non-root. Its
-  `JOBS_CONTAINER_UID:JOBS_CONTAINER_GID` must own the deep-search state root;
-  do not restore root execution or broad capabilities to work around ownership.
-- Do not run `npm audit fix --force` as part of a rollout.
+Check the Prefect UI for a healthy worker on `besedy-ingest-prod`, then upload
+a short recording and verify its completed intake and playable recording.
+A service-secret mismatch breaks web submission or host callbacks; compare the
+web, jobs API and host-worker environment files for the same environment.
 
 ---
 
@@ -765,7 +680,7 @@ Admin uploads on `/admin/ingest` are processed by a Prefect worker running on
 the host (not in the hardened jobs containers). Full runbook:
 [recording-ingest.md](recording-ingest.md).
 
-Deploy additions on top of the Deep Search steps above:
+Deploy additions on top of the jobs runtime steps above:
 
 1. Web env file: set `UPLOADS_DIR` and `UPLOADS_GID`, prepare that directory as
    the shared group with mode `2770`, add the worker user to the group, and add

@@ -6,7 +6,6 @@ import os
 import re
 from collections.abc import Callable
 from http import HTTPStatus
-from pathlib import Path
 from typing import Any, TypeVar
 from urllib.parse import parse_qs, urlparse
 
@@ -17,17 +16,15 @@ from besedy.lib.http_server import JsonApiHandler
 from .client import PrefectJobsClient, RuntimePrefectJobsClient
 from .models import (
     CorrectionIndexSyncRequest,
-    DeepSearchSubmitRequest,
     IngestRemovalRequest,
     IngestSubmitRequest,
     JobKind,
     JobStatus,
     build_correction_index_flow_run_name,
     build_correction_index_flow_run_tags,
-    build_flow_run_name,
-    build_flow_run_tags,
     build_ingest_flow_run_name,
     build_ingest_flow_run_tags,
+    job_kind_from_tags,
     job_kind_tag,
     normalize_flow_run,
     normalize_flow_run_history,
@@ -37,7 +34,6 @@ from .models import (
 
 T = TypeVar("T")
 
-_SUBMIT_ROUTE = re.compile(r"^/catalogs/(?P<catalog_id>[^/]+)/deep-search/jobs$")
 _INGEST_SUBMIT_ROUTE = re.compile(r"^/catalogs/(?P<catalog_id>[^/]+)/ingest/jobs$")
 _INGEST_REMOVAL_ROUTE = re.compile(r"^/catalogs/(?P<catalog_id>[^/]+)/ingest/removals$")
 _CORRECTION_INDEX_ROUTE = re.compile(
@@ -55,22 +51,12 @@ class PrefectJobsApiService:
         self,
         *,
         client: PrefectJobsClient | None = None,
-        output_root_dir: Path | None = None,
-        deployment_name: str | None = None,
         ingest_deployment_name: str | None = None,
         ingest_remove_deployment_name: str | None = None,
         correction_index_deployment_name: str | None = None,
         prefect_ui_url: str | None = None,
     ) -> None:
         self._client = client or RuntimePrefectJobsClient()
-        self._output_root_dir = (
-            output_root_dir
-            or Path(os.getenv("DEEP_SEARCH_OUTPUT_DIR", "tmp/deep-search")).resolve()
-        )
-        self._deployment_name = deployment_name or os.getenv(
-            "PREFECT_DEEP_SEARCH_FULL_DEPLOYMENT_NAME",
-            "deep_search_flow/deep-search-default",
-        )
         self._ingest_deployment_name = ingest_deployment_name or os.getenv(
             "PREFECT_INGEST_FULL_DEPLOYMENT_NAME",
             "ingest_recording_flow/ingest-default",
@@ -90,22 +76,6 @@ class PrefectJobsApiService:
     def health(self) -> dict[str, Any]:
         return {"ready": True, "service": "jobs-api", "orchestrator": "prefect"}
 
-    def submit_deep_search(self, *, catalog_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        request = DeepSearchSubmitRequest.from_payload(payload)
-        parameters = request.to_flow_parameters(catalog_id=catalog_id)
-        flow_run = self._client.create_deployment_run(
-            deployment_name=self._deployment_name,
-            parameters=parameters,
-            flow_run_name=build_flow_run_name(catalog_id=catalog_id, query=request.query),
-            tags=build_flow_run_tags(
-                catalog_id=catalog_id,
-                requested_by_id=request.requested_by_id,
-                caller_scope=request.caller_scope or request.requested_by_id,
-            ),
-            idempotency_key=_string_or_none(payload.get("idempotencyKey")),
-        )
-        return normalize_flow_run(flow_run, output_root_dir=self._output_root_dir)
-
     def submit_ingest(self, *, catalog_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         request = IngestSubmitRequest.from_payload(payload)
         parameters = request.to_flow_parameters(catalog_id=catalog_id)
@@ -123,7 +93,7 @@ class PrefectJobsApiService:
             ),
             idempotency_key=f"ingest:{request.intake_id}",
         )
-        return normalize_flow_run(flow_run, output_root_dir=self._output_root_dir)
+        return normalize_flow_run(flow_run)
 
     def submit_ingest_removal(self, *, catalog_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         request = IngestRemovalRequest.from_payload(payload)
@@ -146,7 +116,7 @@ class PrefectJobsApiService:
                 f"ingest-remove:{request.intake_id}:{request.audio_hash}:{request.idempotency_key}"
             ),
         )
-        return normalize_flow_run(flow_run, output_root_dir=self._output_root_dir)
+        return normalize_flow_run(flow_run)
 
     def submit_correction_index_sync(
         self, *, catalog_id: str, payload: dict[str, Any]
@@ -169,11 +139,11 @@ class PrefectJobsApiService:
             ),
             idempotency_key=request.idempotency_key,
         )
-        return normalize_flow_run(flow_run, output_root_dir=self._output_root_dir)
+        return normalize_flow_run(flow_run)
 
     def list_jobs(self, *, raw_query: str) -> dict[str, Any]:
         params = parse_qs(raw_query, keep_blank_values=False)
-        kind = _parse_job_kind(_first_param(params, "kind")) or JobKind.DEEP_SEARCH
+        kind = _parse_job_kind(_first_param(params, "kind")) or JobKind.INGEST
         status = _parse_job_status(_first_param(params, "status"))
         catalog_id = _first_param(params, "catalogId")
         requested_by_id = _first_param(params, "requestedById")
@@ -189,7 +159,7 @@ class PrefectJobsApiService:
             tags.append(f"requested-by:{sanitize_tag_value(requested_by_id)}")
 
         jobs = [
-            normalize_flow_run(flow_run, output_root_dir=self._output_root_dir)
+            normalize_flow_run(flow_run)
             for flow_run in self._client.read_flow_runs(
                 tags=tags,
                 limit=limit,
@@ -197,27 +167,28 @@ class PrefectJobsApiService:
                 if status is not None
                 else None,
             )
+            if job_kind_from_tags(getattr(flow_run, "tags", None)) == kind
         ]
-        jobs = [job for job in jobs if job["kind"] == kind.value]
         return {"jobs": jobs}
 
     def get_job(self, *, job_id: str) -> dict[str, Any]:
         flow_run = _not_found_as_404(lambda: self._client.read_flow_run(flow_run_id=job_id))
-        return normalize_flow_run(flow_run, output_root_dir=self._output_root_dir)
+        return normalize_flow_run(flow_run)
 
     def get_history(self, *, job_id: str) -> dict[str, Any]:
+        self.get_job(job_id=job_id)
         states = _not_found_as_404(lambda: self._client.read_flow_run_states(flow_run_id=job_id))
         return normalize_flow_run_history(
             flow_run_id=job_id,
             states=states,
-            output_root_dir=self._output_root_dir,
             prefect_ui_url=self._prefect_ui_url,
         )
 
     def cancel_job(self, *, job_id: str) -> dict[str, Any]:
+        self.get_job(job_id=job_id)
         _not_found_as_404(lambda: self._client.cancel_flow_run(flow_run_id=job_id))
         flow_run = _not_found_as_404(lambda: self._client.read_flow_run(flow_run_id=job_id))
-        return normalize_flow_run(flow_run, output_root_dir=self._output_root_dir)
+        return normalize_flow_run(flow_run)
 
 
 def create_handler(service: PrefectJobsApiService):
@@ -258,16 +229,6 @@ def create_handler(service: PrefectJobsApiService):
             parsed = urlparse(self.path)
             if not self._authorize_non_health():
                 return
-            submit_match = _SUBMIT_ROUTE.match(parsed.path)
-            if submit_match is not None:
-                self._dispatch_json(
-                    lambda: service.submit_deep_search(
-                        catalog_id=submit_match.group("catalog_id"),
-                        payload=self._read_json_payload(),
-                    )
-                )
-                return
-
             ingest_match = _INGEST_SUBMIT_ROUTE.match(parsed.path)
             if ingest_match is not None:
                 self._dispatch_json(
@@ -340,10 +301,3 @@ def _parse_job_status(value: str | None) -> JobStatus | None:
         return JobStatus(value)
     except ValueError as exc:
         raise ValueError(f"Unsupported status: {value}") from exc
-
-
-def _string_or_none(value: Any) -> str | None:
-    if value is None:
-        return None
-    rendered = str(value).strip()
-    return rendered or None

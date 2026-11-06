@@ -32,7 +32,6 @@ describe("event artwork access", () => {
       userId: "listener-1",
       catalogGrant,
       policyContext: {
-        featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
         catalogGrant,
@@ -63,7 +62,6 @@ describe("event artwork access", () => {
       userId: "listener-1",
       catalogGrant,
       policyContext: {
-        featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
         catalogGrant,
@@ -83,7 +81,6 @@ describe("event artwork access", () => {
       userId: "owner-1",
       catalogGrant,
       policyContext: {
-        featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
         catalogGrant,

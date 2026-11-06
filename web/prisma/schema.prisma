@@ -146,12 +146,6 @@ model User {
   catalogEventArtworkCreated    CatalogEventArtwork[]            @relation("CatalogEventArtworkCreatedBy")
   /// Event artwork publications performed by this user
   eventArtworkPublications      CatalogEventArtworkPublication[] @relation("CatalogEventArtworkPublishedBy")
-  /// Deep-search jobs owned by this user and shared with others
-  deepSearchSharesOwned         DeepSearchJobShare[]             @relation("DeepSearchJobShareOwner")
-  /// Deep-search jobs shared with this user
-  deepSearchSharesReceived      DeepSearchJobShare[]             @relation("DeepSearchJobShareRecipient")
-  /// Deep-search shares created by this user
-  deepSearchSharesCreated       DeepSearchJobShare[]             @relation("DeepSearchJobShareCreator")
   /// Per-recording listening progress for this user
   recordingPlaybackProgress     RecordingPlaybackProgress[]
   /// Timestamps this user bookmarked in recordings
@@ -592,8 +586,6 @@ model WorkflowGroup {
   catalogEvents            CatalogEvent[]
   /// Event-to-recording assignments
   catalogEventRecordings   CatalogEventRecording[]
-  /// Deep-search job shares scoped to this catalog
-  deepSearchJobShares      DeepSearchJobShare[]
   /// Correction workspaces for recordings in this catalog
   transcriptWorkspaces     TranscriptWorkspace[]
   /// Correction guide revisions for this catalog
@@ -645,32 +637,6 @@ model RecordingIntake {
   @@index([workflowGroupId, status])
   @@index([createdAt])
   @@map("recording_intake")
-}
-
-// ============================================================================
-// Deep Search Job Sharing
-// ============================================================================
-
-/// Web-side read-only sharing grants for Prefect-backed deep-search jobs.
-model DeepSearchJobShare {
-  id               String   @id @default(cuid())
-  jobId            String   @map("job_id") @db.Uuid
-  catalogId        String   @map("catalog_id") @db.VarChar(15)
-  ownerUserId      String   @map("owner_user_id")
-  sharedWithUserId String   @map("shared_with_user_id")
-  sharedByUserId   String?  @map("shared_by_user_id")
-  createdAt        DateTime @default(now()) @map("created_at")
-
-  catalog        WorkflowGroup @relation(fields: [catalogId], references: [id], onDelete: Cascade)
-  ownerUser      User          @relation("DeepSearchJobShareOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  sharedWithUser User          @relation("DeepSearchJobShareRecipient", fields: [sharedWithUserId], references: [id], onDelete: Cascade)
-  sharedByUser   User?         @relation("DeepSearchJobShareCreator", fields: [sharedByUserId], references: [id], onDelete: SetNull)
-
-  @@unique([jobId, sharedWithUserId])
-  @@index([catalogId, sharedWithUserId])
-  @@index([ownerUserId])
-  @@index([sharedByUserId])
-  @@map("deep_search_job_shares")
 }
 
 // ============================================================================

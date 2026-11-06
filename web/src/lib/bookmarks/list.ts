@@ -5,10 +5,6 @@ import {
   resolveReadableEventIds,
   resolveReadableRecordingHashes,
 } from "@/lib/catalog-events/read-service";
-import {
-  buildCatalogFeaturesResponse,
-  getLabsPreferenceForUser,
-} from "@/lib/features/capabilities";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 import {
   bookmarkSelect,
@@ -87,7 +83,6 @@ async function loadReadableRecordings(
   catalogId: string,
   catalogLabel: string | null,
   hashes: string[],
-  labsEnabled: boolean,
 ): Promise<Map<string, BookmarkRecording>> {
   const capability = await getCatalogCapability(catalogId, userId);
   if (!capability.catalogExists || !capability.canViewCatalog) return new Map();
@@ -97,17 +92,9 @@ async function loadReadableRecordings(
   ];
   if (readable.length === 0) return new Map();
 
-  const features = buildCatalogFeaturesResponse(
-    capability.catalogGrant,
-    labsEnabled,
-    capability.isCatalogAdmin,
-    { catalogExists: capability.catalogExists, canEnterPortal: capability.canEnterPortal },
-  ).features;
   const [{ entryByHash, metadataByHash }, primaryAssignments] = await Promise.all([
     loadRecordingHeadings(catalogId, readable),
-    features.events.canView
-      ? loadPrimaryEvents(catalogId, capability.catalogGrant, readable)
-      : Promise.resolve([]),
+    loadPrimaryEvents(catalogId, capability.catalogGrant, readable),
   ]);
   const eventByHash = new Map(primaryAssignments.map((row) => [row.audioHash, row.event]));
 
@@ -160,7 +147,6 @@ export async function listUserBookmarks(userId: string): Promise<UserBookmark[]>
     catalogs.set(row.workflowGroupId, catalog);
   }
 
-  const { enabled: labsEnabled } = await getLabsPreferenceForUser(userId);
   const readableByCatalog = new Map(
     await Promise.all(
       [...catalogs].map(
@@ -172,7 +158,6 @@ export async function listUserBookmarks(userId: string): Promise<UserBookmark[]>
               catalogId,
               catalog.label,
               [...new Set(catalog.rows.map((row) => row.audioHash))],
-              labsEnabled,
             ),
           ] as const,
       ),

@@ -24,8 +24,7 @@ Three concrete requirements cannot be expressed on that shape:
 The current shape also produces effects nobody chose. `canUseCatalogTabSwitcher`
 requires event-edit rights, so every level below OWNER is locked to the events
 view with no path to the recordings list. The bulk transcript export applies no
-per-recording publication scoping. The deep-search worker searches with
-`accessLevel: null`.
+per-recording publication scoping.
 
 ## Decision
 
@@ -72,7 +71,7 @@ spreading it across every caller.
 
 ### Roles are named permission sets
 
-Roles are defined in code, the way feature rollouts already are. An account
+Roles and their permission mappings are defined in code. An account
 stores a role name per catalog, not an expanded set. Adding a role is a commit,
 not a migration and not a runtime editor.
 
@@ -316,7 +315,6 @@ than taken, which is what makes the role name worth reading.
 | Permission           | Covers                                                                                                                                   |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `search_transcripts` | Semantic and lexical search over every transcript in the catalog, published or not. Unlike `read_transcripts` it is not gated on transcript publication. |
-| `use_deep_search`    | Running and reading deep-search jobs. Per-job sharing stays a property of the job.                                                       |
 
 ### Curated metadata
 
@@ -406,7 +404,7 @@ same authority. A `catalogAdmin` still changes the label from the settings page.
 | `reader`        | čtenář       | + `read_transcripts`, `search_transcripts`                                                                                                                                                                                                                                                                                                                                                        |
 | `corrector`     | korektor     | `reader` + `correct_transcripts`                                                                                                                                                                                                                                                                                                                                                                  |
 | `host`          | hostitel     | `reader` + `manage_access`                                                                                                                                                                                                                                                                                                                                                                        |
-| `curator`       | redaktor     | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `publish_event_posters`, `manage_event_sources`, `use_deep_search`, and the file-delivery permissions |
+| `curator`       | redaktor     | `see_unreleased`, `browse_recordings`, `stream_audio`, `read_transcripts`, `search_transcripts`, `correct_transcripts`, `publish_transcript`, `edit_metadata`, `batch_edit_metadata`, `manage_lookups`, `publish_recording`, `manage_events`, `release_events`, `manage_event_posters`, `publish_event_posters`, `manage_event_sources`, and the file-delivery permissions |
 | `catalog_admin` | catalogAdmin | wildcard, including `see_transcript_variants`, `see_speakers` and `manage_catalog_config`                                                                                                                                                                                                                                                                                                         |
 
 Every role below `curator` sees released events and published recordings only,
@@ -445,10 +443,8 @@ start empty.
 - `requiresReadyRecordingScope` and `requiresReleasedEventVisibilityScope` test
   equality against `LISTENER`. They must become `see_unreleased` checks before
   any new role is introduced, or the new role silently gains full visibility.
-- The bulk export path and the deep-search worker currently bypass publication
-  scoping. The export is covered by the delivery rule above, which scopes it to
-  what the account can read; the worker has to consult `see_unreleased` like
-  every other read.
+- The bulk export path must apply publication scoping. The delivery rule above
+  scopes it to what the account can read.
 - The recording page's "download original audio" item moves behind the
   `catalogAdmin` wildcard, and the transcript download route gains a variant
   parameter for the pre-correction text.
@@ -483,7 +479,7 @@ start empty.
   reaches the catalog through `isCatalogAdmin`. As `host` the two of them keep
   listening, reading, searching and managing access, and give up unreleased
   visibility, event management and release, recording publication, metadata
-  editing, posters, sources, deep search, the diarization overlay, audio
+  editing, posters, sources, the diarization overlay, audio
   downloads and the settings page. That is acceptable because it is not what
   they do: in practice they add users and occasionally download a transcript,
   and the transcript download they keep, as an extra. The role finally describes

@@ -85,8 +85,6 @@ describe("catalog route state helpers", () => {
     ["/settings", "/catalog"],
     ["/bookmarks", "/catalog"],
     ["/catalog/c1/settings", "/catalog/c1"],
-    ["/catalog/c1/deep-search", "/catalog/c1"],
-    ["/catalog/c1/deep-search/job-1", "/catalog/c1/deep-search"],
     ["/catalog/c1/events/unassigned", "/catalog/c1?tab=events"],
     ["/catalog/c1/event/7/artwork", "/catalog/c1/event/7"],
     ["/catalog/c1/recording/hash123/correction", "/catalog/c1/correction"],

@@ -216,7 +216,7 @@ describe("proxy security controls", () => {
     const { proxy } = await import("@/proxy");
 
     const request = new NextRequest(
-      "http://localhost/auth/signin?callbackUrl=%2Flabs&state=state_not_found&error=access_denied"
+      "http://localhost/auth/signin?callbackUrl=%2Fsettings&state=state_not_found&error=access_denied"
     );
     const response = await proxy(request);
 
@@ -281,17 +281,17 @@ describe("proxy security controls", () => {
     });
   });
 
-  it("allows authorized internal deep-search service mutations without browser origin", async () => {
+  it("allows authorized internal correction-index callbacks without browser origin", async () => {
     process.env.BESEDY_JOB_SERVICE_SECRET = "test-job-secret";
     const { proxy } = await import("@/proxy");
 
-    const request = new NextRequest("http://localhost/api/internal/deep-search/search", {
+    const request = new NextRequest("http://localhost/api/internal/correction/index-sync/complete", {
       method: "POST",
       headers: {
         authorization: "Bearer test-job-secret",
         "content-type": "application/json",
       },
-      body: JSON.stringify({ catalogId: "catalog-1", query: "brno" }),
+      body: JSON.stringify({ publicationId: "publication-1", status: "SUCCEEDED" }),
     });
 
     const response = await proxy(request);
@@ -341,17 +341,17 @@ describe("proxy security controls", () => {
     expect(response.status).toBe(403);
   });
 
-  it("rejects unauthenticated internal deep-search service mutations without browser origin", async () => {
+  it("rejects unauthenticated internal correction-index callbacks without browser origin", async () => {
     process.env.BESEDY_JOB_SERVICE_SECRET = "test-job-secret";
     const { proxy } = await import("@/proxy");
 
-    const request = new NextRequest("http://localhost/api/internal/deep-search/search", {
+    const request = new NextRequest("http://localhost/api/internal/correction/index-sync/complete", {
       method: "POST",
       headers: {
         authorization: "Bearer wrong-secret",
         "content-type": "application/json",
       },
-      body: JSON.stringify({ catalogId: "catalog-1", query: "brno" }),
+      body: JSON.stringify({ publicationId: "publication-1", status: "SUCCEEDED" }),
     });
 
     const response = await proxy(request);

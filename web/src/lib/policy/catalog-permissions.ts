@@ -29,7 +29,6 @@ export type CatalogPermission =
   | "manage_event_artwork"
   | "publish_event_artwork"
   | "manage_event_sources"
-  | "use_deep_search"
   | "manage_access"
   | "manage_catalog_config"
   // Asked about by no gate yet; see the note above.
@@ -63,7 +62,6 @@ export const CATALOG_ROLES = [
  */
 export const GRANTABLE_EXTRA_PERMISSIONS = [
   "browse_recordings",
-  "use_deep_search",
   "download_audio",
   "download_original_audio",
   "download_transcripts",
@@ -101,7 +99,6 @@ const EVERY_PERMISSION: Record<CatalogPermission, true> = {
   manage_event_artwork: true,
   publish_event_artwork: true,
   manage_event_sources: true,
-  use_deep_search: true,
   manage_access: true,
   manage_catalog_config: true,
   correct_transcripts: true,
@@ -178,7 +175,6 @@ export const ROLE_PERMISSIONS: Record<
     "manage_event_artwork",
     "publish_event_artwork",
     "manage_event_sources",
-    "use_deep_search",
     "download_audio",
     "download_transcripts",
     "download_original_transcript",

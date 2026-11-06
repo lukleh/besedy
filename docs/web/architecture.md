@@ -254,7 +254,6 @@ See [recording-ingest.md](recording-ingest.md) for the end-to-end flow.
 |--------|----------|--------|-------------|
 | * | `/api/auth/*` | Public | Better Auth (session, signin, callback) |
 | GET/PATCH | `/api/preferences` | Auth | Get/update preferences |
-| GET/PUT | `/api/preferences/labs` | Auth | Besedy Labs toggle |
 | GET | `/api/me/permissions` | Auth | Current user's permission flags |
 | GET | `/api/health` | Public | Health check |
 | GET | `/api/version` | Public | Build version and commit info |
@@ -271,7 +270,7 @@ call it. Endpoints not listed above:
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
 | GET | `/api/catalogs/:id/capability` | Lightweight capability flags for navigation |
-| GET | `/api/catalogs/:id/features` | Feature (Labs) capabilities for the caller in this catalog |
+| GET | `/api/catalogs/:id/features` | Event and recording capabilities for the caller in this catalog |
 | GET | `/api/catalogs/:id/status` | `lastModifiedAt` and entry count for change detection |
 | GET | `/api/catalogs/:id/users` | User search for the access-grant dialog |
 | GET | `/api/catalogs/:id/random-event` | Event shown in the radio banner |
@@ -280,15 +279,10 @@ call it. Endpoints not listed above:
 | PATCH | `/api/catalogs/:id/recordings/:hash/ready` | Manual publication toggle (`publish_recording`) |
 | POST | `/api/catalogs/:id/events/from-recording` | Create an event from a recording |
 | GET | `/api/catalogs/:id/recordings/:hash/transcript/compare` | All transcript lanes for timeline comparison |
-| GET/POST | `/api/catalogs/:id/deep-search/jobs` | List and start deep-search jobs |
-| GET | `/api/catalogs/:id/deep-search/jobs/:jobId` | Job status; `/history`, `/result.pdf` and `/share-users` sit below it |
-| POST | `/api/catalogs/:id/deep-search/jobs/:jobId/cancel` | Cancel a job |
-| GET/POST | `/api/catalogs/:id/deep-search/jobs/:jobId/shares` | List and add job shares; `DELETE …/shares/:userId` removes one |
 | GET | `/api/catalogs/:id/events/:eventId/artwork` | The event's published artwork (WebP copy; the stored original when no copy exists) |
 | GET/POST | `/api/catalogs/:id/events/:eventId/artworks` | List and add artwork candidates; `…/artworks/:artworkId` (DELETE) and `…/image` (GET; `?size=original` for the stored original) sit below it |
 | PUT/DELETE | `/api/catalogs/:id/events/:eventId/artwork-publication` | Publish or unpublish artwork |
 | GET/POST | `/api/mcp` | MCP server endpoint (when MCP is enabled) |
-| POST | `/api/internal/deep-search/{search,citation,metadata}` | Service-to-service calls from the jobs runtime (bearer secret) |
 | GET/PATCH | `/api/notifications` | Event notifications; `/api/notifications/subscribe` (POST/DELETE) manages push subscriptions |
 | GET | `/api/auth-complete/session` | Whether the caller is signed in, during the sign-in handoff |
 | POST | `/api/web-update-events` | Web update banner events |
@@ -310,50 +304,14 @@ call it. Endpoints not listed above:
 
 Endpoints return `{ "error": "Human-readable message" }`. Some include additional fields; there is no single global error envelope.
 
-## Labs Feature Gating
+## Catalog Capabilities
 
-Features can be gated behind the Besedy Labs toggle using a three-layer model: rollout registry, capability evaluation, and API guards.
-
-### Rollout Modes
-
-| Mode | Effect |
-|------|--------|
-| `off` | Feature disabled for all users |
-| `labs` | Available only to users with Labs enabled |
-| `public` | Available to all users who pass authorization checks |
-
-### Key Files
-
-| Component | File |
-|-----------|------|
-| Rollout registry | `src/lib/features/rollout.ts` |
-| Capability types | `src/lib/features/types.ts` |
-| Capability evaluation | `src/lib/features/capabilities.ts` |
-| Per-user Labs preference API | `src/app/api/preferences/labs/route.ts` |
-| Per-catalog features API | `src/app/api/catalogs/[id]/features/route.ts` |
-| Catalog features hook | `src/hooks/use-catalog-features.ts` |
-
-### Gating Checklist
-
-1. Add feature to `FeatureKey` and `FEATURE_ROLLOUT` in `rollout.ts` (start with `"labs"`).
-2. Add capability fields in `types.ts`, compute `canView`/`canEdit` in `capabilities.ts`.
-3. Expose capabilities via `GET /api/catalogs/:id/features` (or dedicated endpoint).
-4. Gate UI: hide tabs/buttons when `canView` is false, redirect on direct URL access.
-5. Add API guard helper and use in every feature endpoint. Never rely on client-side hiding alone.
-6. Invalidate related query keys after Labs toggle.
-7. Add unit tests for capability logic, route tests for guards, E2E tests for visibility.
-
-### Release / Kill Switch
-
-- **Release:** change rollout mode from `"labs"` to `"public"` -- keep authorization and API guards unchanged.
-- **Kill switch:** set rollout mode to `"off"` and deploy.
-
-### Rules
-
-1. Labs is not a replacement for role/catalog authorization.
-2. API guards must exist even when UI is hidden.
-3. Rollout decision and authorization decision stay separate in code.
-4. Feature release should be a rollout config change, not a permission model rewrite.
+`src/lib/features/capabilities.ts` computes event and recording capabilities
+from the active catalog, the caller's grant, and administrative access.
+`GET /api/catalogs/:id/features` exposes those flags to navigation through
+`src/hooks/use-catalog-features.ts`. Route handlers independently enforce the
+same catalog permissions and publication visibility; hiding a button is never
+an authorization check.
 
 ## Routes & Access
 

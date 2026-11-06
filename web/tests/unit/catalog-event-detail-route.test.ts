@@ -115,7 +115,6 @@ describe("catalog event detail route", () => {
       userId: "owner-1",
       catalogGrant: grantForRole("curator"),
       policyContext: {
-        featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
         catalogGrant: grantForRole("curator"),
@@ -272,7 +271,6 @@ describe("catalog event detail route", () => {
       userId: "listener-1",
       catalogGrant: grantForRole("listener"),
       policyContext: {
-        featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
         catalogGrant: grantForRole("listener"),
@@ -295,7 +293,6 @@ describe("catalog event detail route", () => {
       userId: "listener-1",
       catalogGrant: grantForRole("listener"),
       policyContext: {
-        featureEnabled: true,
         catalogExists: true,
         canEnterPortal: true,
         catalogGrant: grantForRole("listener"),

@@ -7,20 +7,12 @@ import type { CatalogFeaturesResponse } from "@/lib/features/types";
 import { FIVE_MINUTE_QUERY_PROFILE } from "@/lib/query/profiles";
 
 const featureCapabilitySchema = z.object({
-  rollout: z.enum(["off", "labs", "public"]),
-  enabled: z.boolean(),
   canView: z.boolean(),
   canEdit: z.boolean(),
   showTabs: z.boolean(),
   showAllColumns: z.boolean(),
   showReleaseState: z.boolean(),
   canUseRagSearch: z.boolean().optional().default(false),
-});
-
-const deepSearchFeatureCapabilitySchema = z.object({
-  rollout: z.enum(["off", "labs", "public"]),
-  enabled: z.boolean(),
-  canView: z.boolean(),
 });
 
 const recordingsCapabilitySchema = z.object({
@@ -31,10 +23,8 @@ const recordingsCapabilitySchema = z.object({
 });
 
 export const catalogFeaturesResponseSchema = z.object({
-  labsEnabled: z.boolean(),
   features: z.object({
     events: featureCapabilitySchema,
-    deepSearch: deepSearchFeatureCapabilitySchema,
     recordings: recordingsCapabilitySchema.optional().default({ canBrowse: false }),
   }),
 });

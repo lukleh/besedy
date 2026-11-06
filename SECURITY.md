@@ -50,7 +50,7 @@ branches. Only the current `main` receives security fixes; there are no backport
 
 ## Accepted Dependency Advisories
 
-Three upstream advisories are currently accepted with narrow threat models:
+Two upstream advisories are currently accepted with narrow threat models:
 
 - **`brace-expansion` — `GHSA-mh99-v99m-4gvg` (high).** This denial-of-service
   advisory is reachable only through development-time ESLint dependencies.
@@ -69,11 +69,6 @@ Three upstream advisories are currently accepted with narrow threat models:
   release exists. CI allows this advisory on any path, because the
   `next-intl` path is not dev-only. Remove the exception when upstream
   publishes a fix.
-- **`diskcache` — `GHSA-w8v5-vhqr-4h9v` (moderate).** DSPy uses DiskCache only
-  as a worker-owned cache. Production places it on an ephemeral, non-root
-  `/tmp` filesystem, so replacing its pickle files already requires control of
-  the worker UID. No patched DiskCache release exists. Remove the exception
-  when upstream publishes a fix.
 
 These exceptions are documented in CI next to the audit commands so dependency
 updates cannot silently broaden them.

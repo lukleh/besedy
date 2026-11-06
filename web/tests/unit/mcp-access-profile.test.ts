@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getMcpAccessProfile } from '@/lib/mcp/access-profile';
 import { listUserCatalogAccessEntries } from '@/lib/access/catalog-access-queries';
-import { getUserFeaturePreferences } from '@/lib/features/capabilities';
 import { resolvePortalActorContext } from '@/lib/policy/actor';
 
 vi.mock('@/lib/access/catalog-access-queries', () => ({
@@ -12,25 +11,17 @@ vi.mock('@/lib/policy/actor', () => ({
   resolvePortalActorContext: vi.fn(),
 }));
 
-vi.mock('@/lib/features/capabilities', async () => {
-  const actual = await vi.importActual<
-    typeof import('@/lib/features/capabilities')
-  >('@/lib/features/capabilities');
-  return {
-    ...actual,
-    getUserFeaturePreferences: vi.fn(),
-  };
-});
-
 vi.mock('@/lib/db', () => ({
   default: {
     workflowGroup: { findMany: vi.fn() },
+    userPreferences: { findUnique: vi.fn() },
   },
 }));
 
 describe('MCP access profile', () => {
   let prisma: {
     workflowGroup: { findMany: ReturnType<typeof vi.fn> };
+    userPreferences: { findUnique: ReturnType<typeof vi.fn> };
   };
 
   beforeEach(async () => {
@@ -47,12 +38,8 @@ describe('MCP access profile', () => {
       { catalogId: 'catalog-listener' },
       { catalogId: 'catalog-viewer' },
     ]);
-    vi.mocked(getUserFeaturePreferences).mockResolvedValue({
+    prisma.userPreferences.findUnique.mockResolvedValue({
       activeGroupId: 'catalog-viewer',
-      labsPreference: {
-        enabled: false,
-        updatedAt: null,
-      },
     });
     prisma.workflowGroup.findMany.mockResolvedValue([
       { id: 'catalog-listener', label: 'Listener', isDefault: true },
@@ -141,7 +128,7 @@ describe('MCP access profile', () => {
     ).rejects.toThrow(
       'MCP access profile actor does not match the requested user',
     );
-    expect(getUserFeaturePreferences).not.toHaveBeenCalled();
+    expect(prisma.userPreferences.findUnique).not.toHaveBeenCalled();
   });
 
   it('keeps catalog admin discovery while applying listener visibility', async () => {
