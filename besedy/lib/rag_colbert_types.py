@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -50,6 +50,7 @@ class ColbertIndexResult:
     hashes_failed: int = 0
     chunks_inserted: int = 0
     chunks_deleted: int = 0
+    phase_timings_seconds: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

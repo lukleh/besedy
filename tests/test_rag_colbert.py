@@ -609,12 +609,33 @@ def test_handle_rag_colbert_index_reports_unresolvable_default_backend(
         group="wg-unresolvable-backend",
         model="test/colbert",
         runtime="docker",
+        json=True,
     )
 
     assert handle_rag_colbert_index(request) == 1
-    stderr = capsys.readouterr().err
-    assert "cannot resolve a default backend key" in stderr
-    assert "Pass --backend explicitly" in stderr
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "cannot resolve a default backend key" in captured.err
+    assert "Pass --backend explicitly" in captured.err
+
+
+def test_handle_rag_colbert_index_does_not_emit_json_success_when_sync_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fail_sync(**kwargs):
+        raise RuntimeError("index worker failed")
+
+    monkeypatch.setattr(
+        "besedy.commands.catalog.rag_colbert_index.sync_colbert_index", fail_sync
+    )
+    request = RagColbertIndexRequest(
+        group="wg-failed-sync", backend="faster-whisper/test", model="test/colbert", json=True
+    )
+
+    with pytest.raises(RuntimeError, match="index worker failed"):
+        handle_rag_colbert_index(request)
+
+    assert capsys.readouterr().out == ""
 
 
 def test_handle_rag_colbert_index_keeps_explicit_backend_key(
@@ -2001,6 +2022,7 @@ def test_index_meta_written_with_the_retired_use_faiss_key_still_loads() -> None
     assert result.workflow_group_id == "wg-123"
     assert result.index_bsize == 32
     assert not hasattr(result, "use_faiss")
+    assert result.phase_timings_seconds == {}
 
 
 def test_docker_one_shot_ensures_the_shared_network_first(monkeypatch: pytest.MonkeyPatch) -> None:

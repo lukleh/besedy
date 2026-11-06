@@ -171,6 +171,101 @@ def test_sync_colbert_index_skips_unchanged_scope_without_worker_mutations(
     assert fake_colbert_worker == []
 
 
+@pytest.mark.parametrize("mode", ["bootstrap", "noop", "incremental", "rebuild"])
+def test_sync_json_reports_elapsed_and_executed_phase_timings(
+    tmp_path: Path, fake_colbert_worker, monkeypatch: pytest.MonkeyPatch, capsys, mode: str
+) -> None:
+    from types import SimpleNamespace
+
+    from besedy.commands.catalog import rag_colbert_index as command
+
+    transcripts_root = tmp_path / "transcripts_20260206_120010"
+    backend = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
+    audio_hash = "a" * 64
+    transcript = transcripts_root / backend / audio_hash / "transcript.json"
+    _write_transcript(transcript, [{"start": 0.0, "end": 1.0, "text": "original text"}])
+    request = command.RagColbertIndexRequest(
+        group="wg-timings",
+        backend=backend,
+        transcripts_root=transcripts_root,
+        index_dir=tmp_path / "bundle",
+        model="jinaai/jina-colbert-v2",
+        runtime="docker",
+        rebuild=mode == "rebuild",
+        json=True,
+    )
+    if mode != "bootstrap":
+        sync_colbert_index(
+            workflow_group_id="wg-timings",
+            backend_key=backend,
+            transcripts_root=transcripts_root,
+            index_dir=request.index_dir,
+        )
+    if mode == "incremental":
+        _write_transcript(transcript, [{"start": 0.0, "end": 1.0, "text": "updated text"}])
+
+    elapsed = [0.0]
+    clock = SimpleNamespace(perf_counter=lambda: elapsed[0])
+    monkeypatch.setattr(rag_colbert, "time", clock)
+    monkeypatch.setattr(command, "time", clock)
+    original_lock = rag_colbert._colbert_scope_lock
+
+    @contextmanager
+    def lock_with_wait(path):
+        with original_lock(path):
+            elapsed[0] += 7.0
+            yield
+
+    monkeypatch.setattr(rag_colbert, "_colbert_scope_lock", lock_with_wait)
+
+    def delayed(function, seconds):
+        def call(**kwargs):
+            result = function(**kwargs)
+            elapsed[0] += seconds
+            return result
+
+        return call
+
+    for name, seconds in (
+        ("discover_transcript_sources", 1.0),
+        ("_copy_bundle_to_staging", 2.0),
+        ("_cutover_staged_bundle", 5.0),
+    ):
+        monkeypatch.setattr(rag_colbert, name, delayed(getattr(rag_colbert, name), seconds))
+    original_worker = rag_colbert._run_colbert_worker
+
+    def worker(**kwargs):
+        result = original_worker(**kwargs)
+        elapsed[0] += {
+            "build-index": 5.0,
+            "add-to-index": 3.0,
+            "delete-from-index": 3.0,
+            "audit-tokens": 4.0,
+        }[kwargs["command"]]
+        return result
+
+    monkeypatch.setattr(rag_colbert, "_run_colbert_worker", worker)
+
+    assert command.handle_rag_colbert_index(request) == 0
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert captured.err == ""
+    assert payload["index_dir"] == str(request.index_dir)
+    assert payload["hashes_discovered"] == 1
+    expected = {"discovery": 1.0}
+    if mode in ("bootstrap", "rebuild"):
+        expected["full_rebuild"] = 6.0
+    elif mode == "incremental":
+        expected.update(bundle_copy=2.0, index_update=6.0, token_audit=4.0, activation=5.0)
+    assert payload["phase_timings_seconds"] == expected
+    assert payload["elapsed_seconds"] == sum(expected.values()) + 7.0
+    # Timings describe this invocation; a subsequent no-op must not inherit them.
+    meta = json.loads((request.index_dir / "index_meta.json").read_text())
+    assert "phase_timings_seconds" not in meta
+    assert "elapsed_seconds" not in meta
+
+
 def test_sync_colbert_index_updates_one_audio_hash_incrementally(
     tmp_path: Path,
     fake_colbert_worker,

@@ -221,9 +221,16 @@ def handle_rag_colbert_index(
             None if request.json else lambda message: print(message, file=sys.stderr, flush=True)
         ),
     )
+    elapsed_seconds = time.perf_counter() - command_started_at
 
     if request.json:
-        print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {**asdict(result), "elapsed_seconds": elapsed_seconds},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return 0
 
     print("RAG ColBERT index complete")
@@ -269,7 +276,7 @@ def handle_rag_colbert_index(
         "  overflow_chunks: "
         f"{result.token_audit.overflow_count} ({result.token_audit.overflow_fraction:.1%})"
     )
-    print(f"  total_time: {_format_elapsed(time.perf_counter() - command_started_at)}")
+    print(f"  total_time: {_format_elapsed(elapsed_seconds)}")
     return 0
 
 

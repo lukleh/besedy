@@ -254,6 +254,16 @@ One sync at a time per `(workflow_group_id, backend_key, colbert_model)`. A mode
 
 Sync output reports: hashes discovered, added, updated, removed, unchanged, failed; chunks inserted and deleted; sync mode (`incremental`, `forced`, or `rebuild`).
 
+With `--json`, `elapsed_seconds` measures the sync call, including lock waiting.
+`phase_timings_seconds` reports the phases that ran: `discovery`, `bundle_copy`,
+`index_update` (chunking, index/store mutations, and manifest rewriting),
+`token_audit` (loading and auditing all staged chunks), and `activation`
+(metadata, validation, and pointer cutover). Bootstrap and rebuilds report
+`discovery` plus `full_rebuild`, because their worker combines indexing and token
+auditing. These host wall-clock measurements exclude some setup and bookkeeping,
+so phase totals need not equal elapsed time. A no-op reports only discovery.
+Timings are per invocation and are not persisted in bundle metadata.
+
 ### Non-goals
 
 - Reintroducing PostgreSQL tables (`rag_chunk`, `rag_source_state`).

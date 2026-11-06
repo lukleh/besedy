@@ -1123,12 +1123,14 @@ def sync_colbert_index(
         )
     )
     lock_path = exposed_index_dir.parent / COLBERT_SYNC_LOCK_NAME
+    phase_timings_seconds: dict[str, float] = {}
 
     with _colbert_scope_lock(lock_path):
         # Both the effective source and the active bundle must be resolved
         # after acquiring this lock. A queued publish sync can otherwise keep
         # a correction it discovered before rollback, then cut it over after
         # the rollback sync has already restored the machine source.
+        phase_started_at = time.perf_counter()
         source_build = discover_transcript_sources(
             workflow_group_id=workflow_group_id,
             backend_key=backend_key,
@@ -1136,6 +1138,7 @@ def sync_colbert_index(
             chunk_tokenizer_model=effective_chunk_tokenizer_model,
             target_audio_hash=normalized_target_audio_hash if not rebuild else None,
         )
+        phase_timings_seconds["discovery"] = time.perf_counter() - phase_started_at
         current_sources = {source.audio_hash: source for source in source_build.sources}
         discovered_count = 1 if normalized_target_audio_hash is not None else len(current_sources)
         exposed_index_dir, existing_bundle_dir, staging_dir = _resolve_sync_bundle_context(
@@ -1150,6 +1153,7 @@ def sync_colbert_index(
             _emit_sync_progress(
                 progress_callback, f"ColBERT sync falling back to full rebuild: {reason}"
             )
+            rebuild_started_at = time.perf_counter()
             # A targeted request can still bootstrap or rebuild the whole
             # scope. Its summary must describe every source the build consumes.
             rebuild_sources = current_sources
@@ -1200,6 +1204,7 @@ def sync_colbert_index(
                 removed_hashes = sum(
                     1 for audio_hash in previous_rows if audio_hash not in rebuild_sources
                 )
+            phase_timings_seconds["full_rebuild"] = time.perf_counter() - rebuild_started_at
             return replace(
                 full_result,
                 sync_mode=sync_mode,
@@ -1210,6 +1215,7 @@ def sync_colbert_index(
                 hashes_removed=removed_hashes,
                 chunks_inserted=full_result.chunk_count,
                 chunks_deleted=0,
+                phase_timings_seconds=phase_timings_seconds.copy(),
             )
 
         if rebuild:
@@ -1265,7 +1271,7 @@ def sync_colbert_index(
             target_audio_hash=normalized_target_audio_hash,
         )
         if not classification.added and not classification.updated and not classification.removed:
-            return _coerce_index_result_from_meta(
+            result = _coerce_index_result_from_meta(
                 index_dir=exposed_index_dir,
                 meta=active_meta,
                 sync_mode="forced" if force else "incremental",
@@ -1276,6 +1282,7 @@ def sync_colbert_index(
                 hashes_discovered=discovered_count,
                 hashes_unchanged=len(classification.unchanged),
             )
+            return replace(result, phase_timings_seconds=phase_timings_seconds.copy())
 
         _emit_sync_progress(
             progress_callback,
@@ -1292,12 +1299,15 @@ def sync_colbert_index(
         chunks_deleted = 0
         chunks_inserted = 0
         try:
+            phase_started_at = time.perf_counter()
             _copy_bundle_to_staging(
                 source_bundle_dir=existing_bundle_dir, staging_bundle_dir=staging_dir
             )
+            phase_timings_seconds["bundle_copy"] = time.perf_counter() - phase_started_at
             stage_artifacts = resolve_colbert_bundle_artifacts(staging_dir)
             initialize_source_state(stage_artifacts.source_state_path)
 
+            phase_started_at = time.perf_counter()
             removed_audio_hashes = [row.audio_hash for row in classification.removed]
             if removed_audio_hashes:
                 _emit_sync_progress(
@@ -1410,6 +1420,8 @@ def sync_colbert_index(
                 )
 
             _rewrite_chunk_manifest_from_store(bundle_dir=staging_dir)
+            phase_timings_seconds["index_update"] = time.perf_counter() - phase_started_at
+            phase_started_at = time.perf_counter()
             staged_chunks = list_chunks(path=stage_artifacts.chunk_store_path)
             if staged_chunks:
                 token_audit = audit_colbert_token_lengths(
@@ -1426,6 +1438,8 @@ def sync_colbert_index(
                 min_tokens=min_chunk_tokens,
                 max_tokens=max_chunk_tokens,
             )
+            phase_timings_seconds["token_audit"] = time.perf_counter() - phase_started_at
+            phase_started_at = time.perf_counter()
             retrieval_engine_version = str(active_meta.get("retrieval_engine_version", "unknown"))
             _write_index_meta(
                 target_dir=staging_dir,
@@ -1461,7 +1475,8 @@ def sync_colbert_index(
             )
             cutover_complete = True
             result_meta = _read_index_meta(exposed_index_dir)
-            return _coerce_index_result_from_meta(
+            phase_timings_seconds["activation"] = time.perf_counter() - phase_started_at
+            result = _coerce_index_result_from_meta(
                 index_dir=exposed_index_dir,
                 meta=result_meta,
                 sync_mode="forced" if force else "incremental",
@@ -1477,6 +1492,7 @@ def sync_colbert_index(
                 chunks_inserted=chunks_inserted,
                 chunks_deleted=chunks_deleted,
             )
+            return replace(result, phase_timings_seconds=phase_timings_seconds.copy())
         finally:
             if not cutover_complete and staging_dir.exists():
                 _remove_existing_path(staging_dir)
