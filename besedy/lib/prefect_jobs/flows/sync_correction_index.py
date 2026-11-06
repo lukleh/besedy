@@ -100,7 +100,13 @@ def sync_recording(catalog_id: str, audio_hash: str, backend: str | None) -> Jso
     if backend:
         args[3:3] = ["--backend", backend]
     output = run_catalog_cli(args, stage=SYNC_STAGE, capture_output=True)
-    return parse_trailing_json(output or "")
+    result = parse_trailing_json(output or "")
+    timings = {
+        key: result[key] for key in ("elapsed_seconds", "phase_timings_seconds") if key in result
+    }
+    if timings:
+        print(f"ColBERT sync timings: {json.dumps(timings, sort_keys=True)}")
+    return result
 
 
 @task

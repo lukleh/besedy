@@ -168,6 +168,33 @@ def test_parse_trailing_json_skips_worker_chatter() -> None:
         sync_module.parse_trailing_json("no result here")
 
 
+@pytest.mark.parametrize(
+    "timings",
+    [
+        {},
+        {"elapsed_seconds": 0.0},
+        {"phase_timings_seconds": {}},
+        {"elapsed_seconds": 4.5, "phase_timings_seconds": {"discovery": 0.5, "copy": 4.0}},
+    ],
+)
+def test_sync_recording_prints_available_timings_and_returns_the_unmodified_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys, timings: dict
+) -> None:
+    (tmp_path / f"transcripts_{CATALOG_ID}").mkdir()
+    monkeypatch.setattr(sync_module, "resolve_transcripts_parent", lambda: tmp_path)
+    payload = {"index_dir": "/bundles/scope/index", "chunk_count": 3, **timings}
+    cli_output = "worker chatter\n" + json.dumps(payload, indent=2)
+    monkeypatch.setattr(sync_module, "run_catalog_cli", lambda *_args, **_kwargs: cli_output)
+
+    result = sync_module.sync_recording.fn(CATALOG_ID, AUDIO_HASH, None)
+
+    assert result == payload
+    output = capsys.readouterr().out
+    assert output == (
+        f"ColBERT sync timings: {json.dumps(timings, sort_keys=True)}\n" if timings else ""
+    )
+
+
 def _run_flow(monkeypatch, *, operation: str, indexed_row, tmp_path: Path):  # type: ignore[no-untyped-def]
     cli_calls: list[list[str]] = []
     reports: list[dict[str, object]] = []
