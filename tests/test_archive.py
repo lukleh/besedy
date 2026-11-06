@@ -549,6 +549,52 @@ class TestAacCopyEncoding:
         # Transcripts and saved positions are shared: the timelines must agree.
         assert abs(float(opus["duration"]) - float(copy["duration"])) < 0.05
 
+    def test_manifest_keeps_catalog_duration_despite_encoder_padding(
+        self, tmp_path, require_ffmpeg
+    ):
+        source = tmp_path / "talk.wav"
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=2.495:sample_rate=48000",
+                str(source),
+            ],
+            check=True,
+        )
+        catalog_duration = round(float(_probe(source)["duration"]))
+        row = CsvAudioRow(sha256="c" * 64, full_path=str(source), duration_seconds=catalog_duration)
+        output = tmp_path / "out" / "talk.webm"
+        aac = output.with_suffix(".m4a")
+
+        result = compress_audio_file(
+            row,
+            output,
+            format="opus",
+            quality="medium",
+            stereo=False,
+            ffmpeg_binary="ffmpeg",
+            ffprobe_binary="ffprobe",
+            use_fdk=False,
+            aac_output_path=aac,
+        )
+
+        assert result.skipped is None, result.skipped
+        entry = result.compressed
+        assert entry is not None
+        assert catalog_duration == 2
+        assert round(float(_probe(output)["duration"])) == 3
+        manifest = archive_module.manifest_row(entry)
+        assert manifest["Duration"] == "00:00:02"
+        actual_aac_bitrate = round(aac.stat().st_size * 8 / float(_probe(aac)["duration"]) / 1000)
+        assert manifest["Compressed AAC Bitrate (kbps)"] == actual_aac_bitrate
+        assert actual_aac_bitrate != round(aac.stat().st_size * 8 / catalog_duration / 1000)
+
     @pytest.mark.parametrize("quality, bitrate", [("low", None), ("max", 96)])
     def test_copy_uses_the_fixed_vbr_mode_whatever_the_opus_settings(
         self, tmp_path, require_ffmpeg, monkeypatch, quality, bitrate

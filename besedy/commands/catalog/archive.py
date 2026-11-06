@@ -628,7 +628,7 @@ def compress_audio_file(
                 effective_bitrate = {2: 40, 3: 52, 4: 68, 5: 104}.get(vbr_mode, 68)
             if error:
                 raise RuntimeError(error)
-            compressed_size, duration = _archive_output_metadata(
+            compressed_size, _ = _archive_output_metadata(
                 candidate,
                 codec="opus" if format == "opus" else "aac",
                 expected_duration=decoded_duration,
@@ -681,7 +681,7 @@ def compress_audio_file(
             source_size_bytes=source_size,
             compressed_size_bytes=compressed_size,
             compression_ratio=source_size / compressed_size,
-            duration_seconds=duration,
+            duration_seconds=row.duration_seconds or 0.0,
             added_at=row.added_at,
             aac_path=aac_output_path if aac_size is not None else None,
             aac_size_bytes=aac_size,
