@@ -109,6 +109,7 @@ class FakeBackends:
 
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.transcribed_hashes: list[str] = []
 
     def run(self, argv: list[str]) -> int:
         if (args := _script_args(argv, FASTER_WHISPER_SCRIPT)) is not None:
@@ -126,6 +127,7 @@ class FakeBackends:
                 sanitize_model_identifier
             )
             for audio in _audio_files(args):
+                self.transcribed_hashes.append(require_valid_hash_stem(audio))
                 write_transcript_json(
                     bundle_root / require_valid_hash_stem(audio) / "transcript.json",
                     create_transcript_with_words(words=["Dobrý", "den", audio.stem[:8]]),
@@ -265,3 +267,55 @@ def test_catalog_create_then_run_pipeline_produces_what_the_web_reads(
         assert speakers.is_file()
 
     assert backends.calls == ["faster-whisper", "pyannote", "pyannote", "cluster-speakers"]
+
+
+def test_pipeline_skips_incomplete_loudness_before_transcription(
+    pipeline_env, require_ffmpeg, capsys
+) -> None:  # type: ignore[no-untyped-def]
+    tmp_path, text_root, audio_root, backends = pipeline_env
+    sources = tmp_path / "sources"
+    sources.mkdir()
+    create_tone_wav(sources / "complete.wav", frequency=440.0, duration_seconds=3.0)
+    create_tone_wav(sources / "incomplete.wav", frequency=660.0, duration_seconds=3.0)
+    assert catalog_cli.main(["create", str(sources)]) == 0
+    (catalog_csv,) = sorted((text_root / "catalogs").glob("audio_catalog_2*_*[0-9].csv"))
+    timestamp = catalog_csv.stem.removeprefix("audio_catalog_")
+    source_rows = _rows(catalog_csv)
+    incomplete = next(row for row in source_rows if Path(row["Full Path"]).name == "incomplete.wav")
+    good_hash = next(row["Hash"] for row in source_rows if row["Hash"] != incomplete["Hash"])
+    # A legacy partial analysis is considered cached by the loudness command.
+    # Staging must not turn it into a successful plain conversion.
+    loudness_csv = catalog_csv.with_name(f"{catalog_csv.stem}_loudness.csv")
+    with loudness_csv.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(dict.fromkeys([*_header(catalog_csv), "integrated_loudness_lufs"])),
+        )
+        writer.writeheader()
+        writer.writerow({**incomplete, "integrated_loudness_lufs": "-24"})
+
+    result = catalog_cli.main(
+        [
+            "run-pipeline",
+            "--csv",
+            str(catalog_csv),
+            "--skip-rag-colbert-index",
+            "--skip-derived",
+        ]
+    )
+
+    assert result == 2
+    normalized = _rows(catalog_csv.with_name(f"{catalog_csv.stem}_loudness_normalized.csv"))
+    assert [row["Hash"] for row in normalized] == [good_hash]
+    assert backends.transcribed_hashes == [good_hash]
+    assert not (audio_root / f"audio_staged_{timestamp}" / f"{incomplete['Hash']}.wav").exists()
+    (workflow,) = get_transcription_workflows(workflow_id="faster-whisper")
+    transcripts_root = resolve_transcripts_parent() / f"transcripts_{timestamp}"
+    assert path_builder(workflow).artifact_path(good_hash, transcripts_root).is_file()
+    assert not path_builder(workflow).artifact_path(incomplete["Hash"], transcripts_root).exists()
+    output = capsys.readouterr().out
+    assert "Skipped rows: 1" in output
+    assert f"{incomplete['Hash']}: missing loudness measurements:" in output
+    assert "true_peak_db" in output
+    assert "catalog loudness --overwrite" in output
+    assert "  - stage-audio" in output

@@ -114,7 +114,7 @@ def print_workflow_summary(
     if already_complete:
         print(f"Already complete: {already_complete}")
     if skipped:
-        print("Skipped rows:")
+        print(f"Skipped rows: {len(skipped)}")
         for entry in skipped:
             print(f"  - {entry.sha256}: {entry.reason} ({entry.source})")
     if workflow_failures:
