@@ -138,6 +138,9 @@
     "vitest": "^4.1.12"
   },
   "overrides": {
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.5"
+    },
     "browserslist": "4.28.8",
     "deepmerge-ts": "8.0.2",
     "find-my-way": "9.7.0",
