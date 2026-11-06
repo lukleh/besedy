@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
-from dataclasses import asdict, dataclass
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from rich.console import Console
@@ -18,7 +19,7 @@ from besedy.commands.catalog.default_paths import (
     get_default_normalized_symlink,
 )
 from besedy.config.settings import config
-from besedy.core.cli_output import print_json_result
+from besedy.core.cli_output import JsonStatus, print_json_result
 from besedy.core.paths import (
     extract_run_id_from_transcripts_root,
     extract_timestamp_from_catalog,
@@ -37,6 +38,7 @@ from besedy.lib.analysis.coverage import (
     require_transcript_exports,
 )
 from besedy.lib.catalog.validator import (
+    ValidationResult,
     format_validation_report,
     load_catalog_csv,
     validate_catalog,
@@ -358,16 +360,116 @@ def require_colbert_hash_coverage(
     return True, None, stats
 
 
-def handle_check(args: argparse.Namespace) -> int:
-    """Validate catalog CSV → staged audio → transcripts → diarization chain."""
-    output_format = getattr(args, "format", "text")
-    messages: list[str] = []
-    command_name = "check"
+_COMMAND_NAME = "check"
 
-    def _emit(msg: str) -> None:
-        messages.append(msg)
-        if output_format == "text":
-            print(msg)
+# A check reports (ok, message, stats): ok is True, False (needs attention), or
+# None (skipped with a reason in message).
+CheckOutcome = tuple[bool | None, str | None, dict | None]
+
+
+@dataclass(frozen=True)
+class _CheckSpec:
+    """How one check is titled and remedied in the text report."""
+
+    emoji: str
+    title: str
+    # `just catalog …` line printed when the check fails; `{message}` is the
+    # check's own message.
+    remedy: str
+
+
+_CHECK_SPECS: dict[str, _CheckSpec] = {
+    "loudness_catalog": _CheckSpec(
+        "📈", "Loudness catalog", "just catalog loudness  # Generate loudness catalog"
+    ),
+    "archived_audio": _CheckSpec(
+        "📦", "Archived audio", "just catalog archive   # Generate archived audio"
+    ),
+    "colbert_bundle": _CheckSpec(
+        "🔎",
+        "ColBERT bundle",
+        "just catalog rag-colbert-index  # Build/update ColBERT sidecar bundles",
+    ),
+    "transcript_exports": _CheckSpec(
+        "📄",
+        "Transcript exports",
+        "just catalog export-transcripts  # Regenerate transcript sidecars",
+    ),
+    "colbert_index": _CheckSpec(
+        "🔎", "ColBERT hash coverage", "just catalog rag-colbert-index  # {message}"
+    ),
+    "speaker_clusters": _CheckSpec(
+        "👥", "Speaker clusters", "just catalog cluster-speakers  # {message}"
+    ),
+}
+
+
+@dataclass
+class CheckResult:
+    """One check's verdict, keyed by the name used in the JSON output."""
+
+    name: str
+    ok: bool | None
+    message: str | None
+    stats: dict | None
+
+    @property
+    def failed(self) -> bool:
+        return self.ok is False
+
+    @property
+    def remedy_line(self) -> str:
+        return "    Run: " + _CHECK_SPECS[self.name].remedy.format(message=self.message)
+
+    def to_json(self) -> dict:
+        return {"ok": self.ok, "message": self.message, "stats": self.stats}
+
+
+def _archived_coverage(archived: CheckResult) -> int | None:
+    """Catalog entries the archived catalog covers, or None when unknown."""
+
+    stats = archived.stats
+    if stats and "expected" in stats and "missing" in stats:
+        return stats["expected"] - stats["missing"]
+    return None
+
+
+class _CheckInputError(Exception):
+    """A required input path is missing; the command stops before any check."""
+
+    def __init__(self, code: str, path: Path, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.path = path
+        self.message = message
+
+
+@dataclass(frozen=True)
+class _CheckInputs:
+    """Resolved paths for a complete pipeline run."""
+
+    csv_path: Path
+    csv_normalized_path: Path
+    transcripts_root: Path
+    loudness_path: Path
+    archived_path: Path
+
+
+@dataclass(frozen=True)
+class _IncompletePipeline:
+    """A timestamped catalog whose normalized CSV or transcripts root does not exist yet."""
+
+    csv_path: Path
+    timestamp: str
+    normalized_path: Path
+    normalized_symlink: Path
+    transcripts_path: Path
+    loudness_path: Path
+    archived_path: Path
+
+
+def _resolve_check_inputs(args: argparse.Namespace) -> _CheckInputs | _IncompletePipeline:
+    """Resolve the catalog CSV and the pipeline files that belong to it."""
 
     # Resolve catalog path using getter functions when not provided
     try:
@@ -377,637 +479,645 @@ def handle_check(args: argparse.Namespace) -> int:
             default_symlink=get_default_catalog_symlink(),
         )
     except FileNotFoundError as exc:
-        if output_format == "json":
-            print_json_result(
-                name=command_name,
-                status="error",
-                result={
-                    "error": "catalog_csv_missing",
-                    "path": str(args.csv or get_default_catalog_symlink()),
-                    "messages": [str(exc)],
-                },
-            )
-        else:
-            _emit(str(exc))
-        return 1
+        raise _CheckInputError(
+            "catalog_csv_missing", args.csv or get_default_catalog_symlink(), str(exc)
+        ) from exc
 
     if not csv_path.exists():
-        if output_format == "json":
-            print_json_result(
-                name=command_name,
-                status="error",
-                result={
-                    "error": "catalog_csv_missing",
-                    "path": str(csv_path),
-                    "messages": [f"Catalog CSV not found: {csv_path}"],
-                },
-            )
-        else:
-            _emit(f"Catalog CSV not found: {csv_path}")
-        return 1
+        raise _CheckInputError(
+            "catalog_csv_missing", csv_path, f"Catalog CSV not found: {csv_path}"
+        )
 
     # Extract timestamp and find matching pipeline files
     ts_catalog = extract_timestamp_from_catalog(csv_path.resolve())
-    expected_loudness = None
-    expected_archived = None
-
     if ts_catalog:
-        catalog_dir = csv_path.resolve().parent
-        normalized_candidates = [
-            catalog_dir / f"audio_catalog_{ts_catalog}_loudness_normalized.csv",
-            catalog_dir / f"audio_catalog_{ts_catalog}_normalized.csv",
-        ]
-        expected_normalized = next(
-            (candidate for candidate in normalized_candidates if candidate.exists()),
-            normalized_candidates[-1],
-        )
-        transcripts_parent = resolve_transcripts_parent()
-        base_name = config.paths.transcripts_dir
-        expected_transcripts = transcripts_parent / f"{base_name}_{ts_catalog}"
-        expected_loudness = catalog_dir / f"audio_catalog_{ts_catalog}_loudness.csv"
-        expected_archived = catalog_dir / f"audio_catalog_{ts_catalog}_loudness_archived.csv"
+        return _resolve_timestamped_inputs(args, csv_path, ts_catalog)
+    return _resolve_symlink_inputs(args, csv_path)
 
-        if not expected_normalized.exists() or not expected_transcripts.exists():
-            # Load catalog to show expected counts
-            catalog_entries = load_catalog_csv(csv_path)
-            catalog_count = len({entry.sha256 for entry in catalog_entries})
 
-            # Get expected backends from code
-            asr_backends = expected_asr_backends_from_code()
-            diarization_backends = expected_diarization_backends_from_code()
-
-            # Pipeline incomplete - report gracefully
-            incomplete_items: list[str] = []
-            _emit(f"\nPipeline incomplete for timestamp {ts_catalog}:")
-
-            if not expected_normalized.exists():
-                symlink = args.csv_normalized or get_default_normalized_symlink()
-                if symlink.exists():
-                    ts_old = extract_timestamp_from_normalized_catalog(symlink.resolve())
-                    _emit(f"  Normalized:  not found (symlink → {ts_old})")
-                else:
-                    _emit("  Normalized:  not found")
-                incomplete_items.append("normalized catalog")
-
-            if not expected_transcripts.exists():
-                symlink = resolve_transcripts_parent() / config.paths.transcripts_dir
-                if symlink.exists():
-                    ts_old = extract_timestamp_from_transcripts_root(symlink.resolve())
-                    _emit(f"  Transcripts: not found (symlink → {ts_old})")
-                else:
-                    _emit("  Transcripts: not found")
-                incomplete_items.append("transcripts")
-
-            # Check loudness + archive coverage if available
-            loudness_ok, loudness_msg, loudness_stats = require_loudness_catalog(
-                expected_loudness, {entry.sha256 for entry in catalog_entries}
-            )
-            archived_ok, archived_msg, archived_stats = require_archived_audio(
-                expected_archived, {entry.sha256 for entry in catalog_entries}
-            )
-            actionable_count = None
-            if archived_stats and "expected" in archived_stats and "missing" in archived_stats:
-                actionable_count = archived_stats["expected"] - archived_stats["missing"]
-
-            # Show what would be expected for a complete pipeline (matching complete output format)
-            _emit(f"\n📊 Catalog: {catalog_count} audio files")
-
-            # Loudness catalog
-            _emit("\n📈 Loudness catalog:")
-            if loudness_stats:
-                issue_parts = []
-                if loudness_stats.get("missing", 0) > 0:
-                    issue_parts.append(f"missing {loudness_stats['missing']}")
-                if loudness_stats.get("stale", 0) > 0:
-                    issue_parts.append(f"+{loudness_stats['stale']} stale")
-                if loudness_stats.get("missing_metrics", 0) > 0:
-                    issue_parts.append(f"missing metrics {loudness_stats['missing_metrics']}")
-                issue_info = f" ({', '.join(issue_parts)})" if issue_parts else ""
-                status = "✅" if loudness_ok else "⚠️"
-                _emit(
-                    f"    {status} loudness: {loudness_stats.get('total', 0)}/{catalog_count}{issue_info}"
-                )
-            elif not loudness_ok:
-                _emit(f"    ❌ {loudness_msg}")
-            else:
-                _emit("    ✅ OK")
-
-            # Archived audio
-            _emit("\n📦 Archived audio:")
-            if archived_stats:
-                issue_parts = []
-                if archived_stats.get("missing", 0) > 0:
-                    issue_parts.append(f"missing {archived_stats['missing']}")
-                if archived_stats.get("stale", 0) > 0:
-                    issue_parts.append(f"+{archived_stats['stale']} stale")
-                if archived_stats.get("missing_paths", 0) > 0:
-                    issue_parts.append(f"missing paths {archived_stats['missing_paths']}")
-                if archived_stats.get("missing_files", 0) > 0:
-                    issue_parts.append(f"missing files {archived_stats['missing_files']}")
-                issue_info = f" ({', '.join(issue_parts)})" if issue_parts else ""
-                status = "✅" if archived_ok else "⚠️"
-                _emit(
-                    f"    {status} archived: {archived_stats.get('total', 0)}/{catalog_count}{issue_info}"
-                )
-            elif not archived_ok:
-                _emit(f"    ❌ {archived_msg}")
-            else:
-                _emit("    ✅ OK")
-
-            # Archived coverage (archived catalog only)
-            if actionable_count is not None:
-                actionable_status = "✅" if actionable_count == catalog_count else "⚠️"
-                _emit(
-                    f"\n✅ Archived coverage (archived catalog): {actionable_count}/{catalog_count}"
-                    if actionable_status == "✅"
-                    else f"\n⚠️  Archived coverage (archived catalog): {actionable_count}/{catalog_count}"
-                )
-
-            # Transcription backends (format: icon backend: current/expected)
-            _emit("\n📝 Transcription backends coverage:")
-            max_asr_len = max(len(b) for b in asr_backends) if asr_backends else 0
-            for backend in asr_backends:
-                _emit(f"    ❌ {backend:<{max_asr_len}}: 0/{catalog_count}")
-
-            # Diarization backends
-            _emit("\n🗣️  Diarization backends coverage:")
-            max_diar_len = max(len(b) for b in diarization_backends) if diarization_backends else 0
-            for backend in diarization_backends:
-                _emit(f"    ❌ {backend:<{max_diar_len}}: 0/{catalog_count}")
-
-            # Derived artifacts
-            _emit("\n📄 Transcript exports:")
-            for backend in asr_backends:
-                _emit(f"    ❌ {backend:<{max_asr_len}}: 0/{catalog_count}")
-
-            _emit("\n👥 Speaker clusters:")
-            for backend in diarization_backends:
-                _emit(f"    ❌ {backend:<{max_diar_len}}: 0/{catalog_count}")
-
-            _emit("\nRun the pipeline to generate these files.")
-
-            if output_format == "json":
-                print_json_result(
-                    name=command_name,
-                    status="warning",
-                    result={
-                        "timestamp": ts_catalog,
-                        "missing": incomplete_items,
-                        "pipeline_artifacts": {
-                            "loudness": {
-                                "ok": loudness_ok,
-                                "message": loudness_msg,
-                                "stats": loudness_stats,
-                            },
-                            "archived": {
-                                "ok": archived_ok,
-                                "message": archived_msg,
-                                "stats": archived_stats,
-                            },
-                            "actionable": {
-                                "count": actionable_count,
-                                "expected": catalog_count,
-                            },
-                        },
-                        "messages": messages,
-                    },
-                )
-            return 0  # Not an error, just incomplete
-
-        csv_normalized_path = expected_normalized
-        transcripts_root = expected_transcripts
-    else:
-        # No timestamp in catalog name - fall back to symlink resolution
-        normalized_symlink = args.csv_normalized or get_default_normalized_symlink()
-        csv_normalized_path = (
-            normalized_symlink.resolve() if normalized_symlink.exists() else normalized_symlink
-        )
-        transcripts_root = resolve_transcripts_root()
-        expected_loudness = get_default_loudness_symlink()
-        expected_archived = get_default_archived_symlink()
-
-        if not csv_normalized_path.exists():
-            if output_format == "json":
-                print_json_result(
-                    name=command_name,
-                    status="error",
-                    result={
-                        "error": "normalized_csv_missing",
-                        "path": str(csv_normalized_path),
-                        "messages": [f"Normalized catalog CSV not found: {csv_normalized_path}"],
-                    },
-                )
-            else:
-                _emit(f"Normalized catalog CSV not found: {csv_normalized_path}")
-            return 1
-        if not transcripts_root.exists():
-            if output_format == "json":
-                print_json_result(
-                    name=command_name,
-                    status="error",
-                    result={
-                        "error": "transcripts_root_missing",
-                        "path": str(transcripts_root),
-                        "messages": [f"Transcripts root not found: {transcripts_root}"],
-                    },
-                )
-            else:
-                _emit(f"Transcripts root not found: {transcripts_root}")
-            return 1
-
-    console = Console()
-    use_progress = output_format == "text"
-
-    # Define verification steps
-    steps = [
-        ("Loading catalog", "catalog"),
-        ("Checking loudness catalog", "loudness"),
-        ("Checking archived audio", "archived"),
-        ("Checking transcript export coverage", "txt"),
-        ("Checking ColBERT bundles", "colbert"),
-        ("Checking ColBERT hash coverage", "colbert_hashes"),
-        ("Checking speaker clusters", "clusters"),
-        ("Validating catalog chain", "validate"),
+def _resolve_timestamped_inputs(
+    args: argparse.Namespace,
+    csv_path: Path,
+    ts_catalog: str,
+) -> _CheckInputs | _IncompletePipeline:
+    catalog_dir = csv_path.resolve().parent
+    normalized_candidates = [
+        catalog_dir / f"audio_catalog_{ts_catalog}_loudness_normalized.csv",
+        catalog_dir / f"audio_catalog_{ts_catalog}_normalized.csv",
     ]
+    expected_normalized = next(
+        (candidate for candidate in normalized_candidates if candidate.exists()),
+        normalized_candidates[-1],
+    )
+    transcripts_parent = resolve_transcripts_parent()
+    base_name = config.paths.transcripts_dir
+    expected_transcripts = transcripts_parent / f"{base_name}_{ts_catalog}"
+    expected_loudness = catalog_dir / f"audio_catalog_{ts_catalog}_loudness.csv"
+    expected_archived = catalog_dir / f"audio_catalog_{ts_catalog}_loudness_archived.csv"
 
-    # Initialize results
-    catalog_entries = None
-    catalog_hashes: set[str] = set()
-    catalog_count = 0
-    pipeline_artifacts_status: list[tuple[str, bool | None, str | None, dict | None]] = []
-    derived_dirs_status: list[tuple[str, bool | None, str | None, dict | None]] = []
-    loudness_ok, loudness_msg, loudness_stats = False, None, None
-    archived_ok, archived_msg, archived_stats = False, None, None
-    exports_ok, exports_msg, exports_stats = False, None, None
-    clusters_ok, clusters_msg, clusters_stats = False, None, None
-    expected_backends = None
-    diarization_backends = None
-    result = None
-    actionable_count = None
+    if not expected_normalized.exists() or not expected_transcripts.exists():
+        return _IncompletePipeline(
+            csv_path=csv_path,
+            timestamp=ts_catalog,
+            normalized_path=expected_normalized,
+            normalized_symlink=args.csv_normalized or get_default_normalized_symlink(),
+            transcripts_path=expected_transcripts,
+            loudness_path=expected_loudness,
+            archived_path=expected_archived,
+        )
 
+    return _CheckInputs(
+        csv_path=csv_path,
+        csv_normalized_path=expected_normalized,
+        transcripts_root=expected_transcripts,
+        loudness_path=expected_loudness,
+        archived_path=expected_archived,
+    )
+
+
+def _resolve_symlink_inputs(args: argparse.Namespace, csv_path: Path) -> _CheckInputs:
+    # No timestamp in catalog name - fall back to symlink resolution
+    normalized_symlink = args.csv_normalized or get_default_normalized_symlink()
+    csv_normalized_path = (
+        normalized_symlink.resolve() if normalized_symlink.exists() else normalized_symlink
+    )
+    transcripts_root = resolve_transcripts_root()
+
+    if not csv_normalized_path.exists():
+        raise _CheckInputError(
+            "normalized_csv_missing",
+            csv_normalized_path,
+            f"Normalized catalog CSV not found: {csv_normalized_path}",
+        )
+    if not transcripts_root.exists():
+        raise _CheckInputError(
+            "transcripts_root_missing",
+            transcripts_root,
+            f"Transcripts root not found: {transcripts_root}",
+        )
+
+    return _CheckInputs(
+        csv_path=csv_path,
+        csv_normalized_path=csv_normalized_path,
+        transcripts_root=transcripts_root,
+        loudness_path=get_default_loudness_symlink(),
+        archived_path=get_default_archived_symlink(),
+    )
+
+
+@dataclass
+class _IncompleteReport:
+    """What `check` can say about a catalog whose pipeline has not run yet."""
+
+    timestamp: str
+    missing: list[str]
+    missing_lines: list[str]
+    catalog_count: int
+    loudness: CheckResult
+    archived: CheckResult
+    asr_backends: list[str]
+    diarization_backends: list[str]
+
+
+def _missing_artifact_line(label: str, symlink: Path, extract_timestamp) -> str:
+    if symlink.exists():
+        return f"  {label}not found (symlink → {extract_timestamp(symlink.resolve())})"
+    return f"  {label}not found"
+
+
+def _build_incomplete_report(pipeline: _IncompletePipeline) -> _IncompleteReport:
+    # Load catalog to show expected counts
+    catalog_hashes = {entry.sha256 for entry in load_catalog_csv(pipeline.csv_path)}
+
+    missing: list[str] = []
+    missing_lines: list[str] = []
+    if not pipeline.normalized_path.exists():
+        missing_lines.append(
+            _missing_artifact_line(
+                "Normalized:  ",
+                pipeline.normalized_symlink,
+                extract_timestamp_from_normalized_catalog,
+            )
+        )
+        missing.append("normalized catalog")
+    if not pipeline.transcripts_path.exists():
+        missing_lines.append(
+            _missing_artifact_line(
+                "Transcripts: ",
+                resolve_transcripts_parent() / config.paths.transcripts_dir,
+                extract_timestamp_from_transcripts_root,
+            )
+        )
+        missing.append("transcripts")
+
+    # Check loudness + archive coverage if available
+    return _IncompleteReport(
+        timestamp=pipeline.timestamp,
+        missing=missing,
+        missing_lines=missing_lines,
+        catalog_count=len(catalog_hashes),
+        loudness=CheckResult(
+            "loudness_catalog",
+            *require_loudness_catalog(pipeline.loudness_path, catalog_hashes),
+        ),
+        archived=CheckResult(
+            "archived_audio",
+            *require_archived_audio(pipeline.archived_path, catalog_hashes),
+        ),
+        asr_backends=expected_asr_backends_from_code(),
+        diarization_backends=expected_diarization_backends_from_code(),
+    )
+
+
+def _coverage_issue_info(stats: dict) -> str:
+    issue_parts = []
+    if stats.get("missing", 0) > 0:
+        issue_parts.append(f"missing {stats['missing']}")
+    if stats.get("stale", 0) > 0:
+        issue_parts.append(f"+{stats['stale']} stale")
+    if stats.get("missing_metrics", 0) > 0:
+        issue_parts.append(f"missing metrics {stats['missing_metrics']}")
+    if stats.get("missing_paths", 0) > 0:
+        issue_parts.append(f"missing paths {stats['missing_paths']}")
+    if stats.get("missing_files", 0) > 0:
+        issue_parts.append(f"missing files {stats['missing_files']}")
+    return f" ({', '.join(issue_parts)})" if issue_parts else ""
+
+
+def _expected_artifact_line(label: str, result: CheckResult, catalog_count: int) -> str:
+    """One artifact's coverage line in the incomplete-pipeline report."""
+
+    if result.stats:
+        status = "✅" if result.ok else "⚠️"
+        total = result.stats.get("total", 0)
+        return f"    {status} {label}: {total}/{catalog_count}{_coverage_issue_info(result.stats)}"
+    if not result.ok:
+        return f"    ❌ {result.message}"
+    return "    ✅ OK"
+
+
+def _zero_coverage_lines(backends: list[str], catalog_count: int) -> list[str]:
+    width = max((len(backend) for backend in backends), default=0)
+    return [f"    ❌ {backend:<{width}}: 0/{catalog_count}" for backend in backends]
+
+
+def _incomplete_report_lines(report: _IncompleteReport) -> list[str]:
+    count = report.catalog_count
+    lines = [f"\nPipeline incomplete for timestamp {report.timestamp}:", *report.missing_lines]
+
+    # Show what would be expected for a complete pipeline (matching complete output format)
+    lines.append(f"\n📊 Catalog: {count} audio files")
+    lines.append("\n📈 Loudness catalog:")
+    lines.append(_expected_artifact_line("loudness", report.loudness, count))
+    lines.append("\n📦 Archived audio:")
+    lines.append(_expected_artifact_line("archived", report.archived, count))
+
+    # Archived coverage (archived catalog only)
+    coverage = _archived_coverage(report.archived)
+    if coverage is not None:
+        # The warning icon is followed by two spaces here, unlike the complete report.
+        icon = "✅" if coverage == count else "⚠️ "
+        lines.append(f"\n{icon} Archived coverage (archived catalog): {coverage}/{count}")
+
+    # Transcription backends (format: icon backend: current/expected)
+    lines.append("\n📝 Transcription backends coverage:")
+    lines.extend(_zero_coverage_lines(report.asr_backends, count))
+    lines.append("\n🗣️  Diarization backends coverage:")
+    lines.extend(_zero_coverage_lines(report.diarization_backends, count))
+
+    # Derived artifacts
+    lines.append("\n📄 Transcript exports:")
+    lines.extend(_zero_coverage_lines(report.asr_backends, count))
+    lines.append("\n👥 Speaker clusters:")
+    lines.extend(_zero_coverage_lines(report.diarization_backends, count))
+
+    lines.append("\nRun the pipeline to generate these files.")
+    return lines
+
+
+def _render_incomplete_report(report: _IncompleteReport, output_format: str) -> None:
+    lines = _incomplete_report_lines(report)
+    if output_format != "json":
+        for line in lines:
+            print(line)
+        return
+    print_json_result(
+        name=_COMMAND_NAME,
+        status="warning",
+        result={
+            "timestamp": report.timestamp,
+            "missing": report.missing,
+            "pipeline_artifacts": {
+                "loudness": report.loudness.to_json(),
+                "archived": report.archived.to_json(),
+                "actionable": {
+                    "count": _archived_coverage(report.archived),
+                    "expected": report.catalog_count,
+                },
+            },
+            "messages": lines,
+        },
+    )
+
+
+@dataclass
+class CheckReport:
+    """Findings of a complete `catalog check` run, filled in step by step."""
+
+    inputs: _CheckInputs
+    verbose: bool
+    catalog_hashes: set[str] = field(default_factory=set)
+    catalog_count: int = 0
+    pipeline_artifacts: list[CheckResult] = field(default_factory=list)
+    derived_directories: list[CheckResult] = field(default_factory=list)
+    expected_backends: list[str] | None = None
+    diarization_backends: list[str] | None = None
+    validation: ValidationResult | None = None
+    messages: list[str] = field(default_factory=list)
+
+    @property
+    def result(self) -> ValidationResult:
+        if self.validation is None:
+            raise RuntimeError("Catalog validation did not produce a result.")
+        return self.validation
+
+    @property
+    def archived_coverage(self) -> int | None:
+        for check in self.pipeline_artifacts:
+            if check.name == "archived_audio":
+                return _archived_coverage(check)
+        return None
+
+    @property
+    def core_issues_detected(self) -> bool:
+        # Core pipeline issues (data integrity problems, not pending work)
+        # Note: missing_normalized_hashes is NOT an error - it just means files
+        # are in the catalog but not yet staged (normal intermediate state)
+        result = self.result
+        return any(
+            [
+                result.missing_original_hashes,  # normalized references non-existent catalog entries
+                result.normalized_only_hashes,  # normalized has entries not in catalog
+                result.staged_files_missing,  # normalized references missing WAV files
+                result.orphaned_staged,  # staged files with no catalog entry
+                result.orphaned_transcripts,  # transcripts with no catalog entry
+                result.orphaned_diarization,  # diarization with no catalog entry
+            ]
+        )
+
+    @property
+    def derived_issues_detected(self) -> bool:
+        # Derived artifacts issues (transcript exports, clusters) - warnings, not failures
+        return any(check.failed for check in self.derived_directories)
+
+    @property
+    def pipeline_artifacts_issues_detected(self) -> bool:
+        return any(check.failed for check in self.pipeline_artifacts)
+
+    @property
+    def has_stale_files(self) -> bool:
+        # Stale ColBERT index rows are removed by `rag-colbert-index` (already
+        # suggested via the failed-check remediation), not by `clean --prune-orphans`,
+        # which only prunes transcript sidecars.
+        for check in self.derived_directories:
+            if check.name == "colbert_index" or not check.stats:
+                continue
+            for s in check.stats.values():
+                if isinstance(s, dict) and s.get("stale", 0) > 0:
+                    return True
+        return False
+
+    @property
+    def json_status(self) -> JsonStatus:
+        if self.core_issues_detected:
+            return "error"
+        if self.derived_issues_detected or self.pipeline_artifacts_issues_detected:
+            return "warning"
+        return "success"
+
+
+def _load_catalog(report: CheckReport) -> None:
+    report.catalog_hashes = {entry.sha256 for entry in load_catalog_csv(report.inputs.csv_path)}
+    report.catalog_count = len(report.catalog_hashes)
+
+
+def _check_loudness_catalog(report: CheckReport) -> None:
+    report.pipeline_artifacts.append(
+        CheckResult(
+            "loudness_catalog",
+            *require_loudness_catalog(report.inputs.loudness_path, report.catalog_hashes),
+        )
+    )
+
+
+def _check_archived_audio(report: CheckReport) -> None:
+    report.pipeline_artifacts.append(
+        CheckResult(
+            "archived_audio",
+            *require_archived_audio(report.inputs.archived_path, report.catalog_hashes),
+        )
+    )
+
+
+def _check_transcript_exports(report: CheckReport) -> None:
+    report.derived_directories.append(
+        CheckResult(
+            "transcript_exports",
+            *require_transcript_exports(report.inputs.transcripts_root, report.catalog_hashes),
+        )
+    )
+
+
+def _check_colbert_bundles(report: CheckReport) -> None:
+    report.pipeline_artifacts.append(
+        CheckResult("colbert_bundle", *require_colbert_bundles(report.inputs.transcripts_root))
+    )
+
+
+def _check_colbert_hash_coverage(report: CheckReport) -> None:
+    report.derived_directories.append(
+        CheckResult(
+            "colbert_index",
+            *require_colbert_hash_coverage(report.inputs.transcripts_root, report.catalog_hashes),
+        )
+    )
+
+
+def _check_speaker_clusters(report: CheckReport) -> None:
+    transcripts_root = report.inputs.transcripts_root
+    # Speaker clusters directory is a sibling to transcripts with matching run_id
+    transcripts_resolved = (
+        transcripts_root.resolve() if transcripts_root.is_symlink() else transcripts_root
+    )
+    run_id = extract_run_id_from_transcripts_root(transcripts_resolved)
+    if run_id:
+        clusters_root = transcripts_root.parent / f"speaker_clusters_{run_id}"
+    else:
+        clusters_root = transcripts_root.parent / config.paths.speaker_clusters_dir
+    report.derived_directories.append(
+        CheckResult(
+            "speaker_clusters",
+            *require_speaker_clusters(transcripts_root, clusters_root, report.catalog_hashes),
+        )
+    )
+
+
+def _validate_catalog_chain(report: CheckReport) -> None:
+    expected_backends = expected_asr_backends_from_code()
+    if not expected_backends:
+        report.messages.append(
+            "Warning: unable to determine ASR backends from code; skipping backend coverage check."
+        )
+        expected_backends = None
+
+    diarization_backends = expected_diarization_backends_from_code()
+    if not diarization_backends:
+        report.messages.append(
+            "Warning: unable to determine diarization backends from code; skipping diarization backend coverage check."
+        )
+        diarization_backends = None
+
+    report.expected_backends = expected_backends
+    report.diarization_backends = diarization_backends
+    report.validation = validate_catalog(
+        report.inputs.csv_path,
+        report.inputs.csv_normalized_path,
+        report.inputs.transcripts_root,
+        expected_backends=expected_backends,
+        expected_diarization_backends=diarization_backends,
+    )
+
+
+# Verification steps, in the order they run and appear in the progress bar.
+_CHECK_STEPS: list[tuple[str, Callable[[CheckReport], None]]] = [
+    ("Loading catalog", _load_catalog),
+    ("Checking loudness catalog", _check_loudness_catalog),
+    ("Checking archived audio", _check_archived_audio),
+    ("Checking transcript export coverage", _check_transcript_exports),
+    ("Checking ColBERT bundles", _check_colbert_bundles),
+    ("Checking ColBERT hash coverage", _check_colbert_hash_coverage),
+    ("Checking speaker clusters", _check_speaker_clusters),
+    ("Validating catalog chain", _validate_catalog_chain),
+]
+
+
+def _run_checks(inputs: _CheckInputs, *, verbose: bool, output_format: str) -> CheckReport:
+    report = CheckReport(inputs=inputs, verbose=verbose)
+    text_output = output_format == "text"
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
-        console=console,
+        console=Console(),
         transient=True,
-        disable=not use_progress,
+        disable=not text_output,
     ) as progress:
-        task = progress.add_task("Verifying...", total=len(steps))
-
-        for step_name, step_id in steps:
+        task = progress.add_task("Verifying...", total=len(_CHECK_STEPS))
+        for step_name, step in _CHECK_STEPS:
             progress.update(task, description=step_name)
-
-            match step_id:
-                case "catalog":
-                    catalog_entries = load_catalog_csv(csv_path)
-                    catalog_hashes = {entry.sha256 for entry in catalog_entries}
-                    catalog_count = len(catalog_hashes)
-
-                case "loudness":
-                    loudness_ok, loudness_msg, loudness_stats = require_loudness_catalog(
-                        expected_loudness, catalog_hashes
-                    )
-                    pipeline_artifacts_status.append(
-                        ("loudness_catalog", loudness_ok, loudness_msg, loudness_stats)
-                    )
-
-                case "archived":
-                    archived_ok, archived_msg, archived_stats = require_archived_audio(
-                        expected_archived, catalog_hashes
-                    )
-                    pipeline_artifacts_status.append(
-                        ("archived_audio", archived_ok, archived_msg, archived_stats)
-                    )
-
-                case "txt":
-                    exports_ok, exports_msg, exports_stats = require_transcript_exports(
-                        transcripts_root, catalog_hashes
-                    )
-                    derived_dirs_status.append(
-                        ("transcript_exports", exports_ok, exports_msg, exports_stats)
-                    )
-
-                case "colbert":
-                    colbert_ok, colbert_msg, colbert_stats = require_colbert_bundles(
-                        transcripts_root
-                    )
-                    pipeline_artifacts_status.append(
-                        ("colbert_bundle", colbert_ok, colbert_msg, colbert_stats)
-                    )
-
-                case "colbert_hashes":
-                    (
-                        colbert_hashes_ok,
-                        colbert_hashes_msg,
-                        colbert_hashes_stats,
-                    ) = require_colbert_hash_coverage(transcripts_root, catalog_hashes)
-                    derived_dirs_status.append(
-                        (
-                            "colbert_index",
-                            colbert_hashes_ok,
-                            colbert_hashes_msg,
-                            colbert_hashes_stats,
-                        )
-                    )
-
-                case "clusters":
-                    # Speaker clusters directory is a sibling to transcripts with matching run_id
-                    transcripts_resolved = (
-                        transcripts_root.resolve()
-                        if transcripts_root.is_symlink()
-                        else transcripts_root
-                    )
-                    run_id = extract_run_id_from_transcripts_root(transcripts_resolved)
-                    if run_id:
-                        clusters_root = transcripts_root.parent / f"speaker_clusters_{run_id}"
-                    else:
-                        clusters_root = transcripts_root.parent / config.paths.speaker_clusters_dir
-                    clusters_ok, clusters_msg, clusters_stats = require_speaker_clusters(
-                        transcripts_root, clusters_root, catalog_hashes
-                    )
-                    derived_dirs_status.append(
-                        ("speaker_clusters", clusters_ok, clusters_msg, clusters_stats)
-                    )
-
-                case "validate":
-                    expected_backends = expected_asr_backends_from_code()
-                    if not expected_backends:
-                        _emit(
-                            "Warning: unable to determine ASR backends from code; skipping backend coverage check."
-                        )
-                        expected_backends = None
-
-                    diarization_backends = expected_diarization_backends_from_code()
-                    if not diarization_backends:
-                        _emit(
-                            "Warning: unable to determine diarization backends from code; skipping diarization backend coverage check."
-                        )
-                        diarization_backends = None
-
-                    result = validate_catalog(
-                        csv_path,
-                        csv_normalized_path,
-                        transcripts_root,
-                        expected_backends=expected_backends,
-                        expected_diarization_backends=diarization_backends,
-                    )
-
+            emitted = len(report.messages)
+            step(report)
+            if text_output:
+                # Warnings print as they arise, above the progress bar.
+                for message in report.messages[emitted:]:
+                    print(message)
             progress.advance(task)
+    return report
 
-    if result is None:
-        raise RuntimeError("Catalog validation did not produce a result.")
 
-    report_text, catalog_issues_found = format_validation_report(result, verbose=args.verbose)
+def _pipeline_artifact_lines(check: CheckResult, catalog_count: int) -> list[str]:
+    spec = _CHECK_SPECS[check.name]
+    lines = [f"{spec.emoji}  {spec.title}:"]
+    if check.stats:
+        status = "✅" if check.ok else "⚠️"
+        total = check.stats.get("total", 0)
+        expected = check.stats.get("expected", catalog_count)
+        lines.append(f"    {status} {total}/{expected}{_coverage_issue_info(check.stats)}")
+    elif check.ok is False:
+        lines.append(f"    ❌ {check.message}")
+    elif check.ok is None:
+        lines.append(f"    ℹ️  {check.message}")
+    else:
+        lines.append("    ✅ OK")
+    lines.append("")
+    return lines
 
-    if archived_stats and "expected" in archived_stats and "missing" in archived_stats:
-        actionable_count = archived_stats["expected"] - archived_stats["missing"]
 
-    # Core pipeline issues (data integrity problems, not pending work)
-    # Note: missing_normalized_hashes is NOT an error - it just means files
-    # are in the catalog but not yet staged (normal intermediate state)
-    core_issues_detected = any(
-        [
-            result.missing_original_hashes,  # normalized references non-existent catalog entries
-            result.normalized_only_hashes,  # normalized has entries not in catalog
-            result.staged_files_missing,  # normalized references missing WAV files
-            result.orphaned_staged,  # staged files with no catalog entry
-            result.orphaned_transcripts,  # transcripts with no catalog entry
-            result.orphaned_diarization,  # diarization with no catalog entry
-        ]
+def _backend_coverage_line(stats: dict, backend: str, width: int, catalog_count: int) -> str:
+    padded_name = backend.ljust(width)
+    s = stats[backend]
+    if isinstance(s, dict):
+        total = s.get("total")
+        expected = s.get("expected")
+        missing = s.get("missing")
+        stale = s.get("stale")
+        if missing is None and total is not None and expected is not None:
+            missing = max(0, expected - total)
+        is_ok = (
+            missing == 0
+            and (stale or 0) == 0
+            and total is not None
+            and expected is not None
+            and total == expected
+        )
+        status = "✅" if is_ok else "⚠️"
+        if missing is None and (total is None or expected is None):
+            issue_info = " (stats incomplete)"
+        elif missing and missing > 0:
+            issue_info = f" (missing {missing})"
+        elif stale and stale > 0:
+            issue_info = f" (+{stale} stale)"
+        elif total is not None and expected is not None and total > expected:
+            issue_info = f" (+{total - expected} stale)"
+        else:
+            issue_info = ""
+        total_display = total if total is not None else 0
+        expected_display = expected if expected is not None else catalog_count
+    else:
+        status = "⚠️"
+        issue_info = " (stats invalid)"
+        total_display = 0
+        expected_display = catalog_count
+    return f"    {status} {padded_name}: {total_display}/{expected_display}{issue_info}"
+
+
+def _derived_directory_lines(check: CheckResult, catalog_count: int) -> list[str]:
+    spec = _CHECK_SPECS[check.name]
+    lines = [f"{spec.emoji}  {spec.title}:"]
+    if check.stats:
+        # Calculate max backend name length for alignment
+        width = max(len(backend) for backend in check.stats.keys())
+        lines.extend(
+            _backend_coverage_line(check.stats, backend, width, catalog_count)
+            for backend in check.stats
+        )
+    elif check.ok is False:
+        lines.append(f"    ⚠️  {check.message}")
+    elif check.ok is None:
+        lines.append(f"    ℹ️  {check.message}")
+    else:
+        lines.append("    ✅ OK")
+    lines.append("")
+    return lines
+
+
+_PRUNE_LINE = "    Run: just catalog clean --prune-orphans  # Remove stale derived files"
+
+
+def _final_status_lines(report: CheckReport) -> list[str]:
+    if report.core_issues_detected:
+        return ["❌ Core pipeline issues detected (see above)"]
+    if report.pipeline_artifacts_issues_detected or report.derived_issues_detected:
+        # Show specific commands for failed checks
+        lines = ["⚠️  Core pipeline OK, but artifacts need regeneration"]
+        lines.extend(
+            check.remedy_line
+            for check in report.pipeline_artifacts + report.derived_directories
+            if check.failed
+        )
+        if report.has_stale_files:
+            lines.append(_PRUNE_LINE)
+        return lines
+    if report.has_stale_files:
+        return ["⚠️  Pipeline OK, but stale files detected", _PRUNE_LINE]
+    return ["✅ All checks passed!"]
+
+
+def _render_text_report(report: CheckReport) -> None:
+    report_text, _catalog_issues_found = format_validation_report(
+        report.result, verbose=report.verbose
     )
+    lines = [report_text]
 
-    # Derived artifacts issues (transcript exports, clusters) - warnings, not failures
-    derived_issues_detected = any(ok is False for _, ok, _, _ in derived_dirs_status)
-    pipeline_artifacts_issues_detected = any(
-        ok is False for _, ok, _, _ in pipeline_artifacts_status
-    )
+    # Emit pipeline artifact status (loudness + archive)
+    for check in report.pipeline_artifacts:
+        lines.extend(_pipeline_artifact_lines(check, report.catalog_count))
 
-    # Stale ColBERT index rows are removed by `rag-colbert-index` (already
-    # suggested via the failed-check remediation), not by `clean --prune-orphans`,
-    # which only prunes transcript sidecars.
-    has_stale_files = False
-    for name, _, _, stats in derived_dirs_status:
-        if name == "colbert_index":
-            continue
-        if stats:
-            for s in stats.values():
-                if isinstance(s, dict) and s.get("stale", 0) > 0:
-                    has_stale_files = True
-                    break
+    # Archived coverage (archived catalog only)
+    coverage = report.archived_coverage
+    if coverage is not None:
+        status = "✅" if coverage == report.catalog_count else "⚠️"
+        lines.append(
+            f"{status} Archived coverage (archived catalog): {coverage}/{report.catalog_count}"
+        )
+        lines.append("")
 
-    if output_format == "text":
-        print(report_text)
+    # Emit derived directories status after catalog report
+    for check in report.derived_directories:
+        lines.extend(_derived_directory_lines(check, report.catalog_count))
 
-        # Emit pipeline artifact status (loudness + archive)
-        if pipeline_artifacts_status:
-            for name, ok, msg, stats in pipeline_artifacts_status:
-                emoji = {
-                    "loudness_catalog": "📈",
-                    "archived_audio": "📦",
-                    "colbert_bundle": "🔎",
-                }.get(name, "📁")
-                display_name = name.replace("_", " ").title()
-                if name == "loudness_catalog":
-                    display_name = "Loudness catalog"
-                elif name == "archived_audio":
-                    display_name = "Archived audio"
-                elif name == "colbert_bundle":
-                    display_name = "ColBERT bundle"
-                print(f"{emoji}  {display_name}:")
+    # Final status at the end
+    lines.extend(_final_status_lines(report))
+    lines.append("")
+    lines.append("=" * 70)
+    for line in lines:
+        print(line)
 
-                if stats:
-                    issue_parts = []
-                    if stats.get("missing", 0) > 0:
-                        issue_parts.append(f"missing {stats['missing']}")
-                    if stats.get("stale", 0) > 0:
-                        issue_parts.append(f"+{stats['stale']} stale")
-                    if stats.get("missing_metrics", 0) > 0:
-                        issue_parts.append(f"missing metrics {stats['missing_metrics']}")
-                    if stats.get("missing_paths", 0) > 0:
-                        issue_parts.append(f"missing paths {stats['missing_paths']}")
-                    if stats.get("missing_files", 0) > 0:
-                        issue_parts.append(f"missing files {stats['missing_files']}")
-                    issue_info = f" ({', '.join(issue_parts)})" if issue_parts else ""
-                    status = "✅" if ok else "⚠️"
-                    total = stats.get("total", 0)
-                    expected = stats.get("expected", catalog_count)
-                    print(f"    {status} {total}/{expected}{issue_info}")
-                elif ok is False:
-                    print(f"    ❌ {msg}")
-                elif ok is None:
-                    print(f"    ℹ️  {msg}")
-                else:
-                    print("    ✅ OK")
-                print()
 
-            # Archived coverage (archived catalog only)
-            if actionable_count is not None:
-                actionable_status = "✅" if actionable_count == catalog_count else "⚠️"
-                print(
-                    f"{actionable_status} Archived coverage (archived catalog): {actionable_count}/{catalog_count}"
-                )
-                print()
+def _render_json_report(report: CheckReport) -> None:
+    coverage = {"count": report.archived_coverage, "expected": report.catalog_count}
+    data = {
+        "result": asdict(report.result),
+        "core_issues_detected": report.core_issues_detected,
+        "derived_issues_detected": report.derived_issues_detected,
+        "pipeline_artifacts_issues_detected": report.pipeline_artifacts_issues_detected,
+        "derived_directories": {
+            check.name: check.to_json() for check in report.derived_directories
+        },
+        "pipeline_artifacts": {check.name: check.to_json() for check in report.pipeline_artifacts},
+        "actionable_coverage": coverage,
+        "archived_coverage": coverage,
+        "expected_backends_checked": bool(report.expected_backends),
+        "expected_diarization_backends_checked": bool(report.diarization_backends),
+        "messages": report.messages,
+        "verbose": report.verbose,
+        "csv": str(report.inputs.csv_path),
+        "csv_normalized": str(report.inputs.csv_normalized_path),
+        "transcripts_root": str(report.inputs.transcripts_root),
+    }
+    if report.expected_backends:
+        data["expected_backends"] = report.expected_backends
+    if report.diarization_backends:
+        data["expected_diarization_backends"] = report.diarization_backends
+    print_json_result(name=_COMMAND_NAME, status=report.json_status, result=data)
 
-        # Emit derived directories status after catalog report
-        for name, ok, msg, stats in derived_dirs_status:
-            # Section header with emoji
-            emoji = {
-                "transcript_exports": "📄",
-                "speaker_clusters": "👥",
-                "colbert_index": "🔎",
-            }.get(name, "📁")
-            # Clean up display names
-            display_name = name.replace("_", " ").title()
-            if name == "transcript_exports":
-                display_name = "Transcript exports"
-            elif name == "speaker_clusters":
-                display_name = "Speaker clusters"
-            elif name == "colbert_index":
-                display_name = "ColBERT hash coverage"
-            print(f"{emoji}  {display_name}:")
 
-            if stats:
-                # Calculate max backend name length for alignment
-                max_len = max(len(b) for b in stats.keys())
-                for backend, s in stats.items():
-                    padded_name = backend.ljust(max_len)
-                    if isinstance(s, dict):
-                        total = s.get("total")
-                        expected = s.get("expected")
-                        missing = s.get("missing")
-                        stale = s.get("stale")
-                        if missing is None and total is not None and expected is not None:
-                            missing = max(0, expected - total)
-                        is_ok = (
-                            missing == 0
-                            and (stale or 0) == 0
-                            and total is not None
-                            and expected is not None
-                            and total == expected
-                        )
-                        status = "✅" if is_ok else "⚠️"
-                        if missing is None and (total is None or expected is None):
-                            issue_info = " (stats incomplete)"
-                        elif missing and missing > 0:
-                            issue_info = f" (missing {missing})"
-                        elif stale and stale > 0:
-                            issue_info = f" (+{stale} stale)"
-                        elif total is not None and expected is not None and total > expected:
-                            issue_info = f" (+{total - expected} stale)"
-                        else:
-                            issue_info = ""
-                        total_display = total if total is not None else 0
-                        expected_display = expected if expected is not None else catalog_count
-                    else:
-                        status = "⚠️"
-                        issue_info = " (stats invalid)"
-                        total_display = 0
-                        expected_display = catalog_count
-                    print(
-                        f"    {status} {padded_name}: {total_display}/{expected_display}{issue_info}"
-                    )
-            elif ok is False:
-                print(f"    ⚠️  {msg}")
-            elif ok is None:
-                print(f"    ℹ️  {msg}")
-            else:
-                print("    ✅ OK")
-            print()
-
-        # Final status at the end
-        if (
-            not core_issues_detected
-            and not derived_issues_detected
-            and not pipeline_artifacts_issues_detected
-            and not has_stale_files
-        ):
-            print("✅ All checks passed!")
-        elif (
-            not core_issues_detected
-            and not derived_issues_detected
-            and not pipeline_artifacts_issues_detected
-            and has_stale_files
-        ):
-            print("⚠️  Pipeline OK, but stale files detected")
-            print("    Run: just catalog clean --prune-orphans  # Remove stale derived files")
-        elif not core_issues_detected and (
-            derived_issues_detected or pipeline_artifacts_issues_detected
-        ):
-            print("⚠️  Core pipeline OK, but artifacts need regeneration")
-            if pipeline_artifacts_issues_detected:
-                if not loudness_ok:
-                    print("    Run: just catalog loudness  # Generate loudness catalog")
-                if not archived_ok:
-                    print("    Run: just catalog archive   # Generate archived audio")
-                if any(
-                    name == "colbert_bundle" and ok is False
-                    for name, ok, _, _ in pipeline_artifacts_status
-                ):
-                    print(
-                        "    Run: just catalog rag-colbert-index  # Build/update ColBERT sidecar bundles"
-                    )
-            # Show specific commands for failed checks
-            failed_artifacts = [
-                (name, msg) for name, ok, msg, _ in derived_dirs_status if ok is False
-            ]
-            for name, msg in failed_artifacts:
-                if name == "transcript_exports":
-                    print(
-                        "    Run: just catalog export-transcripts  # Regenerate transcript sidecars"
-                    )
-                elif name == "speaker_clusters":
-                    print(f"    Run: just catalog cluster-speakers  # {msg}")
-                elif name == "colbert_index":
-                    print(f"    Run: just catalog rag-colbert-index  # {msg}")
-            if has_stale_files:
-                print("    Run: just catalog clean --prune-orphans  # Remove stale derived files")
-        elif core_issues_detected:
-            print("❌ Core pipeline issues detected (see above)")
-        print()
-        print("=" * 70)
-
+def _render_input_error(error: _CheckInputError, output_format: str) -> None:
     if output_format == "json":
-        data = {
-            "result": asdict(result),
-            "core_issues_detected": core_issues_detected,
-            "derived_issues_detected": derived_issues_detected,
-            "pipeline_artifacts_issues_detected": pipeline_artifacts_issues_detected,
-            "derived_directories": {
-                name: {"ok": ok, "message": msg, "stats": stats}
-                for name, ok, msg, stats in derived_dirs_status
+        print_json_result(
+            name=_COMMAND_NAME,
+            status="error",
+            result={
+                "error": error.code,
+                "path": str(error.path),
+                "messages": [error.message],
             },
-            "pipeline_artifacts": {
-                name: {"ok": ok, "message": msg, "stats": stats}
-                for name, ok, msg, stats in pipeline_artifacts_status
-            },
-            "actionable_coverage": {
-                "count": actionable_count,
-                "expected": catalog_count,
-            },
-            "archived_coverage": {
-                "count": actionable_count,
-                "expected": catalog_count,
-            },
-            "expected_backends_checked": bool(expected_backends),
-            "expected_diarization_backends_checked": bool(diarization_backends),
-            "messages": messages,
-            "verbose": args.verbose,
-            "csv": str(csv_path),
-            "csv_normalized": str(csv_normalized_path),
-            "transcripts_root": str(transcripts_root),
-        }
-        if expected_backends:
-            data["expected_backends"] = expected_backends
-        if diarization_backends:
-            data["expected_diarization_backends"] = diarization_backends
-        status = "success" if not core_issues_detected else "error"
-        if not core_issues_detected and (
-            derived_issues_detected or pipeline_artifacts_issues_detected
-        ):
-            status = "warning"
-        print_json_result(name=command_name, status=status, result=data)
+        )
+    else:
+        print(error.message)
+
+
+def handle_check(args: argparse.Namespace) -> int:
+    """Validate catalog CSV → staged audio → transcripts → diarization chain."""
+    output_format = getattr(args, "format", "text")
+
+    try:
+        inputs = _resolve_check_inputs(args)
+    except _CheckInputError as error:
+        _render_input_error(error, output_format)
+        return 1
+
+    if isinstance(inputs, _IncompletePipeline):
+        # Pipeline incomplete - report gracefully
+        _render_incomplete_report(_build_incomplete_report(inputs), output_format)
+        return 0  # Not an error, just incomplete
+
+    report = _run_checks(inputs, verbose=args.verbose, output_format=output_format)
+    if output_format == "text":
+        _render_text_report(report)
+    else:
+        _render_json_report(report)
 
     # Only fail on core pipeline issues, not derived artifacts
-    return 1 if core_issues_detected else 0
+    return 1 if report.core_issues_detected else 0
