@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -581,8 +582,17 @@ class TestAacCopyEncoding:
     def test_backfill_uses_the_fixed_vbr_mode(self, tmp_path, require_ffmpeg, monkeypatch):
         source = _tone(tmp_path / "talk.mp3", seconds=2)
         webm = tmp_path / "out" / "talk.webm"
-        webm.parent.mkdir()
-        webm.write_bytes(b"opus")
+        initial = compress_audio_file(
+            self._row(source),
+            webm,
+            format="opus",
+            quality="low",
+            stereo=False,
+            ffmpeg_binary="ffmpeg",
+            ffprobe_binary="ffprobe",
+            use_fdk=False,
+        )
+        assert initial.compressed is not None
         modes: list[int] = []
         original = archive_module._encode_m4a
 
@@ -631,6 +641,204 @@ class TestAacCopyEncoding:
 
 
 @pytest.mark.integration
+class TestAtomicArchivePublication:
+    @pytest.fixture
+    def archived_pair(self, tmp_path, require_ffmpeg):
+        source = _tone(tmp_path / "talk.mp3", seconds=2)
+        row = CsvAudioRow(sha256="f" * 64, full_path=str(source), duration_seconds=2.0)
+        output = tmp_path / "out" / "talk.webm"
+        kwargs = dict(
+            format="opus",
+            quality="low",
+            stereo=False,
+            ffmpeg_binary="ffmpeg",
+            ffprobe_binary="ffprobe",
+            use_fdk=False,
+            aac_output_path=output.with_suffix(".m4a"),
+        )
+        result = compress_audio_file(row, output, **kwargs)
+        assert result.compressed is not None, result.skipped
+        return row, output, kwargs
+
+    def test_preparation_failure_keeps_both_live_files(self, archived_pair, monkeypatch):
+        row, output, kwargs = archived_pair
+        aac = output.with_suffix(".m4a")
+        before = (output.read_bytes(), aac.read_bytes())
+        monkeypatch.setattr(
+            archive_module, "prepare_source", lambda *_a, **_kw: (None, "decode failed")
+        )
+
+        result = compress_audio_file(row, output, force=True, **kwargs)
+
+        assert result.skipped is not None
+        assert (output.read_bytes(), aac.read_bytes()) == before
+        assert not list(output.parent.glob(".besedy-tmp-*"))
+
+    @pytest.mark.parametrize("failure", ["encode", "empty", "invalid", "codec", "duration"])
+    def test_bad_candidate_keeps_both_live_files(self, archived_pair, monkeypatch, failure):
+        row, output, kwargs = archived_pair
+        aac = output.with_suffix(".m4a")
+        before = (output.read_bytes(), aac.read_bytes())
+        original = archive_module._run_ffmpeg
+
+        def fail(cmd, candidate):
+            assert candidate.parent == output.parent and candidate != output
+            if failure == "duration":
+                return original([*cmd[:-1], "-t", "0.2", cmd[-1]], candidate)
+            if failure == "codec":
+                shutil.copyfile(Path(cmd[cmd.index("-i") + 1]), candidate)
+            else:
+                candidate.write_bytes(b"" if failure == "empty" else b"partial output")
+            return "encoder failed" if failure == "encode" else None
+
+        monkeypatch.setattr(archive_module, "_run_ffmpeg", fail)
+        result = compress_audio_file(row, output, force=True, **kwargs)
+
+        assert result.compressed is None and result.skipped is not None
+        assert (output.read_bytes(), aac.read_bytes()) == before
+        assert not list(output.parent.glob(".besedy-tmp-*"))
+
+    @pytest.mark.parametrize("phase", ["primary", "aac"])
+    def test_interrupt_during_encoding_keeps_both_files(self, archived_pair, monkeypatch, phase):
+        row, output, kwargs = archived_pair
+        aac = output.with_suffix(".m4a")
+        before = (output.read_bytes(), aac.read_bytes())
+        original = archive_module._run_ffmpeg
+
+        def interrupt(cmd, candidate):
+            if candidate.suffix == (".webm" if phase == "primary" else ".m4a"):
+                candidate.write_bytes(b"interrupted output")
+                raise KeyboardInterrupt
+            return original(cmd, candidate)
+
+        monkeypatch.setattr(archive_module, "_run_ffmpeg", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            compress_audio_file(row, output, force=True, **kwargs)
+
+        assert (output.read_bytes(), aac.read_bytes()) == before
+        assert not list(output.parent.glob(".besedy-tmp-*"))
+
+    @pytest.mark.parametrize("valid_old_aac", [True, False])
+    def test_optional_aac_failure_only_advertises_a_valid_retained_copy(
+        self, archived_pair, monkeypatch, valid_old_aac
+    ):
+        row, output, kwargs = archived_pair
+        aac = output.with_suffix(".m4a")
+        if not valid_old_aac:
+            aac.write_bytes(b"old invalid AAC")
+        old_aac = aac.read_bytes()
+        old_inode = output.stat().st_ino
+
+        def fail(_prepared, candidate, **_kwargs):
+            candidate.write_bytes(b"partial AAC")
+            return "encoder failed"
+
+        monkeypatch.setattr(archive_module, "_encode_m4a", fail)
+        result = compress_audio_file(row, output, force=True, **kwargs)
+
+        assert result.skipped is None and result.compressed is not None
+        assert result.warning is not None
+        assert output.stat().st_ino != old_inode
+        assert _probe(output)["codec"] == "opus"
+        assert aac.read_bytes() == old_aac
+        entry = result.compressed
+        if valid_old_aac:
+            assert entry.aac_path == aac and entry.aac_size_bytes == aac.stat().st_size
+            assert entry.aac_bitrate_kbps == round(
+                aac.stat().st_size * 8 / float(_probe(aac)["duration"]) / 1000
+            )
+        else:
+            assert entry.aac_path is None
+            assert entry.aac_size_bytes is None and entry.aac_bitrate_kbps is None
+        assert not list(output.parent.glob(".besedy-tmp-*"))
+
+    def test_success_replaces_symlink_entries_without_changing_their_targets(self, archived_pair):
+        row, output, kwargs = archived_pair
+        aac = output.with_suffix(".m4a")
+        preserved = []
+        for path in (output, aac):
+            target = path.with_name(f"old-{path.name}")
+            path.rename(target)
+            path.symlink_to(target)
+            preserved.append((target, target.read_bytes()))
+
+        result = compress_audio_file(row, output, force=True, **kwargs)
+
+        assert result.compressed is not None
+        assert not output.is_symlink() and not aac.is_symlink()
+        assert all(target.read_bytes() == content for target, content in preserved)
+        assert not list(output.parent.glob(".besedy-tmp-*"))
+
+    def test_m4a_overwrite_failure_keeps_the_old_archive(self, archived_pair, monkeypatch):
+        row, output, kwargs = archived_pair
+        aac = output.with_suffix(".m4a")
+        before = aac.read_bytes()
+
+        def fail(_cmd, candidate):
+            candidate.write_bytes(b"partial M4A")
+            return "encoder failed"
+
+        monkeypatch.setattr(archive_module, "_run_ffmpeg", fail)
+        result = compress_audio_file(
+            row, aac, force=True, **{**kwargs, "format": "m4a", "aac_output_path": None}
+        )
+
+        assert result.skipped is not None and aac.read_bytes() == before
+        assert not list(aac.parent.glob(".besedy-tmp-*"))
+
+    def test_backfill_rejects_a_timeline_that_no_longer_matches_the_opus_archive(
+        self, archived_pair, tmp_path
+    ):
+        _, output, _ = archived_pair
+        aac = output.with_suffix(".m4a")
+        before = (output.read_bytes(), aac.read_bytes())
+        source = _tone(tmp_path / "changed.mp3", seconds=1)
+        row = CsvAudioRow(sha256="f" * 64, full_path=str(source), duration_seconds=1.0)
+
+        result = archive_module.backfill_aac_copy(
+            row,
+            output,
+            stereo=False,
+            ffmpeg_binary="ffmpeg",
+            ffprobe_binary="ffprobe",
+            use_fdk=False,
+        )
+
+        assert result.values is None and result.skipped is not None
+        assert "duration" in result.skipped.reason
+        assert (output.read_bytes(), aac.read_bytes()) == before
+        assert not list(aac.parent.glob(".besedy-tmp-*"))
+
+    @pytest.mark.parametrize("format", ["opus", "m4a"])
+    def test_initial_encode_failure_leaves_no_final_or_partial_output(
+        self, tmp_path, require_ffmpeg, monkeypatch, format
+    ):
+        source = _tone(tmp_path / "talk.mp3", seconds=1)
+        row = CsvAudioRow(sha256="f" * 64, full_path=str(source), duration_seconds=1.0)
+        output = tmp_path / "out" / ("talk.webm" if format == "opus" else "talk.m4a")
+
+        def fail(_cmd, candidate):
+            candidate.write_bytes(b"partial output")
+            return "encoder failed"
+
+        monkeypatch.setattr(archive_module, "_run_ffmpeg", fail)
+        result = compress_audio_file(
+            row,
+            output,
+            format=format,
+            quality="low",
+            stereo=False,
+            ffmpeg_binary="ffmpeg",
+            ffprobe_binary="ffprobe",
+            use_fdk=False,
+        )
+
+        assert result.skipped is not None
+        assert not output.exists()
+        assert not list(output.parent.glob(".besedy-tmp-*"))
+
+
+@pytest.mark.integration
 class TestArchiveAndBackfill:
     """handle_archive writes the copy, and --backfill-aac adds it later."""
 
@@ -675,6 +883,82 @@ class TestArchiveAndBackfill:
         stamp = archived.stat().st_mtime_ns
         assert handle_archive(request) == 0
         assert archived.stat().st_mtime_ns == stamp
+
+    @pytest.mark.parametrize("backfill", [False, True])
+    def test_failed_overwrite_keeps_artifacts_and_manifest(
+        self, tmp_path, require_ffmpeg, monkeypatch, backfill
+    ):
+        loudness, archived = self._catalog(tmp_path, monkeypatch)
+        assert handle_archive(ArchiveRequest(csv=loudness, no_symlink=True)) == 0
+        _, rows = _read_rows(archived)
+        paths = [Path(rows[0][column]) for column in ("Compressed Path", "Compressed AAC Path")]
+        before = [path.read_bytes() for path in paths]
+        manifest_before = archived.read_bytes()
+
+        def fail(_cmd, candidate):
+            candidate.write_bytes(b"partial output")
+            return "encoder failed"
+
+        monkeypatch.setattr(archive_module, "_run_ffmpeg", fail)
+        assert (
+            handle_archive(
+                ArchiveRequest(
+                    csv=loudness,
+                    no_symlink=True,
+                    overwrite=True,
+                    backfill_aac=backfill,
+                    continue_on_error=True,
+                )
+            )
+            == EXIT_ROWS_SKIPPED
+        )
+
+        assert [path.read_bytes() for path in paths] == before
+        assert archived.read_bytes() == manifest_before
+        assert not list(paths[0].parent.glob(".besedy-tmp-*"))
+
+    def test_success_records_only_published_artifacts(self, tmp_path, require_ffmpeg, monkeypatch):
+        loudness, archived = self._catalog(tmp_path, monkeypatch)
+        original = ArchivedManifestWriter.write_entry
+        written = []
+
+        def record(writer, entry):
+            assert _probe(entry.compressed)["codec"] == "opus"
+            assert entry.compressed_size_bytes == entry.compressed.stat().st_size
+            assert entry.aac_path is not None and _probe(entry.aac_path)["codec"] == "aac"
+            assert entry.aac_size_bytes == entry.aac_path.stat().st_size
+            assert ".besedy-tmp-" not in str(entry.compressed)
+            written.append(entry)
+            return original(writer, entry)
+
+        monkeypatch.setattr(ArchivedManifestWriter, "write_entry", record)
+        assert handle_archive(ArchiveRequest(csv=loudness, no_symlink=True)) == 0
+        assert len(written) == 1
+        _, rows = _read_rows(archived)
+        assert rows[0]["Compressed Path"] == str(written[0].compressed)
+        assert rows[0]["Compressed AAC Path"] == str(written[0].aac_path)
+
+    def test_interrupted_backfill_keeps_old_copy_and_manifest(
+        self, tmp_path, require_ffmpeg, monkeypatch
+    ):
+        loudness, archived = self._catalog(tmp_path, monkeypatch)
+        assert handle_archive(ArchiveRequest(csv=loudness, no_symlink=True)) == 0
+        _, rows = _read_rows(archived)
+        aac = Path(rows[0]["Compressed AAC Path"])
+        before = aac.read_bytes(), archived.read_bytes()
+
+        def interrupt(_cmd, candidate):
+            candidate.write_bytes(b"interrupted AAC")
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(archive_module, "_run_ffmpeg", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            handle_archive(
+                ArchiveRequest(csv=loudness, no_symlink=True, overwrite=True, backfill_aac=True)
+            )
+
+        assert (aac.read_bytes(), archived.read_bytes()) == before
+        assert not list(aac.parent.glob(".besedy-tmp-*"))
 
     def test_row_that_fails_to_encode_is_skipped_with_exit_2(
         self, tmp_path, require_ffmpeg, monkeypatch
