@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import pytest
 
-pytestmark = pytest.mark.optional_dependency
+pytestmark = [pytest.mark.optional_dependency, pytest.mark.jobs]
 pytest.importorskip("prefect", reason="requires the optional jobs extra")
 
 from besedy.lib.internal_ingest_client import CorrectionIndexSyncStatus  # noqa: E402

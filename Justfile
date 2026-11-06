@@ -39,6 +39,10 @@ transcribe-oneoff *args:
 test *args:
     uv run --locked --all-extras pytest "$@"
 
+# Jobs API, host-worker and runtime integration tests (same selection as CI).
+test-jobs *args:
+    uv run --locked --extra jobs pytest -m jobs "$@"
+
 # Run ty against the full production package.
 ty *args:
     uv run ty check besedy training {{args}}

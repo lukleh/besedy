@@ -92,13 +92,7 @@ jobs:
           prune-cache: true
       - run: uv sync --locked --extra jobs
       - run: >-
-          uv run pytest
-          tests/test_prefect_jobs.py
-          tests/test_prefect_ingest.py
-          tests/test_prefect_correction_index.py
-          tests/test_prefect_jobs_maintenance.py
-          tests/test_jobs_production_hardening.py
-          -q
+          uv run pytest -m jobs -q
 
   web-typecheck:
     name: Web type-check

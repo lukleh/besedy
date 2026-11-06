@@ -2,6 +2,10 @@
 
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.jobs
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 JOBS_DOCKERFILE = PROJECT_ROOT / "jobs-service" / "Dockerfile"
 JOBS_PROD_COMPOSE = PROJECT_ROOT / "jobs-service" / "docker-compose.jobs-prod.yml"

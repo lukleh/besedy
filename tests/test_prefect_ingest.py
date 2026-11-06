@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import pytest
 
-pytestmark = pytest.mark.optional_dependency
+pytestmark = [pytest.mark.optional_dependency, pytest.mark.jobs]
 pytest.importorskip("prefect", reason="requires the optional jobs extra")
 
 from besedy.commands.catalog.pipeline import print_step  # noqa: E402

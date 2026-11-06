@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = [pytest.mark.optional_dependency, pytest.mark.jobs]
+
 prefect_settings = pytest.importorskip("prefect.settings")
 
 

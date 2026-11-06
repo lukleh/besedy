@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-pytestmark = pytest.mark.optional_dependency
+pytestmark = [pytest.mark.optional_dependency, pytest.mark.jobs]
 pytest.importorskip("prefect", reason="requires the optional jobs extra")
 
 from prefect.client.schemas.filters import FlowRunFilter, WorkPoolFilter  # noqa: E402
