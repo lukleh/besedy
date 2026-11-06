@@ -625,9 +625,7 @@ def test_handle_rag_colbert_index_does_not_emit_json_success_when_sync_fails(
     def fail_sync(**kwargs):
         raise RuntimeError("index worker failed")
 
-    monkeypatch.setattr(
-        "besedy.commands.catalog.rag_colbert_index.sync_colbert_index", fail_sync
-    )
+    monkeypatch.setattr("besedy.commands.catalog.rag_colbert_index.sync_colbert_index", fail_sync)
     request = RagColbertIndexRequest(
         group="wg-failed-sync", backend="faster-whisper/test", model="test/colbert", json=True
     )
