@@ -136,14 +136,38 @@ def check_workspace(
             problems.append("staged audio content changed")
 
     try:
-        manifest = json.loads((workspace_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        manifest, protected = read_manifest(workspace_dir / MANIFEST_NAME)
+    except CorrectionManifestError as exc:
         problems.append(f"workspace manifest unreadable: {exc}")
     else:
-        if manifest.get("status") != "active":
+        if manifest["status"] != "active":
             problems.append("workspace manifest does not say active")
-        if (manifest.get("staged_audio") or {}).get("sha256") != workspace["staged_audio_sha256"]:
+        for label, recorded, expected_value in (
+            ("workspace", protected.workspace_id, str(workspace["id"])),
+            ("catalog", protected.catalog_id, str(workspace["workflow_group_id"])),
+            ("audio hash", protected.audio_hash, workspace["audio_hash"]),
+            (
+                "segmentation version",
+                manifest.get("segmentation_version"),
+                workspace["segmentation_version"],
+            ),
+        ):
+            if recorded != expected_value:
+                problems.append(f"workspace manifest {label} differs from the database")
+
+        staged = manifest["staged_audio"]
+        if staged.get("sha256") != workspace["staged_audio_sha256"]:
             problems.append("workspace manifest names other staged audio")
+        if type(staged.get("size")) is not int or staged["size"] != int(
+            workspace["staged_audio_size"]
+        ):
+            problems.append("workspace manifest staged audio size differs from the database")
+        try:
+            manifest_audio = map_recorded_path(str(protected.path), path_map or {})
+            if manifest_audio.expanduser().resolve() != audio_path.expanduser().resolve():
+                problems.append("workspace manifest staged audio path differs from the database")
+        except (OSError, ValueError) as exc:
+            problems.append(f"workspace manifest staged audio path is invalid: {exc}")
 
     if int(workspace.get("bad_revision_hashes") or 0):
         problems.append(f"{workspace['bad_revision_hashes']} revisions no longer match their hash")
