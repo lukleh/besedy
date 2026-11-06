@@ -24,10 +24,6 @@ from besedy.lib.audio.quality import (
     determine_needs_normalization,
     needs_declipping,
 )
-from besedy.lib.audio.staged_measurements import (
-    StagedAudioMeasurements,
-    staged_measurement_fingerprint,
-)
 from besedy.lib.audio.types import (
     DECLIP_THRESHOLD_DBTP,
     DURATION_TOLERANCE_MIN_SECONDS,
@@ -85,16 +81,10 @@ def reuse_existing_staged_entry(
     source: Path,
     staged_path: Path,
     duration_seconds: float,
-    include_audio_analysis: bool,
-    analysis_ffmpeg_bin: str,
-    analysis_ffprobe_bin: str,
-    continue_on_error: bool,
-    cached_measurements: StagedAudioMeasurements | None = None,
-) -> tuple[PreparedEntry, int, StagedAudioMeasurements | None]:
+) -> tuple[PreparedEntry, int]:
     entry = PreparedEntry(row.sha256, source, staged_path, "existing", duration_seconds)
 
     existing_size_bytes = 0
-    existing_measurements: StagedAudioMeasurements | None = None
     try:
         existing_size_bytes = staged_path.stat().st_size
     except OSError as size_exc:
@@ -104,39 +94,9 @@ def reuse_existing_staged_entry(
             size_exc,
         )
 
-    # This row describes the original source, whose loudness changes during
-    # normalization. Only measurements of the staged file belong in its manifest.
-    if include_audio_analysis:
-        try:
-            if cached_measurements is not None and cached_measurements.matches(staged_path):
-                existing_measurements = cached_measurements
-            else:
-                existing_measurements = _measure_staged_audio(
-                    staged_path,
-                    ffmpeg_binary=analysis_ffmpeg_bin,
-                    ffprobe_binary=analysis_ffprobe_bin,
-                )
-        except Exception as exc:
-            logging.warning(
-                "[stage_audio_files] audio analysis failed for existing file %s: %s",
-                staged_path,
-                exc,
-            )
-            if not continue_on_error:
-                raise RuntimeError(f"audio analysis failed for {staged_path}: {exc}") from exc
-    return entry, existing_size_bytes, existing_measurements
-
-
-def _measure_staged_audio(
-    path: Path, *, ffmpeg_binary: str, ffprobe_binary: str
-) -> StagedAudioMeasurements:
-    before = staged_measurement_fingerprint(path)
-    metrics = analyze_audio_file(
-        path, timeout=None, ffmpeg_binary=ffmpeg_binary, ffprobe_binary=ffprobe_binary
-    )
-    if staged_measurement_fingerprint(path) != before:
-        raise RuntimeError(f"Staged audio changed while measuring {path}")
-    return StagedAudioMeasurements(metrics, before)
+    # Reuse does not remeasure the WAV. Source measurements describe different
+    # audio, so leave the manifest's unmeasured quality fields blank.
+    return entry, existing_size_bytes
 
 
 def _validate_staged_wav(path: Path, expected_duration: float) -> None:
@@ -195,21 +155,6 @@ def run_stage_conversion(
                 raise _SkippedConversion(result)
             prepared = result.prepared
             _validate_staged_wav(candidate, result.prepared.duration_seconds)
-            if result.measurement_fingerprint and (
-                result.measurement_fingerprint != staged_measurement_fingerprint(candidate)
-            ):
-                result = replace(result, metrics=None, measurement_fingerprint="")
-        if result.measurement_fingerprint:
-            published_fingerprint = staged_measurement_fingerprint(staged_path)
-            # chmod/rename update ctime during publication; the measured inode,
-            # size and mtime must still match before recording the new ctime.
-            if (
-                published_fingerprint.rsplit(":", 1)[0]
-                == result.measurement_fingerprint.rsplit(":", 1)[0]
-            ):
-                result = replace(result, measurement_fingerprint=published_fingerprint)
-            else:
-                result = replace(result, metrics=None, measurement_fingerprint="")
     except _SkippedConversion as exc:
         return exc.result
     except (OSError, ValueError, wave.Error, EOFError) as exc:
@@ -767,7 +712,6 @@ def _convert_stage_audio(
                     log_lines.append("CompressionRetry: yes")
 
             analysis_metrics: AudioQualityMetrics | None = None
-            measurement_fingerprint = ""
             file_size_bytes = 0
             if include_audio_analysis:
                 try:
@@ -782,13 +726,12 @@ def _convert_stage_audio(
                     )
 
                 try:
-                    measurements = _measure_staged_audio(
+                    analysis_metrics = analyze_audio_file(
                         staged_path,
+                        timeout=None,
                         ffmpeg_binary=analysis_ffmpeg_bin,
                         ffprobe_binary=analysis_ffprobe_bin,
                     )
-                    analysis_metrics = measurements.metrics
-                    measurement_fingerprint = measurements.fingerprint
                 except Exception as analysis_exc:
                     messages.append(
                         ConversionLogMessage(
@@ -821,7 +764,6 @@ def _convert_stage_audio(
                 tuple(log_lines),
                 metrics=analysis_metrics,
                 size_bytes=file_size_bytes,
-                measurement_fingerprint=measurement_fingerprint,
             )
 
         failure_lines = [

@@ -22,7 +22,6 @@ from besedy.core.symlinks import (
     validate_symlink_can_be_created,
 )
 from besedy.lib.audio.normalize import stage_audio_files
-from besedy.lib.audio.staged_measurements import load_staged_measurements
 from besedy.lib.audio.types import ManifestWriter
 from besedy.lib.data.atomic_io import atomic_path
 from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
@@ -239,7 +238,6 @@ def handle_stage_audio(
         print(f"Created staging directory: {staging_dir}")
 
     include_analysis = not request.skip_audio_analysis
-    cached_measurements = load_staged_measurements(normalized_csv_path) if include_analysis else {}
 
     # Create the staging symlink immediately (points to "current data set")
     if not request.no_symlink and staging_symlink is not None:
@@ -265,7 +263,6 @@ def handle_stage_audio(
                     reuse_existing=reuse_existing,
                     aggressive_normalization=not request.no_aggressive_normalization,
                     verbose=request.verbose,
-                    cached_measurements=cached_measurements,
                 )
             finally:
                 manifest_writer.close()

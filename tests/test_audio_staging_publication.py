@@ -1,4 +1,4 @@
-"""Staging publishes validated audio and measures the artifact it actually reuses."""
+"""Staging publishes validated audio and reports only measurements it made."""
 
 from __future__ import annotations
 
@@ -11,8 +11,7 @@ import pytest
 
 from besedy.lib.audio import normalize_stage_helpers as stage_helpers
 from besedy.lib.audio.normalize import stage_audio_files
-from besedy.lib.audio.quality import analyze_audio_file
-from besedy.lib.audio.staged_measurements import load_staged_measurements
+from besedy.lib.audio.quality import AUDIO_QUALITY_COLUMNS, analyze_audio_file
 from besedy.lib.audio.types import ManifestWriter
 from besedy.lib.workflow.common import CsvAudioRow
 from tests.helpers.audio import create_silent_wav, create_tone_wav
@@ -184,7 +183,7 @@ def test_overwrite_replaces_staged_symlink_without_changing_its_target(
 
 
 @pytest.mark.integration
-def test_incremental_manifest_keeps_measurements_of_normalized_audio(
+def test_manifest_records_output_measurements_only_for_fresh_conversion(
     tmp_path: Path, require_ffmpeg, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     if shutil.which("ffprobe") is None:
@@ -206,11 +205,10 @@ def test_incremental_manifest_keeps_measurements_of_normalized_audio(
     measurements = []
     for reuse_existing in (False, True):
         manifest_path = tmp_path / "normalized.csv"
-        cache = load_staged_measurements(manifest_path)
         if reuse_existing:
 
             def unexpected_analysis(*_args, **_kwargs):
-                pytest.fail("unchanged staged audio should reuse its measurements")
+                pytest.fail("reused staged audio should not be reanalyzed")
 
             monkeypatch.setattr(stage_helpers, "analyze_audio_file", unexpected_analysis)
         manifest = ManifestWriter(manifest_path, include_analysis=True)
@@ -225,7 +223,6 @@ def test_incremental_manifest_keeps_measurements_of_normalized_audio(
                 continue_on_error=False,
                 reuse_existing=reuse_existing,
                 protected={},
-                cached_measurements=cache,
             )
         finally:
             manifest.close()
@@ -236,7 +233,51 @@ def test_incremental_manifest_keeps_measurements_of_normalized_audio(
 
     first, reused = measurements
     assert -20 <= float(first["integrated_loudness_lufs"]) <= -12
-    assert reused["integrated_loudness_lufs"] == first["integrated_loudness_lufs"]
-    assert reused["sample_rate"] == first["sample_rate"] == "16000"
-    assert reused["channels"] == first["channels"] == "1"
-    assert reused["integrated_loudness_lufs"] != source_metrics.integrated_loudness_lufs
+    assert first["sample_rate"] == "16000"
+    assert first["channels"] == "1"
+    assert first["integrated_loudness_lufs"] != source_metrics.integrated_loudness_lufs
+    assert all(reused[column] == "" for column in AUDIO_QUALITY_COLUMNS)
+
+
+@pytest.mark.parametrize("source_exists", [False, True])
+def test_reuse_does_not_run_ffmpeg_or_copy_source_measurements(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source_exists: bool
+) -> None:
+    source = tmp_path / "source.wav"
+    if source_exists:
+        create_tone_wav(source)
+    staged = create_silent_wav(tmp_path / f"{HASH}.wav")
+    previous = staged.read_bytes()
+
+    def unexpected_work(*_args, **_kwargs):
+        pytest.fail("reuse must not need audio tools or analysis")
+
+    monkeypatch.setattr(stage_helpers, "analyze_audio_file", unexpected_work)
+    monkeypatch.setattr(stage_helpers.subprocess, "run", unexpected_work)
+    monkeypatch.setattr("besedy.lib.audio.normalize.resolve_analysis_binary", unexpected_work)
+    manifest_path = tmp_path / "normalized.csv"
+    manifest = ManifestWriter(manifest_path, include_analysis=True)
+    try:
+        prepared, skipped = stage_audio_files(
+            [_row(source)],
+            tmp_path,
+            manifest_writer=manifest,
+            include_audio_analysis=True,
+            analysis_ffmpeg="unavailable-ffmpeg",
+            analysis_ffprobe="unavailable-ffprobe",
+            continue_on_error=False,
+            reuse_existing=True,
+        )
+    finally:
+        manifest.close()
+
+    assert skipped == []
+    assert len(prepared) == 1
+    assert prepared[0].action == "existing"
+    assert staged.read_bytes() == previous
+    with manifest_path.open(newline="", encoding="utf-8") as handle:
+        recorded = next(csv.DictReader(handle))
+    assert recorded["Hash"] == HASH
+    assert recorded["Full Path"] == str(staged)
+    assert recorded["Size (bytes)"] == str(len(previous))
+    assert all(recorded[column] == "" for column in AUDIO_QUALITY_COLUMNS)

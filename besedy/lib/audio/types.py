@@ -19,7 +19,6 @@ from pathlib import Path
 from besedy.core.paths import FFMPEG_LOG_DIR
 from besedy.core.system import detect_logical_cpus
 from besedy.lib.audio.quality import AUDIO_QUALITY_COLUMNS, AudioQualityMetrics
-from besedy.lib.audio.staged_measurements import MEASUREMENT_FINGERPRINT_COLUMN
 
 __all__ = [
     "AUDIO_QUALITY_COLUMNS",
@@ -189,7 +188,6 @@ class ConversionResult:
     log_lines: Sequence[str]
     metrics: AudioQualityMetrics | None = None
     size_bytes: int = 0
-    measurement_fingerprint: str = ""
 
 
 class ManifestWriter:
@@ -215,7 +213,6 @@ class ManifestWriter:
         fieldnames = ["Hash", "Full Path", "Filename", "Size (bytes)", "Size (human)", "added_at"]
         if include_analysis:
             fieldnames.extend(AUDIO_QUALITY_COLUMNS)
-            fieldnames.append(MEASUREMENT_FINGERPRINT_COLUMN)
         self.fieldnames = fieldnames
         path.parent.mkdir(parents=True, exist_ok=True)
         self.handle = path.open("w", newline="", encoding="utf-8")
@@ -229,7 +226,6 @@ class ManifestWriter:
         *,
         size_bytes: int,
         metrics: AudioQualityMetrics | None = None,
-        measurement_fingerprint: str = "",
         added_at: str | None = None,
     ) -> None:
         """Write a staged file entry to the manifest.
@@ -251,7 +247,6 @@ class ManifestWriter:
         if self.include_analysis:
             for column in AUDIO_QUALITY_COLUMNS:
                 row[column] = getattr(metrics, column, "") if metrics else ""
-            row[MEASUREMENT_FINGERPRINT_COLUMN] = measurement_fingerprint if metrics else ""
         with self.lock:
             self.writer.writerow(row)
             self.handle.flush()
