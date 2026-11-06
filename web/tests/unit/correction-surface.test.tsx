@@ -826,6 +826,85 @@ describe("CorrectionSurface", () => {
     expect(screen.getByDisplayValue("machine 2")).toBeInTheDocument();
   });
 
+  it("keeps the selected span's conflict when an earlier approval succeeds", async () => {
+    let moved = false;
+    let resolveApprove: (value: unknown) => void = () => {};
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) {
+        return moved
+          ? page(0, 2, 2, [span(0), span(1, { text: "their text", revisionId: "rev-1-2", isEdited: true })])
+          : page(0, 2, 2);
+      }
+      if (/\/spans\/span-0$/.test(url) && init?.method === "POST") {
+        return new Promise((resolve) => {
+          resolveApprove = resolve;
+        });
+      }
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    const { queryClient } = renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await listenThrough(0);
+    await userEvent.click(screen.getByRole("button", { name: "approveAndContinue" }));
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+    const editor = await screen.findByDisplayValue("machine 1");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "my draft");
+    moved = true;
+    await queryClient.invalidateQueries({ queryKey: ["correction-spans"] });
+    await waitFor(() => expect(screen.getByTestId("conflict-current-text")).toHaveTextContent("their text"));
+
+    resolveApprove({
+      spanId: "span-0",
+      revisionId: "rev-0-1",
+      text: "machine 0",
+      state: "needs_second_approval",
+      approverIds: ["user-1"],
+      disapproverIds: [],
+      replayed: false,
+    });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "disapprove" })).not.toBeDisabled());
+    expect(editor).toHaveValue("my draft");
+    expect(screen.getByTestId("conflict-current-text")).toHaveTextContent("their text");
+  });
+
+  it("does not flag the selected span when an earlier command conflicts", async () => {
+    let rejectApprove: (error: Error) => void = () => {};
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 2, 2);
+      if (/\/spans\/span-0$/.test(url) && init?.method === "POST") {
+        return new Promise((_resolve, reject) => {
+          rejectApprove = reject;
+        });
+      }
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await listenThrough(0);
+    await userEvent.click(screen.getByRole("button", { name: "approveAndContinue" }));
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+    const editor = await screen.findByDisplayValue("machine 1");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "my draft");
+
+    rejectApprove(new ApiError("conflict", 409, { code: "REVISION_CONFLICT" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "disapprove" })).not.toBeDisabled());
+    expect(editor).toHaveValue("my draft");
+    expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
+    expect(mocks.toast).toHaveBeenCalledWith({ description: "conflict", variant: "destructive" });
+  });
+
   // When the answer to a command is lost, repeating it must carry the same
   // key, so the server replays what it recorded instead of refusing the now
   // stale revision.
