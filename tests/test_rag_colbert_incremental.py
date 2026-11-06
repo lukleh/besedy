@@ -171,6 +171,101 @@ def test_sync_colbert_index_skips_unchanged_scope_without_worker_mutations(
     assert fake_colbert_worker == []
 
 
+@pytest.mark.parametrize("mode", ["bootstrap", "noop", "incremental", "rebuild"])
+def test_sync_json_reports_elapsed_and_executed_phase_timings(
+    tmp_path: Path, fake_colbert_worker, monkeypatch: pytest.MonkeyPatch, capsys, mode: str
+) -> None:
+    from types import SimpleNamespace
+
+    from besedy.commands.catalog import rag_colbert_index as command
+
+    transcripts_root = tmp_path / "transcripts_20260206_120010"
+    backend = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
+    audio_hash = "a" * 64
+    transcript = transcripts_root / backend / audio_hash / "transcript.json"
+    _write_transcript(transcript, [{"start": 0.0, "end": 1.0, "text": "original text"}])
+    request = command.RagColbertIndexRequest(
+        group="wg-timings",
+        backend=backend,
+        transcripts_root=transcripts_root,
+        index_dir=tmp_path / "bundle",
+        model="jinaai/jina-colbert-v2",
+        runtime="docker",
+        rebuild=mode == "rebuild",
+        json=True,
+    )
+    if mode != "bootstrap":
+        sync_colbert_index(
+            workflow_group_id="wg-timings",
+            backend_key=backend,
+            transcripts_root=transcripts_root,
+            index_dir=request.index_dir,
+        )
+    if mode == "incremental":
+        _write_transcript(transcript, [{"start": 0.0, "end": 1.0, "text": "updated text"}])
+
+    elapsed = [0.0]
+    clock = SimpleNamespace(perf_counter=lambda: elapsed[0])
+    monkeypatch.setattr(rag_colbert, "time", clock)
+    monkeypatch.setattr(command, "time", clock)
+    original_lock = rag_colbert._colbert_scope_lock
+
+    @contextmanager
+    def lock_with_wait(path):
+        with original_lock(path):
+            elapsed[0] += 7.0
+            yield
+
+    monkeypatch.setattr(rag_colbert, "_colbert_scope_lock", lock_with_wait)
+
+    def delayed(function, seconds):
+        def call(**kwargs):
+            result = function(**kwargs)
+            elapsed[0] += seconds
+            return result
+
+        return call
+
+    for name, seconds in (
+        ("discover_transcript_sources", 1.0),
+        ("_copy_bundle_to_staging", 2.0),
+        ("_cutover_staged_bundle", 5.0),
+    ):
+        monkeypatch.setattr(rag_colbert, name, delayed(getattr(rag_colbert, name), seconds))
+    original_worker = rag_colbert._run_colbert_worker
+
+    def worker(**kwargs):
+        result = original_worker(**kwargs)
+        elapsed[0] += {
+            "build-index": 5.0,
+            "add-to-index": 3.0,
+            "delete-from-index": 3.0,
+            "audit-tokens": 4.0,
+        }[kwargs["command"]]
+        return result
+
+    monkeypatch.setattr(rag_colbert, "_run_colbert_worker", worker)
+
+    assert command.handle_rag_colbert_index(request) == 0
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert captured.err == ""
+    assert payload["index_dir"] == str(request.index_dir)
+    assert payload["hashes_discovered"] == 1
+    expected = {"discovery": 1.0}
+    if mode in ("bootstrap", "rebuild"):
+        expected["full_rebuild"] = 6.0
+    elif mode == "incremental":
+        expected.update(bundle_copy=2.0, index_update=6.0, token_audit=4.0, activation=5.0)
+    assert payload["phase_timings_seconds"] == expected
+    assert payload["elapsed_seconds"] == sum(expected.values()) + 7.0
+    # Timings describe this invocation; a subsequent no-op must not inherit them.
+    meta = json.loads((request.index_dir / "index_meta.json").read_text())
+    assert "phase_timings_seconds" not in meta
+    assert "elapsed_seconds" not in meta
+
+
 def test_sync_colbert_index_updates_one_audio_hash_incrementally(
     tmp_path: Path,
     fake_colbert_worker,
@@ -510,7 +605,13 @@ def test_queued_sync_resolves_source_after_rollback_pointer_change(
     audio_hash = "e" * 64
     backend = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
     transcripts_root = tmp_path / f"transcripts_{catalog_id}"
-    machine_path = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs" / audio_hash / "transcript.json"
+    machine_path = (
+        transcripts_root
+        / "faster-whisper"
+        / "large-v3@silero_vad_v6@lang-cs"
+        / audio_hash
+        / "transcript.json"
+    )
     _write_transcript(machine_path, [{"start": 0.0, "end": 1.0, "text": "machine words"}])
     bundle_dir = tmp_path / "bundle"
     corrections_root = tmp_path / "corrections"
@@ -523,7 +624,14 @@ def test_queued_sync_resolves_source_after_rollback_pointer_change(
         index_dir=bundle_dir,
     )
 
-    corrected = corrections_root / f"corrections_{catalog_id}" / "workspace" / "publications" / "publication" / "transcript.json"
+    corrected = (
+        corrections_root
+        / f"corrections_{catalog_id}"
+        / "workspace"
+        / "publications"
+        / "publication"
+        / "transcript.json"
+    )
     _write_transcript(corrected, [{"start": 0.0, "end": 1.0, "text": "corrected words"}])
     pointer_dir = corrections_root / f"corrections_{catalog_id}" / "index-sources"
     pointer_dir.mkdir(parents=True)
@@ -576,8 +684,103 @@ def test_queued_sync_resolves_source_after_rollback_pointer_change(
         result = future.result(timeout=30)
 
     assert result.hashes_unchanged == 1
-    assert read_source_state(bundle_dir / "source_state.sqlite")[audio_hash].transcript_path == str(machine_path)
-    assert [chunk.text for chunk in list_chunks(path=bundle_dir / "chunk_store.sqlite")] == ["machine words"]
+    assert read_source_state(bundle_dir / "source_state.sqlite")[audio_hash].transcript_path == str(
+        machine_path
+    )
+    assert [chunk.text for chunk in list_chunks(path=bundle_dir / "chunk_store.sqlite")] == [
+        "machine words"
+    ]
+
+
+@pytest.mark.parametrize("recordings", [3, 50])
+@pytest.mark.parametrize("change_target", [False, True])
+def test_targeted_sync_reads_only_its_transcript(
+    tmp_path: Path,
+    fake_colbert_worker,
+    monkeypatch: pytest.MonkeyPatch,
+    recordings: int,
+    change_target: bool,
+) -> None:
+    transcripts_root = tmp_path / "transcripts_20260206_120006"
+    backend = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
+    backend_root = transcripts_root / backend
+    hashes = [f"{index:064x}" for index in range(recordings)]
+    paths = [backend_root / audio_hash / "transcript.json" for audio_hash in hashes]
+    for path in paths:
+        _write_transcript(path, [{"start": 0.0, "end": 1.0, "text": "original text"}])
+    kwargs = {
+        "workflow_group_id": "wg-targeted-reads",
+        "backend_key": backend,
+        "transcripts_root": transcripts_root,
+        "index_dir": tmp_path / "bundle",
+    }
+    sync_colbert_index(**kwargs)
+    before = read_source_state(tmp_path / "bundle" / "source_state.sqlite")
+    # The single-recording operation must leave unrelated changed recordings
+    # for the next scope sync, without reading or fingerprinting their content.
+    _write_transcript(paths[-1], [{"start": 0.0, "end": 1.0, "text": "unrelated edit"}])
+    if change_target:
+        _write_transcript(paths[0], [{"start": 0.0, "end": 1.0, "text": "requested edit"}])
+    original_load = rag_chunk_corpus.load_json_with_fallback
+    reads: list[Path] = []
+
+    def load(path):
+        reads.append(path)
+        assert path == paths[0], "unrelated transcript was parsed during targeted refresh"
+        return original_load(path)
+
+    monkeypatch.setattr(rag_chunk_corpus, "load_json_with_fallback", load)
+
+    result = sync_colbert_index(**kwargs, target_audio_hash=hashes[0])
+
+    assert len(reads) == (2 if change_target else 1)
+    assert result.hashes_discovered == 1
+    assert result.hashes_updated == int(change_target)
+    after = read_source_state(tmp_path / "bundle" / "source_state.sqlite")
+    assert len(after) == recordings
+    assert after[hashes[-1]] == before[hashes[-1]]
+
+
+@pytest.mark.parametrize("mode", ["bootstrap", "requested-rebuild", "incompatible"])
+def test_targeted_full_rebuild_keeps_full_scope_counts(
+    tmp_path: Path, fake_colbert_worker, mode: str
+) -> None:
+    transcripts_root = tmp_path / "transcripts_20260206_120007"
+    backend = "faster-whisper/large-v3@silero_vad_v6@lang-cs"
+    hashes = ["a" * 64, "b" * 64]
+    for audio_hash in hashes:
+        _write_transcript(
+            transcripts_root / backend / audio_hash / "transcript.json",
+            [{"start": 0.0, "end": 1.0, "text": "full scope text"}],
+        )
+    kwargs = {
+        "workflow_group_id": "wg-targeted-rebuild",
+        "backend_key": backend,
+        "transcripts_root": transcripts_root,
+        "index_dir": tmp_path / "bundle",
+    }
+    if mode != "bootstrap":
+        sync_colbert_index(**kwargs)
+        (transcripts_root / backend / hashes[1] / "transcript.json").unlink()
+        hashes[1] = "c" * 64
+        _write_transcript(
+            transcripts_root / backend / hashes[1] / "transcript.json",
+            [{"start": 0.0, "end": 1.0, "text": "new recording"}],
+        )
+
+    result = sync_colbert_index(
+        **kwargs,
+        target_audio_hash=hashes[0],
+        rebuild=mode == "requested-rebuild",
+        index_bsize=123 if mode == "incompatible" else rag_colbert.DEFAULT_INDEX_BSIZE,
+    )
+
+    assert result.sync_mode == ("bootstrap" if mode == "bootstrap" else "rebuild")
+    assert result.hashes_discovered == 2
+    assert result.hashes_added == (2 if mode == "bootstrap" else 1)
+    assert result.hashes_updated == (0 if mode == "bootstrap" else 1)
+    assert result.hashes_removed == (0 if mode == "bootstrap" else 1)
+    assert set(read_source_state(tmp_path / "bundle" / "source_state.sqlite")) == set(hashes)
 
 
 def test_classify_target_hash_outside_scope_removes_its_stale_row() -> None:

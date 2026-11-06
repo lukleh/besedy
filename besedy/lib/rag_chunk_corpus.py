@@ -279,12 +279,16 @@ def discover_transcript_sources(
     chunk_tokenizer_model: str | None = None,
     corrections_root: Path | str | None = None,
     scope_transcripts: list[EffectiveTranscriptSource] | None = None,
+    target_audio_hash: str | None = None,
 ) -> TranscriptSourceBuild:
     """Discover transcript sources and fingerprints for one transcript backend scope.
 
     A published corrected transcript is the source for its recording; every
     other recording keeps its machine transcript. ``scope_transcripts`` lets a
     caller that has already resolved the scope hand the list in.
+    A targeted refresh fingerprints only its recording. Scope resolution still
+    validates correction pointers before filtering, preserving its fail-closed
+    behavior for publications.
     """
 
     normalized_backend = normalize_backend_key(backend_key)
@@ -299,6 +303,9 @@ def discover_transcript_sources(
             backend_key=normalized_backend,
             corrections_root=corrections_root,
         )
+    if target_audio_hash is not None:
+        target = target_audio_hash.strip().lower()
+        scope_transcripts = [source for source in scope_transcripts if source.audio_hash == target]
     token_counter = _get_chunk_token_counter(
         chunk_tokenizer_model=chunk_tokenizer_model,
     )

@@ -319,6 +319,29 @@ def test_discovery_and_chunking_use_the_corrected_text(
     assert "mis heard machine words" not in " ".join(chunk.text for chunk in corpus.chunks)
 
 
+def test_targeted_discovery_still_refuses_an_unrelated_broken_publication(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, corrections_root: Path
+) -> None:
+    monkeypatch.setattr(
+        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+    )
+    transcripts_root = tmp_path / "transcripts_20260206_120008"
+    _write_transcript(
+        transcripts_root / BACKEND / HASH_A / "transcript.json",
+        [{"start": 0.0, "end": 1.0, "text": "requested machine text"}],
+    )
+    _publish_correction(corrections_root, audio_hash=HASH_B, corrupt=True)
+
+    with pytest.raises(CorrectionPointerError, match="does not match the hash"):
+        discover_transcript_sources(
+            workflow_group_id=CATALOG_ID,
+            backend_key=BACKEND,
+            transcripts_root=transcripts_root,
+            corrections_root=corrections_root,
+            target_audio_hash=HASH_A,
+        )
+
+
 def test_fingerprint_changes_when_correction_replaces_machine_text(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, corrections_root: Path
 ) -> None:
