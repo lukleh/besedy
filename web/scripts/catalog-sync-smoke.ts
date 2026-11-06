@@ -22,6 +22,7 @@ async function main() {
   const addedHash = hash();
   const metadataPath = path.join(root, 'metadata.csv');
   const archivedPath = path.join(root, 'archived.csv');
+  const duplicatesPath = path.join(root, 'duplicates.csv');
   const client = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
   const publisher = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
   let concurrentPublication: boolean | null = null;
@@ -99,6 +100,34 @@ async function main() {
     assert.equal(added.isPublished, false, 'new recordings must start unpublished');
     assert.equal(await client.catalogEntry.count({ where: { workflowGroupId: catalogId, audioHash: removedHash } }), 0);
 
+    // Python keeps duplicate discoveries even when the original path is
+    // unknown. Those rows are valid CSV but cannot enter the web projection.
+    await fs.writeFile(duplicatesPath, [
+      'Hash,Original Path,Duplicate Path',
+      `${retainedHash},/audio/original.wav,/audio/known-duplicate.wav`,
+      `${retainedHash},,/audio/unknown-original.wav`,
+      '',
+    ].join('\n'));
+    await client.workflowGroup.update({
+      where: { id: catalogId }, data: { duplicatesCatalogPath: duplicatesPath },
+    });
+    const duplicatesSync = await syncCatalogGroup(catalogId);
+    assert.equal(duplicatesSync.status, 'success', duplicatesSync.error);
+    assert.deepEqual(await client.catalogDuplicate.findMany({
+      where: { workflowGroupId: catalogId },
+      select: { audioHash: true, originalPath: true, duplicatePath: true },
+    }), [{
+      audioHash: retainedHash,
+      originalPath: '/audio/original.wav',
+      duplicatePath: '/audio/known-duplicate.wav',
+    }]);
+    assert.equal((await client.catalogEntry.findUniqueOrThrow({
+      where: { workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash: retainedHash } },
+    })).duplicateCount, 1, 'only projected duplicates count toward recording details');
+    assert.equal((await client.catalogSyncState.findFirstOrThrow({
+      where: { workflowGroupId: catalogId, sourceKey: 'duplicates' },
+    })).rowCount, 1);
+
     // A parsed metadata source followed by a malformed archive must leave the
     // entire committed projection and its successful fingerprints intact.
     const entriesBeforeInvalid = await client.catalogEntry.findMany({
@@ -125,6 +154,7 @@ async function main() {
 
     // Clearing an explicitly allowed empty catalog still removes every row.
     await writeSources([], '', false);
+    await fs.writeFile(duplicatesPath, 'Hash,Original Path,Duplicate Path\n');
     assert.equal((await syncCatalogGroup(catalogId, { allowRowCountDrop: true })).status, 'success');
     assert.equal(await client.catalogEntry.count({ where: { workflowGroupId: catalogId } }), 0);
     console.log('Catalog sync publication/concurrency and CSV validation checks passed');

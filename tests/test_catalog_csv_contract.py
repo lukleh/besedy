@@ -15,7 +15,7 @@ import pytest
 
 from besedy.commands.catalog import create as create_command
 from besedy.commands.catalog.archive import ArchivedManifestWriter
-from besedy.commands.catalog.file_processing import AddFilesResult
+from besedy.commands.catalog.file_processing import AddFilesResult, write_duplicates_report
 from besedy.commands.catalog.ui import write_duplicates_csv
 from besedy.lib.catalog.manager import (
     AUDIO_HASH_ALGORITHM,
@@ -116,3 +116,23 @@ def test_duplicates_writer_emits_the_contract_columns(contract: dict, tmp_path: 
 
     assert set(contract["duplicates"]) <= set(header)
     assert rows[0]["Duplicate Path"] == str(duplicate.full_path)
+
+
+def test_duplicates_with_unknown_original_match_shared_fixture(tmp_path: Path) -> None:
+    known = "a" * 64
+    unknown = "b" * 64
+    path = tmp_path / "duplicates.csv"
+
+    count = write_duplicates_report(
+        duplicate_records=[
+            _record(Path("/copies"), "copy1.mp3", known),
+            _record(Path("/copies"), "copy2.mp3", known),
+            _record(Path("/copies"), "unknown-original.mp3", unknown),
+        ],
+        new_records=[],
+        hash_to_original_path={known: "/source/known.mp3"},
+        duplicates_csv_path=path,
+    )
+
+    assert count == 3
+    assert _read(path) == _read(CONTRACT_PATH.with_name("catalog-duplicates-unknown-original.csv"))

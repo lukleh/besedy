@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import Papa from 'papaparse';
+
+// Python's duplicates writer is checked against this same fixture.
+const duplicatesWithUnknownOriginalCsv = readFileSync(
+  path.resolve(__dirname, '../../../contracts/catalog-duplicates-unknown-original.csv'),
+  'utf8',
+);
 
 // Must equal SOURCE_FINGERPRINT_VERSION (asserted below). A static import of
 // source-snapshot would run before the mock functions below are initialized,
@@ -606,9 +614,11 @@ describe('catalog-sync', () => {
     ['archived', 'Hash,Original Path,Compressed Path\n' + 'a'.repeat(64) + ',,/audio.webm', 'blank Original Path'],
     ['archived', 'Hash,Original Path,Compressed Path\n' + 'a'.repeat(64) + ',/source.wav,', 'blank Compressed Path'],
     ['duplicates', 'Hash,Original Path\n', 'missing required columns: Duplicate Path'],
+    ['duplicates', 'Hash,Duplicate Path\n' + 'a'.repeat(64) + ',/duplicate.wav', 'missing required columns: Original Path'],
     ['duplicates', 'Hash,Original Path,Duplicate Path\n,/source.wav,/duplicate.wav', '64-character hexadecimal Hash'],
     ['duplicates', 'Hash,Original Path,Duplicate Path\n' + 'a'.repeat(64) + ',/source.wav,', 'blank Duplicate Path'],
-    ['duplicates', 'Hash,Original Path,Duplicate Path\n' + 'a'.repeat(64) + ',,/duplicate.wav', 'blank Original Path'],
+    ['duplicates', 'Hash,Original Path,Duplicate Path\nnot-a-hash,,/duplicate.wav', '64-character hexadecimal Hash'],
+    ['duplicates', 'Hash,Original Path,Duplicate Path\n' + 'a'.repeat(64) + ',,', 'blank Duplicate Path'],
     ['metadata', '', 'missing required columns'],
   ])('rejects invalid %s CSV before touching the live projection (%s)', async (kind, content, detail) => {
     setupBaseChangedWithBaseline(100);
@@ -768,6 +778,74 @@ describe('catalog-sync', () => {
     expect(result.rowCounts).toEqual({ metadata: 1, archived: 1, duplicates: 2 });
     expect(mockTx.catalogDuplicate.createMany.mock.calls[0][0].data).toHaveLength(2);
     expect(mockTx.catalogEntry.createMany.mock.calls[0][0].data[0].duplicateCount).toBe(2);
+  });
+
+  it('syncs Python duplicate output while skipping rows whose original is unknown', async () => {
+    setupBaseChangedWithBaseline(0);
+    mockTx.workflowGroup.findUnique.mockResolvedValue({
+      id: '20251222_144441',
+      metadataCatalogPath: '/data/meta.csv',
+      archivedCatalogPath: '/data/archived.csv',
+      duplicatesCatalogPath: '/data/duplicates.csv',
+    });
+    const known = 'a'.repeat(64);
+    const unknown = 'b'.repeat(64);
+    mockReadFile.mockImplementation(async (file: string) =>
+      file === '/data/duplicates.csv'
+        ? duplicatesWithUnknownOriginalCsv
+        : csvRows([{ Hash: known }, { Hash: unknown }]),
+    );
+    const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+
+    const result = await syncCatalogGroup('20251222_144441');
+
+    expect(result.status).toBe('success');
+    expect(result.rowCounts).toEqual({ metadata: 2, archived: 2, duplicates: 2 });
+    expect(mockTx.catalogDuplicate.createMany.mock.calls[0][0].data).toEqual([
+      expect.objectContaining({ audioHash: known, originalPath: '/source/known.mp3', duplicatePath: '/copies/copy1.mp3' }),
+      expect.objectContaining({ audioHash: known, originalPath: '/source/known.mp3', duplicatePath: '/copies/copy2.mp3' }),
+    ]);
+    expect(mockTx.catalogEntry.createMany.mock.calls[0][0].data).toEqual([
+      expect.objectContaining({ audioHash: known, duplicateCount: 2 }),
+      expect.objectContaining({ audioHash: unknown, duplicateCount: 0 }),
+    ]);
+    expect(mockTx.catalogSyncState.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: expect.objectContaining({ status: 'SUCCESS', rowCount: 2 }),
+      where: { workflowGroupId_sourceKey: { workflowGroupId: '20251222_144441', sourceKey: 'duplicates' } },
+    }));
+  });
+
+  it('clears projected duplicate counts when the changed source only has unknown originals', async () => {
+    setupBaseChangedWithBaseline(1);
+    mockTx.workflowGroup.findUnique.mockResolvedValue({
+      id: '20251222_144441',
+      metadataCatalogPath: '/data/meta.csv',
+      archivedCatalogPath: '/data/archived.csv',
+      duplicatesCatalogPath: '/data/duplicates.csv',
+    });
+    mockTx.catalogSyncState.findMany.mockResolvedValue([
+      { sourceKey: 'metadata', filePath: '/data/meta.csv', fingerprint: emptyCsvFingerprint, rowCount: 1 },
+      { sourceKey: 'archived', filePath: '/data/archived.csv', fingerprint: emptyCsvFingerprint, rowCount: 1 },
+      { sourceKey: 'duplicates', filePath: '/data/duplicates.csv', fingerprint: 'old', rowCount: 1 },
+    ]);
+    mockReadFile.mockImplementation(async (file: string) =>
+      file === '/data/duplicates.csv'
+        ? `Hash,Original Path,Duplicate Path\n${'a'.repeat(64)},  ,/duplicate.wav\n`
+        : emptyCsv,
+    );
+    const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+
+    const result = await syncCatalogGroup('20251222_144441');
+
+    expect(result.status).toBe('success');
+    expect(result.changedSources).toEqual(['duplicates']);
+    expect(result.rowCounts).toEqual({ duplicates: 0 });
+    expect(mockTx.catalogDuplicate.deleteMany).toHaveBeenCalledWith({ where: { workflowGroupId: '20251222_144441' } });
+    expect(mockTx.catalogDuplicate.createMany).not.toHaveBeenCalled();
+    expect(mockTx.catalogEntry.updateMany).toHaveBeenCalledExactlyOnceWith({
+      where: { workflowGroupId: '20251222_144441' },
+      data: { duplicateCount: 0 },
+    });
   });
 
   it('syncs rows with a missing or unknown hash algorithm and reports how many', async () => {

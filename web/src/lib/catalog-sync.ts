@@ -255,7 +255,9 @@ function parseCsvRows(content: string, kind: SourceKind): CsvRow[] {
     throw invalid(`missing required columns: ${missing.join(', ')}`);
   }
 
-  const pathColumns = required.slice(1);
+  // Python keeps duplicate rows whose original is unknown. The header is
+  // still required, but those blank cells are skipped during projection.
+  const pathColumns = kind === 'duplicates' ? ['Duplicate Path'] : required.slice(1);
   for (const [index, row] of results.data.entries()) {
     const hash = normalizeHash(getRowValue(row, ['Hash']));
     if (!HashSchema.safeParse(hash).success) {
@@ -760,14 +762,18 @@ async function syncCatalogGroupAttempt(
         if (duplicatesChanged) {
           if (duplicatesState?.resolvedFilePath) {
             const rows = parseCsvRows(duplicatesState.content!, 'duplicates');
-            duplicateRows = rows.map((row) => ({
-              workflowGroupId: groupId,
-              audioHash: normalizeHash(getRowValue(row, ['Hash']))!,
-              originalPath: getRowValue(row, ['Original Path'])!.trim(),
-              duplicatePath: getRowValue(row, ['Duplicate Path'])!.trim(),
-              duplicatePayload: toDuplicatePayload(row),
-              duplicatePayloadVersion: 1,
-            }));
+            duplicateRows = rows.flatMap((row) => {
+              const originalPath = optionalPath(getRowValue(row, ['Original Path']));
+              if (!originalPath) return [];
+              return [{
+                workflowGroupId: groupId,
+                audioHash: normalizeHash(getRowValue(row, ['Hash']))!,
+                originalPath,
+                duplicatePath: getRowValue(row, ['Duplicate Path'])!.trim(),
+                duplicatePayload: toDuplicatePayload(row),
+                duplicatePayloadVersion: 1,
+              }];
+            });
           }
 
           rowCounts[duplicatesState!.descriptor.sourceKey] =
