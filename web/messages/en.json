@@ -1637,10 +1637,10 @@
       "eventFallbackTitle": "Event {id}",
       "unreleased": "Unreleased",
       "editEvent": "Edit Event",
+      "correction": "Correction",
       "editMenu": {
         "eventDetails": "Event details",
         "recordingMetadata": "Recording metadata",
-        "correction": "Transcript correction",
         "artwork": "Artwork",
         "sources": "Sources"
       },

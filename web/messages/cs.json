@@ -1636,10 +1636,10 @@
       "eventFallbackTitle": "Událost {id}",
       "unreleased": "Nevydáno",
       "editEvent": "Upravit událost",
+      "correction": "Korektura",
       "editMenu": {
         "eventDetails": "Údaje o události",
         "recordingMetadata": "Metadata nahrávky",
-        "correction": "Korektura přepisu",
         "artwork": "Obálka",
         "sources": "Zdroje"
       },

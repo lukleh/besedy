@@ -91,7 +91,7 @@ interface RecordingTranscriptSectionProps {
   canSeeTranscriptVariants?: boolean;
   canCorrectTranscripts?: boolean;
   correctionEligible?: boolean;
-  /** An embedding page offers correction from its own menu instead. */
+  /** An embedding page offers its own correction action. */
   hideCorrectionLink?: boolean;
   catalogId: string;
   clock: PlaybackClock;

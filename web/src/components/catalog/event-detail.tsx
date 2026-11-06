@@ -5,10 +5,11 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CalendarX, ChevronDown, Mic, RefreshCw } from "lucide-react";
+import { ArrowLeft, CalendarX, ChevronDown, Mic, RefreshCw, SquarePen } from "lucide-react";
 import RecordingContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content";
 import { formatPartialDate } from "@/lib/date-format";
 import { isNetworkFailure } from "@/lib/api/fetch-json";
+import { buildCorrectionPagePath } from "@/lib/api/recording-urls";
 import { isAccessDeniedError } from "@/lib/query/auth-sensitive";
 import { clearLastRoute } from "@/lib/pwa/last-route";
 import { useLocalArtworkUrl } from "@/hooks/use-local-package";
@@ -89,7 +90,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     hash: activeSelectedHash,
     enabled: !!selectedRecording,
   });
-  // Correction belongs to the event's primary recording, so the menu offers it
+  // Correction belongs to the event's primary recording, so the button offers it
   // only while that one is selected. An unavailable recording renders no
   // transcript, so it offers no correction either.
   const correctionHash =
@@ -251,7 +252,6 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
       canEditArtwork={canViewArtworkCandidates}
       artworkHint={artworkHint}
       canManageSources={canManageSources}
-      correctionHash={correctionHash}
     />
   );
 
@@ -260,6 +260,14 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     <>
       {eventBadges}
       {editMenu}
+      {correctionHash && (
+        <Button asChild variant="outline" size="sm">
+          <Link href={buildCorrectionPagePath(catalogId, correctionHash)}>
+            <SquarePen className="mr-2 h-4 w-4" />
+            {t("correction")}
+          </Link>
+        </Button>
+      )}
     </>
   );
 
