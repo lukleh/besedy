@@ -24,6 +24,10 @@ concurrency and operator history; Besedy owns the domain requests and outcomes.
 There is no general-purpose report-generation worker or language-model provider
 runtime in the jobs stack. Research clients use the read-only [MCP server](mcp-server.md).
 
+[ADR 0013](../adr/0013-jobs-runtime-after-deep-search.md) proposes retaining this
+runtime while measuring its operating cost and the recovery work a database
+queue would require.
+
 ## Remaining deployments
 
 `just jobs-<dev|test|prod>-deploy` registers all three deployments on the same
