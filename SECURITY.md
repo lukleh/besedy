@@ -50,7 +50,7 @@ branches. Only the current `main` receives security fixes; there are no backport
 
 ## Accepted Dependency Advisories
 
-Three upstream advisories are currently accepted with narrow threat models:
+Two upstream advisories are currently accepted with narrow threat models:
 
 - **`brace-expansion` — `GHSA-mh99-v99m-4gvg` (high).** This denial-of-service
   advisory is reachable only through development-time ESLint dependencies.

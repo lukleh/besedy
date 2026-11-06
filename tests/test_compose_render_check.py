@@ -30,7 +30,6 @@ def test_every_compose_file_is_rendered_by_the_check() -> None:
         name
         for name in _tracked_files()
         if Path(name).name.startswith("docker-compose") and name.endswith(".yml")
-        and (REPO_ROOT / name).is_file()
     ]
     assert compose_files, "no compose files found"
 
