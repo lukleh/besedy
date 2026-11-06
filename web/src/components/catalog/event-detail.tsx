@@ -24,6 +24,7 @@ import { EventArtworkPicture } from "@/components/catalog/event-artwork-picture"
 import { EventArtworkSwipe } from "@/components/catalog/event-artwork-swipe";
 import { eventDetailQueryOptions, selectShownEventArtwork } from "@/components/catalog/event-detail-query";
 import { EventEditMenu } from "@/components/catalog/event-edit-menu";
+import { CorrectionLink } from "@/components/correction/correction-link";
 import {
   ResponsiveMenu,
   ResponsiveMenuContent,
@@ -89,7 +90,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     hash: activeSelectedHash,
     enabled: !!selectedRecording,
   });
-  // Correction belongs to the event's primary recording, so the menu offers it
+  // Correction belongs to the event's primary recording, so the button offers it
   // only while that one is selected. An unavailable recording renders no
   // transcript, so it offers no correction either.
   const correctionHash =
@@ -251,7 +252,6 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
       canEditArtwork={canViewArtworkCandidates}
       artworkHint={artworkHint}
       canManageSources={canManageSources}
-      correctionHash={correctionHash}
     />
   );
 
@@ -260,6 +260,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     <>
       {eventBadges}
       {editMenu}
+      {correctionHash && <CorrectionLink catalogId={catalogId} hash={correctionHash} />}
     </>
   );
 

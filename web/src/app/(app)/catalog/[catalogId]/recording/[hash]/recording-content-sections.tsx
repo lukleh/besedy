@@ -3,20 +3,20 @@
 import { Fragment, type ComponentProps, type ReactNode } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowLeft, Download, FileAudio, Mic, Pencil, SquarePen } from "lucide-react";
+import { ArrowLeft, Download, FileAudio, Mic, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { AudioPlayer } from "@/components/player/audio-player";
 import { TranscriptStreamViewer } from "@/components/transcript/transcript-stream-viewer";
 import { TranscriptViewer, type Transcript } from "@/components/transcript/transcript-viewer";
+import { CorrectionLink } from "@/components/correction/correction-link";
 import {
   ResponsiveMenu,
   ResponsiveMenuContent,
   ResponsiveMenuItem,
   ResponsiveMenuTrigger,
 } from "@/components/ui/responsive-menu";
-import { buildCorrectionPagePath } from "@/lib/api/recording-urls";
 import type { PlaybackClock } from "@/lib/playback-clock";
 import { usePlaybackTime } from "@/hooks/use-playback-time";
 import { cn } from "@/lib/utils";
@@ -91,7 +91,7 @@ interface RecordingTranscriptSectionProps {
   canSeeTranscriptVariants?: boolean;
   canCorrectTranscripts?: boolean;
   correctionEligible?: boolean;
-  /** An embedding page offers correction from its own menu instead. */
+  /** An embedding page offers its own correction action. */
   hideCorrectionLink?: boolean;
   catalogId: string;
   clock: PlaybackClock;
@@ -386,12 +386,7 @@ export function RecordingTranscriptSection({
           moment there is a transcript to read.
         */}
         {canCorrectTranscripts && correctionEligible && !hideCorrectionLink && (
-          <Button asChild variant="outline" size="sm" className="gap-2">
-            <Link href={buildCorrectionPagePath(catalogId, hash)}>
-              <SquarePen className="h-4 w-4" />
-              {t("correction.openSurface")}
-            </Link>
-          </Button>
+          <CorrectionLink catalogId={catalogId} hash={hash} />
         )}
         {canSeeTranscriptVariants && (
         <div className="inline-flex items-center gap-2 rounded-full border bg-muted/40 px-3 py-1">
@@ -437,8 +432,8 @@ export function RecordingTranscriptSection({
           canDownload={canDownloadTranscripts}
           canSeeSpeakers={canSeeSpeakers}
           canSeeTranscriptVariants={canSeeTranscriptVariants}
-          // Only the progress panel's link reads this, and the embedding page's
-          // menu replaces it along with the heading button.
+          // Only the progress panel's link reads this; an embedding page's
+          // correction action replaces it along with the heading button.
           canCorrectTranscripts={canCorrectTranscripts && !hideCorrectionLink}
           onTranscriptChange={onTranscriptChange}
         />

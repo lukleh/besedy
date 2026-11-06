@@ -53,7 +53,7 @@ vi.mock("@/components/ui/responsive-menu", () => {
   return {
     ResponsiveMenu: Passthrough,
     ResponsiveMenuTrigger: Passthrough,
-    ResponsiveMenuContent: Passthrough,
+    ResponsiveMenuContent: ({ children }: { children?: ReactNode }) => <div role="menu">{children}</div>,
     ResponsiveMenuItem: Passthrough,
     ResponsiveMenuRadioGroup: Passthrough,
     ResponsiveMenuRadioItem: Passthrough,
@@ -283,23 +283,47 @@ describe("EventDetail edit menu", () => {
     expect(recordingContentMock).toHaveBeenCalledWith(expect.objectContaining({ hideMetadataEdit: true }));
   });
 
-  it("offers transcript correction from the menu instead of the transcript heading", () => {
+  it("offers correction in the header without event edit permission", () => {
     grantCorrection();
     renderEventDetail(eventDetail());
 
     expect(linkHrefs()).toEqual([`/catalog/${CATALOG_ID}/recording/${"a".repeat(64)}/correction`]);
-    expect(screen.getByRole("link", { name: /editMenu.correction/ })).toBeInTheDocument();
+    expect(within(screen.getByTestId("header-actions")).getByRole("link", { name: "openSurface" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /editEvent/ })).not.toBeInTheDocument();
     expect(recordingContentMock).toHaveBeenCalledWith(expect.objectContaining({ hideCorrectionLink: true }));
   });
 
-  it("leaves correction out of the menu for a recording outside correction scope", () => {
+  it("puts correction beside Edit Event outside its menu", () => {
+    grantCorrection();
+    renderEventDetail(eventDetail(), true);
+
+    const actions = within(screen.getByTestId("header-actions"));
+    expect(actions.getByRole("button", { name: /editEvent/ })).toBeInTheDocument();
+    expect(actions.getByRole("link", { name: "openSurface" })).toHaveAttribute(
+      "href",
+      `/catalog/${CATALOG_ID}/recording/${"a".repeat(64)}/correction`
+    );
+    expect(within(actions.getByRole("menu")).queryByRole("link", { name: "openSurface" })).not.toBeInTheDocument();
+  });
+
+  it("hides correction without permission even when event editing is allowed", () => {
+    useRecordingEntryMock.mockReturnValue({
+      data: { entry: { isActionable: true }, canCorrectTranscripts: false, correctionEligible: true },
+    });
+    renderEventDetail(eventDetail(), true);
+
+    expect(screen.getByRole("button", { name: /editEvent/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "openSurface" })).not.toBeInTheDocument();
+  });
+
+  it("hides correction for a recording outside correction scope", () => {
     grantCorrection(false);
     renderEventDetail(eventDetail());
 
     expect(linkHrefs()).toEqual([]);
   });
 
-  it("leaves correction out of the menu for a recording that is not available", () => {
+  it("hides correction for a recording that is not available", () => {
     grantCorrection(true, false);
     renderEventDetail(eventDetail());
 
@@ -321,7 +345,7 @@ describe("EventDetail edit menu", () => {
     expect(linkHrefs()).toEqual([`/catalog/${CATALOG_ID}/recording/${"a".repeat(64)}/correction`]);
   });
 
-  it("leaves correction out of the menu when the selected recording is not the primary", () => {
+  it("hides correction when the selected recording is not the primary", () => {
     const recording = eventDetail().recordings[0];
     grantCorrection();
     renderEventDetail(eventDetail({ recordings: [{ ...recording, isPrimary: false }] }));

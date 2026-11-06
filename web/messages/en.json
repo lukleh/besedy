@@ -275,7 +275,7 @@
     "inProgressDescription": "People are checking this transcript against the audio. It becomes readable once every passage has been checked and a curator publishes it.",
     "reviewedOnce": "Reviewed once",
     "fullyApproved": "Fully approved",
-    "openSurface": "Open the correction surface",
+    "openSurface": "Correction",
     "pageTitle": "Correct transcript",
     "sourceDetails": "Transcript source",
     "frozenSource": "Frozen source {backend}",
@@ -1640,7 +1640,6 @@
       "editMenu": {
         "eventDetails": "Event details",
         "recordingMetadata": "Recording metadata",
-        "correction": "Transcript correction",
         "artwork": "Artwork",
         "sources": "Sources"
       },
