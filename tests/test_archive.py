@@ -1031,9 +1031,26 @@ class TestArchiveAndBackfill:
 class TestBackfillSafety:
     """Backfill selection, locking and manifest writes."""
 
+    @pytest.fixture
+    def backfill_tools(self, monkeypatch):
+        monkeypatch.setattr(archive_module.shutil, "which", lambda binary: str(binary))
+        monkeypatch.setattr(archive_module, "select_aac_encoder", lambda *_: False)
+
     def _manifest(self, tmp_path: Path, rows: list[dict[str, str]]) -> Path:
         path = tmp_path / "audio_catalog_20260101_000000_loudness_archived.csv"
         _write_rows(path, OLD_HEADER, rows)
+        return path
+
+    def _source_catalog(self, manifest: Path, rows: list[CsvAudioRow]) -> Path:
+        path = manifest.with_name(f"{manifest.stem.removesuffix('_archived')}.csv")
+        _write_rows(
+            path,
+            ["Hash", "Full Path", "Duration"],
+            [
+                {"Hash": row.sha256, "Full Path": row.full_path, "Duration": "00:00:01"}
+                for row in rows
+            ],
+        )
         return path
 
     def test_selects_each_hash_once_and_only_webm_archives(self, tmp_path):
@@ -1057,6 +1074,110 @@ class TestBackfillSafety:
 
         assert [(row.sha256, path) for row, path in jobs] == [("a" * 64, webm)]
         assert skipped == []
+
+    @pytest.mark.parametrize(
+        ("missing", "reason"),
+        [
+            ("source", "source file not found"),
+            ("archive", "archive file not found"),
+            ("catalog row", "not in source catalog"),
+            ("empty catalog", "not in source catalog"),
+        ],
+    )
+    @pytest.mark.parametrize("limit", [None, 1])
+    def test_missing_backfill_inputs_report_incomplete_work(
+        self, tmp_path, backfill_tools, capsys, missing, reason, limit
+    ):
+        manifest, rows = self._jobs(tmp_path, ["a" * 64])
+        if missing != "source":
+            Path(rows[0].full_path).write_bytes(b"source")
+        if missing == "archive":
+            (tmp_path / "a.webm").unlink()
+        elif missing == "catalog row":
+            rows = [CsvAudioRow(sha256="b" * 64, full_path=str(tmp_path / "b.mp3"))]
+        elif missing == "empty catalog":
+            rows = []
+        catalog = self._source_catalog(manifest, rows)
+        original_manifest = manifest.read_bytes()
+
+        result = handle_archive(
+            ArchiveRequest(csv=catalog, backfill_aac=True, no_symlink=True, limit=limit)
+        )
+
+        assert result == EXIT_ROWS_SKIPPED
+        assert reason in capsys.readouterr().out
+        assert manifest.read_bytes() == original_manifest
+        assert not (tmp_path / "a.m4a").exists()
+
+    def test_existing_aac_backfill_is_a_successful_noop(
+        self, tmp_path, backfill_tools, monkeypatch
+    ):
+        manifest, rows = self._jobs(tmp_path, ["a" * 64])
+        copy = tmp_path / "a.m4a"
+        copy.write_bytes(b"existing AAC")
+        update_manifest_rows(manifest, {"a" * 64: {"Compressed AAC Path": str(copy)}})
+        catalog = self._source_catalog(manifest, rows)
+        original_manifest = manifest.read_bytes()
+        monkeypatch.setattr(
+            archive_module, "backfill_aac_copy", lambda *_a, **_kw: pytest.fail("copy exists")
+        )
+
+        assert handle_archive(ArchiveRequest(csv=catalog, backfill_aac=True, no_symlink=True)) == 0
+        assert manifest.read_bytes() == original_manifest
+        assert copy.read_bytes() == b"existing AAC"
+
+    @pytest.mark.parametrize("limit", [0, 1])
+    def test_backfill_limit_excludes_known_rows_without_reporting_missing_work(
+        self, tmp_path, backfill_tools, monkeypatch, capsys, limit
+    ):
+        manifest, rows = self._jobs(tmp_path, ["a" * 64, "b" * 64])
+        # Manifest order does not choose the first N source rows. The excluded
+        # row also has a missing archive, which must not turn this into exit 2.
+        header, manifest_rows = _read_rows(manifest)
+        _write_rows(manifest, header, list(reversed(manifest_rows)))
+        (tmp_path / "b.webm").unlink()
+        catalog = self._source_catalog(manifest, rows)
+        calls: list[str] = []
+        monkeypatch.setattr(archive_module, "backfill_aac_copy", self._fake_copy(calls))
+
+        result = handle_archive(
+            ArchiveRequest(csv=catalog, backfill_aac=True, no_symlink=True, limit=limit)
+        )
+
+        assert result == 0
+        assert calls == (["a" * 64] if limit else [])
+        by_hash = {row["Hash"]: row for row in _read_rows(manifest)[1]}
+        assert by_hash["a" * 64].get("Compressed AAC Path", "") == (
+            str(tmp_path / "a.m4a") if limit else ""
+        )
+        assert by_hash["b" * 64].get("Compressed AAC Path", "") == ""
+        assert "not in source catalog" not in capsys.readouterr().out
+
+    def test_missing_backfill_archive_keeps_successful_manifest_updates(
+        self, tmp_path, backfill_tools, monkeypatch
+    ):
+        manifest, rows = self._jobs(tmp_path, ["a" * 64, "b" * 64])
+        (tmp_path / "a.webm").unlink()
+        catalog = self._source_catalog(manifest, rows)
+
+        def successful_copy(row, path, **kwargs):
+            copy = path.with_suffix(".m4a")
+            copy.write_bytes(b"AAC copy")
+            return archive_module.AacBackfillResult(
+                row.sha256, {"Compressed AAC Path": str(copy)}, None
+            )
+
+        monkeypatch.setattr(archive_module, "backfill_aac_copy", successful_copy)
+
+        result = handle_archive(ArchiveRequest(csv=catalog, backfill_aac=True, no_symlink=True))
+
+        assert result == EXIT_ROWS_SKIPPED
+        by_hash = {row["Hash"]: row for row in _read_rows(manifest)[1]}
+        assert set(by_hash) == {"a" * 64, "b" * 64}
+        assert by_hash["a" * 64].get("Compressed AAC Path", "") == ""
+        assert by_hash["b" * 64]["Compressed AAC Path"] == str(tmp_path / "b.m4a")
+        assert by_hash["b" * 64]["Compressed Path"] == str(tmp_path / "b.webm")
+        assert (tmp_path / "b.m4a").read_bytes() == b"AAC copy"
 
     def test_manifest_writes_keep_symlinks_and_permissions(self, tmp_path):
         target = tmp_path / "real_archived.csv"

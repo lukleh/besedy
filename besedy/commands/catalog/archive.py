@@ -1083,7 +1083,8 @@ def _select_backfill_jobs(
     rows: list[CsvAudioRow],
     manifest_rows: list[dict[str, str]],
 ) -> tuple[list[tuple[CsvAudioRow, Path]], list[ArchiveSkippedEntry]]:
-    rows_by_hash = {row.sha256: row for row in rows}
+    source_hashes = {row.sha256 for row in rows}
+    rows_by_hash = {row.sha256: row for row in rows[: request.limit]}
     jobs: list[tuple[CsvAudioRow, Path]] = []
     skipped: list[ArchiveSkippedEntry] = []
     queued: set[str] = set()
@@ -1103,6 +1104,10 @@ def _select_backfill_jobs(
         if existing_copy and Path(existing_copy).is_file() and not request.overwrite:
             continue
         row = rows_by_hash.get(sha256)
+        # Membership uses the full catalog, so --limit excludes known rows
+        # without hiding archive rows whose source catalog entry is missing.
+        if row is None and sha256 in source_hashes:
+            continue
         compressed_path = Path(compressed)
         if row is None or not compressed_path.is_file():
             reason = "not in source catalog" if row is None else "archive file not found"
@@ -1193,11 +1198,7 @@ def _run_backfill_jobs(
     print(f"\n  AAC copies added: {added}")
     print(f"  Skipped:          {len(skipped)}")
     print(f"  Manifest:         {archived_csv_path}")
-    has_errors = any(
-        s.reason not in ("source file not found", "not in source catalog", "archive file not found")
-        for s in skipped
-    )
-    return EXIT_ROWS_SKIPPED if has_errors else 0
+    return EXIT_ROWS_SKIPPED if skipped else 0
 
 
 def handle_archive(
@@ -1220,12 +1221,16 @@ def handle_archive(
 
     # 2. Load rows
     try:
-        rows = load_audio_rows(csv_path, require_duration=True, limit=request.limit)
+        rows = load_audio_rows(
+            csv_path,
+            require_duration=True,
+            limit=None if request.backfill_aac else request.limit,
+        )
     except ValueError as exc:
         print(f"Error while reading {csv_path}: {exc}", file=sys.stderr)
         return 1
 
-    if not rows:
+    if request.limit == 0 or (not rows and not request.backfill_aac):
         print(f"No rows found in {csv_path}.")
         return 0
 
