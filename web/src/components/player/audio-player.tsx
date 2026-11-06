@@ -11,8 +11,9 @@
  *   that the service worker serves. The switch is a real
  *   source change; position and play intent carry across it.
  * - Recovery from network errors while streaming a recording that is not
- *   downloaded: exponential retries that reload the element, then restore
- *   position and resume when the listener had asked for playback.
+ *   downloaded (useAudioRecovery): exponential retries that reload the
+ *   element, then restore position and resume when the listener had asked
+ *   for playback.
  * - Position restore after a mobile browser discarded the media in the
  *   background, from the position saved in localStorage.
  *
@@ -25,55 +26,28 @@ import {
   useEffect,
   useCallback,
   useMemo,
-  useReducer,
   useImperativeHandle,
 } from 'react';
 import { AudioPlayerChrome } from './audio-player-chrome';
 import { AudioPlayerDebugPanel } from './audio-player-debug-panel';
-import { describeAudioSource } from '@/lib/offline/audio-transport';
 import { createPlaybackClock } from '@/lib/playback-clock';
-import {
-  INITIAL_RETRY_STATE,
-  isRetrying,
-  retryReducer,
-  type RetryAction,
-  type UnstampedRetryAction,
-  type RetryState,
-} from './audio-player-retry-state';
-import type {
-  AudioPlayerProps,
-  AudioPlayerControls,
-  DebugEvent,
-  DebugEventType,
-} from './audio-player-types';
-import {
-  extractRecordingHash,
-  MAX_RETRY_ATTEMPTS,
-  safePlay,
-} from './audio-player-utils';
+import { isRetrying } from './audio-player-retry-state';
+import type { AudioPlayerProps, AudioPlayerControls } from './audio-player-types';
+import { extractRecordingHash, safePlay } from './audio-player-utils';
 import { useAudioBufferDiagnostics } from './use-audio-buffer-diagnostics';
+import { useAudioRecovery, type PendingSeek } from './use-audio-recovery';
+import { useDebugEventLog } from './use-debug-event-log';
 import { useMediaSession } from './use-media-session';
+import { useSleepFade } from './use-sleep-fade';
+import { useVolumeControls } from './use-volume-controls';
 import { useDownloadRecord } from '@/hooks/use-downloads';
 import { getSavedPlaybackPosition } from '@/lib/playback-position';
-import { fadeOutAndPause } from '@/lib/sleep-timer/fade-out';
 import { useSleepTimerTarget } from '@/contexts/sleep-timer-context';
 
 function resolvePlaybackEnd(value: number | undefined): number | null {
   return value !== undefined && Number.isFinite(value) && value >= 0
     ? value
     : null;
-}
-
-/** The log entry naming the transport behind a source. */
-function createSourceEvent(id: number, src: string): DebugEvent {
-  const source = describeAudioSource(src);
-  return {
-    id,
-    timestamp: new Date(),
-    type: 'source',
-    message: `Source: ${source.kind}`,
-    details: source.summary,
-  };
 }
 
 /**
@@ -115,7 +89,6 @@ export function AudioPlayer({
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [hasMediaError, setHasMediaError] = useState(false);
   const rangeStart = playbackRange?.start;
   const rangeEnd = playbackRange?.end;
 
@@ -136,8 +109,6 @@ export function AudioPlayer({
   // read it (see AudioPlayerChrome), and the debug panel while it is open.
   const [timeClock] = useState(() => createPlaybackClock());
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const {
@@ -146,7 +117,7 @@ export function AudioPlayer({
     reset: resetBufferDiagnostics,
     updateDebugInfo,
   } = useAudioBufferDiagnostics({ audioRef, debugEnabled: showDebug, src });
-  const userInitiatedRef = useRef(false);
+  const { debugEvents, logDebugEvent, resetDebugEvents } = useDebugEventLog(src);
   const playbackEndRef = useRef<number | null>(
     resolvePlaybackEnd(playbackEnd),
   );
@@ -164,36 +135,6 @@ export function AudioPlayer({
     audio.playbackRate = rate;
   }, [playbackRate, src]);
 
-  // Background event log - always collects events even when debug is off.
-  // It opens with the initial source's transport; the source-change effect
-  // below skips the mount, so that entry is created here.
-  const [debugEvents, setDebugEvents] = useState<DebugEvent[]>(() => [
-    createSourceEvent(0, src),
-  ]);
-  const debugEventIdRef = useRef(1);
-
-  const logDebugEvent = useCallback(
-    (type: DebugEventType, message: string, details?: string) => {
-      const event: DebugEvent = {
-        id: debugEventIdRef.current++,
-        timestamp: new Date(),
-        type,
-        message,
-        details,
-      };
-      // Keep last 50 events
-      setDebugEvents((prev) => [...prev.slice(-49), event]);
-    },
-    [],
-  );
-
-  // Network error retry state — lives in a single reducer, see retryReducer
-  // above. `isReconnecting` is derived.
-  const [retryState, reactDispatchRetry] = useReducer(
-    retryReducer,
-    INITIAL_RETRY_STATE,
-  );
-  const isReconnecting = isRetrying(retryState);
   const prevSrcRef = useRef(src); // Track previous src for change detection
   const prevRecordingHashRef = useRef(recordingHash);
   // Last playback position React observed; survives the element reset that a
@@ -206,119 +147,46 @@ export function AudioPlayer({
     },
     [timeClock],
   );
-  // Whether the listener wants playback. The browser pauses the element
-  // before it reports a media error, so `audio.paused` alone cannot tell an
-  // interrupted play from a deliberate pause when deciding to resume.
+  // What the listener asked for, shared with recovery (see PlaybackIntentRefs).
+  const userInitiatedRef = useRef(false);
   const playIntentRef = useRef(false);
-  // The sleep timer's fade in progress. Any volume change from the listener
-  // ends it: they are awake.
-  const cancelSleepFadeRef = useRef<(() => void) | null>(null);
-  const cancelSleepFade = useCallback(() => {
-    cancelSleepFadeRef.current?.();
-  }, []);
-  const sleepFadeOutAndPause = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio || audio.paused) return () => {};
-    cancelSleepFade();
-    const cancel = fadeOutAndPause(audio, {
-      onFinish: (outcome) => {
-        if (cancelSleepFadeRef.current === cancel) {
-          cancelSleepFadeRef.current = null;
-        }
-        if (outcome !== 'paused') return;
-        // A deliberate stop, not an interrupted play.
-        playIntentRef.current = false;
-        logDebugEvent('pause', 'Sleep timer paused playback');
-      },
-    });
-    cancelSleepFadeRef.current = cancel;
-    return cancel;
-  }, [cancelSleepFade, logDebugEvent]);
+  const pendingSeekRef = useRef<PendingSeek | null>(null);
 
-  // Tracks whether metadata has loaded successfully for the current src.
-  // Used to avoid retry-looping on MEDIA_ERR_SRC_NOT_SUPPORTED when the format
-  // is genuinely unplayable (vs. a network blip mid-stream).
-  const metadataLoadedRef = useRef(false);
-  // Held in a ref so event handlers (attached once via useEffect deps) can read
-  // the latest phase WITHOUT waiting for React to commit the reducer state.
-  // Updated synchronously by `dispatchRetry` below so there's no lag window
-  // between a dispatch and a handler observing the new phase.
-  const retryStateRef = useRef<RetryState>(INITIAL_RETRY_STATE);
-  // Pending retry timer. Held in a ref (not the retry-driving effect's local
-  // closure) so it can be cancelled synchronously from any transition out of
-  // `scheduled` — RECOVERED, RESET, RELOAD_FAILED — without waiting for React
-  // to re-run the effect.
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelRetryTimer = useCallback(() => {
-    if (retryTimerRef.current !== null) {
-      clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
-    }
-  }, []);
-  // The audio.src value that was in effect when the retry chain started.
-  // React commits a new src before our src-change useEffect runs and dispatches
-  // RESET, so there's a window where the retry timer/state still looks active
-  // but is referring to the previous recording. Every retry-time decision
-  // (timer fire, canplay recovery) compares this against the current audio.src
-  // and bails if they differ, closing that window.
-  const retrySrcRef = useRef<string | null>(null);
-  const retryScheduleCounterRef = useRef(0);
-  // Pending seek - stores seek request until metadata is loaded
-  const pendingSeekRef = useRef<{ time: number; autoPlay: boolean } | null>(
-    null,
-  );
-  // Whether playback is wanted right now: playing, queued until metadata
-  // arrives, or held by a reconnect that will resume it. Reported to the page
-  // whenever it changes, so controls outside the player can show what a
-  // click on them will do.
-  const isPlayRequested = useCallback(() => {
-    const audio = audioRef.current;
-    return Boolean(
-      (isRetrying(retryStateRef.current) && playIntentRef.current) ||
-      pendingSeekRef.current?.autoPlay ||
-      (audio && !audio.paused),
-    );
-  }, []);
-  const onPlayRequestChangeRef = useRef(onPlayRequestChange);
-  useEffect(() => {
-    onPlayRequestChangeRef.current = onPlayRequestChange;
-  }, [onPlayRequestChange]);
-  const playRequestedRef = useRef(false);
-  const syncPlayRequest = useCallback(() => {
-    const requested = isPlayRequested();
-    if (requested === playRequestedRef.current) return;
-    playRequestedRef.current = requested;
-    onPlayRequestChangeRef.current?.(requested);
-  }, [isPlayRequested]);
-  const dispatchRetry = useCallback(
-    (action: UnstampedRetryAction) => {
-      // Any action that exits the retry chain must kill a pending timer
-      // immediately; otherwise an already-queued callback can still fire and
-      // call audio.load() on an element that's recovered or switched src.
-      if (
-        action.type === 'RESET' ||
-        action.type === 'RECOVERED' ||
-        action.type === 'RELOAD_FAILED'
-      ) {
-        cancelRetryTimer();
-      }
-      // RESET/RECOVERED also invalidate the captured src (we're leaving the
-      // chain entirely). RELOAD_FAILED keeps it because the retry continues
-      // against the same source.
-      if (action.type === 'RESET' || action.type === 'RECOVERED') {
-        retrySrcRef.current = null;
-      }
-      // Actions that may start a schedule carry a fresh id; see scheduleId.
-      const stamped: RetryAction =
-        action.type === 'ERROR_DETECTED' || action.type === 'RELOAD_FAILED'
-          ? { ...action, scheduleId: ++retryScheduleCounterRef.current }
-          : action;
-      retryStateRef.current = retryReducer(retryStateRef.current, stamped);
-      reactDispatchRetry(stamped);
-      syncPlayRequest();
-    },
-    [cancelRetryTimer, syncPlayRequest],
-  );
+  const { cancelSleepFade, sleepFadeOutAndPause } = useSleepFade({
+    audioRef,
+    playIntentRef,
+    logDebugEvent,
+  });
+
+  const onPlaybackInterrupted = useCallback(() => {
+    setIsPlaying(false);
+    onPlayingChange?.(false);
+  }, [onPlayingChange]);
+  const recovery = useAudioRecovery({
+    audioRef,
+    intent: { pendingSeekRef, playIntentRef, userInitiatedRef },
+    isPlaying,
+    logDebugEvent,
+    setCurrentTime,
+    setIsBuffering,
+    onPlaybackInterrupted,
+    onPlayRequestChange,
+  });
+  const {
+    retryStateRef,
+    isReconnecting,
+    dispatchRetry,
+    recordedErrorTakesOverPlay,
+    isPlayRequested,
+    syncPlayRequest,
+    relativeSeekBase,
+    resetForSource,
+    clearMediaError,
+    reloadFrom,
+    handleError,
+    handleCanPlay: handleRecoveryCanPlay,
+    handleLoadedMetadata: handleRecoveryLoadedMetadata,
+  } = recovery;
 
   const lastExternalSeekRef = useRef<{
     recording: string;
@@ -366,77 +234,6 @@ export function AudioPlayer({
       `To ${savedPosition.toFixed(1)}s`,
     );
   }, [hash, rangeStart, rangeEnd, onTimeUpdate, logDebugEvent, setCurrentTime]);
-
-  // Drive the retry machine. When phase transitions to "scheduled", schedule
-  // the reload; when it transitions to "exhausted", log and clear transient
-  // UI state. The timer itself lives in `retryTimerRef` so it can be
-  // cancelled synchronously from `dispatchRetry` on RESET/RECOVERED/
-  // RELOAD_FAILED — see the wrapper above. The callback also re-reads the
-  // phase via the ref and bails if it's moved out of "scheduled", which
-  // closes the window between a cancel on a different tick and a timer that
-  // was already about to fire.
-  // A seek changes the restore target, not the deadline of a scheduled retry;
-  // a new schedule always has a new scheduleId, so the timer is re-armed.
-  const retryAttempt = 'attempt' in retryState ? retryState.attempt : 0;
-  const retryDelayMs = retryState.phase === 'scheduled' ? retryState.delayMs : 0;
-  const retryScheduleId = retryState.phase === 'scheduled' ? retryState.scheduleId : 0;
-  useEffect(() => {
-    let cancelled = false;
-
-    if (retryState.phase === 'scheduled') {
-      const audio = audioRef.current;
-      if (!audio) return;
-
-      logDebugEvent(
-        'retry',
-        `Retry attempt ${retryAttempt}`,
-        `Waiting ${retryDelayMs}ms`,
-      );
-
-      cancelRetryTimer();
-      retryTimerRef.current = setTimeout(() => {
-        retryTimerRef.current = null;
-        if (retryStateRef.current.phase !== 'scheduled') return;
-        // If src changed since we started retrying, bail — otherwise we'd
-        // issue audio.load() against the new recording.
-        if (retrySrcRef.current !== null && audio.src !== retrySrcRef.current) {
-          return;
-        }
-        dispatchRetry({ type: 'TIMER_FIRED' });
-        audio.load();
-      }, retryDelayMs);
-
-      return () => cancelRetryTimer();
-    }
-
-    if (retryState.phase === 'exhausted') {
-      logDebugEvent(
-        'error',
-        'Max retries reached',
-        `Gave up after ${MAX_RETRY_ATTEMPTS} attempts`,
-      );
-      queueMicrotask(() => {
-        if (cancelled) return;
-        // Old resetRetryState() used to clear the buffering spinner here.
-        // Without this, the player can sit on an "exhausted" phase with
-        // isBuffering=true (set earlier by 'waiting' during a failed load)
-        // and show the spinner forever.
-        setIsBuffering(false);
-      });
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    retryState.phase,
-    retryAttempt,
-    retryDelayMs,
-    retryScheduleId,
-    logDebugEvent,
-    cancelRetryTimer,
-    dispatchRetry,
-  ]);
 
   useEffect(() => {
     const handlePageShow = () => {
@@ -487,15 +284,12 @@ export function AudioPlayer({
     userInitiatedRef.current = false;
     cancelSleepFade();
 
-    // Reset retry machine. The retry-driving effect watches for this and
-    // cancels any in-flight setTimeout via its cleanup.
-    dispatchRetry({ type: 'RESET' });
-    metadataLoadedRef.current = false;
+    // Reset the retry machine; its pending timer is cancelled with it.
+    resetForSource();
 
     // Preserve seek target/position when only switching source variants for the same recording.
     const queuedSeek = pendingSeekRef.current;
-    let restoreAfterSourceSwitch: { time: number; autoPlay: boolean } | null =
-      null;
+    let restoreAfterSourceSwitch: PendingSeek | null = null;
 
     // Ensure audio element is stopped/reset
     const audio = audioRef.current;
@@ -527,126 +321,15 @@ export function AudioPlayer({
     // Reset UI state - deferred to avoid synchronous setState in effect body
     queueMicrotask(() => {
       setIsBuffering(false);
-      setHasMediaError(false);
+      clearMediaError();
       setCurrentTime(restoreAfterSourceSwitch?.time ?? 0);
       setDuration(0);
       setIsPlaying(false);
       resetBufferDiagnostics();
-      // The fresh log opens with this source's transport, so a later stall or
-      // error is attributable to the network, the worker cache or inline data.
-      setDebugEvents([createSourceEvent(debugEventIdRef.current++, src)]);
+      resetDebugEvents(src);
       onPlayingChange?.(false);
     });
-  }, [src, recordingHash, onPlayingChange, dispatchRetry, resetBufferDiagnostics, cancelSleepFade, setCurrentTime, syncPlayRequest]);
-
-  // Handle `error` events — dispatch the retry reducer. The scheduling and
-  // reload itself live in the retry-driving effect above.
-  const handleError = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const error = audio.error;
-    if (!error) return;
-
-    const phase = retryStateRef.current.phase;
-
-    // Suppress speculative preload errors when we're not actively retrying —
-    // either because we haven't started (idle) or because we already gave up
-    // (exhausted). Without covering "exhausted", a post-giveup metadata probe
-    // error would kick off a fresh 10-attempt chain that the reducer's dedup
-    // doesn't catch (ERROR_DETECTED dedup only applies to scheduled/reloading).
-    if (
-      !userInitiatedRef.current &&
-      !isPlaying &&
-      (phase === 'idle' || phase === 'exhausted')
-    ) {
-      setIsBuffering(false);
-      return;
-    }
-
-    // If we're already retrying, the error is from our own retry's
-    // audio.load() — advance the retry chain regardless of error code. The
-    // retriability check only governs whether a *fresh* error should start a
-    // retry chain; once we're in flight, any failure here must move the state
-    // machine forward (next attempt or exhausted) or isReconnecting never
-    // clears.
-    if (phase === 'reloading') {
-      logDebugEvent(
-        'error',
-        'Reload failed',
-        `Code: ${error.code}, Message: ${error.message || 'none'}`,
-      );
-      dispatchRetry({ type: 'RELOAD_FAILED' });
-      setIsPlaying(false);
-      onPlayingChange?.(false);
-      return;
-    }
-
-    // MEDIA_ERR_NETWORK = 2 (network error during loading)
-    const isNetworkError = error.code === 2;
-
-    // MEDIA_ERR_SRC_NOT_SUPPORTED = 4 can indicate either a genuinely
-    // unplayable format OR a mid-stream connection loss. Only start a retry
-    // chain when metadata previously loaded for this src — that proves the
-    // format is supported and the error is transient. Otherwise retrying
-    // burns ~3 minutes of exponential backoff on something that will never
-    // play.
-    const isSrcError =
-      error.code === 4 &&
-      audio.src &&
-      audio.src !== '' &&
-      metadataLoadedRef.current &&
-      (typeof navigator === 'undefined' || navigator.onLine !== false);
-
-    if (isNetworkError || isSrcError) {
-      const errorType = isNetworkError ? 'Network error' : 'Source error';
-      logDebugEvent(
-        'error',
-        errorType,
-        `Code: ${error.code}, Message: ${error.message || 'none'}`,
-      );
-      // Capture the src we're retrying for. Guards in the timer and canplay
-      // handlers compare against audio.src so a pending retry can't leak
-      // onto a newly-selected recording during the pre-RESET commit window.
-      retrySrcRef.current = audio.src;
-      // A seek still waiting for metadata is the position to restore; the
-      // element itself reports 0 until metadata arrives.
-      dispatchRetry({
-        type: 'ERROR_DETECTED',
-        savedPosition: pendingSeekRef.current?.time ?? (audio.currentTime || 0),
-        wasPlaying: !audio.paused || playIntentRef.current,
-      });
-      setIsPlaying(false);
-      onPlayingChange?.(false);
-    } else {
-      setHasMediaError(true);
-      setIsBuffering(false);
-      logDebugEvent(
-        'error',
-        'Media error',
-        `Code: ${error.code}, Message: ${error.message || 'none'}`,
-      );
-    }
-  }, [dispatchRetry, isPlaying, onPlayingChange, logDebugEvent]);
-
-  // An error during the unattended preload was left alone (see handleError),
-  // and the element does not report it again: play() does not reload a failed
-  // element. Every playback the listener asks for, from the play control or a
-  // seek that plays, hands that error to handleError first: a network error
-  // reconnects and then plays, anything else offers Retry and plays nothing.
-  // Returns whether it took over, in which case the caller does not play.
-  const recordedErrorTakesOverPlay = useCallback((audio: HTMLAudioElement) => {
-    if (!audio.error || retryStateRef.current.phase !== 'idle') return false;
-    userInitiatedRef.current = true;
-    playIntentRef.current = true;
-    handleError();
-    if (!isRetrying(retryStateRef.current)) {
-      playIntentRef.current = false;
-      if (pendingSeekRef.current) pendingSeekRef.current.autoPlay = false;
-      syncPlayRequest();
-    }
-    return true;
-  }, [handleError, syncPlayRequest]);
+  }, [src, recordingHash, onPlayingChange, resetForSource, clearMediaError, resetBufferDiagnostics, resetDebugEvents, cancelSleepFade, setCurrentTime, syncPlayRequest]);
 
   // Consume each external request once. Callback changes and the page clearing
   // autoPlayOnSeek must not replay an old handoff over a later user seek. The
@@ -705,48 +388,6 @@ export function AudioPlayer({
   // NOTE: PerformanceObserver was removed because it only fires when HTTP requests complete.
   // For streaming audio, the request stays open until the entire file downloads, so it's not
   // useful for tracking progress. Buffer growth tracking (in updateBasicBufferInfo) is used instead.
-
-  // Handle `canplay` events mid-retry:
-  //   - "reloading": our scheduled retry's audio.load() finished successfully
-  //     (load() cleared the element's error).
-  //   - "scheduled": only if the element's error has cleared on its own. While
-  //     it is still set the connection is still down, and a `canplay` is just
-  //     a seek into data that was already buffered; counting that as recovery
-  //     would cancel the pending retry and restart the backoff at attempt 1
-  //     when the stream stalls at the end of the buffer.
-  const handleCanPlayAfterError = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const phase = retryStateRef.current;
-    if (phase.phase !== 'scheduled' && phase.phase !== 'reloading') return;
-    if (phase.phase === 'scheduled' && audio.error) return;
-
-    // Stale-canplay guard: after src changes, the browser emits canplay for
-    // the new recording. If retry state still carries the previous src (the
-    // RESET useEffect hasn't committed yet), applying savedPosition/wasPlaying
-    // would leak recording A's resume state onto recording B. Bail.
-    if (retrySrcRef.current !== null && audio.src !== retrySrcRef.current) {
-      return;
-    }
-
-    logDebugEvent(
-      'recovered',
-      'Connection recovered',
-      `After ${phase.attempt} attempt(s)`,
-    );
-
-    if (audio.currentTime !== phase.savedPosition) {
-      audio.currentTime = phase.savedPosition;
-      setCurrentTime(phase.savedPosition);
-    }
-    if (phase.wasPlaying) {
-      safePlay(audio, 'resume after reconnect', logDebugEvent);
-    }
-
-    dispatchRetry({ type: 'RECOVERED' });
-    setIsBuffering(false);
-  }, [dispatchRetry, logDebugEvent, setCurrentTime]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -818,8 +459,7 @@ export function AudioPlayer({
     };
 
     const handleLoadedMetadata = () => {
-      metadataLoadedRef.current = true;
-      setHasMediaError(false);
+      handleRecoveryLoadedMetadata();
       // A paused load stops once it has metadata, often before canplay; a
       // play queued below shows its own buffering from the play event.
       if (audio.paused) setIsBuffering(false);
@@ -902,10 +542,9 @@ export function AudioPlayer({
     };
 
     const handleCanPlay = () => {
-      if (!audio.error) setHasMediaError(false);
       setIsBuffering(false);
-      // Check if we're recovering from a network error
-      handleCanPlayAfterError();
+      // Clears a shown error; resumes if we're recovering from a network error.
+      handleRecoveryCanPlay();
     };
 
     const handleStalled = () => {
@@ -988,7 +627,8 @@ export function AudioPlayer({
     onPlayingChange,
     onEnded,
     handleError,
-    handleCanPlayAfterError,
+    handleRecoveryCanPlay,
+    handleRecoveryLoadedMetadata,
     showDebug,
     logDebugEvent,
     updateDebugInfo,
@@ -1004,7 +644,6 @@ export function AudioPlayer({
     const audio = audioRef.current;
     if (!audio) return;
     return () => {
-      cancelSleepFadeRef.current?.();
       if (audio.isConnected) return;
       audio.removeAttribute('src');
       audio.load();
@@ -1071,7 +710,7 @@ export function AudioPlayer({
       safePlay(audio, 'playback requested', logDebugEvent);
     }
     syncPlayRequest();
-  }, [rangeStart, rangeEnd, seekFromControls, recordedErrorTakesOverPlay, dispatchRetry, logDebugEvent, syncPlayRequest]);
+  }, [rangeStart, rangeEnd, retryStateRef, seekFromControls, recordedErrorTakesOverPlay, dispatchRetry, logDebugEvent, syncPlayRequest]);
 
   const pause = useCallback(() => {
     userInitiatedRef.current = true;
@@ -1090,51 +729,11 @@ export function AudioPlayer({
 
   const handleSeek = (value: number[]) => seekFromControls(value[0]);
 
-  const handleVolumeChange = (value: number[]) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const newVolume = Math.max(0, Math.min(1, value[0]));
-    cancelSleepFade();
-    audio.volume = newVolume;
-    setVolume(newVolume);
-    setIsMuted(newVolume === 0);
-  };
-
-  const toggleMute = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    cancelSleepFade();
-
-    if (isMuted) {
-      // Muted by dragging to zero leaves no level to return to; unmuting
-      // then restores full volume, and the slider must show it.
-      audio.volume = volume || 1;
-      setVolume(audio.volume);
-      setIsMuted(false);
-    } else {
-      audio.volume = 0;
-      setIsMuted(true);
-    }
-  };
-
-  // Where playback is, for relative seeks and for controls outside the player.
-  // A retry's reload empties the element, which then reports position 0 until
-  // the recovery seek; until then the retry state holds where the listener was.
-  const relativeSeekBase = useCallback((audio: HTMLAudioElement) => {
-    // Without metadata the element reports 0 wherever the listener is: a
-    // queued seek (saved position, ?seek=, handoff, transport switch) is the
-    // position.
-    if (audio.readyState < 1 && pendingSeekRef.current) {
-      return pendingSeekRef.current.time;
-    }
-    // Until a reconnect recovers, its restore target is the position. The
-    // reload resets the element to 0, and metadata can return before the
-    // recovery seek, so readyState alone does not tell.
-    // After giving up, the element was reset by the last reload as well.
-    const retry = retryStateRef.current;
-    return retry.phase === 'idle' ? audio.currentTime : retry.savedPosition;
-  }, []);
+  const { volume, isMuted, setVolumeLevel, toggleMute, adjustVolume } = useVolumeControls({
+    audioRef,
+    cancelSleepFade,
+  });
+  const handleVolumeChange = (value: number[]) => setVolumeLevel(value[0]);
 
   const retry = () => {
     const audio = audioRef.current;
@@ -1142,14 +741,8 @@ export function AudioPlayer({
     const time = Math.max(rangeStart ?? 0, rangeEnd !== undefined
       ? Math.min(rangeEnd, relativeSeekBase(audio)) : relativeSeekBase(audio));
     pause();
-    dispatchRetry({ type: 'RESET' });
-    metadataLoadedRef.current = false;
-    pendingSeekRef.current = { time, autoPlay: false };
     playbackEndRef.current = rangeEnd ?? playbackEndRef.current;
-    setHasMediaError(false);
-    setIsBuffering(true);
-    audio.load();
-    syncPlayRequest();
+    reloadFrom(time);
   };
 
   const skipBackward = () => {
@@ -1229,33 +822,19 @@ export function AudioPlayer({
           break;
         case 'ArrowUp':
           e.preventDefault();
-          cancelSleepFade();
-          audio.volume = Math.min(1, audio.volume + 0.1);
-          setVolume(audio.volume);
-          setIsMuted(false);
+          adjustVolume(0.1);
           break;
         case 'ArrowDown':
           e.preventDefault();
-          cancelSleepFade();
-          audio.volume = Math.max(0, audio.volume - 0.1);
-          setVolume(audio.volume);
-          if (audio.volume === 0) setIsMuted(true);
+          adjustVolume(-0.1);
           break;
         case 'KeyM':
           e.preventDefault();
-          cancelSleepFade();
-          if (isMuted) {
-            audio.volume = volume || 1;
-            setVolume(audio.volume);
-            setIsMuted(false);
-          } else {
-            audio.volume = 0;
-            setIsMuted(true);
-          }
+          toggleMute();
           break;
       }
     },
-    [togglePlay, duration, volume, isMuted, seekFromControls, relativeSeekBase, cancelSleepFade],
+    [togglePlay, duration, seekFromControls, relativeSeekBase, adjustVolume, toggleMute],
   );
 
   // Register keyboard shortcuts
@@ -1290,9 +869,9 @@ export function AudioPlayer({
         isMuted,
         isBuffering,
         isReconnecting,
-        hasError: retryState.phase === 'exhausted' || (hasMediaError && !isReconnecting),
+        hasError: recovery.hasError,
         seek: seekFromControls,
-        setVolume: (value) => handleVolumeChange([value]),
+        setVolume: setVolumeLevel,
         toggleMute,
         retry,
       }} /> : <AudioPlayerChrome
