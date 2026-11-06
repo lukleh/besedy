@@ -56,6 +56,14 @@ from besedy.lib.correction_guard import (
 )
 from besedy.lib.workflow.common import CsvAudioRow, resolve_unicode_path
 
+_NORMALIZATION_MEASUREMENTS = (
+    "integrated_loudness_lufs",
+    "true_peak_db",
+    "loudness_range_lu",
+    "input_thresh",
+    "target_offset",
+)
+
 
 def stage_audio_files(
     rows: Sequence[CsvAudioRow],
@@ -153,6 +161,19 @@ def stage_audio_files(
             skipped.append(SkippedEntry(row.sha256, source, "file not found"))
             if not continue_on_error:
                 raise RuntimeError(f"Audio file not found: {resolved_str}")
+            continue
+
+        missing_measurements = [
+            name
+            for name in _NORMALIZATION_MEASUREMENTS
+            if getattr(row, name) is None or not str(getattr(row, name)).strip()
+        ]
+        if missing_measurements:
+            reason = (
+                f"missing loudness measurements: {', '.join(missing_measurements)}; "
+                "run 'catalog loudness --overwrite' before staging"
+            )
+            skipped.append(SkippedEntry(row.sha256, source, reason))
             continue
 
         conversions.append((index, row, source, staged_path, duration_seconds))

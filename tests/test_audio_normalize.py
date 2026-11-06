@@ -558,16 +558,22 @@ class TestStageAudioFilesIntegration:
     These tests are skipped unless FFmpeg is available.
     """
 
-    def test_stage_single_file(self, tmp_path, require_ffmpeg, wav_16k_mono):
+    def test_stage_single_file(self, tmp_path, require_ffmpeg, wav_with_tone):
         """Test staging a single audio file."""
         from besedy.lib.audio.normalize import stage_audio_files
+        from besedy.lib.audio.quality import analyze_audio_file
         from besedy.lib.workflow.common import CsvAudioRow
 
-        # Create test row
+        measurements = analyze_audio_file(wav_with_tone)
         row = CsvAudioRow(
             sha256="a" * 64,
-            full_path=str(wav_16k_mono),
+            full_path=str(wav_with_tone),
             duration_seconds=1.0,
+            integrated_loudness_lufs=measurements.integrated_loudness_lufs,
+            true_peak_db=measurements.true_peak_db,
+            loudness_range_lu=measurements.loudness_range_lu,
+            input_thresh=measurements.input_thresh,
+            target_offset=measurements.target_offset,
         )
 
         staging_dir = tmp_path / "staging"

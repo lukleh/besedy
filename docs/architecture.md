@@ -189,6 +189,13 @@ Audio normalization (staging) is a separate step from transcription/diarization.
 
 Staged audio is normalized to -16 LUFS (EBU R128), acceptable range -20 to -12 LUFS.
 
+New conversions require all five source loudness measurements. Missing values
+skip the row with status 2, including with `--skip-audio-analysis`; refresh them
+with `catalog loudness --overwrite`. Existing or correction-protected WAVs can
+still be reused without those measurements. A skipped overwrite keeps the old
+WAV but excludes the row from the new manifest, preventing transcription of a
+row whose requested conversion did not run.
+
 **Rationale:** ASR models perform better with consistent loudness. EBU R128 is the broadcast standard with broad tool support. -16 LUFS provides headroom while staying clear for speech. Files outside the tolerance range get aggressive normalization with dynamic compression.
 
 **Trade-offs:** Compression may affect audio quality at range boundaries. Loudness measurement adds processing time.
