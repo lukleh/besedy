@@ -47,7 +47,8 @@ concurrency:
 jobs:
   e2e:
     name: Web E2E smoke and MCP smoke
-    runs-on: ubuntu-latest
+    # Match CI's tested ffmpeg and host system dependencies.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       # The template has throwaway secrets only and points every data path at

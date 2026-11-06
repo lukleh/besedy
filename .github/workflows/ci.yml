@@ -17,10 +17,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Keep system ffmpeg on the Ubuntu release verified by the audio hash fixtures.
+# Validate those fixtures before changing the Ubuntu release.
 jobs:
   python:
     name: Python lint + types + extras-free tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -61,7 +63,7 @@ jobs:
 
   python-311-syntax:
     name: Python 3.11 syntax
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -74,7 +76,7 @@ jobs:
 
   compose-render:
     name: Compose render (every stack)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Renders web (dev/test/prod through run_web_compose.sh), jobs, Prefect,
@@ -83,7 +85,7 @@ jobs:
 
   python-jobs:
     name: Python jobs integration
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -96,7 +98,7 @@ jobs:
 
   web-typecheck:
     name: Web type-check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: web
@@ -108,7 +110,7 @@ jobs:
 
   web-lint:
     name: Web lint + dependency audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: web
@@ -130,7 +132,7 @@ jobs:
 
   web-unit:
     name: Web unit (${{ matrix.shard }}/${{ strategy.job-total }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -147,7 +149,7 @@ jobs:
 
   web-build:
     name: Web production build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: web
@@ -204,7 +206,7 @@ jobs:
       - correction-integration
       - python-311-syntax
       - compose-render
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Require every gated job to succeed
         env:
@@ -217,7 +219,7 @@ jobs:
 
   correction-integration:
     name: Migrations + transcript correction integration
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: web
@@ -293,7 +295,7 @@ jobs:
 
   secrets:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Scan checked-out source with Gitleaks
