@@ -73,6 +73,16 @@ async function main() {
     createdCatalog = true;
     const initialSync = await syncCatalogGroup(catalogId);
     assert.equal(initialSync.status, 'success', initialSync.error);
+    const initialStates = await client.catalogSyncState.findMany({
+      where: { workflowGroupId: catalogId },
+    });
+    assert.deepEqual(initialStates.map((state) => state.sourceKey).sort(),
+      ['archived', 'duplicates', 'metadata']);
+    for (const state of initialStates) {
+      assert.equal(state.status, 'SUCCESS');
+      assert.equal(state.lastSuccessfulAt?.getTime(), state.syncedAt.getTime());
+      assert.equal(state.lastError, null);
+    }
     const before = await client.catalogEntry.findUniqueOrThrow({
       where: { workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash: retainedHash } },
     });
@@ -139,6 +149,14 @@ async function main() {
       orderBy: { sourceKey: 'asc' },
     });
     const generationsBeforeInvalid = await sourceGenerations();
+    const lastSuccessfulSources = await Promise.all([
+      fs.readFile(metadataPath, 'utf8'), fs.readFile(archivedPath, 'utf8'),
+    ]);
+    const successTimesBeforeInvalid = await client.catalogSyncState.findMany({
+      where: { workflowGroupId: catalogId },
+      select: { sourceKey: true, lastSuccessfulAt: true },
+      orderBy: { sourceKey: 'asc' },
+    });
     await writeSources([retainedHash, addedHash], 'Rejected title', true);
     await fs.writeFile(archivedPath,
       `Hash,Original Path,Compressed Path\n${retainedHash},/audio/original.wav,"unfinished`,
@@ -151,13 +169,43 @@ async function main() {
     }), entriesBeforeInvalid, 'malformed CSV must not change committed catalog rows');
     assert.deepEqual(await sourceGenerations(), generationsBeforeInvalid,
       'malformed CSV must not replace successful source generations');
+    assert.deepEqual(await client.catalogSyncState.findMany({
+      where: { workflowGroupId: catalogId },
+      select: { sourceKey: true, lastSuccessfulAt: true },
+      orderBy: { sourceKey: 'asc' },
+    }), successTimesBeforeInvalid, 'a failed sync must retain the last successful timestamps');
+    const failedArchive = await client.catalogSyncState.findUniqueOrThrow({
+      where: { workflowGroupId_sourceKey: { workflowGroupId: catalogId, sourceKey: 'archived' } },
+    });
+    assert.equal(failedArchive.status, 'ERROR');
+    assert.match(failedArchive.lastError ?? '', /MissingQuotes/);
+
+    await Promise.all([
+      fs.writeFile(metadataPath, lastSuccessfulSources[0]),
+      fs.writeFile(archivedPath, lastSuccessfulSources[1]),
+    ]);
+    assert.equal((await syncCatalogGroup(catalogId)).status, 'skipped');
+    const restoredArchive = await client.catalogSyncState.findUniqueOrThrow({
+      where: { workflowGroupId_sourceKey: { workflowGroupId: catalogId, sourceKey: 'archived' } },
+    });
+    assert.equal(restoredArchive.status, 'SUCCESS');
+    assert.equal(restoredArchive.lastError, null);
+    assert.equal(restoredArchive.lastSuccessfulAt?.getTime(), failedArchive.lastSuccessfulAt?.getTime(),
+      'restoring known-good bytes must preserve the previous projection success time');
 
     // Clearing an explicitly allowed empty catalog still removes every row.
     await writeSources([], '', false);
     await fs.writeFile(duplicatesPath, 'Hash,Original Path,Duplicate Path\n');
     assert.equal((await syncCatalogGroup(catalogId, { allowRowCountDrop: true })).status, 'success');
     assert.equal(await client.catalogEntry.count({ where: { workflowGroupId: catalogId } }), 0);
-    console.log('Catalog sync publication/concurrency and CSV validation checks passed');
+    const recoveredArchive = await client.catalogSyncState.findUniqueOrThrow({
+      where: { workflowGroupId_sourceKey: { workflowGroupId: catalogId, sourceKey: 'archived' } },
+    });
+    assert.equal(recoveredArchive.status, 'SUCCESS');
+    assert.equal(recoveredArchive.lastError, null);
+    assert.equal(recoveredArchive.lastSuccessfulAt?.getTime(), recoveredArchive.syncedAt.getTime());
+    assert(recoveredArchive.lastSuccessfulAt!.getTime() >= failedArchive.lastSuccessfulAt!.getTime());
+    console.log('Catalog sync publication/concurrency, CSV validation, and status history checks passed');
   } finally {
     try {
       if (createdCatalog) await client.workflowGroup.delete({ where: { id: catalogId } });

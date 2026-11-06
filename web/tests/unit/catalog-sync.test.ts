@@ -60,6 +60,7 @@ const mockPrisma: any = {
   catalogSyncState: {
     findMany: (...args: unknown[]) => mockTx.catalogSyncState.findMany(...args),
     upsert: vi.fn(),
+    updateMany: vi.fn(),
   },
 };
 
@@ -116,6 +117,8 @@ describe('catalog-sync', () => {
     mockTx.catalogEntry.updateMany.mockResolvedValue({ count: 0 });
     mockTx.catalogEntry.count.mockResolvedValue(0);
     mockTx.catalogSyncState.upsert.mockResolvedValue({});
+    mockPrisma.catalogSyncState.upsert.mockReset().mockResolvedValue({});
+    mockPrisma.catalogSyncState.updateMany.mockReset().mockResolvedValue({ count: 0 });
     mockTx.catalogDuplicate.deleteMany.mockResolvedValue({ count: 0 });
     mockTx.catalogDuplicate.createMany.mockResolvedValue({ count: 0 });
     mockTx.catalogDuplicate.groupBy.mockResolvedValue([]);
@@ -345,6 +348,85 @@ describe('catalog-sync', () => {
       );
     } finally {
       warn.mockRestore();
+    }
+  });
+
+  it.each(['recovered', 'cleanup-failed', 'newer-failure'])('recovers unchanged known-good source status safely (%s)', async (outcome) => {
+    type State = {
+      sourceKey: string; filePath: string; fingerprint: string; rowCount: number;
+      status: 'SUCCESS' | 'ERROR'; syncedAt: Date; lastSuccessfulAt: Date | null; lastError: string | null;
+    };
+    const states = new Map<string, State>();
+    const groupId = '20251222_144441';
+    const hash = 'a'.repeat(64);
+    let broken = false;
+    mockTx.workflowGroup.findUnique.mockResolvedValue({
+      id: groupId, metadataCatalogPath: '/data/meta.csv', archivedCatalogPath: '/data/archived.csv', duplicatesCatalogPath: null,
+    });
+    mockTx.catalogSyncState.findMany.mockImplementation(async () => [...states.values()]);
+    mockReadFile.mockImplementation(async (file: string) => file === '/data/meta.csv'
+      ? `Hash,Full Path\n${hash},${broken ? '' : '/source.wav'}\n`
+      : `Hash,Original Path,Compressed Path\n${hash},/source.wav,/audio.webm\n`);
+    mockTx.catalogSyncState.upsert.mockImplementation(async ({ create, update }: { create: State; update: Partial<State> }) => {
+      const next = { ...states.get(create.sourceKey), ...create, ...update };
+      states.set(create.sourceKey, next);
+      return next;
+    });
+    mockPrisma.catalogSyncState.upsert.mockImplementation(async ({ where, update }: {
+      where: { workflowGroupId_sourceKey: { sourceKey: string } }; update: Partial<State>;
+    }) => {
+      const key = where.workflowGroupId_sourceKey.sourceKey;
+      const next = { ...states.get(key)!, ...update };
+      states.set(key, next);
+      return next;
+    });
+    mockPrisma.catalogSyncState.updateMany.mockImplementation(async ({ where, data }: {
+      where: { OR: Array<Pick<State, 'sourceKey' | 'filePath' | 'fingerprint' | 'syncedAt' | 'status'>> };
+      data: Partial<State>;
+    }) => {
+      if (outcome === 'newer-failure') {
+        const previous = states.get('metadata')!;
+        states.set('metadata', { ...previous, syncedAt: new Date(previous.syncedAt.getTime() + 1), lastError: 'newer failure' });
+      }
+      let count = 0;
+      for (const expected of where.OR) {
+        const previous = states.get(expected.sourceKey)!;
+        if (previous.status === expected.status && previous.fingerprint === expected.fingerprint &&
+            previous.filePath === expected.filePath && previous.syncedAt.getTime() === expected.syncedAt.getTime()) {
+          states.set(expected.sourceKey, { ...previous, ...data });
+          count++;
+        }
+      }
+      return { count };
+    });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { syncCatalogGroup } = await import('@/lib/catalog-sync');
+      expect((await syncCatalogGroup(groupId)).status).toBe('success');
+      const lastSuccess = states.get('metadata')!.lastSuccessfulAt;
+      expect(lastSuccess).toBeInstanceOf(Date);
+      broken = true;
+      expect((await syncCatalogGroup(groupId)).status).toBe('error');
+      expect(states.get('metadata')).toMatchObject({ status: 'ERROR', lastSuccessfulAt: lastSuccess });
+      broken = false;
+      mockParse.mockClear();
+      mockTx.catalogEntry.createMany.mockClear();
+      if (outcome === 'cleanup-failed') mockTx.$queryRaw.mockRejectedValueOnce(new Error('cleanup failed'));
+
+      const recovered = await syncCatalogGroup(groupId);
+
+      expect(recovered.status).toBe(outcome === 'cleanup-failed' ? 'error' : 'skipped');
+      expect(mockParse).not.toHaveBeenCalled();
+      expect(mockTx.catalogEntry.createMany).not.toHaveBeenCalled();
+      expect(states.get('metadata')!.lastSuccessfulAt).toBe(lastSuccess);
+      if (outcome === 'recovered') expect(states.get('metadata')).toMatchObject({ status: 'SUCCESS', lastError: null });
+      if (outcome === 'cleanup-failed') {
+        expect(mockPrisma.catalogSyncState.updateMany).not.toHaveBeenCalled();
+        expect(states.get('metadata')!.status).toBe('ERROR');
+      }
+      if (outcome === 'newer-failure') expect(states.get('metadata')).toMatchObject({ status: 'ERROR', lastError: 'newer failure' });
+    } finally {
+      log.mockRestore();
     }
   });
 
@@ -810,9 +892,13 @@ describe('catalog-sync', () => {
       expect.objectContaining({ audioHash: unknown, duplicateCount: 0 }),
     ]);
     expect(mockTx.catalogSyncState.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      update: expect.objectContaining({ status: 'SUCCESS', rowCount: 2 }),
+      update: expect.objectContaining({ status: 'SUCCESS', rowCount: 2, lastSuccessfulAt: expect.any(Date) }),
       where: { workflowGroupId_sourceKey: { workflowGroupId: '20251222_144441', sourceKey: 'duplicates' } },
     }));
+    for (const [input] of mockTx.catalogSyncState.upsert.mock.calls) {
+      expect(input.update.lastSuccessfulAt).toBe(input.update.syncedAt);
+      expect(input.create.lastSuccessfulAt).toBe(input.create.syncedAt);
+    }
   });
 
   it('clears projected duplicate counts when the changed source only has unknown originals', async () => {

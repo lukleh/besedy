@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from besedy.commands.catalog import create as create_command
-from besedy.commands.catalog.archive import ArchivedManifestWriter
+from besedy.commands.catalog.archive import ArchivedManifestWriter, CompressedEntry
 from besedy.commands.catalog.file_processing import AddFilesResult, write_duplicates_report
 from besedy.commands.catalog.ui import write_duplicates_csv
 from besedy.lib.catalog.manager import (
@@ -49,6 +49,16 @@ def _read(path: Path) -> tuple[list[str], list[dict[str, str]]]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         return list(reader.fieldnames or []), list(reader)
+
+
+def _assert_validation_rules(path: Path, kind: str, contract: dict) -> None:
+    header, rows = _read(path)
+    rules = contract["validation"][kind]
+    assert set(rules["requiredHeaders"]) <= set(header)
+    assert set(rules["nonBlankCells"]) <= set(rules["requiredHeaders"])
+    for row in rows:
+        for column in rules["nonBlankCells"]:
+            assert row[column].strip(), (kind, column)
 
 
 def test_contract_hash_algorithm_is_the_one_python_writes(contract: dict) -> None:
@@ -92,17 +102,32 @@ def test_metadata_catalog_writer_emits_the_contract_columns(
 
     assert set(contract["metadata"]) <= set(header)
     assert rows[0]["Hash Algorithm"] == contract["hashAlgorithm"]
+    _assert_validation_rules(path, "metadata", contract)
 
 
 def test_archived_manifest_writer_emits_the_contract_columns(
     contract: dict, tmp_path: Path
 ) -> None:
     path = tmp_path / "archived.csv"
-    ArchivedManifestWriter(path)
+    writer = ArchivedManifestWriter(path)
+    writer.write_entry(
+        CompressedEntry(
+            sha256="a" * 64,
+            source=tmp_path / "a.mp3",
+            compressed=tmp_path / "a.webm",
+            format="opus",
+            bitrate_kbps=64,
+            source_size_bytes=1000,
+            compressed_size_bytes=500,
+            compression_ratio=2,
+            duration_seconds=60,
+        )
+    )
 
     header, _ = _read(path)
 
     assert set(contract["archived"]) <= set(header)
+    _assert_validation_rules(path, "archived", contract)
 
 
 def test_duplicates_writer_emits_the_contract_columns(contract: dict, tmp_path: Path) -> None:
@@ -116,9 +141,12 @@ def test_duplicates_writer_emits_the_contract_columns(contract: dict, tmp_path: 
 
     assert set(contract["duplicates"]) <= set(header)
     assert rows[0]["Duplicate Path"] == str(duplicate.full_path)
+    _assert_validation_rules(path, "duplicates", contract)
 
 
-def test_duplicates_with_unknown_original_match_shared_fixture(tmp_path: Path) -> None:
+def test_duplicates_with_unknown_original_match_shared_fixture(
+    tmp_path: Path, contract: dict
+) -> None:
     known = "a" * 64
     unknown = "b" * 64
     path = tmp_path / "duplicates.csv"
@@ -135,4 +163,5 @@ def test_duplicates_with_unknown_original_match_shared_fixture(tmp_path: Path) -
     )
 
     assert count == 3
+    _assert_validation_rules(path, "duplicates", contract)
     assert _read(path) == _read(CONTRACT_PATH.with_name("catalog-duplicates-unknown-original.csv"))

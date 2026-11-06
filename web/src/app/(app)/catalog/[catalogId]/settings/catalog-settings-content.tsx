@@ -278,6 +278,7 @@ export default function CatalogSettingsContent({
         variant: "destructive",
       });
     },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["catalog-sync-status", catalogId] }),
   });
 
   // Fetch pending users (added but not yet signed in)
@@ -618,6 +619,7 @@ export default function CatalogSettingsContent({
       {/* Catalog Configuration - Only visible to admins */}
       {cards.configuration && (
         <CatalogSettingsConfigCard
+          catalogId={catalogId}
           catalogConfig={catalogConfig}
           configDraft={configDraft}
           configError={configError instanceof Error ? configError : null}

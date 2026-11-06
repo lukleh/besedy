@@ -7,6 +7,7 @@ import { syncCatalogEntries } from '@/lib/catalog-sync/entries';
 import { readSourceSnapshot } from '@/lib/catalog-sync/source-snapshot';
 import { rewritePath } from '@/lib/security/path-validation';
 import { HashSchema } from '@/lib/validation/schemas';
+import { CATALOG_CSV_VALIDATION } from '@/lib/catalog-sync/csv-contract';
 
 type CsvRow = Record<string, string | undefined>;
 
@@ -223,12 +224,6 @@ function normalizeHash(raw: string | undefined): string | null {
   return hash;
 }
 
-const REQUIRED_CSV_COLUMNS: Record<SourceKind, string[]> = {
-  metadata: ['Hash', 'Full Path'],
-  archived: ['Hash', 'Original Path', 'Compressed Path'],
-  duplicates: ['Hash', 'Original Path', 'Duplicate Path'],
-};
-
 function parseCsvRows(content: string, kind: SourceKind): CsvRow[] {
   const results = Papa.parse<CsvRow>(content, {
     header: true,
@@ -249,21 +244,18 @@ function parseCsvRows(content: string, kind: SourceKind): CsvRow[] {
   }
   const fields = results.meta.fields ?? [];
   if (fields.includes('')) throw invalid('blank column name');
-  const required = REQUIRED_CSV_COLUMNS[kind];
+  const { requiredHeaders: required, nonBlankCells } = CATALOG_CSV_VALIDATION[kind];
   const missing = required.filter((column) => !fields.includes(normalizeHeader(column)));
   if (missing.length > 0) {
     throw invalid(`missing required columns: ${missing.join(', ')}`);
   }
 
-  // Python keeps duplicate rows whose original is unknown. The header is
-  // still required, but those blank cells are skipped during projection.
-  const pathColumns = kind === 'duplicates' ? ['Duplicate Path'] : required.slice(1);
   for (const [index, row] of results.data.entries()) {
     const hash = normalizeHash(getRowValue(row, ['Hash']));
     if (!HashSchema.safeParse(hash).success) {
       throw invalid(`data row ${index + 1} must have a 64-character hexadecimal Hash`);
     }
-    for (const column of pathColumns) {
+    for (const column of nonBlankCells) {
       if (!getRowValue(row, [column])?.trim()) {
         throw invalid(`data row ${index + 1} has a blank ${column}`);
       }
@@ -577,6 +569,13 @@ async function syncCatalogGroupAttempt(
   options: { force?: boolean; allowRowCountDrop?: boolean } = {},
   retryInvalidatedSnapshot = true,
 ): Promise<CatalogSyncResult> {
+  const unchangedSourceErrors: Array<{
+    sourceKey: string;
+    filePath: string;
+    fingerprint: string;
+    syncedAt: Date;
+    status: 'ERROR';
+  }> = [];
   const force = options.force === true;
   const allowRowCountDrop =
     options.allowRowCountDrop === true || isRowCountDropAllowedByEnv();
@@ -643,6 +642,8 @@ async function syncCatalogGroupAttempt(
             filePath: true,
             fingerprint: true,
             rowCount: true,
+            status: true,
+            syncedAt: true,
           },
         });
 
@@ -658,6 +659,22 @@ async function syncCatalogGroupAttempt(
           force,
         );
         const changedStates = runtimeStates.filter((state) => state.changed);
+
+        // A failed attempt kept the last good fingerprint. Restoring those
+        // exact bytes needs no projection rebuild, but should clear its error
+        // once the rest of reconciliation has succeeded.
+        for (const state of runtimeStates.filter((source) => !source.changed)) {
+          const previous = existingStates.find((source) => source.sourceKey === state.descriptor.sourceKey);
+          if (previous?.status === 'ERROR') {
+            unchangedSourceErrors.push({
+              sourceKey: previous.sourceKey,
+              filePath: previous.filePath,
+              fingerprint: previous.fingerprint,
+              syncedAt: previous.syncedAt,
+              status: 'ERROR',
+            });
+          }
+        }
 
         if (changedStates.length === 0) {
           return {
@@ -936,6 +953,7 @@ async function syncCatalogGroupAttempt(
               fingerprint,
               rowCount,
               syncedAt,
+              lastSuccessfulAt: syncedAt,
               status: 'SUCCESS',
               lastError: null,
             },
@@ -946,6 +964,7 @@ async function syncCatalogGroupAttempt(
               fingerprint,
               rowCount,
               syncedAt,
+              lastSuccessfulAt: syncedAt,
               status: 'SUCCESS',
               lastError: null,
             },
@@ -979,6 +998,13 @@ async function syncCatalogGroupAttempt(
       return { ...result, status: 'error', error };
     }
 
+    if (unchangedSourceErrors.length > 0) {
+      await prisma.catalogSyncState.updateMany({
+        // Do not clear a newer failure recorded while cleanup was running.
+        where: { workflowGroupId: groupId, OR: unchangedSourceErrors },
+        data: { status: 'SUCCESS', lastError: null, syncedAt: new Date() },
+      });
+    }
     return result;
   } catch (error) {
     if (error instanceof SourceSnapshotInvalidatedError) {

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { CATALOG_CSV_VALIDATION } from "@/lib/catalog-sync/csv-contract";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/db", () => ({ default: {} }));
@@ -21,6 +22,7 @@ const contract = JSON.parse(
   metadata: string[];
   archived: string[];
   duplicates: string[];
+  validation: typeof CATALOG_CSV_VALIDATION;
 };
 
 type Row = Record<string, string>;
@@ -38,6 +40,13 @@ function columnsRead(payload: object): string[] {
 }
 
 describe("catalog CSV contract", () => {
+  it("uses the shared required-header and nonblank-cell rules at runtime", () => {
+    expect(CATALOG_CSV_VALIDATION).toEqual(contract.validation);
+    expect(contract.validation.metadata.requiredHeaders).not.toContain("Hash Algorithm");
+    expect(contract.validation.archived.requiredHeaders).not.toContain("Compressed AAC Path");
+    expect(contract.validation.duplicates.requiredHeaders).toContain("Original Path");
+    expect(contract.validation.duplicates.nonBlankCells).not.toContain("Original Path");
+  });
   it("uses the hash algorithm Python writes", () => {
     expect(AUDIO_HASH_ALGORITHM).toBe(contract.hashAlgorithm);
   });

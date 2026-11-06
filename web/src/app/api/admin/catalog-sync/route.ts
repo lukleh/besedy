@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { badRequest, handlePrismaError, validateMutationSource } from "@/lib/api";
+import { badRequest, handlePrismaError, notFound, validateMutationSource } from "@/lib/api";
 import { syncActiveCatalogs, syncCatalogGroup } from "@/lib/catalog-sync";
 import { requireAdminCapability } from "@/lib/access/require-admin";
+import prisma from "@/lib/db";
+import { TimestampIdSchema } from "@/lib/validation/schemas";
+import { CATALOG_SYNC_SOURCE_KEYS } from "@/lib/catalog-sync/status";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,16 +18,28 @@ const SyncRequestSchema = z.object({
 
 /**
  * GET /api/admin/catalog-sync
- * Returns latest sync-state snapshots for active groups.
+ * Returns at most three source snapshots for one catalog. Error details may
+ * name source paths, so this stays behind the system-admin boundary.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     await requireAdminCapability({ message: "Unauthorized" });
 
-    return NextResponse.json({
-      ok: true,
-      message: "Use POST to trigger sync. Query catalog_sync_state via SQL for detailed status.",
+    const parsed = TimestampIdSchema.safeParse(request.nextUrl.searchParams.get("groupId"));
+    if (!parsed.success) return badRequest("A valid groupId is required");
+    const groupId = parsed.data;
+    const group = await prisma.workflowGroup.findUnique({ where: { id: groupId }, select: { id: true } });
+    if (!group) return notFound("catalog");
+    const sources = await prisma.catalogSyncState.findMany({
+      where: { workflowGroupId: groupId, sourceKey: { in: [...CATALOG_SYNC_SOURCE_KEYS] } },
+      take: CATALOG_SYNC_SOURCE_KEYS.length,
+      orderBy: { sourceKey: "asc" },
+      select: {
+        sourceKey: true, status: true, syncedAt: true,
+        lastSuccessfulAt: true, lastError: true, rowCount: true,
+      },
     });
+    return NextResponse.json({ groupId, sources });
   } catch (error) {
     return handlePrismaError(error, "catalog sync", "fetch");
   }
@@ -72,7 +87,10 @@ export async function POST(request: NextRequest) {
     };
 
     if (failed.length > 0) {
-      return NextResponse.json(response, { status: 500 });
+      return NextResponse.json({
+        ...response,
+        error: failed.map((result) => `${result.groupId}: ${result.error ?? "Catalog sync failed"}`).join("\n"),
+      }, { status: 500 });
     }
 
     return NextResponse.json(response);

@@ -54,6 +54,17 @@ Sync triggers:
 
 `--force` bypasses fingerprint checks and rebuilds all tracked sources for the scope.
 
+System administrators can inspect each source's latest sync result, last successful
+sync, and error in catalog settings beside **Sync Catalog**. The status endpoint,
+`GET /api/admin/catalog-sync?groupId=<id>`, returns at most three source snapshots
+for that catalog. It shares the sync command's system-admin authorization because
+errors may name source paths. Catalog administrators do not receive these details
+or the sync control. Older failed states have no recoverable last-success timestamp
+and show it as unrecorded; later failures preserve the last recorded success.
+Restoring the exact last successful source bytes clears the failed status after
+reconciliation succeeds, without rebuilding the projection or advancing that
+last-success timestamp.
+
 Every reconciliation also removes orphaned event-recording assignments and
 repairs events that lost their primary recording, even when all source bytes
 are unchanged. A cleanup failure returns an error while preserving the committed
@@ -68,12 +79,19 @@ The columns the sync reads from each CSV kind are listed in
 Python writers emit them, and `web/tests/unit/catalog-csv-contract.test.ts`
 checks that the sync reads exactly them, so renaming a column on either side
 fails a test. Change the JSON together with both sides.
+The JSON also distinguishes required headers from nonblank cells. The web image
+uses a small runtime copy in `src/lib/catalog-sync/csv-contract.ts`, checked against
+the canonical rules by the same contract suite; Python tests check the rules against
+actual writer output.
 
 Sync rejects CSV parsing errors, blank or duplicate column names, and sources
 missing their core identity columns: `Hash` and `Full Path` for metadata;
 `Hash`, `Original Path`, and `Compressed Path` for archives; `Hash`,
 `Original Path`, and `Duplicate Path` for duplicates. Every row must contain
-a full 64-character hexadecimal hash and nonblank values in those path columns.
+a full 64-character hexadecimal hash and nonblank values in required path cells.
+Duplicates are the exception: Python may write a blank `Original Path` when the
+original is unknown. Its header is still required, but those rows are skipped by
+the web projection, preserving the existing duplicate-count behavior.
 Headers ignore case and surrounding whitespace; hashes normalize to lowercase.
 Other columns, including the AAC copy columns, remain optional. Invalid input
 leaves the live projection and successful source fingerprints unchanged, even
