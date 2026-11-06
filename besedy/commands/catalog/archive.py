@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import csv
 import fcntl
+import math
 import os
 import shutil
 import subprocess
@@ -63,9 +64,13 @@ from besedy.core.symlinks import (
     validate_symlink_can_be_created,
 )
 from besedy.lib.audio.decode import decode_to_temp_wav
+from besedy.lib.audio.join import probe_audio_file
+from besedy.lib.audio.probe import measure_audio_duration_seconds
 from besedy.lib.audio.quality import needs_declipping
 from besedy.lib.audio.types import (
     DECLIP_THRESHOLD_DBTP,
+    DURATION_TOLERANCE_MIN_SECONDS,
+    DURATION_TOLERANCE_PERCENTAGE,
     detect_logical_cpus,
     format_size,
 )
@@ -146,7 +151,7 @@ class CompressionResult:
     compressed: CompressedEntry | None
     skipped: ArchiveSkippedEntry | None
     # The Opus archive succeeded but its AAC copy did not; the row is written
-    # with blank AAC columns so `--backfill-aac` can add the copy later.
+    # with blank AAC columns unless a validated existing copy can be retained.
     warning: str | None = None
 
 
@@ -481,7 +486,7 @@ def aac_vbr_mode(quality: str, input_bitrate: int | None) -> int:
 
 
 def _run_ffmpeg(cmd: list[str], output_path: Path) -> str | None:
-    """Run an encode; on failure remove partial output and return the reason."""
+    """Encode into a candidate; remove partial output on failure."""
     try:
         result = subprocess.run(cmd, capture_output=True)
     except Exception as exc:
@@ -525,6 +530,31 @@ def _measured_kbps(size_bytes: int, duration_seconds: float) -> int | None:
     return round(size_bytes * 8 / duration_seconds / 1000)
 
 
+def _archive_output_metadata(
+    path: Path, *, codec: str, expected_duration: float, ffprobe_binary: str
+) -> tuple[int, float]:
+    """Validate an encoded candidate (or retained copy) before advertising it."""
+    size = path.stat().st_size
+    if size <= 0:
+        raise RuntimeError(f"Archive output is empty: {path}")
+    info = probe_audio_file(path, ffprobe_binary=ffprobe_binary)
+    if info.codec != codec:
+        raise RuntimeError(f"Archive output has codec {info.codec}, expected {codec}: {path}")
+    if not all(
+        math.isfinite(value) and value > 0 for value in (info.duration_seconds, expected_duration)
+    ):
+        raise RuntimeError(f"Archive output has invalid duration: {path}")
+    tolerance = max(
+        DURATION_TOLERANCE_MIN_SECONDS, expected_duration * DURATION_TOLERANCE_PERCENTAGE
+    )
+    if abs(info.duration_seconds - expected_duration) > tolerance:
+        raise RuntimeError(
+            f"Archive output duration {info.duration_seconds:.2f}s differs from "
+            f"decoded source {expected_duration:.2f}s: {path}"
+        )
+    return size, info.duration_seconds
+
+
 def compress_audio_file(
     row: CsvAudioRow,
     output_path: Path,
@@ -539,116 +569,108 @@ def compress_audio_file(
     bitrate_override: int | None = None,
     aac_output_path: Path | None = None,
 ) -> CompressionResult:
-    """Compress a single audio file with two-pass normalization.
+    """Compress into validated candidates, retaining live files until publication.
 
-    With ``aac_output_path`` (Opus only), also encode an AAC-in-MP4 copy from
-    the same decoded source. If only the copy fails, the Opus archive is kept
-    and the result carries a warning; its AAC columns stay blank.
+    The optional AAC copy uses the same decoded source. Its ordinary failure
+    keeps the new Opus and any validated old AAC. Interruption during encoding
+    publishes neither candidate. The two renames and later manifest update are
+    independent, rather than one transaction.
     """
     source = Path(row.full_path)
     sha256 = row.sha256
-
-    # Check source exists
     if not source.exists():
-        return CompressionResult(
-            compressed=None,
-            skipped=ArchiveSkippedEntry(sha256, source, "source file not found"),
-        )
+        return CompressionResult(None, ArchiveSkippedEntry(sha256, source, "source file not found"))
+    if (output_path.exists() or output_path.is_symlink()) and not force:
+        return CompressionResult(None, ArchiveSkippedEntry(sha256, source, "output already exists"))
 
-    # Check if output already exists
-    if output_path.exists():
-        if not force:
-            return CompressionResult(
-                compressed=None,
-                skipped=ArchiveSkippedEntry(sha256, source, "output already exists"),
-            )
-        # Force mode: delete existing file and reprocess
-        output_path.unlink()
-
-    # Create output directory
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Get source size
     source_size = source.stat().st_size
-
     prepared, error = prepare_source(
         row, source, ffmpeg_binary=ffmpeg_binary, ffprobe_binary=ffprobe_binary
     )
     if prepared is None:
-        return CompressionResult(
-            compressed=None, skipped=ArchiveSkippedEntry(sha256, source, error or "")
-        )
+        return CompressionResult(None, ArchiveSkippedEntry(sha256, source, error or ""))
 
-    duration = row.duration_seconds if row.duration_seconds else 0.0
     aac_size: int | None = None
+    aac_duration: float | None = None
     aac_warning: str | None = None
     try:
-        # Normalize and compress (second pass) - using temp WAV as input
-        if format == "opus":
-            target_bitrate = bitrate_override if bitrate_override else OPUS_BITRATES[quality]
-            # Cap bitrate to input (never upconvert)
-            if prepared.input_bitrate and prepared.input_bitrate < target_bitrate:
-                effective_bitrate = prepared.input_bitrate
+        decoded_duration = measure_audio_duration_seconds(
+            prepared.temp_wav, ffprobe_binary=ffprobe_binary
+        )
+        # Replace a symlink entry as the old force-unlink path did; never encode
+        # through it or alter the file it points at.
+        with atomic_path(output_path, follow_symlinks=False, replace_symlink=True) as candidate:
+            if format == "opus":
+                target_bitrate = bitrate_override if bitrate_override else OPUS_BITRATES[quality]
+                effective_bitrate = min(prepared.input_bitrate or target_bitrate, target_bitrate)
+                effective_sample_rate = nearest_opus_sample_rate(prepared.capped_sample_rate)
+                cmd = build_opus_command(
+                    prepared.temp_wav,
+                    candidate,
+                    prepared.measured,
+                    effective_bitrate,
+                    effective_sample_rate,
+                    stereo,
+                    ffmpeg_binary,
+                    apply_declipping=prepared.apply_declipping,
+                )
+                error = _run_ffmpeg(cmd, candidate)
             else:
-                effective_bitrate = target_bitrate
-            # Opus requires specific sample rates - round to nearest supported
-            effective_sample_rate = nearest_opus_sample_rate(prepared.capped_sample_rate)
-            cmd = build_opus_command(
-                prepared.temp_wav,  # Use temp WAV instead of original source
-                output_path,
-                prepared.measured,
-                effective_bitrate,
-                effective_sample_rate,
-                stereo,
-                ffmpeg_binary,
-                apply_declipping=prepared.apply_declipping,
+                vbr_mode = aac_vbr_mode(quality, prepared.input_bitrate)
+                error = _encode_m4a(
+                    prepared,
+                    candidate,
+                    vbr_mode=vbr_mode,
+                    stereo=stereo,
+                    ffmpeg_binary=ffmpeg_binary,
+                    use_fdk=use_fdk,
+                )
+                effective_bitrate = {2: 40, 3: 52, 4: 68, 5: 104}.get(vbr_mode, 68)
+            if error:
+                raise RuntimeError(error)
+            compressed_size, _ = _archive_output_metadata(
+                candidate,
+                codec="opus" if format == "opus" else "aac",
+                expected_duration=decoded_duration,
+                ffprobe_binary=ffprobe_binary,
             )
-            error = _run_ffmpeg(cmd, output_path)
-        else:  # m4a
-            vbr_mode = aac_vbr_mode(quality, prepared.input_bitrate)
-            error = _encode_m4a(
-                prepared,
-                output_path,
-                vbr_mode=vbr_mode,
-                stereo=stereo,
-                ffmpeg_binary=ffmpeg_binary,
-                use_fdk=use_fdk,
-            )
-            # Approximate bitrate for M4A VBR
-            effective_bitrate = {2: 40, 3: 52, 4: 68, 5: 104}.get(vbr_mode, 68)
-
-        if error is None and format == "opus" and aac_output_path is not None:
-            aac_output_path.unlink(missing_ok=True)
-            aac_output_path.parent.mkdir(parents=True, exist_ok=True)
-            aac_error = _encode_m4a(
-                prepared,
-                aac_output_path,
-                vbr_mode=AAC_COPY_VBR_MODE,
-                stereo=stereo,
-                ffmpeg_binary=ffmpeg_binary,
-                use_fdk=use_fdk,
-            )
-            if aac_error:
-                # Keep the Opus archive: the recording stays playable
-                # everywhere but Safari, and a later --backfill-aac retries
-                # only the copy.
-                aac_warning = f"aac copy {aac_error}"
-            else:
-                aac_size = aac_output_path.stat().st_size
+            if format == "opus" and aac_output_path is not None:
+                try:
+                    with atomic_path(
+                        aac_output_path, follow_symlinks=False, replace_symlink=True
+                    ) as aac_candidate:
+                        aac_error = _encode_m4a(
+                            prepared,
+                            aac_candidate,
+                            vbr_mode=AAC_COPY_VBR_MODE,
+                            stereo=stereo,
+                            ffmpeg_binary=ffmpeg_binary,
+                            use_fdk=use_fdk,
+                        )
+                        if aac_error:
+                            raise RuntimeError(aac_error)
+                        aac_size, aac_duration = _archive_output_metadata(
+                            aac_candidate,
+                            codec="aac",
+                            expected_duration=decoded_duration,
+                            ffprobe_binary=ffprobe_binary,
+                        )
+                except (OSError, RuntimeError, ValueError) as exc:
+                    aac_warning = f"aac copy {exc}"
+                    try:
+                        aac_size, aac_duration = _archive_output_metadata(
+                            aac_output_path,
+                            codec="aac",
+                            expected_duration=decoded_duration,
+                            ffprobe_binary=ffprobe_binary,
+                        )
+                    except (OSError, RuntimeError, ValueError):
+                        aac_size = aac_duration = None
+    except (OSError, RuntimeError, ValueError) as exc:
+        return CompressionResult(None, ArchiveSkippedEntry(sha256, source, str(exc)))
     finally:
-        # Always clean up temp WAV file
         prepared.temp_wav.unlink(missing_ok=True)
 
-    if error:
-        return CompressionResult(
-            compressed=None, skipped=ArchiveSkippedEntry(sha256, source, error)
-        )
-
-    # Get output size and calculate ratio
-    compressed_size = output_path.stat().st_size
-    ratio = source_size / compressed_size if compressed_size > 0 else 0
-
-    has_aac = aac_size is not None
     return CompressionResult(
         compressed=CompressedEntry(
             sha256=sha256,
@@ -658,12 +680,16 @@ def compress_audio_file(
             bitrate_kbps=effective_bitrate,
             source_size_bytes=source_size,
             compressed_size_bytes=compressed_size,
-            compression_ratio=ratio,
-            duration_seconds=duration,
+            compression_ratio=source_size / compressed_size,
+            duration_seconds=row.duration_seconds or 0.0,
             added_at=row.added_at,
-            aac_path=aac_output_path if has_aac else None,
+            aac_path=aac_output_path if aac_size is not None else None,
             aac_size_bytes=aac_size,
-            aac_bitrate_kbps=_measured_kbps(aac_size, duration) if aac_size is not None else None,
+            aac_bitrate_kbps=(
+                _measured_kbps(aac_size, aac_duration)
+                if aac_size is not None and aac_duration is not None
+                else None
+            ),
         ),
         skipped=None,
         warning=aac_warning,
@@ -706,23 +732,38 @@ def backfill_aac_copy(
     if prepared is None:
         return AacBackfillResult(sha256, None, ArchiveSkippedEntry(sha256, source, error or ""))
     try:
-        aac_path.unlink(missing_ok=True)
-        error = _encode_m4a(
-            prepared,
-            aac_path,
-            vbr_mode=AAC_COPY_VBR_MODE,
-            stereo=stereo,
-            ffmpeg_binary=ffmpeg_binary,
-            use_fdk=use_fdk,
+        decoded_duration = measure_audio_duration_seconds(
+            prepared.temp_wav, ffprobe_binary=ffprobe_binary
+        )
+        _archive_output_metadata(
+            compressed_path,
+            codec="opus",
+            expected_duration=decoded_duration,
+            ffprobe_binary=ffprobe_binary,
+        )
+        with atomic_path(aac_path, follow_symlinks=False, replace_symlink=True) as candidate:
+            error = _encode_m4a(
+                prepared,
+                candidate,
+                vbr_mode=AAC_COPY_VBR_MODE,
+                stereo=stereo,
+                ffmpeg_binary=ffmpeg_binary,
+                use_fdk=use_fdk,
+            )
+            if error:
+                raise RuntimeError(error)
+            size, duration = _archive_output_metadata(
+                candidate,
+                codec="aac",
+                expected_duration=decoded_duration,
+                ffprobe_binary=ffprobe_binary,
+            )
+    except (OSError, RuntimeError, ValueError) as exc:
+        return AacBackfillResult(
+            sha256, None, ArchiveSkippedEntry(sha256, source, f"aac copy {exc}")
         )
     finally:
         prepared.temp_wav.unlink(missing_ok=True)
-    if error:
-        return AacBackfillResult(
-            sha256, None, ArchiveSkippedEntry(sha256, source, f"aac copy {error}")
-        )
-    size = aac_path.stat().st_size
-    duration = row.duration_seconds or 0.0
     return AacBackfillResult(
         sha256, aac_manifest_values(aac_path, size, _measured_kbps(size, duration)), None
     )
@@ -1421,9 +1462,12 @@ def handle_archive(
                         manifest_writer.write_entry(entry)
                         if result.warning:
                             aac_warnings.append(entry.sha256)
+                            retry = (
+                                "--backfill-aac --overwrite" if entry.aac_path else "--backfill-aac"
+                            )
                             progress.console.print(
                                 f"  [yellow]![/yellow] {rich_escape(entry.source.name)}: "
-                                f"{rich_escape(result.warning)} (run --backfill-aac to retry)",
+                                f"{rich_escape(result.warning)} (run {retry} to retry)",
                                 highlight=False,
                             )
                         ratio_str = f"{entry.compression_ratio:.1f}x"
@@ -1470,7 +1514,7 @@ def handle_archive(
     print(f"  Compressed: {len(compressed)}")
     print(f"  Skipped:    {len(skipped)}")
     if aac_warnings:
-        print(f"  Without AAC copy: {len(aac_warnings)} (run --backfill-aac to retry)")
+        print(f"  AAC copy warnings: {len(aac_warnings)} (see above for retry commands)")
     if is_resume:
         print(f"  Previously archived: {len(already_archived)}")
 
