@@ -19,14 +19,8 @@ vi.mock("@/lib/db", () => ({
       update: vi.fn(),
       findFirst: vi.fn(),
     },
-    audioMetadata: {
-      groupBy: vi.fn(),
-    },
+    $queryRaw: vi.fn(),
   },
-}));
-
-vi.mock("@/lib/catalog", () => ({
-  loadCatalogHashes: vi.fn(),
 }));
 
 vi.mock("@/lib/catalog/resolve-group", () => ({
@@ -39,7 +33,6 @@ describe("album CRUD routes", () => {
   let requireAuth: ReturnType<typeof vi.fn>;
   let getCatalogCapability: ReturnType<typeof vi.fn>;
   let resolveCatalogWithAccess: ReturnType<typeof vi.fn>;
-  let loadCatalogHashes: ReturnType<typeof vi.fn>;
   let prisma: {
     album: {
       findMany: ReturnType<typeof vi.fn>;
@@ -47,9 +40,7 @@ describe("album CRUD routes", () => {
       update: ReturnType<typeof vi.fn>;
       findFirst: ReturnType<typeof vi.fn>;
     };
-    audioMetadata: {
-      groupBy: ReturnType<typeof vi.fn>;
-    };
+    $queryRaw: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(async () => {
@@ -63,7 +54,6 @@ describe("album CRUD routes", () => {
     resolveCatalogWithAccess = (
       await import("@/lib/catalog/resolve-group")
     ).resolveCatalogWithAccess as ReturnType<typeof vi.fn>;
-    loadCatalogHashes = (await import("@/lib/catalog")).loadCatalogHashes as ReturnType<typeof vi.fn>;
   });
 
   /** Put the caller in one catalog, optionally with lookup rights on it. */
@@ -73,7 +63,6 @@ describe("album CRUD routes", () => {
       group: { id: "20251222_144441" },
       hasAccess: true,
     });
-    vi.mocked(loadCatalogHashes).mockResolvedValue(new Set(["hash1"]));
     vi.mocked(getCatalogCapability).mockResolvedValue({ canManageLookups });
   }
 
@@ -83,7 +72,6 @@ describe("album CRUD routes", () => {
       group: { id: "20251222_144441" },
       hasAccess: true,
     });
-    vi.mocked(loadCatalogHashes).mockResolvedValue(new Set(["hash1", "hash2"]));
     prisma.album.findMany.mockResolvedValue([
       {
         id: 1,
@@ -92,9 +80,7 @@ describe("album CRUD routes", () => {
         updatedAt: new Date(),
       },
     ]);
-    prisma.audioMetadata.groupBy.mockResolvedValue([
-      { albumId: 1, _count: { _all: 5 } },
-    ]);
+    prisma.$queryRaw.mockResolvedValue([{ id: 1, count: 5 }]);
 
     vi.mocked(getCatalogCapability).mockResolvedValue({ canManageLookups: false });
 

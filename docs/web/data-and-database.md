@@ -187,6 +187,13 @@ walks through export, train, convert, eval and compare.
 
 Rows missing from one source still exist in `catalog_entry` but remain non-actionable.
 
+### Lookup Reference Counts
+
+Lookup collection counts join `audio_metadata` to `catalog_entry` on both catalog
+ID and audio hash, so orphan metadata and other catalogs do not contribute.
+Single-lookup reads and mutations resolve catalog access without enumerating
+recordings.
+
 ### Audio Source Resolution
 
 When serving audio, the app resolves the source from the `source` query
