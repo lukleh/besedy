@@ -5,11 +5,10 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CalendarX, ChevronDown, Mic, RefreshCw, SquarePen } from "lucide-react";
+import { ArrowLeft, CalendarX, ChevronDown, Mic, RefreshCw } from "lucide-react";
 import RecordingContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content";
 import { formatPartialDate } from "@/lib/date-format";
 import { isNetworkFailure } from "@/lib/api/fetch-json";
-import { buildCorrectionPagePath } from "@/lib/api/recording-urls";
 import { isAccessDeniedError } from "@/lib/query/auth-sensitive";
 import { clearLastRoute } from "@/lib/pwa/last-route";
 import { useLocalArtworkUrl } from "@/hooks/use-local-package";
@@ -25,6 +24,7 @@ import { EventArtworkPicture } from "@/components/catalog/event-artwork-picture"
 import { EventArtworkSwipe } from "@/components/catalog/event-artwork-swipe";
 import { eventDetailQueryOptions, selectShownEventArtwork } from "@/components/catalog/event-detail-query";
 import { EventEditMenu } from "@/components/catalog/event-edit-menu";
+import { CorrectionLink } from "@/components/correction/correction-link";
 import {
   ResponsiveMenu,
   ResponsiveMenuContent,
@@ -260,14 +260,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     <>
       {eventBadges}
       {editMenu}
-      {correctionHash && (
-        <Button asChild variant="outline" size="sm">
-          <Link href={buildCorrectionPagePath(catalogId, correctionHash)}>
-            <SquarePen className="mr-2 h-4 w-4" />
-            {t("correction")}
-          </Link>
-        </Button>
-      )}
+      {correctionHash && <CorrectionLink catalogId={catalogId} hash={correctionHash} />}
     </>
   );
 

@@ -231,7 +231,7 @@ describe("RecordingContent transcript toggle", () => {
     render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
 
     expect(
-      screen.getByRole("link", { name: "correction.openSurface" })
+      screen.getByRole("link", { name: "openSurface" })
     ).toHaveAttribute("href", `/catalog/${CATALOG_ID}/recording/${HASH}/correction`);
   });
 
@@ -263,7 +263,7 @@ describe("RecordingContent transcript toggle", () => {
     render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} hideCorrectionLink />);
 
     expect(
-      screen.queryByRole("link", { name: "correction.openSurface" })
+      screen.queryByRole("link", { name: "openSurface" })
     ).not.toBeInTheDocument();
     // Nor from the progress panel shown before a transcript is published.
     expect(transcriptViewerMock).toHaveBeenCalledWith(
@@ -299,7 +299,7 @@ describe("RecordingContent transcript toggle", () => {
     render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
 
     expect(
-      screen.queryByRole("link", { name: "correction.openSurface" })
+      screen.queryByRole("link", { name: "openSurface" })
     ).not.toBeInTheDocument();
   });
 

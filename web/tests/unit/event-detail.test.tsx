@@ -288,7 +288,7 @@ describe("EventDetail edit menu", () => {
     renderEventDetail(eventDetail());
 
     expect(linkHrefs()).toEqual([`/catalog/${CATALOG_ID}/recording/${"a".repeat(64)}/correction`]);
-    expect(within(screen.getByTestId("header-actions")).getByRole("link", { name: "correction" })).toBeInTheDocument();
+    expect(within(screen.getByTestId("header-actions")).getByRole("link", { name: "openSurface" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /editEvent/ })).not.toBeInTheDocument();
     expect(recordingContentMock).toHaveBeenCalledWith(expect.objectContaining({ hideCorrectionLink: true }));
   });
@@ -299,11 +299,11 @@ describe("EventDetail edit menu", () => {
 
     const actions = within(screen.getByTestId("header-actions"));
     expect(actions.getByRole("button", { name: /editEvent/ })).toBeInTheDocument();
-    expect(actions.getByRole("link", { name: "correction" })).toHaveAttribute(
+    expect(actions.getByRole("link", { name: "openSurface" })).toHaveAttribute(
       "href",
       `/catalog/${CATALOG_ID}/recording/${"a".repeat(64)}/correction`
     );
-    expect(within(actions.getByRole("menu")).queryByRole("link", { name: "correction" })).not.toBeInTheDocument();
+    expect(within(actions.getByRole("menu")).queryByRole("link", { name: "openSurface" })).not.toBeInTheDocument();
   });
 
   it("hides correction without permission even when event editing is allowed", () => {
@@ -313,7 +313,7 @@ describe("EventDetail edit menu", () => {
     renderEventDetail(eventDetail(), true);
 
     expect(screen.getByRole("button", { name: /editEvent/ })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "correction" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "openSurface" })).not.toBeInTheDocument();
   });
 
   it("hides correction for a recording outside correction scope", () => {
