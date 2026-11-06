@@ -1779,6 +1779,19 @@
       "defaultCatalog": "Default catalog",
       "pathsAndFlagsAdminOnly": "Only system administrators can change the paths and the active and default flags."
     },
+    "syncStatus": {
+      "title": "CSV synchronization",
+      "loading": "Loading sync status…",
+      "loadError": "Could not load sync status.",
+      "notRun": "No synchronization recorded yet.",
+      "lastSuccess": "Last successful sync",
+      "unknown": "Not recorded",
+      "metadata": "Metadata CSV",
+      "archived": "Archived audio CSV",
+      "duplicates": "Duplicates CSV",
+      "SUCCESS": "Sync succeeded",
+      "ERROR": "Sync failed"
+    },
     "transcriptExports": {
       "title": "Transcript exports",
       "description": "Download TXT transcripts using the same backend as catalog search."

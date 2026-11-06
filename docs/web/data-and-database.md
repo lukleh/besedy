@@ -26,13 +26,14 @@ The discovery endpoint (`/api/catalogs/discover`) scans `BESEDY_BASE_DIR` for fi
 ### Sync Rules
 
 CSV-to-DB sync stores a versioned SHA-256 generation fingerprint for the exact
-source bytes that were parsed (`v4:sha256:<digest>`). Source snapshots are read
+source bytes that were parsed (`v5:sha256:<digest>`). Source snapshots are read
 once per reconciliation, before the database transaction and advisory lock, so
 fingerprinting and parsing cannot observe different file contents. Older
 stat-based fingerprints cause a one-time refresh after upgrade. The version is
 bumped when sync starts reading a column it ignored before, so every source is
 rebuilt once on the first sync after that deploy, even when its bytes are
-unchanged; `v4` added the AAC copy columns (#291).
+unchanged; `v5` revalidates sources under the stricter CSV and recording-identity
+checks below.
 
 | Condition                        | Effect                                                   |
 | -------------------------------- | -------------------------------------------------------- |
@@ -53,6 +54,17 @@ Sync triggers:
 
 `--force` bypasses fingerprint checks and rebuilds all tracked sources for the scope.
 
+System administrators can inspect each source's latest sync result, last successful
+sync, and error in catalog settings beside **Sync Catalog**. The status endpoint,
+`GET /api/admin/catalog-sync?groupId=<id>`, returns at most three source snapshots
+for that catalog. It shares the sync command's system-admin authorization because
+errors may name source paths. Catalog administrators do not receive these details
+or the sync control. Older failed states have no recoverable last-success timestamp
+and show it as unrecorded; later failures preserve the last recorded success.
+Restoring the exact last successful source bytes clears the failed status after
+reconciliation succeeds, without rebuilding the projection or advancing that
+last-success timestamp.
+
 Every reconciliation also removes orphaned event-recording assignments and
 repairs events that lost their primary recording, even when all source bytes
 are unchanged. A cleanup failure returns an error while preserving the committed
@@ -67,6 +79,24 @@ The columns the sync reads from each CSV kind are listed in
 Python writers emit them, and `web/tests/unit/catalog-csv-contract.test.ts`
 checks that the sync reads exactly them, so renaming a column on either side
 fails a test. Change the JSON together with both sides.
+The JSON also distinguishes required headers from nonblank cells. The web image
+uses a small runtime copy in `src/lib/catalog-sync/csv-contract.ts`, checked against
+the canonical rules by the same contract suite; Python tests check the rules against
+actual writer output.
+
+Sync rejects CSV parsing errors, blank or duplicate column names, and sources
+missing their core identity columns: `Hash` and `Full Path` for metadata;
+`Hash`, `Original Path`, and `Compressed Path` for archives; `Hash`,
+`Original Path`, and `Duplicate Path` for duplicates. Every row must contain
+a full 64-character hexadecimal hash and nonblank values in required path cells.
+Duplicates are the exception: Python may write a blank `Original Path` when the
+original is unknown. Its header is still required, but those rows are skipped by
+the web projection, preserving the existing duplicate-count behavior.
+Headers ignore case and surrounding whitespace; hashes normalize to lowercase.
+Other columns, including the AAC copy columns, remain optional. Invalid input
+leaves the live projection and successful source fingerprints unchanged, even
+when the row-count-drop override is enabled. Header-only CSVs remain valid empty
+sources, subject to the existing row-count-drop guard.
 
 A metadata row whose `Hash Algorithm` is missing or not
 `pcm-s16le-16000hz-mono-sha256-v1` still syncs. The sync that parses the

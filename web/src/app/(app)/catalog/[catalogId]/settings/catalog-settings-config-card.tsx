@@ -8,12 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { CatalogSettingsSyncStatus } from "./catalog-settings-sync-status";
 import type {
   CatalogConfig,
   CatalogConfigDraft,
 } from "./catalog-settings-content-types";
 
 interface CatalogSettingsConfigCardProps {
+  catalogId: string;
   canEditPathsAndFlags: boolean;
   catalogConfig?: CatalogConfig;
   configDraft: CatalogConfigDraft | null;
@@ -30,6 +32,7 @@ interface CatalogSettingsConfigCardProps {
 }
 
 export function CatalogSettingsConfigCard({
+  catalogId,
   canEditPathsAndFlags,
   catalogConfig,
   configDraft,
@@ -63,7 +66,7 @@ export function CatalogSettingsConfigCard({
           <CardDescription>{t("configuration.description")}</CardDescription>
         </div>
         <div className="flex gap-2">
-          <Button
+          {canEditPathsAndFlags && <Button
             type="button"
             variant="outline"
             onClick={onSync}
@@ -71,7 +74,7 @@ export function CatalogSettingsConfigCard({
           >
             {isSyncPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {t("buttons.syncCatalog")}
-          </Button>
+          </Button>}
           {isEditing ? (
             <>
               <Button
@@ -101,6 +104,7 @@ export function CatalogSettingsConfigCard({
         </div>
       </CardHeader>
       <CardContent>
+        {canEditPathsAndFlags && <CatalogSettingsSyncStatus catalogId={catalogId} />}
         {configError ? (
           <div className="text-sm text-destructive">
             {configError.message || t("configuration.loadError")}

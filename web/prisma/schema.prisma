@@ -706,6 +706,7 @@ model CatalogSyncState {
   fingerprint     String
   rowCount        Int               @default(0) @map("row_count")
   syncedAt        DateTime          @map("synced_at")
+  lastSuccessfulAt DateTime?        @map("last_successful_at")
   status          CatalogSyncStatus
   lastError       String?           @map("last_error")
 

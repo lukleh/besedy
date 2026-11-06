@@ -1778,6 +1778,19 @@
       "defaultCatalog": "Výchozí katalog",
       "pathsAndFlagsAdminOnly": "Cesty a příznaky aktivní a výchozí může měnit jen správce systému."
     },
+    "syncStatus": {
+      "title": "Synchronizace CSV",
+      "loading": "Načítání stavu synchronizace…",
+      "loadError": "Stav synchronizace se nepodařilo načíst.",
+      "notRun": "Zatím nebyla zaznamenána žádná synchronizace.",
+      "lastSuccess": "Poslední úspěšná synchronizace",
+      "unknown": "Nezaznamenáno",
+      "metadata": "CSV metadat",
+      "archived": "CSV archivovaného audia",
+      "duplicates": "CSV duplikátů",
+      "SUCCESS": "Synchronizováno",
+      "ERROR": "Synchronizace selhala"
+    },
     "transcriptExports": {
       "title": "Export přepisů",
       "description": "Stáhněte TXT přepisy ze stejného backendu jako katalogové hledání."

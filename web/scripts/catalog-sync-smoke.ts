@@ -22,6 +22,7 @@ async function main() {
   const addedHash = hash();
   const metadataPath = path.join(root, 'metadata.csv');
   const archivedPath = path.join(root, 'archived.csv');
+  const duplicatesPath = path.join(root, 'duplicates.csv');
   const client = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
   const publisher = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
   let concurrentPublication: boolean | null = null;
@@ -57,8 +58,8 @@ async function main() {
       '',
     ].join('\n'));
     await fs.writeFile(archivedPath, [
-      'Hash,Compressed Path,Compressed AAC Path',
-      ...hashes.map((audioHash) => `${audioHash},/audio/${audioHash}.webm,${withAac ? `/audio/${audioHash}.m4a` : ''}`),
+      'Hash,Original Path,Compressed Path,Compressed AAC Path',
+      ...hashes.map((audioHash) => `${audioHash},/audio/${audioHash}.wav,/audio/${audioHash}.webm,${withAac ? `/audio/${audioHash}.m4a` : ''}`),
       '',
     ].join('\n'));
   }
@@ -70,7 +71,18 @@ async function main() {
       data: { id: catalogId, metadataCatalogPath: metadataPath, archivedCatalogPath: archivedPath },
     });
     createdCatalog = true;
-    assert.equal((await syncCatalogGroup(catalogId)).status, 'success');
+    const initialSync = await syncCatalogGroup(catalogId);
+    assert.equal(initialSync.status, 'success', initialSync.error);
+    const initialStates = await client.catalogSyncState.findMany({
+      where: { workflowGroupId: catalogId },
+    });
+    assert.deepEqual(initialStates.map((state) => state.sourceKey).sort(),
+      ['archived', 'duplicates', 'metadata']);
+    for (const state of initialStates) {
+      assert.equal(state.status, 'SUCCESS');
+      assert.equal(state.lastSuccessfulAt?.getTime(), state.syncedAt.getTime());
+      assert.equal(state.lastError, null);
+    }
     const before = await client.catalogEntry.findUniqueOrThrow({
       where: { workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash: retainedHash } },
     });
@@ -98,11 +110,102 @@ async function main() {
     assert.equal(added.isPublished, false, 'new recordings must start unpublished');
     assert.equal(await client.catalogEntry.count({ where: { workflowGroupId: catalogId, audioHash: removedHash } }), 0);
 
+    // Python keeps duplicate discoveries even when the original path is
+    // unknown. Those rows are valid CSV but cannot enter the web projection.
+    await fs.writeFile(duplicatesPath, [
+      'Hash,Original Path,Duplicate Path',
+      `${retainedHash},/audio/original.wav,/audio/known-duplicate.wav`,
+      `${retainedHash},,/audio/unknown-original.wav`,
+      '',
+    ].join('\n'));
+    await client.workflowGroup.update({
+      where: { id: catalogId }, data: { duplicatesCatalogPath: duplicatesPath },
+    });
+    const duplicatesSync = await syncCatalogGroup(catalogId);
+    assert.equal(duplicatesSync.status, 'success', duplicatesSync.error);
+    assert.deepEqual(await client.catalogDuplicate.findMany({
+      where: { workflowGroupId: catalogId },
+      select: { audioHash: true, originalPath: true, duplicatePath: true },
+    }), [{
+      audioHash: retainedHash,
+      originalPath: '/audio/original.wav',
+      duplicatePath: '/audio/known-duplicate.wav',
+    }]);
+    assert.equal((await client.catalogEntry.findUniqueOrThrow({
+      where: { workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash: retainedHash } },
+    })).duplicateCount, 1, 'only projected duplicates count toward recording details');
+    assert.equal((await client.catalogSyncState.findFirstOrThrow({
+      where: { workflowGroupId: catalogId, sourceKey: 'duplicates' },
+    })).rowCount, 1);
+
+    // A parsed metadata source followed by a malformed archive must leave the
+    // entire committed projection and its successful fingerprints intact.
+    const entriesBeforeInvalid = await client.catalogEntry.findMany({
+      where: { workflowGroupId: catalogId }, orderBy: { audioHash: 'asc' },
+    });
+    const sourceGenerations = () => client.catalogSyncState.findMany({
+      where: { workflowGroupId: catalogId },
+      select: { sourceKey: true, fingerprint: true, rowCount: true },
+      orderBy: { sourceKey: 'asc' },
+    });
+    const generationsBeforeInvalid = await sourceGenerations();
+    const lastSuccessfulSources = await Promise.all([
+      fs.readFile(metadataPath, 'utf8'), fs.readFile(archivedPath, 'utf8'),
+    ]);
+    const successTimesBeforeInvalid = await client.catalogSyncState.findMany({
+      where: { workflowGroupId: catalogId },
+      select: { sourceKey: true, lastSuccessfulAt: true },
+      orderBy: { sourceKey: 'asc' },
+    });
+    await writeSources([retainedHash, addedHash], 'Rejected title', true);
+    await fs.writeFile(archivedPath,
+      `Hash,Original Path,Compressed Path\n${retainedHash},/audio/original.wav,"unfinished`,
+    );
+    const rejected = await syncCatalogGroup(catalogId, { force: true, allowRowCountDrop: true });
+    assert.equal(rejected.status, 'error');
+    assert.match(rejected.error ?? '', /Invalid archived catalog CSV: MissingQuotes/);
+    assert.deepEqual(await client.catalogEntry.findMany({
+      where: { workflowGroupId: catalogId }, orderBy: { audioHash: 'asc' },
+    }), entriesBeforeInvalid, 'malformed CSV must not change committed catalog rows');
+    assert.deepEqual(await sourceGenerations(), generationsBeforeInvalid,
+      'malformed CSV must not replace successful source generations');
+    assert.deepEqual(await client.catalogSyncState.findMany({
+      where: { workflowGroupId: catalogId },
+      select: { sourceKey: true, lastSuccessfulAt: true },
+      orderBy: { sourceKey: 'asc' },
+    }), successTimesBeforeInvalid, 'a failed sync must retain the last successful timestamps');
+    const failedArchive = await client.catalogSyncState.findUniqueOrThrow({
+      where: { workflowGroupId_sourceKey: { workflowGroupId: catalogId, sourceKey: 'archived' } },
+    });
+    assert.equal(failedArchive.status, 'ERROR');
+    assert.match(failedArchive.lastError ?? '', /MissingQuotes/);
+
+    await Promise.all([
+      fs.writeFile(metadataPath, lastSuccessfulSources[0]),
+      fs.writeFile(archivedPath, lastSuccessfulSources[1]),
+    ]);
+    assert.equal((await syncCatalogGroup(catalogId)).status, 'skipped');
+    const restoredArchive = await client.catalogSyncState.findUniqueOrThrow({
+      where: { workflowGroupId_sourceKey: { workflowGroupId: catalogId, sourceKey: 'archived' } },
+    });
+    assert.equal(restoredArchive.status, 'SUCCESS');
+    assert.equal(restoredArchive.lastError, null);
+    assert.equal(restoredArchive.lastSuccessfulAt?.getTime(), failedArchive.lastSuccessfulAt?.getTime(),
+      'restoring known-good bytes must preserve the previous projection success time');
+
     // Clearing an explicitly allowed empty catalog still removes every row.
     await writeSources([], '', false);
+    await fs.writeFile(duplicatesPath, 'Hash,Original Path,Duplicate Path\n');
     assert.equal((await syncCatalogGroup(catalogId, { allowRowCountDrop: true })).status, 'success');
     assert.equal(await client.catalogEntry.count({ where: { workflowGroupId: catalogId } }), 0);
-    console.log('Catalog sync publication/concurrency checks passed');
+    const recoveredArchive = await client.catalogSyncState.findUniqueOrThrow({
+      where: { workflowGroupId_sourceKey: { workflowGroupId: catalogId, sourceKey: 'archived' } },
+    });
+    assert.equal(recoveredArchive.status, 'SUCCESS');
+    assert.equal(recoveredArchive.lastError, null);
+    assert.equal(recoveredArchive.lastSuccessfulAt?.getTime(), recoveredArchive.syncedAt.getTime());
+    assert(recoveredArchive.lastSuccessfulAt!.getTime() >= failedArchive.lastSuccessfulAt!.getTime());
+    console.log('Catalog sync publication/concurrency, CSV validation, and status history checks passed');
   } finally {
     try {
       if (createdCatalog) await client.workflowGroup.delete({ where: { id: catalogId } });

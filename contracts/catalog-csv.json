@@ -1,6 +1,20 @@
 {
-  "description": "The catalog CSV columns the web sync (web/src/lib/catalog-sync.ts) reads, per CSV kind, and the decoded-audio hash contract of the Hash column. Python writes these files; tests/test_catalog_csv_contract.py and web/tests/unit/catalog-csv-contract.test.ts fail when either side drifts from this file.",
+  "description": "The catalog CSV columns, required headers and nonblank cells the web sync (web/src/lib/catalog-sync.ts) reads, per CSV kind, and the decoded-audio hash contract of the Hash column. Python writes these files; tests/test_catalog_csv_contract.py and web/tests/unit/catalog-csv-contract.test.ts fail when either side drifts from this file.",
   "hashAlgorithm": "pcm-s16le-16000hz-mono-sha256-v1",
+  "validation": {
+    "metadata": {
+      "requiredHeaders": ["Hash", "Full Path"],
+      "nonBlankCells": ["Hash", "Full Path"]
+    },
+    "archived": {
+      "requiredHeaders": ["Hash", "Original Path", "Compressed Path"],
+      "nonBlankCells": ["Hash", "Original Path", "Compressed Path"]
+    },
+    "duplicates": {
+      "requiredHeaders": ["Hash", "Original Path", "Duplicate Path"],
+      "nonBlankCells": ["Hash", "Duplicate Path"]
+    }
+  },
   "metadata": [
     "Hash",
     "Hash Algorithm",

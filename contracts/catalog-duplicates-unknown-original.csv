@@ -1,0 +1,4 @@
+Hash,Original Path,Duplicate Path,Scan Root,Size (bytes),Size (human),Duration,added_at,album,artist,comment,date,encoded_by,encoder,genre,title,track
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,/source/known.mp3,/copies/copy1.mp3,/copies,1000,1.0 KB,,,,,,,,,,,
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,/source/known.mp3,/copies/copy2.mp3,/copies,1000,1.0 KB,,,,,,,,,,,
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,,/copies/unknown-original.mp3,/copies,1000,1.0 KB,,,,,,,,,,,
