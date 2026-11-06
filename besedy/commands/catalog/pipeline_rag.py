@@ -6,6 +6,7 @@ import argparse
 import os
 import sys
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 from besedy.commands.catalog.rag_backend import (
@@ -17,27 +18,16 @@ from besedy.commands.catalog.rag_colbert_index import (
     RagColbertIndexRequest,
     handle_rag_colbert_index,
 )
+from besedy.commands.catalog.rag_options import RagIndexOptions, resolve_rag_index_options
 from besedy.lib.rag_chunk_corpus import slugify_backend_key
 from besedy.lib.rag_colbert import (
-    COLBERT_RUNTIME_CHOICES,
     COLBERT_RUNTIME_ENV_VAR,
-    DEFAULT_INDEX_BSIZE,
-    DEFAULT_MAX_CHUNK_TOKENS,
-    DEFAULT_MIN_CHUNK_TOKENS,
-    DEFAULT_OVERLAP_TOKENS,
     check_colbert_runtime_ready,
     default_colbert_index_runtime,
-    resolve_default_colbert_model,
 )
 from besedy.lib.workflow.config import WorkflowConfig
 
 __all__ = [
-    "COLBERT_RUNTIME_CHOICES",
-    "COLBERT_RUNTIME_ENV_VAR",
-    "DEFAULT_INDEX_BSIZE",
-    "DEFAULT_MAX_CHUNK_TOKENS",
-    "DEFAULT_MIN_CHUNK_TOKENS",
-    "DEFAULT_OVERLAP_TOKENS",
     "backend_has_transcripts",
     "default_pipeline_rag_backend_key",
     "rag_backend_key_for_workflow",
@@ -89,8 +79,8 @@ def select_rag_workflows(
 def should_run_rag_colbert_index(
     args: argparse.Namespace,
     *,
-    resolve_runtime: Callable[[argparse.Namespace], str] = lambda args: (
-        _resolve_pipeline_colbert_runtime(args)
+    resolve_runtime: Callable[[RagIndexOptions], str] = lambda options: (
+        _resolve_pipeline_colbert_runtime(options)
     ),
     runtime_ready_check: Callable[[str], object] = check_colbert_runtime_ready,
 ) -> bool:
@@ -100,7 +90,7 @@ def should_run_rag_colbert_index(
         return False
 
     try:
-        runtime_ready_check(resolve_runtime(args))
+        runtime_ready_check(resolve_runtime(resolve_rag_index_options(args, pipeline=True)))
     except RuntimeError as exc:
         print(f"Note: skipping rag-colbert-index because {exc}", file=sys.stderr)
         return False
@@ -109,32 +99,28 @@ def should_run_rag_colbert_index(
 
 
 def _resolve_pipeline_colbert_runtime(
-    args: argparse.Namespace,
+    options: RagIndexOptions,
     *,
     default_runtime_resolver: Callable[[], str] = default_colbert_index_runtime,
 ) -> str:
-    runtime = getattr(args, "rag_colbert_runtime", None)
-    if runtime is not None:
-        return runtime
+    if options.runtime is not None:
+        return options.runtime
     if os.getenv(COLBERT_RUNTIME_ENV_VAR) is not None:
         return os.getenv(COLBERT_RUNTIME_ENV_VAR, "")
     return default_runtime_resolver()
 
 
 def _resolve_pipeline_colbert_index_dir(
-    args: argparse.Namespace,
+    options: RagIndexOptions,
     *,
     backend_key: str,
+    multi_backend: bool,
 ) -> Path | None:
-    explicit_index_dir = getattr(args, "rag_colbert_index_dir", None)
-    if explicit_index_dir is None:
+    if options.index_dir is None:
         return None
-
-    resolved_index_dir = Path(explicit_index_dir)
-    if bool(getattr(args, "_pipeline_multi_rag_backend_selection", False)):
-        return resolved_index_dir / slugify_backend_key(backend_key)
-
-    return resolved_index_dir
+    if multi_backend:
+        return options.index_dir / slugify_backend_key(backend_key)
+    return options.index_dir
 
 
 def run_rag_colbert_index_for_workflow(
@@ -144,13 +130,13 @@ def run_rag_colbert_index_for_workflow(
     transcripts_root: Path,
     workflow: WorkflowConfig,
     has_transcripts: Callable[[Path, WorkflowConfig], bool] = backend_has_transcripts,
-    resolve_runtime: Callable[[argparse.Namespace], str] = lambda args: (
-        _resolve_pipeline_colbert_runtime(args)
+    resolve_runtime: Callable[[RagIndexOptions], str] = lambda options: (
+        _resolve_pipeline_colbert_runtime(options)
     ),
     resolve_index_dir: Callable[
-        [argparse.Namespace, str], Path | None
-    ] = lambda args, backend_key: _resolve_pipeline_colbert_index_dir(
-        args, backend_key=backend_key
+        [RagIndexOptions, str, bool], Path | None
+    ] = lambda options, backend_key, multi_backend: _resolve_pipeline_colbert_index_dir(
+        options, backend_key=backend_key, multi_backend=multi_backend
     ),
     handle_index: Callable[[RagColbertIndexRequest], int] = handle_rag_colbert_index,
 ) -> int:
@@ -161,20 +147,16 @@ def run_rag_colbert_index_for_workflow(
         print(f"No transcripts found for {backend_key}; skipping rag-colbert-index.")
         return 0
 
-    colbert_args = RagColbertIndexRequest(
+    options = resolve_rag_index_options(args, pipeline=True)
+    multi_backend = bool(getattr(args, "_pipeline_multi_rag_backend_selection", False))
+    colbert_args = RagColbertIndexRequest.from_options(
+        replace(
+            options,
+            index_dir=resolve_index_dir(options, backend_key, multi_backend),
+            runtime=resolve_runtime(options),
+        ),
         group=workflow_group_id,
         backend=backend_key,
         transcripts_root=transcripts_root,
-        index_dir=resolve_index_dir(args, backend_key),
-        model=getattr(args, "rag_colbert_model", None) or resolve_default_colbert_model(),
-        chunk_tokenizer_model=getattr(args, "rag_chunk_tokenizer_model", None),
-        doc_maxlen=getattr(args, "rag_colbert_doc_maxlen", 384),
-        index_bsize=getattr(args, "rag_colbert_index_bsize", DEFAULT_INDEX_BSIZE),
-        force=bool(getattr(args, "rag_force", False)),
-        min_chunk_tokens=getattr(args, "rag_min_chunk_tokens", DEFAULT_MIN_CHUNK_TOKENS),
-        max_chunk_tokens=getattr(args, "rag_max_chunk_tokens", DEFAULT_MAX_CHUNK_TOKENS),
-        overlap_tokens=getattr(args, "rag_overlap_tokens", DEFAULT_OVERLAP_TOKENS),
-        runtime=resolve_runtime(args),
-        json=False,
     )
     return handle_index(colbert_args)

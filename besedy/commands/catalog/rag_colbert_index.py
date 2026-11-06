@@ -11,10 +11,15 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from besedy.commands.catalog.rag_backend import resolve_pipeline_rag_backend_key
+from besedy.commands.catalog.rag_options import (
+    RagIndexOptions,
+    add_rag_index_arguments,
+    resolve_rag_index_options,
+)
 from besedy.core.paths import require_timestamped_transcripts_root, resolve_transcripts_root
 from besedy.lib.rag_colbert import (
-    COLBERT_RUNTIME_CHOICES,
     COLBERT_RUNTIME_ENV_VAR,
+    DEFAULT_DOC_MAXLEN,
     DEFAULT_INDEX_BSIZE,
     DEFAULT_MAX_CHUNK_TOKENS,
     DEFAULT_MIN_CHUNK_TOKENS,
@@ -36,7 +41,7 @@ class RagColbertIndexRequest:
     index_dir: Path | None = None
     model: str = field(default_factory=resolve_default_colbert_model)
     chunk_tokenizer_model: str | None = None
-    doc_maxlen: int = 384
+    doc_maxlen: int = DEFAULT_DOC_MAXLEN
     index_bsize: int = DEFAULT_INDEX_BSIZE
     target_audio_hash: str | None = None
     runtime: str | None = None
@@ -52,25 +57,40 @@ class RagColbertIndexRequest:
         cls,
         args: argparse.Namespace | "RagColbertIndexRequest",
     ) -> "RagColbertIndexRequest":
-        if isinstance(args, cls):
+        if isinstance(args, RagColbertIndexRequest):
             return args
-        return cls(
+        return cls.from_options(
+            resolve_rag_index_options(args),
             group=getattr(args, "group", None),
             backend=getattr(args, "backend", None),
             transcripts_root=getattr(args, "transcripts_root", None),
-            index_dir=getattr(args, "index_dir", None),
-            model=getattr(args, "model", None) or resolve_default_colbert_model(),
-            chunk_tokenizer_model=getattr(args, "chunk_tokenizer_model", None),
-            doc_maxlen=getattr(args, "doc_maxlen", 384),
-            index_bsize=getattr(args, "index_bsize", DEFAULT_INDEX_BSIZE),
             target_audio_hash=getattr(args, "target_audio_hash", None),
-            runtime=getattr(args, "runtime", None),
-            force=bool(getattr(args, "force", False)),
             rebuild=bool(getattr(args, "rebuild", False)),
-            min_chunk_tokens=getattr(args, "min_chunk_tokens", DEFAULT_MIN_CHUNK_TOKENS),
-            max_chunk_tokens=getattr(args, "max_chunk_tokens", DEFAULT_MAX_CHUNK_TOKENS),
-            overlap_tokens=getattr(args, "overlap_tokens", DEFAULT_OVERLAP_TOKENS),
             json=bool(getattr(args, "json", False)),
+        )
+
+    @classmethod
+    def from_options(
+        cls,
+        options: RagIndexOptions,
+        *,
+        group: str | None,
+        backend: str | None,
+        transcripts_root: Path | None,
+        target_audio_hash: str | None = None,
+        rebuild: bool = False,
+        json: bool = False,
+    ) -> "RagColbertIndexRequest":
+        """Combine shared indexing options with the scope of one indexing run."""
+
+        return cls(
+            group=group,
+            backend=backend,
+            transcripts_root=transcripts_root,
+            target_audio_hash=target_audio_hash,
+            rebuild=rebuild,
+            json=json,
+            **asdict(options),
         )
 
 
@@ -85,8 +105,6 @@ def register_parser(
     subparsers: argparse._SubParsersAction,  # type: ignore[type-arg]
     formatter_class: type[argparse.HelpFormatter],
 ) -> argparse.ArgumentParser:
-    from besedy.commands.catalog.system import parse_positive_int
-
     parser = subparsers.add_parser(
         "rag-colbert-index",
         formatter_class=formatter_class,
@@ -117,31 +135,7 @@ def register_parser(
         default=None,
         help="Transcripts root (default: resolve from config, usually transcripts/ symlink).",
     )
-    parser.add_argument(
-        "--index-dir",
-        type=Path,
-        default=None,
-        help="Optional explicit ColBERT sidecar directory override.",
-    )
-    parser.add_argument("--model", default=None)
-    parser.add_argument(
-        "--chunk-tokenizer-model",
-        default=None,
-        help=(
-            "Tokenizer model used for chunk sizing. "
-            "Default: use the active ColBERT model from --model."
-        ),
-    )
-    parser.add_argument("--doc-maxlen", type=int, default=384)
-    parser.add_argument(
-        "--index-bsize",
-        type=parse_positive_int,
-        default=DEFAULT_INDEX_BSIZE,
-        help=(
-            "Inner ColBERT indexing batch size. Lower values reduce GPU VRAM use at the cost of speed. "
-            f"Default: {DEFAULT_INDEX_BSIZE}."
-        ),
-    )
+    add_rag_index_arguments(parser)
     parser.add_argument(
         "--hash",
         dest="target_audio_hash",
@@ -149,25 +143,10 @@ def register_parser(
         help="Optional audio hash to refresh within the selected backend scope.",
     )
     parser.add_argument(
-        "--runtime",
-        choices=COLBERT_RUNTIME_CHOICES,
-        default=None,
-        help=(
-            "Optional ColBERT worker runtime override for this indexing run only. "
-            f"Default: use {COLBERT_RUNTIME_ENV_VAR} when set, otherwise "
-            "'docker-indexer' on GPU hosts and 'docker' on CPU-only hosts. "
-            "Use 'docker' to force the CPU Docker ColBERT runtime."
-        ),
-    )
-    parser.add_argument("--force", action="store_true")
-    parser.add_argument(
         "--rebuild",
         action="store_true",
         help="Discard incremental diffing and rebuild a fresh ColBERT bundle from current transcripts.",
     )
-    parser.add_argument("--min-chunk-tokens", type=int, default=DEFAULT_MIN_CHUNK_TOKENS)
-    parser.add_argument("--max-chunk-tokens", type=int, default=DEFAULT_MAX_CHUNK_TOKENS)
-    parser.add_argument("--overlap-tokens", type=int, default=DEFAULT_OVERLAP_TOKENS)
     parser.add_argument("--json", action="store_true")
     parser.set_defaults(func=handle_rag_colbert_index)
     return parser
