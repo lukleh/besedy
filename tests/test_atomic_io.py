@@ -95,6 +95,7 @@ class TestAtomicWriteText:
     def test_new_file_gets_umask_permissions(self, tmp_path):
         """New files use 0o666 & ~umask, not mkstemp's 0o600."""
         import besedy.lib.data.atomic_io as mod
+
         target = tmp_path / "new.txt"
         atomic_write_text(target, "content")
         mode = stat.S_IMODE(target.stat().st_mode)
@@ -185,6 +186,35 @@ class TestAtomicPath:
 
 
 class TestNoFollowSymlink:
+    @pytest.mark.parametrize("succeeds", [False, True])
+    def test_explicit_symlink_replacement_preserves_target(self, tmp_path, succeeds):
+        protected = tmp_path / "protected.txt"
+        protected.write_text("sentinel", encoding="utf-8")
+        destination = tmp_path / "state.txt"
+        destination.symlink_to(protected.name)
+
+        def replace():
+            with atomic_path(destination, follow_symlinks=False, replace_symlink=True) as tmp:
+                tmp.write_text("replacement", encoding="utf-8")
+                assert destination.is_symlink()
+                if not succeeds:
+                    raise RuntimeError("failed write")
+
+        if succeeds:
+            replace()
+            assert not destination.is_symlink()
+            assert destination.read_text(encoding="utf-8") == "replacement"
+        else:
+            with pytest.raises(RuntimeError, match="failed write"):
+                replace()
+            assert destination.is_symlink()
+        assert protected.read_text(encoding="utf-8") == "sentinel"
+
+    def test_symlink_replacement_requires_explicit_no_follow(self, tmp_path):
+        with pytest.raises(ValueError, match="follow_symlinks=False"):
+            with atomic_path(tmp_path / "state.txt", replace_symlink=True):
+                pytest.fail("conflicting publication policies must be rejected")
+
     def test_no_follow_rejects_preexisting_symlink(self, tmp_path):
         protected = tmp_path / "protected.txt"
         protected.write_text("sentinel", encoding="utf-8")

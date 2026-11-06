@@ -295,12 +295,12 @@ class TestStageAudioManifest:
         assert manifest.read_bytes() == before
         assert _temp_files(tmp_path) == []
 
-    def test_failed_staging_publishes_rows_staged_so_far(
+    def test_failed_staging_keeps_previous_manifest(
         self, loudness_csv: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # With --overwrite the failed run has already deleted the staged files
-        # the previous manifest lists, so that manifest must not survive.
+        # Failed replacements now leave the previous staged WAVs intact too.
         manifest = loudness_csv.with_name(f"audio_catalog_{TS}_loudness_normalized.csv")
+        before = manifest.read_bytes()
         monkeypatch.setattr(
             stage_command, "stage_audio_files", self._staging(error=RuntimeError("ffmpeg failed"))
         )
@@ -310,7 +310,7 @@ class TestStageAudioManifest:
         )
         assert handle_stage_audio(request) == 1
 
-        assert [row["Hash"] for row in _read_rows(manifest)] == [HASH_B]
+        assert manifest.read_bytes() == before
         assert _temp_files(tmp_path) == []
 
     def test_completed_staging_replaces_manifest(

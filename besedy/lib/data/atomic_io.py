@@ -80,6 +80,7 @@ def atomic_path(
     *,
     before_replace: Callable[[], None] | None = None,
     follow_symlinks: bool = True,
+    replace_symlink: bool = False,
 ) -> Iterator[Path]:
     """Yield a temp file that replaces final_path on success.
 
@@ -98,13 +99,17 @@ def atomic_path(
         before_replace: Optional callback run immediately before rename.
         follow_symlinks: If True (default), resolve a symlink target before
             writing. If False, refuse to write through a symlink.
+        replace_symlink: With follow_symlinks=False, explicitly allow replacing
+            the symlink entry itself while leaving its target untouched.
     """
+    if follow_symlinks and replace_symlink:
+        raise ValueError("Replacing a symlink requires follow_symlinks=False")
     target = _resolve_abs(final_path)
 
     if target.is_symlink():
         if follow_symlinks:
             target = target.resolve(strict=False)
-        else:
+        elif not replace_symlink:
             raise OSError(f"Refusing atomic publication through symlink: {final_path}")
 
     parent = target.parent

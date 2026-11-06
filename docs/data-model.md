@@ -101,6 +101,12 @@ truncated hash directories.
 | `<staging-dir>/{hash}.wav` | Normalized WAV files for transcription. Created by `just catalog stage-audio`. |
 | `logs/ffmpeg/ffmpeg_stage_*.log` | Source-audio prep logs (resampling, trimming). |
 
+The `*_loudness_normalized.csv` manifest records measurements made during fresh
+conversion. Reused WAVs are not reanalyzed; their quality fields stay blank,
+because original-source measurements do not describe normalized audio. WAV
+overwrites publish validated replacements atomically, including replacement of
+a staged symlink itself without changing its target.
+
 ### Processing Pipeline
 
 `catalog run-pipeline` orchestrates source audio in the catalog CSV -->

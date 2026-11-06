@@ -88,13 +88,6 @@ def stage_audio_files(
     console = Console()
     total_rows = len(rows)
 
-    if include_audio_analysis:
-        analysis_ffmpeg_bin = resolve_analysis_binary(analysis_ffmpeg)
-        analysis_ffprobe_bin = resolve_analysis_binary(analysis_ffprobe)
-    else:
-        analysis_ffmpeg_bin = analysis_ffmpeg
-        analysis_ffprobe_bin = analysis_ffprobe
-
     for index, row in enumerate(rows, start=1):
         duration_seconds = row.duration_seconds
         if duration_seconds is None:
@@ -143,20 +136,15 @@ def stage_audio_files(
                     f"  [dim]↻[/dim] {rich_escape(source.name)} ({status_suffix})",
                     highlight=False,
                 )
-            entry, existing_size_bytes, existing_metrics = reuse_existing_staged_entry(
+            entry, existing_size_bytes = reuse_existing_staged_entry(
                 row=row,
                 source=source,
                 staged_path=staged_path,
                 duration_seconds=duration_seconds,
-                include_audio_analysis=include_audio_analysis,
-                analysis_ffmpeg_bin=analysis_ffmpeg_bin,
-                analysis_ffprobe_bin=analysis_ffprobe_bin,
-                continue_on_error=continue_on_error,
             )
             manifest_writer.write_entry(
                 entry,
                 size_bytes=existing_size_bytes,
-                metrics=existing_metrics,
             )
             prepared.append(entry)
             continue
@@ -167,12 +155,6 @@ def stage_audio_files(
                 raise RuntimeError(f"Audio file not found: {resolved_str}")
             continue
 
-        if staged_path.exists() or staged_path.is_symlink():
-            try:
-                staged_path.unlink()
-            except FileNotFoundError:
-                pass
-
         conversions.append((index, row, source, staged_path, duration_seconds))
         seen_hashes[hash_component] = source
 
@@ -180,6 +162,12 @@ def stage_audio_files(
     log_write_lock: threading.Lock | None = None
 
     if conversions:
+        if include_audio_analysis:
+            analysis_ffmpeg_bin = resolve_analysis_binary(analysis_ffmpeg)
+            analysis_ffprobe_bin = resolve_analysis_binary(analysis_ffprobe)
+        else:
+            analysis_ffmpeg_bin = analysis_ffmpeg
+            analysis_ffprobe_bin = analysis_ffprobe
         ffmpeg_binary = shutil.which("ffmpeg")
         if ffmpeg_binary is None:
             raise RuntimeError(
