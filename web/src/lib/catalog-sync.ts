@@ -564,18 +564,589 @@ function buildDuplicateCounts(
   return counts;
 }
 
+interface ExistingSyncState extends ExistingSourceState {
+  status: string;
+  syncedAt: Date;
+}
+
+interface UnchangedSourceError {
+  sourceKey: string;
+  filePath: string;
+  fingerprint: string;
+  syncedAt: Date;
+  status: 'ERROR';
+}
+
+interface SourceClassification {
+  runtimeStates: SourceRuntimeState[];
+  changedStates: SourceRuntimeState[];
+  unchangedSourceErrors: UnchangedSourceError[];
+}
+
+interface ParsedBaseSources {
+  metadataRows: CsvRow[];
+  archivedRows: CsvRow[];
+  unrecognizedHashAlgorithmRows: number;
+}
+
+interface DuplicateRow {
+  workflowGroupId: string;
+  audioHash: string;
+  originalPath: string;
+  duplicatePath: string;
+  duplicatePayload: DuplicatePayload;
+  duplicatePayloadVersion: number;
+}
+
+interface EntryRow {
+  workflowGroupId: string;
+  audioHash: string;
+  compressedPath: string | null;
+  compressedAacPath: string | null;
+  originalPath: string | null;
+  filename: string | null;
+  scanRoot: string | null;
+  durationHms: string | null;
+  sourceTitle: string | null;
+  sourceArtist: string | null;
+  sourceAlbum: string | null;
+  sourceDate: string | null;
+  sourceMetadataPayload?: MetadataPayload;
+  sourceArchivedPayload?: ArchivedPayload;
+  detailsPayloadVersion: number;
+  hasArchived: boolean;
+  hasMetadata: boolean;
+  isActionable: boolean;
+  duplicateCount: number;
+}
+
+interface SyncAttemptContext {
+  groupId: string;
+  force: boolean;
+  allowRowCountDrop: boolean;
+  sourceDescriptors: SourceDescriptor[];
+  baselineStates: ExistingSourceState[];
+  capturedSources: CapturedSource[];
+  // Filled in while the transaction runs so that a failure part-way through
+  // still reports which sources were being written and what was counted.
+  rowCounts: Record<string, number>;
+  changedSources: string[];
+}
+
+interface SyncTransactionOutcome {
+  result: CatalogSyncResult;
+  // Unchanged sources whose last attempt failed. Cleared only after orphan
+  // reconciliation succeeded, so the dependency is explicit to the caller.
+  unchangedSourceErrors: UnchangedSourceError[];
+}
+
+async function lockAndRevalidateSnapshot(
+  tx: Prisma.TransactionClient,
+  groupId: string,
+  sourceDescriptors: SourceDescriptor[],
+  baselineStates: ExistingSourceState[],
+): Promise<ExistingSyncState[]> {
+  // Transaction-scoped lock guarantees lock acquire/release on the same session.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${getLockKey(groupId)}));`;
+
+  const group = await tx.workflowGroup.findUnique({
+    where: { id: groupId },
+  });
+
+  if (!group) {
+    throw new Error(`Workflow group not found: ${groupId}`);
+  }
+
+  const currentDescriptors = buildSourceDescriptors(group);
+  if (!descriptorsMatch(sourceDescriptors, currentDescriptors)) {
+    throw new SourceSnapshotInvalidatedError(
+      `Workflow group sources changed while sync was reading files: ${groupId}`,
+    );
+  }
+
+  const existingStates = await tx.catalogSyncState.findMany({
+    where: { workflowGroupId: groupId },
+    select: {
+      sourceKey: true,
+      filePath: true,
+      fingerprint: true,
+      rowCount: true,
+      status: true,
+      syncedAt: true,
+    },
+  });
+
+  if (!sourceStatesMatch(baselineStates, existingStates)) {
+    throw new SourceSnapshotInvalidatedError(
+      `Catalog sync state changed while sync was reading files: ${groupId}`,
+    );
+  }
+
+  return existingStates;
+}
+
+function classifySources(
+  existingStates: ExistingSyncState[],
+  capturedSources: CapturedSource[],
+  force: boolean,
+): SourceClassification {
+  const runtimeStates = buildSourceRuntimeStates(
+    existingStates,
+    capturedSources,
+    force,
+  );
+  const changedStates = runtimeStates.filter((state) => state.changed);
+
+  // A failed attempt kept the last good fingerprint. Restoring those
+  // exact bytes needs no projection rebuild, but should clear its error
+  // once the rest of reconciliation has succeeded.
+  const unchangedSourceErrors: UnchangedSourceError[] = [];
+  for (const state of runtimeStates.filter((source) => !source.changed)) {
+    const previous = existingStates.find((source) => source.sourceKey === state.descriptor.sourceKey);
+    if (previous?.status === 'ERROR') {
+      unchangedSourceErrors.push({
+        sourceKey: previous.sourceKey,
+        filePath: previous.filePath,
+        fingerprint: previous.fingerprint,
+        syncedAt: previous.syncedAt,
+        status: 'ERROR',
+      });
+    }
+  }
+
+  return { runtimeStates, changedStates, unchangedSourceErrors };
+}
+
+function parseBaseSources(
+  groupId: string,
+  metadataState: SourceRuntimeState,
+  archivedState: SourceRuntimeState,
+  rowCounts: Record<string, number>,
+): ParsedBaseSources {
+  const metadataRows = parseCsvRows(metadataState.content!, 'metadata');
+  const archivedRows = parseCsvRows(archivedState.content!, 'archived');
+
+  const unrecognizedHashAlgorithmRows =
+    countUnrecognizedHashAlgorithms(metadataRows);
+  if (unrecognizedHashAlgorithmRows > 0) {
+    console.warn(
+      `[catalog-sync] ${groupId}: ${unrecognizedHashAlgorithmRows} metadata rows have a missing or unknown Hash Algorithm (expected ${AUDIO_HASH_ALGORITHM}); syncing them anyway`,
+    );
+  }
+
+  rowCounts[metadataState.descriptor.sourceKey] = countUniqueHashes(
+    metadataRows,
+    'metadata',
+  );
+  rowCounts[archivedState.descriptor.sourceKey] = countUniqueHashes(
+    archivedRows,
+    'archived',
+  );
+
+  return { metadataRows, archivedRows, unrecognizedHashAlgorithmRows };
+}
+
+async function assertBaseRowCountsNotDropped(
+  tx: Prisma.TransactionClient,
+  groupId: string,
+  baseStates: SourceRuntimeState[],
+  existingStates: ExistingSourceState[],
+  rowCounts: Record<string, number>,
+): Promise<void> {
+  const previousRowCounts = new Map(
+    existingStates.map((state) => [state.sourceKey, state.rowCount]),
+  );
+  for (const state of baseStates) {
+    const sourceKey = state.descriptor.sourceKey;
+    const liveRowCount = await tx.catalogEntry.count({
+      where: {
+        workflowGroupId: groupId,
+        ...(state.descriptor.kind === 'metadata'
+          ? { hasMetadata: true }
+          : { hasArchived: true }),
+      },
+    });
+    const previous = Math.max(
+      previousRowCounts.get(sourceKey) ?? 0,
+      liveRowCount,
+    );
+    const next = rowCounts[sourceKey] ?? 0;
+    // Only a drop from a populated baseline is suspicious; syncing an
+    // empty catalog into an empty/new one loses nothing.
+    if (previous > 0 && next === 0) {
+      throw new Error(
+        `Refusing to sync ${sourceKey} for ${groupId}: source CSV is empty ` +
+          `while ${previous} rows exist; rerun with allowRowCountDrop or set ` +
+          `CATALOG_SYNC_ALLOW_ROW_COUNT_DROP=true to override`,
+      );
+    }
+    if (previous > 0 && next < previous * BASE_ROW_COUNT_DROP_RATIO) {
+      throw new Error(
+        `Refusing to sync ${sourceKey} for ${groupId}: row count dropped from ${previous} to ${next}; ` +
+          `rerun with allowRowCountDrop or set CATALOG_SYNC_ALLOW_ROW_COUNT_DROP=true to override`,
+      );
+    }
+  }
+}
+
+function buildDuplicateRows(groupId: string, rows: CsvRow[]): DuplicateRow[] {
+  return rows.flatMap((row) => {
+    const originalPath = optionalPath(getRowValue(row, ['Original Path']));
+    if (!originalPath) return [];
+    return [{
+      workflowGroupId: groupId,
+      audioHash: normalizeHash(getRowValue(row, ['Hash']))!,
+      originalPath,
+      duplicatePath: getRowValue(row, ['Duplicate Path'])!.trim(),
+      duplicatePayload: toDuplicatePayload(row),
+      duplicatePayloadVersion: 1,
+    }];
+  });
+}
+
+async function loadExistingDuplicateCounts(
+  tx: Prisma.TransactionClient,
+  groupId: string,
+): Promise<Map<string, number>> {
+  const grouped = await tx.catalogDuplicate.groupBy({
+    by: ['audioHash'],
+    where: { workflowGroupId: groupId },
+    _count: { _all: true },
+  });
+  return new Map(grouped.map((row) => [row.audioHash, row._count._all]));
+}
+
+function buildEntryRows(
+  groupId: string,
+  metadataRows: CsvRow[],
+  archivedRows: CsvRow[],
+  duplicateCounts: Map<string, number>,
+): EntryRow[] {
+  const metadataByHash = new Map<string, CsvRow>();
+  for (const row of metadataRows) {
+    const hash = normalizeHash(getRowValue(row, ['Hash']));
+    if (hash) metadataByHash.set(hash, row);
+  }
+
+  const archivedByHash = new Map<string, CsvRow>();
+  for (const row of archivedRows) {
+    const hash = normalizeHash(getRowValue(row, ['Hash']));
+    if (hash) archivedByHash.set(hash, row);
+  }
+
+  const allHashes = new Set([
+    ...metadataByHash.keys(),
+    ...archivedByHash.keys(),
+  ]);
+
+  const entryRows: EntryRow[] = [];
+  for (const audioHash of allHashes) {
+    const metadata = metadataByHash.get(audioHash);
+    const archived = archivedByHash.get(audioHash);
+
+    const metadataPayload = metadata
+      ? toMetadataPayload(metadata)
+      : null;
+    const archivedPayload = archived
+      ? toArchivedPayload(archived)
+      : null;
+
+    const originalPath =
+      metadataPayload?.fullPath ??
+      getRowValue(metadata ?? {}, ['Original Path']) ??
+      archivedPayload?.originalPath ??
+      null;
+
+    const durationHms =
+      metadataPayload?.duration ?? archivedPayload?.duration ?? null;
+
+    entryRows.push({
+      workflowGroupId: groupId,
+      audioHash,
+      compressedPath: archivedPayload?.compressedPath ?? null,
+      compressedAacPath: optionalPath(archivedPayload?.compressedAacPath),
+      originalPath,
+      filename: metadataPayload?.filename ?? null,
+      scanRoot: metadataPayload?.scanRoot ?? null,
+      durationHms,
+      sourceTitle: metadataPayload?.title ?? null,
+      sourceArtist: metadataPayload?.artist ?? null,
+      sourceAlbum: metadataPayload?.album ?? null,
+      sourceDate: metadataPayload?.date ?? null,
+      sourceMetadataPayload: metadataPayload ?? undefined,
+      sourceArchivedPayload: archivedPayload ?? undefined,
+      detailsPayloadVersion: 1,
+      hasArchived: !!archived,
+      hasMetadata: !!metadata,
+      isActionable: !!archived && !!metadata,
+      duplicateCount: duplicateCounts.get(audioHash) ?? 0,
+    });
+  }
+  return entryRows;
+}
+
+async function replaceDuplicates(
+  tx: Prisma.TransactionClient,
+  groupId: string,
+  duplicateRows: DuplicateRow[],
+): Promise<void> {
+  await tx.catalogDuplicate.deleteMany({
+    where: { workflowGroupId: groupId },
+  });
+  if (duplicateRows.length > 0) {
+    await tx.catalogDuplicate.createMany({ data: duplicateRows });
+  }
+}
+
+async function refreshEntryDuplicateCounts(
+  tx: Prisma.TransactionClient,
+  groupId: string,
+  duplicateRows: DuplicateRow[],
+): Promise<void> {
+  await tx.catalogEntry.updateMany({
+    where: { workflowGroupId: groupId },
+    data: { duplicateCount: 0 },
+  });
+
+  const duplicateCounts = buildDuplicateCounts(duplicateRows);
+
+  for (const [
+    audioHash,
+    duplicateCount,
+  ] of duplicateCounts.entries()) {
+    await tx.catalogEntry.updateMany({
+      where: { workflowGroupId: groupId, audioHash },
+      data: { duplicateCount },
+    });
+  }
+}
+
+async function recordSourceSuccess(
+  tx: Prisma.TransactionClient,
+  groupId: string,
+  changedStates: SourceRuntimeState[],
+  rowCounts: Record<string, number>,
+  syncedAt: Date,
+): Promise<void> {
+  for (const state of changedStates) {
+    const sourceKey = state.descriptor.sourceKey;
+    const filePath = state.descriptor.filePath ?? '';
+    const fingerprint = state.fingerprint;
+    const rowCount = rowCounts[sourceKey] ?? 0;
+
+    await tx.catalogSyncState.upsert({
+      where: {
+        workflowGroupId_sourceKey: {
+          workflowGroupId: groupId,
+          sourceKey,
+        },
+      },
+      update: {
+        filePath,
+        fingerprint,
+        rowCount,
+        syncedAt,
+        lastSuccessfulAt: syncedAt,
+        status: 'SUCCESS',
+        lastError: null,
+      },
+      create: {
+        workflowGroupId: groupId,
+        sourceKey,
+        filePath,
+        fingerprint,
+        rowCount,
+        syncedAt,
+        lastSuccessfulAt: syncedAt,
+        status: 'SUCCESS',
+        lastError: null,
+      },
+    });
+  }
+}
+
+// Everything a source's commit depends on happens here under the advisory
+// lock: projection writes, fingerprints and the SUCCESS state for a source
+// land in the same transaction.
+async function runSyncTransaction(
+  tx: Prisma.TransactionClient,
+  context: SyncAttemptContext,
+): Promise<SyncTransactionOutcome> {
+  const {
+    groupId,
+    force,
+    allowRowCountDrop,
+    sourceDescriptors,
+    baselineStates,
+    capturedSources,
+    rowCounts,
+    changedSources,
+  } = context;
+
+  const existingStates = await lockAndRevalidateSnapshot(
+    tx,
+    groupId,
+    sourceDescriptors,
+    baselineStates,
+  );
+
+  const { runtimeStates, changedStates, unchangedSourceErrors } =
+    classifySources(existingStates, capturedSources, force);
+
+  if (changedStates.length === 0) {
+    return {
+      result: {
+        groupId,
+        status: 'skipped' as const,
+        changedSources: [],
+        rowCounts,
+      },
+      unchangedSourceErrors,
+    };
+  }
+
+  changedSources.push(
+    ...changedStates.map((state) => state.descriptor.sourceKey),
+  );
+
+  const metadataState = runtimeStates.find(
+    (state) => state.descriptor.kind === 'metadata',
+  );
+  const archivedState = runtimeStates.find(
+    (state) => state.descriptor.kind === 'archived',
+  );
+  const duplicatesState = runtimeStates.find(
+    (state) => state.descriptor.kind === 'duplicates',
+  );
+
+  const baseChanged = Boolean(
+    metadataState?.changed || archivedState?.changed,
+  );
+  const duplicatesChanged = Boolean(duplicatesState?.changed);
+
+  let base: ParsedBaseSources = {
+    metadataRows: [],
+    archivedRows: [],
+    unrecognizedHashAlgorithmRows: 0,
+  };
+  if (baseChanged) {
+    base = parseBaseSources(groupId, metadataState!, archivedState!, rowCounts);
+    if (!allowRowCountDrop) {
+      await assertBaseRowCountsNotDropped(
+        tx,
+        groupId,
+        [metadataState!, archivedState!],
+        existingStates,
+        rowCounts,
+      );
+    }
+  }
+
+  let duplicateRows: DuplicateRow[] = [];
+  if (duplicatesChanged) {
+    if (duplicatesState?.resolvedFilePath) {
+      duplicateRows = buildDuplicateRows(
+        groupId,
+        parseCsvRows(duplicatesState.content!, 'duplicates'),
+      );
+    }
+
+    rowCounts[duplicatesState!.descriptor.sourceKey] = duplicateRows.length;
+  }
+
+  let entryRows: EntryRow[] = [];
+  if (baseChanged) {
+    const duplicateCounts = duplicatesChanged
+      ? buildDuplicateCounts(duplicateRows)
+      : await loadExistingDuplicateCounts(tx, groupId);
+    entryRows = buildEntryRows(
+      groupId,
+      base.metadataRows,
+      base.archivedRows,
+      duplicateCounts,
+    );
+  }
+
+  const syncedAt = new Date();
+
+  if (baseChanged) {
+    await syncCatalogEntries(tx, groupId, entryRows, syncedAt);
+  }
+
+  if (duplicatesChanged) {
+    await replaceDuplicates(tx, groupId, duplicateRows);
+    if (!baseChanged) {
+      await refreshEntryDuplicateCounts(tx, groupId, duplicateRows);
+    }
+  }
+
+  await recordSourceSuccess(tx, groupId, changedStates, rowCounts, syncedAt);
+
+  return {
+    result: {
+      groupId,
+      status: 'success' as const,
+      changedSources,
+      rowCounts,
+      ...(base.unrecognizedHashAlgorithmRows > 0 && {
+        unrecognizedHashAlgorithmRows: base.unrecognizedHashAlgorithmRows,
+      }),
+    },
+    unchangedSourceErrors,
+  };
+}
+
+async function clearRecoveredSourceErrors(
+  groupId: string,
+  unchangedSourceErrors: UnchangedSourceError[],
+): Promise<void> {
+  if (unchangedSourceErrors.length === 0) return;
+  await prisma.catalogSyncState.updateMany({
+    // Do not clear a newer failure recorded while cleanup was running.
+    where: { workflowGroupId: groupId, OR: unchangedSourceErrors },
+    data: { status: 'SUCCESS', lastError: null, syncedAt: new Date() },
+  });
+}
+
+async function recordSourceErrors(
+  groupId: string,
+  sourceKeys: string[],
+  message: string,
+): Promise<void> {
+  if (sourceKeys.length === 0) return;
+  const syncedAt = new Date();
+  for (const sourceKey of sourceKeys) {
+    await prisma.catalogSyncState.upsert({
+      where: {
+        workflowGroupId_sourceKey: {
+          workflowGroupId: groupId,
+          sourceKey,
+        },
+      },
+      update: {
+        status: 'ERROR',
+        syncedAt,
+        lastError: message,
+      },
+      create: {
+        workflowGroupId: groupId,
+        sourceKey,
+        filePath: '',
+        fingerprint: '<error>',
+        rowCount: 0,
+        syncedAt,
+        status: 'ERROR',
+        lastError: message,
+      },
+    });
+  }
+}
+
 async function syncCatalogGroupAttempt(
   groupId: string,
   options: { force?: boolean; allowRowCountDrop?: boolean } = {},
   retryInvalidatedSnapshot = true,
 ): Promise<CatalogSyncResult> {
-  const unchangedSourceErrors: Array<{
-    sourceKey: string;
-    filePath: string;
-    fingerprint: string;
-    syncedAt: Date;
-    status: 'ERROR';
-  }> = [];
   const force = options.force === true;
   const allowRowCountDrop =
     options.allowRowCountDrop === true || isRowCountDropAllowedByEnv();
@@ -615,372 +1186,18 @@ async function syncCatalogGroupAttempt(
       force,
     );
 
-    const result = await prisma.$transaction(
-      async (tx) => {
-        // Transaction-scoped lock guarantees lock acquire/release on the same session.
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${getLockKey(groupId)}));`;
-
-        const group = await tx.workflowGroup.findUnique({
-          where: { id: groupId },
-        });
-
-        if (!group) {
-          throw new Error(`Workflow group not found: ${groupId}`);
-        }
-
-        const currentDescriptors = buildSourceDescriptors(group);
-        if (!descriptorsMatch(sourceDescriptors, currentDescriptors)) {
-          throw new SourceSnapshotInvalidatedError(
-            `Workflow group sources changed while sync was reading files: ${groupId}`,
-          );
-        }
-
-        const existingStates = await tx.catalogSyncState.findMany({
-          where: { workflowGroupId: groupId },
-          select: {
-            sourceKey: true,
-            filePath: true,
-            fingerprint: true,
-            rowCount: true,
-            status: true,
-            syncedAt: true,
-          },
-        });
-
-        if (!sourceStatesMatch(baselineStates, existingStates)) {
-          throw new SourceSnapshotInvalidatedError(
-            `Catalog sync state changed while sync was reading files: ${groupId}`,
-          );
-        }
-
-        const runtimeStates = buildSourceRuntimeStates(
-          existingStates,
-          capturedSources,
-          force,
-        );
-        const changedStates = runtimeStates.filter((state) => state.changed);
-
-        // A failed attempt kept the last good fingerprint. Restoring those
-        // exact bytes needs no projection rebuild, but should clear its error
-        // once the rest of reconciliation has succeeded.
-        for (const state of runtimeStates.filter((source) => !source.changed)) {
-          const previous = existingStates.find((source) => source.sourceKey === state.descriptor.sourceKey);
-          if (previous?.status === 'ERROR') {
-            unchangedSourceErrors.push({
-              sourceKey: previous.sourceKey,
-              filePath: previous.filePath,
-              fingerprint: previous.fingerprint,
-              syncedAt: previous.syncedAt,
-              status: 'ERROR',
-            });
-          }
-        }
-
-        if (changedStates.length === 0) {
-          return {
-            groupId,
-            status: 'skipped' as const,
-            changedSources: [],
-            rowCounts,
-          };
-        }
-
-        changedSources.push(
-          ...changedStates.map((state) => state.descriptor.sourceKey),
-        );
-
-        const metadataState = runtimeStates.find(
-          (state) => state.descriptor.kind === 'metadata',
-        );
-        const archivedState = runtimeStates.find(
-          (state) => state.descriptor.kind === 'archived',
-        );
-        const duplicatesState = runtimeStates.find(
-          (state) => state.descriptor.kind === 'duplicates',
-        );
-
-        const baseChanged = Boolean(
-          metadataState?.changed || archivedState?.changed,
-        );
-        const duplicatesChanged = Boolean(duplicatesState?.changed);
-
-        let metadataRows: CsvRow[] = [];
-        let archivedRows: CsvRow[] = [];
-        let unrecognizedHashAlgorithmRows = 0;
-
-        if (baseChanged) {
-          metadataRows = parseCsvRows(metadataState!.content!, 'metadata');
-          archivedRows = parseCsvRows(archivedState!.content!, 'archived');
-
-          unrecognizedHashAlgorithmRows =
-            countUnrecognizedHashAlgorithms(metadataRows);
-          if (unrecognizedHashAlgorithmRows > 0) {
-            console.warn(
-              `[catalog-sync] ${groupId}: ${unrecognizedHashAlgorithmRows} metadata rows have a missing or unknown Hash Algorithm (expected ${AUDIO_HASH_ALGORITHM}); syncing them anyway`,
-            );
-          }
-
-          rowCounts[metadataState!.descriptor.sourceKey] = countUniqueHashes(
-            metadataRows,
-            'metadata',
-          );
-          rowCounts[archivedState!.descriptor.sourceKey] = countUniqueHashes(
-            archivedRows,
-            'archived',
-          );
-
-          if (!allowRowCountDrop) {
-            const previousRowCounts = new Map(
-              existingStates.map((state) => [state.sourceKey, state.rowCount]),
-            );
-            for (const state of [metadataState!, archivedState!]) {
-              const sourceKey = state.descriptor.sourceKey;
-              const liveRowCount = await tx.catalogEntry.count({
-                where: {
-                  workflowGroupId: groupId,
-                  ...(state.descriptor.kind === 'metadata'
-                    ? { hasMetadata: true }
-                    : { hasArchived: true }),
-                },
-              });
-              const previous = Math.max(
-                previousRowCounts.get(sourceKey) ?? 0,
-                liveRowCount,
-              );
-              const next = rowCounts[sourceKey] ?? 0;
-              // Only a drop from a populated baseline is suspicious; syncing an
-              // empty catalog into an empty/new one loses nothing.
-              if (previous > 0 && next === 0) {
-                throw new Error(
-                  `Refusing to sync ${sourceKey} for ${groupId}: source CSV is empty ` +
-                    `while ${previous} rows exist; rerun with allowRowCountDrop or set ` +
-                    `CATALOG_SYNC_ALLOW_ROW_COUNT_DROP=true to override`,
-                );
-              }
-              if (previous > 0 && next < previous * BASE_ROW_COUNT_DROP_RATIO) {
-                throw new Error(
-                  `Refusing to sync ${sourceKey} for ${groupId}: row count dropped from ${previous} to ${next}; ` +
-                    `rerun with allowRowCountDrop or set CATALOG_SYNC_ALLOW_ROW_COUNT_DROP=true to override`,
-                );
-              }
-            }
-          }
-        }
-
-        let duplicateRows: Array<{
-          workflowGroupId: string;
-          audioHash: string;
-          originalPath: string;
-          duplicatePath: string;
-          duplicatePayload: DuplicatePayload;
-          duplicatePayloadVersion: number;
-        }> = [];
-
-        if (duplicatesChanged) {
-          if (duplicatesState?.resolvedFilePath) {
-            const rows = parseCsvRows(duplicatesState.content!, 'duplicates');
-            duplicateRows = rows.flatMap((row) => {
-              const originalPath = optionalPath(getRowValue(row, ['Original Path']));
-              if (!originalPath) return [];
-              return [{
-                workflowGroupId: groupId,
-                audioHash: normalizeHash(getRowValue(row, ['Hash']))!,
-                originalPath,
-                duplicatePath: getRowValue(row, ['Duplicate Path'])!.trim(),
-                duplicatePayload: toDuplicatePayload(row),
-                duplicatePayloadVersion: 1,
-              }];
-            });
-          }
-
-          rowCounts[duplicatesState!.descriptor.sourceKey] =
-            duplicateRows.length;
-        }
-
-        let existingDuplicateCounts = new Map<string, number>();
-        if (baseChanged && !duplicatesChanged) {
-          const grouped = await tx.catalogDuplicate.groupBy({
-            by: ['audioHash'],
-            where: { workflowGroupId: groupId },
-            _count: { _all: true },
-          });
-          existingDuplicateCounts = new Map(
-            grouped.map((row) => [row.audioHash, row._count._all]),
-          );
-        }
-
-        const entryRows: Array<{
-          workflowGroupId: string;
-          audioHash: string;
-          compressedPath: string | null;
-          compressedAacPath: string | null;
-          originalPath: string | null;
-          filename: string | null;
-          scanRoot: string | null;
-          durationHms: string | null;
-          sourceTitle: string | null;
-          sourceArtist: string | null;
-          sourceAlbum: string | null;
-          sourceDate: string | null;
-          sourceMetadataPayload?: MetadataPayload;
-          sourceArchivedPayload?: ArchivedPayload;
-          detailsPayloadVersion: number;
-          hasArchived: boolean;
-          hasMetadata: boolean;
-          isActionable: boolean;
-          duplicateCount: number;
-        }> = [];
-
-        if (baseChanged) {
-          const metadataByHash = new Map<string, CsvRow>();
-          for (const row of metadataRows) {
-            const hash = normalizeHash(getRowValue(row, ['Hash']));
-            if (hash) metadataByHash.set(hash, row);
-          }
-
-          const archivedByHash = new Map<string, CsvRow>();
-          for (const row of archivedRows) {
-            const hash = normalizeHash(getRowValue(row, ['Hash']));
-            if (hash) archivedByHash.set(hash, row);
-          }
-
-          const allHashes = new Set([
-            ...metadataByHash.keys(),
-            ...archivedByHash.keys(),
-          ]);
-
-          const duplicateCounts = duplicatesChanged
-            ? buildDuplicateCounts(
-                duplicateRows.map((row) => ({ audioHash: row.audioHash })),
-              )
-            : existingDuplicateCounts;
-
-          for (const audioHash of allHashes) {
-            const metadata = metadataByHash.get(audioHash);
-            const archived = archivedByHash.get(audioHash);
-
-            const metadataPayload = metadata
-              ? toMetadataPayload(metadata)
-              : null;
-            const archivedPayload = archived
-              ? toArchivedPayload(archived)
-              : null;
-
-            const originalPath =
-              metadataPayload?.fullPath ??
-              getRowValue(metadata ?? {}, ['Original Path']) ??
-              archivedPayload?.originalPath ??
-              null;
-
-            const durationHms =
-              metadataPayload?.duration ?? archivedPayload?.duration ?? null;
-
-            entryRows.push({
-              workflowGroupId: groupId,
-              audioHash,
-              compressedPath: archivedPayload?.compressedPath ?? null,
-              compressedAacPath: optionalPath(archivedPayload?.compressedAacPath),
-              originalPath,
-              filename: metadataPayload?.filename ?? null,
-              scanRoot: metadataPayload?.scanRoot ?? null,
-              durationHms,
-              sourceTitle: metadataPayload?.title ?? null,
-              sourceArtist: metadataPayload?.artist ?? null,
-              sourceAlbum: metadataPayload?.album ?? null,
-              sourceDate: metadataPayload?.date ?? null,
-              sourceMetadataPayload: metadataPayload ?? undefined,
-              sourceArchivedPayload: archivedPayload ?? undefined,
-              detailsPayloadVersion: 1,
-              hasArchived: !!archived,
-              hasMetadata: !!metadata,
-              isActionable: !!archived && !!metadata,
-              duplicateCount: duplicateCounts.get(audioHash) ?? 0,
-            });
-          }
-        }
-
-        const syncedAt = new Date();
-
-        if (baseChanged) {
-          await syncCatalogEntries(tx, groupId, entryRows, syncedAt);
-        }
-
-        if (duplicatesChanged) {
-          await tx.catalogDuplicate.deleteMany({
-            where: { workflowGroupId: groupId },
-          });
-          if (duplicateRows.length > 0) {
-            await tx.catalogDuplicate.createMany({ data: duplicateRows });
-          }
-
-          if (!baseChanged) {
-            await tx.catalogEntry.updateMany({
-              where: { workflowGroupId: groupId },
-              data: { duplicateCount: 0 },
-            });
-
-            const duplicateCounts = buildDuplicateCounts(
-              duplicateRows.map((row) => ({ audioHash: row.audioHash })),
-            );
-
-            for (const [
-              audioHash,
-              duplicateCount,
-            ] of duplicateCounts.entries()) {
-              await tx.catalogEntry.updateMany({
-                where: { workflowGroupId: groupId, audioHash },
-                data: { duplicateCount },
-              });
-            }
-          }
-        }
-
-        for (const state of changedStates) {
-          const sourceKey = state.descriptor.sourceKey;
-          const filePath = state.descriptor.filePath ?? '';
-          const fingerprint = state.fingerprint;
-          const rowCount = rowCounts[sourceKey] ?? 0;
-
-          await tx.catalogSyncState.upsert({
-            where: {
-              workflowGroupId_sourceKey: {
-                workflowGroupId: groupId,
-                sourceKey,
-              },
-            },
-            update: {
-              filePath,
-              fingerprint,
-              rowCount,
-              syncedAt,
-              lastSuccessfulAt: syncedAt,
-              status: 'SUCCESS',
-              lastError: null,
-            },
-            create: {
-              workflowGroupId: groupId,
-              sourceKey,
-              filePath,
-              fingerprint,
-              rowCount,
-              syncedAt,
-              lastSuccessfulAt: syncedAt,
-              status: 'SUCCESS',
-              lastError: null,
-            },
-          });
-        }
-
-        return {
+    const { result, unchangedSourceErrors } = await prisma.$transaction(
+      (tx) =>
+        runSyncTransaction(tx, {
           groupId,
-          status: 'success' as const,
-          changedSources,
+          force,
+          allowRowCountDrop,
+          sourceDescriptors,
+          baselineStates,
+          capturedSources,
           rowCounts,
-          ...(unrecognizedHashAlgorithmRows > 0 && {
-            unrecognizedHashAlgorithmRows,
-          }),
-        };
-      },
+          changedSources,
+        }),
       {
         maxWait: 10000,
         timeout: 120000,
@@ -998,13 +1215,7 @@ async function syncCatalogGroupAttempt(
       return { ...result, status: 'error', error };
     }
 
-    if (unchangedSourceErrors.length > 0) {
-      await prisma.catalogSyncState.updateMany({
-        // Do not clear a newer failure recorded while cleanup was running.
-        where: { workflowGroupId: groupId, OR: unchangedSourceErrors },
-        data: { status: 'SUCCESS', lastError: null, syncedAt: new Date() },
-      });
-    }
+    await clearRecoveredSourceErrors(groupId, unchangedSourceErrors);
     return result;
   } catch (error) {
     if (error instanceof SourceSnapshotInvalidatedError) {
@@ -1025,37 +1236,11 @@ async function syncCatalogGroupAttempt(
 
     const message = error instanceof Error ? error.message : String(error);
 
-    const errorSourceKeys =
-      changedSources.length > 0 ? changedSources : knownSourceKeys;
-
-    if (errorSourceKeys.length > 0) {
-      const syncedAt = new Date();
-      for (const sourceKey of errorSourceKeys) {
-        await prisma.catalogSyncState.upsert({
-          where: {
-            workflowGroupId_sourceKey: {
-              workflowGroupId: groupId,
-              sourceKey,
-            },
-          },
-          update: {
-            status: 'ERROR',
-            syncedAt,
-            lastError: message,
-          },
-          create: {
-            workflowGroupId: groupId,
-            sourceKey,
-            filePath: '',
-            fingerprint: '<error>',
-            rowCount: 0,
-            syncedAt,
-            status: 'ERROR',
-            lastError: message,
-          },
-        });
-      }
-    }
+    await recordSourceErrors(
+      groupId,
+      changedSources.length > 0 ? changedSources : knownSourceKeys,
+      message,
+    );
 
     return {
       groupId,

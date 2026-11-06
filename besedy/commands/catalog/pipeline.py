@@ -15,17 +15,10 @@ from besedy.commands.catalog.csv_utils import resolve_catalog_csv
 from besedy.commands.catalog.diarize import DiarizeRequest, handle_diarize
 from besedy.commands.catalog.extract import ExportTranscriptsRequest, handle_export_transcripts
 from besedy.commands.catalog.loudness import LoudnessRequest, handle_loudness
-from besedy.commands.catalog.pipeline_rag import (
-    COLBERT_RUNTIME_CHOICES,
-    COLBERT_RUNTIME_ENV_VAR,
-    DEFAULT_INDEX_BSIZE,
-    DEFAULT_MAX_CHUNK_TOKENS,
-    DEFAULT_MIN_CHUNK_TOKENS,
-    DEFAULT_OVERLAP_TOKENS,
-)
 from besedy.commands.catalog.rag_colbert_index import (
     handle_rag_colbert_index,
 )
+from besedy.commands.catalog.rag_options import RagIndexOptions, add_rag_index_arguments
 from besedy.commands.catalog.speakers import ClusterSpeakersRequest, handle_cluster_speakers
 from besedy.commands.catalog.stage import StageAudioRequest, handle_stage_audio
 from besedy.commands.catalog.transcribe import TranscribeRequest, handle_transcribe
@@ -97,19 +90,22 @@ def should_run_rag_colbert_index(args: argparse.Namespace) -> bool:
     )
 
 
-def _resolve_pipeline_colbert_runtime(args: argparse.Namespace) -> str:
+def _resolve_pipeline_colbert_runtime(options: RagIndexOptions) -> str:
     return _pipeline_rag._resolve_pipeline_colbert_runtime(
-        args,
+        options,
         default_runtime_resolver=default_colbert_index_runtime,
     )
 
 
 def _resolve_pipeline_colbert_index_dir(
-    args: argparse.Namespace,
+    options: RagIndexOptions,
     *,
     backend_key: str,
+    multi_backend: bool,
 ) -> Path | None:
-    return _pipeline_rag._resolve_pipeline_colbert_index_dir(args, backend_key=backend_key)
+    return _pipeline_rag._resolve_pipeline_colbert_index_dir(
+        options, backend_key=backend_key, multi_backend=multi_backend
+    )
 
 
 def run_rag_colbert_index_for_workflow(
@@ -126,9 +122,10 @@ def run_rag_colbert_index_for_workflow(
         workflow=workflow,
         has_transcripts=backend_has_transcripts,
         resolve_runtime=_resolve_pipeline_colbert_runtime,
-        resolve_index_dir=lambda local_args, local_backend: _resolve_pipeline_colbert_index_dir(
-            local_args,
-            backend_key=local_backend,
+        resolve_index_dir=lambda options, backend_key, multi_backend: (
+            _resolve_pipeline_colbert_index_dir(
+                options, backend_key=backend_key, multi_backend=multi_backend
+            )
         ),
         handle_index=handle_rag_colbert_index,
     )
@@ -139,10 +136,6 @@ def register_parser(
     formatter_class: type[argparse.HelpFormatter],
 ) -> argparse.ArgumentParser:
     """Register the 'run-pipeline' subparser."""
-    from pathlib import Path
-
-    from besedy.commands.catalog.system import parse_positive_int
-
     parser = subparsers.add_parser(
         "run-pipeline",
         help="Run the complete processing pipeline from catalog to transcripts",
@@ -208,73 +201,7 @@ Example:
         action="store_true",
         help="Index RAG for every transcription backend instead of only the active RAG backend.",
     )
-    parser.add_argument(
-        "--rag-force",
-        action="store_true",
-        help="Force-refresh ColBERT RAG for the selected scope even when transcripts are unchanged.",
-    )
-    parser.add_argument(
-        "--rag-colbert-index-dir",
-        type=Path,
-        default=None,
-        help="Optional explicit ColBERT sidecar directory override for pipeline indexing.",
-    )
-    parser.add_argument(
-        "--rag-colbert-model",
-        default=None,
-        help="ColBERT checkpoint used for pipeline sidecar indexing.",
-    )
-    parser.add_argument(
-        "--rag-chunk-tokenizer-model",
-        default=None,
-        help=(
-            "Tokenizer model used for pipeline chunk sizing. "
-            "Default: use the active pipeline ColBERT model."
-        ),
-    )
-    parser.add_argument(
-        "--rag-colbert-doc-maxlen",
-        type=int,
-        default=384,
-        help="ColBERT doc_maxlen used for pipeline sidecar indexing.",
-    )
-    parser.add_argument(
-        "--rag-colbert-index-bsize",
-        type=parse_positive_int,
-        default=DEFAULT_INDEX_BSIZE,
-        help=(
-            "ColBERT indexing batch size used for pipeline sidecar indexing. "
-            f"Default: {DEFAULT_INDEX_BSIZE}."
-        ),
-    )
-    parser.add_argument(
-        "--rag-colbert-runtime",
-        choices=COLBERT_RUNTIME_CHOICES,
-        default=None,
-        help=(
-            "Optional ColBERT runtime override for pipeline indexing. "
-            f"Default: use {COLBERT_RUNTIME_ENV_VAR} when set, otherwise "
-            "'docker-indexer' on GPU hosts and 'docker' on CPU-only hosts."
-        ),
-    )
-    parser.add_argument(
-        "--rag-min-chunk-tokens",
-        type=int,
-        default=DEFAULT_MIN_CHUNK_TOKENS,
-        help="Minimum chunk token count for pipeline RAG ingest.",
-    )
-    parser.add_argument(
-        "--rag-max-chunk-tokens",
-        type=int,
-        default=DEFAULT_MAX_CHUNK_TOKENS,
-        help="Maximum chunk token count for pipeline RAG ingest.",
-    )
-    parser.add_argument(
-        "--rag-overlap-tokens",
-        type=int,
-        default=DEFAULT_OVERLAP_TOKENS,
-        help="Chunk overlap token count for pipeline RAG ingest.",
-    )
+    add_rag_index_arguments(parser, pipeline=True)
     parser.set_defaults(func=handle_run_pipeline)
     return parser
 
