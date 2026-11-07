@@ -17,7 +17,6 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { TextSizeToggle } from "@/components/text-size-toggle";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { UserMenu } from "@/components/auth/user-menu";
-import { RadioButton } from "@/components/radio/radio-button";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { UpdateIndicator } from "@/components/update-indicator";
 import { Button } from "@/components/ui/button";
@@ -139,9 +138,8 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Radio, Notifications, Update, Support & User Menu */}
+          {/* Notifications, Update, Support & User Menu */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-            {!isAuthPage && effectiveCatalogId && <RadioButton catalogId={effectiveCatalogId} />}
             {!isAuthPage && <NotificationBell />}
             {!isAuthPage && <UpdateIndicator />}
             {/* The single app-level connectivity indicator. It never blocks

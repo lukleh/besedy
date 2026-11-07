@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useRadioMode } from "@/contexts/radio-mode-context";
 import { useAudioPlayback } from "@/contexts/audio-playback-context";
 import { useSession } from "@/contexts/session-context";
 import { useDownloadRecord } from "@/hooks/use-downloads";
@@ -56,12 +55,10 @@ const SERVER_SYNC_INTERVAL_MS = 15_000;
 const HIDDEN_SERVER_SYNC_INTERVAL_MS = 60_000;
 
 /**
- * Owns playback persistence, seek restoration, and radio handoff for a single
- * recording detail view.
+ * Owns playback persistence and seek restoration for a single recording view.
  */
 export function useRecordingPlayback(catalogId: string, hash: string) {
   const searchParams = useSearchParams();
-  const radio = useRadioMode();
   const { setRecordingPlaying } = useAudioPlayback();
   const { session } = useSession();
   const userId = session?.user?.id ?? null;
@@ -69,11 +66,8 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   // is queued for the account that downloaded the recording.
   const downloadRecord = useDownloadRecord(catalogId, hash);
   const progressOwnerId = userId ?? downloadRecord?.userId ?? null;
-  const fromRadio = searchParams.get("fromRadio") === "true";
   const seekParam = searchParams.get("seek");
   const endParam = searchParams.get("end");
-  const radioHandoffDone = useRef(false);
-  const radioHandoffSucceeded = useRef(false);
   const positionRestoredRef = useRef(false);
   const currentTimeRef = useRef(0);
   const isPlayingRef = useRef(false);
@@ -92,7 +86,6 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   const [clock] = useState(() => createPlaybackClock());
   const [isPlaying, setIsPlaying] = useState(false);
   const [seekRequest, setSeekRequest] = useState<RecordingSeekRequest | undefined>(undefined);
-  const [autoPlayOnSeek, setAutoPlayOnSeek] = useState(false);
 
   // Durable offline progress: synchronised by the download-manager bridge on
   // the next successful connection.
@@ -223,58 +216,12 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   }, [setRecordingPlaying]);
 
   useEffect(() => {
-    if (!radio.isActive || radioHandoffDone.current) return;
-
-    // Handoff: the radio banner links here with ?fromRadio=true. When the radio
-    // is on this same recording (e.g. an event's primary), take over its
-    // position and keep playing; otherwise stop the radio so two players don't
-    // sound at once.
-    if (fromRadio && radio.currentTrack?.hash === hash) {
-      const { time, wasPlaying } = radio.handOffPlayback();
-      radioHandoffSucceeded.current = true;
-      radioHandoffDone.current = true;
-      restorePendingRef.current = false;
-      // Apply the handoff position synchronously, not from a deferred
-      // microtask. Under React Strict Mode the effect runs setup -> cleanup ->
-      // setup: a microtask guarded by a `cancelled` cleanup flag was dropped on
-      // the first cleanup and never re-queued (the refs already mark the handoff
-      // done), leaving the event player paused at 0. The radioHandoffDone ref
-      // guards re-entry, so this one-shot controlled seek cannot loop.
-      /* eslint-disable react-hooks/set-state-in-effect -- intentional one-shot controlled seek; must stay synchronous (see above) */
-      if (time > 0) {
-        setSeekRequest({ time, key: Date.now() });
-      }
-      if (wasPlaying) {
-        setAutoPlayOnSeek(true);
-      }
-      /* eslint-enable react-hooks/set-state-in-effect */
-      return;
-    }
-
-    radio.stopRadio();
-    radioHandoffDone.current = true;
-  }, [radio, fromRadio, hash]);
-
-  useEffect(() => {
-    if (autoPlayOnSeek && seekRequest) {
-      const timer = setTimeout(() => setAutoPlayOnSeek(false), 100);
-      return () => clearTimeout(timer);
-    }
-  }, [autoPlayOnSeek, seekRequest]);
-
-  useEffect(() => {
     if (positionRestoredRef.current) return;
-    if (fromRadio && radio.isActive && !radioHandoffDone.current) return;
-    if (fromRadio && radioHandoffSucceeded.current) {
-      positionRestoredRef.current = true;
-      return;
-    }
 
-    // Restore the seek / saved position synchronously, for the same reason as
-    // the handoff effect above: a deferred microtask guarded by a cleanup flag
-    // is dropped under React Strict Mode's setup -> cleanup -> setup, so the
-    // position would never restore in dev. The positionRestoredRef one-shot
-    // guard prevents re-entry / loops.
+    // Restore the seek / saved position synchronously: a deferred microtask
+    // guarded by a cleanup flag is dropped under React Strict Mode's
+    // setup -> cleanup -> setup, so the position would never restore in dev.
+    // The positionRestoredRef one-shot guard prevents re-entry / loops.
     /* eslint-disable react-hooks/set-state-in-effect -- one-shot position restore; must stay synchronous (see above) */
     const parsedSeek = seekParam ? Number.parseFloat(seekParam) : Number.NaN;
     if (Number.isFinite(parsedSeek) && parsedSeek >= 0) {
@@ -297,18 +244,13 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
       setSeekRequest({ time: savedPosition, key: Date.now() });
     }
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [hash, endParam, fromRadio, radio.isActive, seekParam]);
+  }, [hash, endParam, seekParam]);
 
   useEffect(() => {
-    if (
-      remoteRestoreAppliedRef.current ||
-      seekParam ||
-      radioHandoffSucceeded.current
-    ) {
+    if (remoteRestoreAppliedRef.current || seekParam) {
       restorePendingRef.current = false;
       return;
     }
-    if (fromRadio && radio.isActive) return;
 
     let cancelled = false;
     const loadProgress = async () => {
@@ -443,10 +385,8 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     };
   }, [
     catalogId,
-    fromRadio,
     hash,
     persistCurrentPlaybackPosition,
-    radio.isActive,
     sendPlaybackProgress,
     seekParam,
     userId,
@@ -563,7 +503,6 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
   }, [clock, noteSeek]);
 
   return {
-    autoPlayOnSeek,
     clock,
     handleAudioEnded,
     handleDurationChange,

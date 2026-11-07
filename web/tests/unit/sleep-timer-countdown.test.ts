@@ -71,8 +71,8 @@ describe("createSleepCountdown", () => {
   });
 
   it("runs out when playback resumes after reaching zero as it stopped", () => {
-    // A radio track ends just after the timer reaches zero; the next track
-    // must still be paused.
+    // Playback stops just after the timer reaches zero; resuming it must
+    // still trigger the pause.
     const { countdown, advance } = setup();
     countdown.setRunning(true);
     countdown.start(10_000);

@@ -61,7 +61,6 @@ const DELEGATED: Record<string, { module: string; handlers: string[] }> = {
 // `getCatalogCapability` is not a guard: it reports access and refuses nobody.
 const CHECKED_IN_HANDLER: Record<string, string> = {
   "catalogs/[id]/status": "checks getCurrentUserId and capability.hasAccess",
-  "catalogs/[id]/random-event": "checks getCurrentUserId and capability.hasAccess",
 };
 
 // Routes that are open on purpose.

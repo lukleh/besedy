@@ -95,7 +95,7 @@ describe('LocalModeShell', () => {
 
   it("honours a legacy worker's ?from= redirect, restoring path and search before routing", () => {
     mocks.pathname = '/downloads';
-    mocks.search = `from=${encodeURIComponent(`/catalog/cat-1/recording/${HASH}?seek=10&fromRadio=true`)}`;
+    mocks.search = `from=${encodeURIComponent(`/catalog/cat-1/recording/${HASH}?seek=10&end=20`)}`;
     const replaceState = vi.spyOn(window.history, 'replaceState');
     const { rerender } = render(<LocalModeShell />);
 
@@ -105,11 +105,11 @@ describe('LocalModeShell', () => {
     expect(replaceState).toHaveBeenCalledWith(
       null,
       '',
-      `/catalog/cat-1/recording/${HASH}?seek=10&fromRadio=true`,
+      `/catalog/cat-1/recording/${HASH}?seek=10&end=20`,
     );
 
     mocks.pathname = `/catalog/cat-1/recording/${HASH}`;
-    mocks.search = 'seek=10&fromRadio=true';
+    mocks.search = 'seek=10&end=20';
     rerender(<LocalModeShell />);
     expect(screen.getByTestId('recording-content')).toBeInTheDocument();
     replaceState.mockRestore();

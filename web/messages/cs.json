@@ -226,19 +226,6 @@
     "bookmark": "Přidat záložku (B)",
     "reconnecting": "Připojování..."
   },
-  "radio": {
-    "start": "Spustit rádio",
-    "stop": "Zastavit rádio",
-    "noEventsTitle": "Žádné události k přehrání",
-    "noEventsDescription": "Tento katalog zatím nemá žádné zveřejněné události.",
-    "loading": "Načítání...",
-    "play": "Přehrát",
-    "pause": "Pozastavit",
-    "skip": "Přeskočit na další",
-    "volume": "Hlasitost",
-    "mute": "Ztlumit",
-    "unmute": "Zapnout zvuk"
-  },
   "sleepTimer": {
     "label": "Časovač usnutí",
     "activeLabel": "Časovač usnutí: zbývá {time}",
