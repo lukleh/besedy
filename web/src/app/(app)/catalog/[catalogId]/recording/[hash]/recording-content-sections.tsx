@@ -20,7 +20,7 @@ import {
 import type { PlaybackClock } from "@/lib/playback-clock";
 import { usePlaybackTime } from "@/hooks/use-playback-time";
 import { cn } from "@/lib/utils";
-import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
+import { formatRecordingDate } from "@/lib/date-format";
 import type { CatalogEntryResponse } from "@/types/catalog";
 import type { RecordingSeekRequest } from "./use-recording-playback";
 
@@ -183,11 +183,7 @@ function useRecordingHeading(
     dateDay: recording.dateDay,
     locationName: recording.location?.name,
   };
-  const formattedDate = !dateYear
-    ? null
-    : dateMonth && dateDay
-      ? formatMediumDate(dateYear, dateMonth, dateDay, locale)
-      : formatPartialDate(dateYear, dateMonth, null, locale);
+  const formattedDate = formatRecordingDate(dateYear, dateMonth, dateDay, locale);
   // Only a curated title leads the heading; source-file titles are mostly the recorder's date labels.
   const headingParts = [recording.curatedTitle, formattedDate, locationName]
     .map((part) => part?.trim())

@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Loader2, RotateCcw, Send, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,9 +18,12 @@ import {
   buildCorrectionOverviewPath,
   buildCorrectionPublicationUrl,
   buildCorrectionUrl,
+  buildEventPagePath,
   buildRecordingEntryUrl,
 } from "@/lib/api/recording-urls";
+import { extractDateParts, parseDuration } from "@/lib/catalog-filters";
 import { formatHoursMinutes } from "@/lib/correction/format";
+import { formatRecordingDate } from "@/lib/date-format";
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
 import { CorrectionConsentCard, useContributorConsent } from "./correction-consent-card";
 import { CorrectionSurface } from "./correction-surface";
@@ -37,6 +40,7 @@ interface CorrectionWorkspaceProps {
   hash: string;
   userId: string;
   canPublish: boolean;
+  eventId: number | null;
 }
 
 export function CorrectionWorkspace({
@@ -44,8 +48,10 @@ export function CorrectionWorkspace({
   hash,
   userId,
   canPublish,
+  eventId,
 }: CorrectionWorkspaceProps) {
   const t = useTranslations("correction");
+  const locale = useLocale();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const supported = useLandscapeWorkspace();
@@ -78,12 +84,25 @@ export function CorrectionWorkspace({
     enabled: supported === true,
   });
   const recording = entryQuery.data?.entry;
-  const recordingTitle =
-    recording?.curatedTitle || recording?.title || recording?.filename || hash.slice(0, 16);
-  const recordingDate = recording?.curatedDate || recording?.date || null;
-  const recordingSubtitle = [recordingDate, recording?.album?.name]
+  // Curated date parts as a whole, else the source file's date: the same
+  // rule the catalog list applies.
+  const dateParts = recording ? extractDateParts(recording) : null;
+  const recordingDate = formatRecordingDate(
+    dateParts?.year,
+    dateParts?.month,
+    dateParts?.day,
+    locale,
+  );
+  const durationSeconds =
+    parseDuration(recording?.duration) ?? stateQuery.data?.workspace?.spanDurationSeconds;
+  const recordingHeading = [
+    recordingDate,
+    recording?.location?.name,
+    durationSeconds === undefined ? null : formatHoursMinutes(durationSeconds),
+  ]
     .filter((part): part is string => Boolean(part))
     .join(" · ");
+  const headingText = recordingHeading || hash.slice(0, 16);
 
   const refreshState = useCallback(() => {
     void queryClient.invalidateQueries({
@@ -180,33 +199,21 @@ export function CorrectionWorkspace({
             {/* The header back control leads to the correction overview. */}
             <span>{t("pageTitle")}</span>
           </div>
-          <h1 className="break-words text-lg font-medium">{recordingTitle}</h1>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-            {recordingSubtitle && <p>{recordingSubtitle}</p>}
-            {state?.workspace && (
-              <>
-                <span>
-                  {formatHoursMinutes(state.workspace.spanDurationSeconds)}
-                </span>
-                <details className="max-w-full text-xs">
-                  <summary
-                    className="cursor-pointer hover:text-foreground"
-                    onKeyDown={(event) => {
-                      // Keep native activation instead of the player's Space shortcut.
-                      if (event.code === "Space") event.stopPropagation();
-                    }}
-                  >
-                    {t("sourceDetails")}
-                  </summary>
-                  <p className="mt-1 max-w-lg break-all">
-                    {t("frozenSource", {
-                      backend: state.workspace.sourceBackend,
-                    })}
-                  </p>
-                </details>
-              </>
-            )}
-          </div>
+          <h1 className="break-words text-lg font-medium">
+            {eventId !== null ? (
+              <Link
+                href={buildEventPagePath(catalogId, eventId)}
+                className="underline decoration-muted-foreground/50 underline-offset-4 hover:decoration-current"
+              >
+                {headingText}
+              </Link>
+            ) : headingText}
+          </h1>
+          {state?.workspace && (
+            <p className="break-all text-xs text-muted-foreground">
+              {state.workspace.sourceBackend}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col items-start gap-2 lg:max-w-md lg:shrink-0 lg:items-end lg:text-right">

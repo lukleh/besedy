@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CorrectionWorkspace } from "@/components/correction/correction-workspace";
-import { AudioPlayer } from "@/components/player/audio-player";
 import { fetchJson } from "@/lib/api/fetch-json";
 
 vi.mock("next-intl", () => ({
+  useLocale: () => "cs",
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
     values ? `${key} ${JSON.stringify(values)}` : key,
 }));
@@ -89,7 +89,13 @@ const fetchJsonMock = vi.mocked(fetchJson);
 
 const ACCEPTED = { consent: { accepted: true, version: "v", text: "terms" } };
 
-function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unknown = ACCEPTED, canPublish = true) {
+function renderWorkspace(
+  correctionState: ReturnType<typeof state>,
+  consent: unknown = ACCEPTED,
+  canPublish = true,
+  eventId: number | null = 42,
+  entryOverrides: Record<string, unknown> = {},
+) {
   fetchJsonMock.mockImplementation(async (input) => {
     const url = String(input);
     if (url.endsWith("/correction")) return correctionState;
@@ -100,10 +106,17 @@ function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unk
     if (url.endsWith("/entry")) return {
       entry: {
         hash: HASH,
+        filename: "recording.wav",
+        duration: "01:02:00",
         title: "Recording",
         curatedTitle: "Beseda v knihovně",
         curatedDate: "19.2.2005",
-        album: { name: "Městská knihovna" },
+        dateYear: 2005,
+        dateMonth: 2,
+        dateDay: 19,
+        location: { id: 1, name: "Městská knihovna" },
+        album: { name: "Cyklus besed" },
+        ...entryOverrides,
       },
     };
     throw new Error(`unexpected ${url}`);
@@ -113,7 +126,7 @@ function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unk
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <CorrectionWorkspace catalogId={CATALOG_ID} hash={HASH} userId="user-1" canPublish={canPublish} />
+      <CorrectionWorkspace catalogId={CATALOG_ID} hash={HASH} userId="user-1" canPublish={canPublish} eventId={eventId} />
     </QueryClientProvider>
   );
 }
@@ -132,28 +145,43 @@ it("sends a narrow screen to the correction overview, like the header back contr
   );
 });
 
-it("leaves source disclosure activation to the browser without toggling audio", async () => {
-  renderWorkspace(state({}));
-  const summary = await screen.findByText("sourceDetails");
-  const { container } = render(<AudioPlayer src="/audio.wav" />);
-  const audio = container.querySelector("audio")!;
-  audio.play = vi.fn().mockResolvedValue(undefined);
-  audio.pause = vi.fn();
-  audio.load = vi.fn();
-  summary.focus();
+it("keeps the heading as text when there is no visible event to link to", async () => {
+  renderWorkspace(state({}), ACCEPTED, false, null);
 
-  const space = new KeyboardEvent("keydown", {
-    key: " ", code: "Space", bubbles: true, cancelable: true,
+  const heading = await screen.findByRole("heading", {
+    name: "19. Února 2005 · Městská knihovna · 1 h 2 min",
   });
-  await act(async () => { summary.dispatchEvent(space); });
+  expect(within(heading).queryByRole("link")).not.toBeInTheDocument();
+});
 
-  expect(space.defaultPrevented).toBe(false);
-  expect(audio.play).not.toHaveBeenCalled();
-  expect(audio.pause).not.toHaveBeenCalled();
+it("falls back to the source file's date for an uncurated recording", async () => {
+  renderWorkspace(state({}), ACCEPTED, false, null, {
+    curatedDate: null,
+    dateYear: null,
+    dateMonth: null,
+    dateDay: null,
+    date: "2005-02-19",
+  });
 
-  // The player shortcut still works away from the disclosure.
-  await act(async () => { fireEvent.keyDown(document.body, { key: " ", code: "Space" }); });
-  expect(audio.play).toHaveBeenCalledTimes(1);
+  expect(await screen.findByRole("heading", {
+    name: "19. Února 2005 · Městská knihovna · 1 h 2 min",
+  })).toBeInTheDocument();
+});
+
+it("never mixes curated date parts with the source file's date", async () => {
+  renderWorkspace(state({}), ACCEPTED, false, null, {
+    curatedDate: null,
+    dateYear: null,
+    dateMonth: 12,
+    dateDay: null,
+    date: "2005-06-15",
+  });
+
+  const header = await screen.findByTestId("correction-header");
+  await within(header).findByRole("heading", { name: /Městská knihovna · 1 h 2 min/ });
+  expect(header).not.toHaveTextContent("2005");
+  expect(header).not.toHaveTextContent("Prosin");
+  expect(header).not.toHaveTextContent("Červ");
 });
 
 describe("CorrectionWorkspace publication card", () => {
@@ -168,27 +196,32 @@ describe("CorrectionWorkspace publication card", () => {
   it("shows recording identity and progress without publication permission", async () => {
     renderWorkspace(state({}), ACCEPTED, false);
 
-    expect(await screen.findByRole("heading", { name: "Beseda v knihovně" })).toBeInTheDocument();
-    expect(screen.getByText("19.2.2005 · Městská knihovna")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", {
+      name: "19. Února 2005 · Městská knihovna · 1 h 2 min",
+    })).toBeInTheDocument();
+    const header = screen.getByTestId("correction-header");
+    expect(within(header).getByRole("link", {
+      name: "19. Února 2005 · Městská knihovna · 1 h 2 min",
+    })).toHaveAttribute("href", `/catalog/${CATALOG_ID}/event/42`);
+    expect(header).not.toHaveTextContent("recording.wav");
+    expect(header).not.toHaveTextContent("Beseda v knihovně");
+    expect(header).not.toHaveTextContent("Cyklus besed");
     expect(screen.getByText(/progressSummary/)).toBeInTheDocument();
     // The app header's back control is the way back to the overview.
     expect(screen.queryByRole("link", { name: "overviewLink" })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "publishTitle" })).not.toBeInTheDocument();
   });
 
-  it("shows the duration and keeps the frozen source in a disclosure", async () => {
+  it("shows the duration and source name directly below the linked heading", async () => {
     const base = state({});
-    renderWorkspace(state({ workspace: { ...base.workspace, spanDurationSeconds: 3720 } }));
+    renderWorkspace(base);
 
     const header = await screen.findByTestId("correction-header");
-    expect(await within(header).findByText("1 h 2 min")).toBeInTheDocument();
-    const source = within(header).getByText(
-      `frozenSource ${JSON.stringify({ backend: base.workspace.sourceBackend })}`
-    );
-    const disclosure = source.closest("details");
-    expect(disclosure).not.toBeNull();
-    expect(disclosure).not.toHaveAttribute("open");
-    expect(within(disclosure!).getByText("sourceDetails").tagName).toBe("SUMMARY");
+    expect(await within(header).findByRole("heading", { name: /1 h 2 min/ })).toBeInTheDocument();
+    const source = within(header).getByText(base.workspace.sourceBackend);
+    expect(source).toBeVisible();
+    expect(source.tagName).toBe("P");
+    expect(header.querySelector("details, summary")).toBeNull();
   });
 
   it("puts the publication controls before their status in reading order", async () => {

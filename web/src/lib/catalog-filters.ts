@@ -40,7 +40,9 @@ export function scopeCatalogEntriesForAccess<
   return scopeRecordingsForAccess(entries, catalogGrant);
 }
 
-export function extractDateParts(entry: EnrichedCatalogEntry): {
+export function extractDateParts(
+  entry: Pick<EnrichedCatalogEntry, "date" | "dateYear" | "dateMonth" | "dateDay">,
+): {
   year?: number;
   month?: number;
   day?: number;

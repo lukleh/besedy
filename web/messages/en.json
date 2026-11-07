@@ -277,8 +277,6 @@
     "fullyApproved": "Fully approved",
     "openSurface": "Correction",
     "pageTitle": "Correct transcript",
-    "sourceDetails": "Transcript source",
-    "frozenSource": "Frozen source {backend}",
     "landscapeOnly": "Correction needs a larger screen",
     "landscapeOnlyDescription": "The correction surface is available on a desktop or on a tablet held in landscape.",
     "notEligible": "This recording cannot be corrected",

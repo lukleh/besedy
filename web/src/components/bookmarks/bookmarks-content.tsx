@@ -24,7 +24,7 @@ import {
   type BookmarkRecording,
   type UserBookmark,
 } from "@/lib/bookmarks/schemas";
-import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
+import { formatRecordingDate } from "@/lib/date-format";
 import { withBackTo } from "@/lib/navigation/back-to";
 import { formatAudioTime } from "@/components/player/audio-player-utils";
 import { z } from "zod";
@@ -66,11 +66,7 @@ function useRecordingHeading() {
   return useCallback(
     (recording: BookmarkRecording) => {
       const { dateYear, dateMonth, dateDay } = recording;
-      const date = !dateYear
-        ? null
-        : dateMonth && dateDay
-          ? formatMediumDate(dateYear, dateMonth, dateDay, locale)
-          : formatPartialDate(dateYear, dateMonth, null, locale);
+      const date = formatRecordingDate(dateYear, dateMonth, dateDay, locale);
       const parts = [recording.title, date, recording.locationName].filter(
         (part): part is string => !!part,
       );

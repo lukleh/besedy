@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getRecordingCapability } from "@/lib/access/capabilities";
 import { getSession } from "@/lib/auth/session";
 import { CorrectionWorkspace } from "@/components/correction/correction-workspace";
+import { loadReadableRecordingEventId } from "@/lib/catalog-events/read-service";
 
 interface CorrectionPageProps {
   params: Promise<{ catalogId: string; hash: string }>;
@@ -25,12 +26,15 @@ export default async function CorrectionPage({ params }: CorrectionPageProps) {
     notFound();
   }
 
+  const eventId = await loadReadableRecordingEventId(catalogId, hash, capability.catalogGrant);
+
   return (
     <CorrectionWorkspace
       catalogId={catalogId}
       hash={hash}
       userId={session.user.id}
       canPublish={capability.canPublishTranscript}
+      eventId={eventId}
     />
   );
 }
