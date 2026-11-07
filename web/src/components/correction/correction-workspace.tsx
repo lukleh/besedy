@@ -21,10 +21,9 @@ import {
   buildEventPagePath,
   buildRecordingEntryUrl,
 } from "@/lib/api/recording-urls";
-import { parseDuration } from "@/lib/catalog-filters";
+import { extractDateParts, parseDuration } from "@/lib/catalog-filters";
 import { formatHoursMinutes } from "@/lib/correction/format";
 import { formatRecordingDate } from "@/lib/date-format";
-import { parseDateFromString } from "@/lib/date-utils";
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
 import { CorrectionConsentCard, useContributorConsent } from "./correction-consent-card";
 import { CorrectionSurface } from "./correction-surface";
@@ -85,12 +84,13 @@ export function CorrectionWorkspace({
     enabled: supported === true,
   });
   const recording = entryQuery.data?.entry;
-  // An uncurated recording still has the date its source file carried.
-  const sourceDate = recording?.dateYear ? null : parseDateFromString(recording?.date);
+  // Curated date parts as a whole, else the source file's date: the same
+  // rule the catalog list applies.
+  const dateParts = recording ? extractDateParts(recording) : null;
   const recordingDate = formatRecordingDate(
-    recording?.dateYear ?? sourceDate?.year,
-    recording?.dateMonth ?? sourceDate?.month,
-    recording?.dateDay ?? sourceDate?.day,
+    dateParts?.year,
+    dateParts?.month,
+    dateParts?.day,
     locale,
   );
   const durationSeconds =

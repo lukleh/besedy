@@ -168,6 +168,22 @@ it("falls back to the source file's date for an uncurated recording", async () =
   })).toBeInTheDocument();
 });
 
+it("never mixes curated date parts with the source file's date", async () => {
+  renderWorkspace(state({}), ACCEPTED, false, null, {
+    curatedDate: null,
+    dateYear: null,
+    dateMonth: 12,
+    dateDay: null,
+    date: "2005-06-15",
+  });
+
+  const header = await screen.findByTestId("correction-header");
+  await within(header).findByRole("heading", { name: /Městská knihovna · 1 h 2 min/ });
+  expect(header).not.toHaveTextContent("2005");
+  expect(header).not.toHaveTextContent("Prosin");
+  expect(header).not.toHaveTextContent("Červ");
+});
+
 describe("CorrectionWorkspace publication card", () => {
   it("keeps an ineligible publication disabled and explains why", async () => {
     renderWorkspace(state({ publication: { ...state({}).publication, eligible: false } }));
