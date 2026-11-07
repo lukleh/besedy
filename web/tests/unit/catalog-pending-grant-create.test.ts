@@ -83,9 +83,27 @@ describe("catalog pending grant create", () => {
     prisma.workflowGroup.findUnique.mockResolvedValue({
       id: CATALOG_ID,
       label: "Catalog",
+      isActive: true,
     });
     prisma.user.findUnique.mockResolvedValue(null);
     prisma.portalAdmission.findUnique.mockResolvedValue(null);
+  });
+
+  it("refuses a new invitation to an inactive catalog before writing admission or access", async () => {
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: CATALOG_ID, label: "Old catalog", isActive: false });
+
+    const response = await createPendingCatalogGrant(
+      new NextRequest(`http://localhost/api/catalogs/${CATALOG_ID}/pending-catalog-grants`, {
+        method: "POST",
+        body: JSON.stringify({ email: "pending@example.com", role: "reader" }),
+      }),
+      CATALOG_ID
+    );
+
+    expect(response.status).toBe(404);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(syncPendingAdmissionState).not.toHaveBeenCalled();
   });
 
   // An invitation to an address that already has an account grants directly, so

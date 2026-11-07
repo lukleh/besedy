@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import {
   forbidden,
+  badRequest,
   notFound,
   handlePrismaError,
   conflict,
@@ -206,12 +207,12 @@ export async function patchAdminPendingRecord(
       );
     }
 
-    if (catalogId) {
+    if (catalogId && catalogId !== newestPendingGrant?.catalogId) {
       const catalog = await prisma.workflowGroup.findUnique({
         where: { id: catalogId },
-        select: { id: true },
+        select: { isActive: true },
       });
-      if (!catalog) {
+      if (!catalog?.isActive) {
         return notFound("catalog");
       }
     }
@@ -263,6 +264,11 @@ export async function patchAdminPendingRecord(
     const normalizedExtraPermissions = normalizedRole
       ? nextExtraPermissions
       : [];
+    if (!multiGrantAdmissionEdit && previousPendingGrantInput && !normalizedCatalogId) {
+      return badRequest(
+        "Pending invitations must retain content access. Revoke the invitation instead."
+      );
+    }
     const normalizedNotes = notes !== undefined ? notes : previousNotes;
     const shouldRevokePreviousGrant =
       !multiGrantAdmissionEdit &&

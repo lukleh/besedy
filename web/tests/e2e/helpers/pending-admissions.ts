@@ -6,8 +6,8 @@ import { APIRequestContext } from "@playwright/test";
 
 export interface PendingAdmissionData {
   email: string;
-  catalogId?: string;
-  role?: string;
+  catalogId: string;
+  role: string;
   extraPermissions?: string[];
 }
 

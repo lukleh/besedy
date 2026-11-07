@@ -26,8 +26,9 @@ self-register.
 
 ### Portal Admission Flow (OAuth)
 
-1. Admin creates a portal admission (`POST /api/admin/portal-admissions`) or a
-   catalog-scoped pending grant (`POST /api/catalogs/:id/pending-catalog-grants`).
+1. Admin creates a content-backed invitation (`POST /api/admin/portal-admissions`,
+   with required active `catalogId` and `role`) or a catalog-scoped pending grant
+   (`POST /api/catalogs/:id/pending-catalog-grants`).
 2. User signs in with OAuth (Google).
 3. Auth creation hooks validate portal-admission state and any pending catalog
    grants.
@@ -35,6 +36,18 @@ self-register.
    unauthorized UX.
 5. If the email **is** admitted, session creation continues and normal access
    checks apply.
+
+New invitations always include content access. The admin form has no sign-in-only
+option, and editing a pending invitation cannot remove its final catalog grant;
+use revocation to cancel it. Resetting a claimed admission requires a saved
+consumed grant for an active catalog, so reset cannot recreate a sign-in-only
+invitation.
+
+This is preparation for the single-archive invitation model. Existing pending
+admissions are not rewritten, and their read, revoke and claim paths remain
+until the later migration reviews their content grants and history. The existing
+role/extras, protected-role delegation, blocking and revocation checks remain
+authoritative. There is no schema or automatic access migration in this step.
 
 ### Superadmin Bootstrap
 
