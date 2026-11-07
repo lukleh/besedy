@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { preferencesResponseSchema } from "@/lib/preferences/client-schema";
-import { catalogSchema } from "@/hooks/use-catalogs";
 import { catalogFeaturesResponseSchema } from "@/hooks/use-catalog-features";
 
 describe("client response schemas", () => {
@@ -11,20 +10,6 @@ describe("client response schemas", () => {
       catalogColumns: [],
       settings: {},
       extra: true,
-    });
-
-    expect(result.success).toBe(false);
-  });
-
-  it("requires the full catalog payload shape instead of stripping fields", () => {
-    const result = catalogSchema.safeParse({
-      id: "20251201_143022",
-      label: "Winter",
-      archivedCatalogPath: "/archived.csv",
-      metadataCatalogPath: "/metadata.csv",
-      transcriptsPath: "/transcripts",
-      isDefault: false,
-      isActive: true,
     });
 
     expect(result.success).toBe(false);

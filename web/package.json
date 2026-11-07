@@ -44,6 +44,7 @@
     "test:e2e:mobile:visual": "TEST_RUN_ID=$(date +%Y%m%d_%H%M%S) playwright test tests/e2e/mobile/responsive-layouts.spec.ts --project='Desktop Chrome'",
     "test:e2e:mobile:update": "TEST_RUN_ID=$(date +%Y%m%d_%H%M%S) playwright test tests/e2e/mobile/ --update-snapshots",
     "test:e2e:visual-gallery": "tsx tests/e2e/scripts/generate-visual-report.ts",
+    "archive:register": "tsx scripts/register-archive.ts",
     "catalog:sync": "tsx scripts/sync-catalog-db.ts",
     "catalog:verify": "tsx scripts/verify-catalog-db-parity.ts",
     "artwork": "tsx scripts/artwork.ts",

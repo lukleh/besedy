@@ -30,9 +30,9 @@ export function hasSystemCatalogAuthority(
 /**
  * A system admin who may currently use the portal.
  *
- * The one rule behind the admin capability and behind the catalog settings a
- * catalog grant does not cover (paths, the default and active flags, and
- * deactivation), so the routes and the pages that offer them cannot drift.
+ * The one rule behind the admin capability and behind the catalog paths a
+ * catalog grant does not cover, so the routes and the pages that offer them
+ * cannot drift.
  */
 export function hasSystemAdminAuthority(
   actor: Pick<PortalActorContext, "canEnterPortal" | "systemRole">
