@@ -16,6 +16,7 @@ async function main() {
   assert(connectionString, 'DATABASE_URL must name a migrated throwaway database');
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'besedy-catalog-sync-'));
   const catalogId = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15);
+  process.env.BESEDY_ARCHIVE_ID = catalogId;
   const hash = () => createHash('sha256').update(randomUUID()).digest('hex');
   const retainedHash = hash();
   const removedHash = hash();

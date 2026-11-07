@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/db';
-import { ArchiveScopeError, getConfiguredArchive } from '@/lib/archive';
+import { ArchiveScopeError, requireArchive } from '@/lib/archive';
 import {
   handlePrismaError,
   notFound,
@@ -51,13 +51,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const bodyResult = await validateRequestBody(request, ProgressSchema);
     if (!bodyResult.success) return bodyResult.response;
     const { step, total, label } = bodyResult.data;
-    const archive = await getConfiguredArchive();
+    const archive = await requireArchive();
 
     const now = new Date();
     const active = {
       id: intakeId,
       status: { in: [...ACTIVE_INTAKE_STATUSES] },
-      ...(archive ? { workflowGroupId: archive.id } : {}),
+      workflowGroupId: archive.id,
     };
     // The run's clock starts with its first report; the guard keeps the write
     // atomic, so a concurrent report never moves an existing start.
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         select: { id: true, workflowGroupId: true },
       });
       if (!exists) return notFound('intake');
-      if (archive && exists.workflowGroupId !== archive.id) throw new ArchiveScopeError();
+      if (exists.workflowGroupId !== archive.id) throw new ArchiveScopeError();
     }
     return NextResponse.json({ ok: true, applied: result.count > 0 });
   } catch (error) {

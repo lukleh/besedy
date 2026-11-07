@@ -166,6 +166,7 @@ describe('admin ingest routes', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.stubEnv('BESEDY_ARCHIVE_ID', CATALOG_ID);
     mocks.uploadsDir = await fs.mkdtemp(
       path.join(os.tmpdir(), 'besedy-ingest-'),
     );
@@ -182,6 +183,7 @@ describe('admin ingest routes', () => {
     syncCatalogGroup = (await import('@/lib/catalog-sync'))
       .syncCatalogGroup as ReturnType<typeof vi.fn>;
     prisma = (await import('@/lib/db')).default as unknown as typeof prisma;
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: CATALOG_ID, isActive: true });
 
     requireAuth.mockResolvedValue('admin-1');
     getAdminCapability.mockResolvedValue({ canAccessAdmin: true });
