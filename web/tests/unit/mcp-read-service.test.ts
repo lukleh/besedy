@@ -932,7 +932,6 @@ describe('MCP read service', () => {
         totalMatching: 2,
       },
       continuation: {
-        catalogId: 'catalog-a',
         audioHash: 'visible-recording',
         mode: 'page',
         startSec: 5,
@@ -1039,7 +1038,6 @@ describe('MCP read service', () => {
     });
 
     expect(result.continuation).toEqual({
-      catalogId: 'catalog-a',
       audioHash: 'visible-recording',
       mode: 'page',
       segmentOffset: 2,
@@ -1128,7 +1126,6 @@ describe('MCP read service', () => {
             afterText: null,
           },
           transcriptRequest: {
-            catalogId: 'catalog-a',
             audioHash: 'visible-recording',
             mode: 'page',
             startSec: 30,
@@ -1425,7 +1422,6 @@ describe('MCP read service', () => {
               isPrimary: true,
             },
             transcriptRequest: {
-              catalogId: 'catalog-a',
               audioHash: 'visible-recording',
               mode: 'page',
               startSec: 65.5,
@@ -1576,7 +1572,6 @@ describe('MCP read service', () => {
       });
 
       expect(result.bookmarks[0]?.transcriptRequest).toEqual({
-        catalogId: 'catalog-a',
         audioHash: 'visible-recording',
         mode: 'page',
         startSec: 65.5,

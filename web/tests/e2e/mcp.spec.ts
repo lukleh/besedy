@@ -2,7 +2,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { Pool } from 'pg';
 import { test, expect } from './helpers/base-test';
-import { TEST_AUDIO_FILES, TEST_EVENTS } from '../../prisma/test-data';
+import { TEST_AUDIO_FILES, TEST_EVENTS, TEST_CATALOG_ID } from '../../prisma/test-data';
 import {
   MCP_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
   MCP_AUTH_SCOPES,
@@ -109,7 +109,6 @@ async function removeLocalTestClient(clientId: string): Promise<void> {
 
 type McpToolName =
   | 'who_am_i'
-  | 'list_catalogs'
   | 'list_locations'
   | 'list_recorders'
   | 'list_events'
@@ -517,7 +516,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(legacyToolsResponse.ok(), legacyToolsText).toBe(true);
     for (const toolName of [
       'who_am_i',
-      'list_catalogs',
       'list_locations',
       'list_recorders',
       'list_events',
@@ -563,7 +561,6 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     // The client requests every advertised scope, besedy:bookmarks included.
     expect(toolsBody.result?.tools.map((tool) => tool.name)).toEqual([
       'who_am_i',
-      'list_catalogs',
       'list_locations',
       'list_recorders',
       'list_events',
@@ -626,57 +623,16 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       'name',
     ]);
     expect(Object.keys(identity.authorization).sort()).toEqual([
+      'archive',
       'clientId',
       'clientName',
-      'defaultCatalogId',
       'grantedScopes',
     ]);
 
-    const catalogResponse = await request.post(MCP_RESOURCE, {
-      headers: {
-        ...mcpHeaders,
-        'Mcp-Method': 'tools/call',
-        'Mcp-Name': 'list_catalogs',
-      },
-      data: {
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'tools/call',
-        params: {
-          name: 'list_catalogs',
-          arguments: { limit: 10 },
-          _meta: envelope,
-        },
-      },
-    });
-    expect(catalogResponse.ok()).toBe(true);
-    const catalogBody = (await catalogResponse.json()) as McpResponse<
-      McpToolResult<{
-        catalogs: Array<{
-          id: string;
-          isDefault: boolean;
-        }>;
-        defaultCatalogId: string;
-        defaultCatalogSource: string;
-        nextCursor: string | null;
-      }>
-    >;
-    expect(catalogBody.error).toBeUndefined();
-    expect(catalogBody.result?.isError).not.toBe(true);
-    const result = catalogBody.result?.structuredContent;
-    expect(result?.catalogs).toHaveLength(1);
-    expect(result?.defaultCatalogId).toBe(result?.catalogs[0]?.id);
-    expect(result?.defaultCatalogSource).toBe('global_default');
-    expect(result?.nextCursor).toBeNull();
-    expect(result?.catalogs[0]).toMatchObject({
-      id: result?.defaultCatalogId,
-      isDefault: true,
-    });
-    expect(Object.keys(result!.catalogs[0]!).sort()).toEqual([
-      'id',
-      'isDefault',
-      'label',
-    ]);
+    const archive = identity.authorization.archive as { id: string; label: string | null };
+    expect(archive.id).toBe(TEST_CATALOG_ID);
+    expect(Object.keys(archive).sort()).toEqual(['id', 'label']);
+    const catalogId = archive.id;
 
     for (const lookup of [
       { tool: 'list_locations', field: 'locations' },
@@ -711,7 +667,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       expect(lookupBody.error).toBeUndefined();
       expect(lookupBody.result?.isError).not.toBe(true);
       const lookupResult = lookupBody.result?.structuredContent;
-      expect(lookupResult?.catalogId).toBe(result?.defaultCatalogId);
+      expect(lookupResult?.catalogId).toBe(catalogId);
       expect(lookupResult?.[lookup.field]?.length).toBeGreaterThan(0);
     }
 
@@ -759,7 +715,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       expect(eventsBody.error).toBeUndefined();
       expect(eventsBody.result?.isError).not.toBe(true);
       const eventPage = eventsBody.result?.structuredContent;
-      expect(eventPage?.catalogId).toBe(result?.defaultCatalogId);
+      expect(eventPage?.catalogId).toBe(catalogId);
       expect(eventPage?.events).toHaveLength(1);
       listedEvents.push(...eventPage!.events);
       if (eventPage!.nextCursor === null) {
@@ -786,7 +742,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     );
     expect(event).toBeTruthy();
     expect(event?.webUrl).toBe(
-      `${BASE_URL}/catalog/${result?.defaultCatalogId}/event/${event?.id}`,
+      `${BASE_URL}/catalog/${catalogId}/event/${event?.id}`,
     );
     expect(Object.keys(event!).sort()).toEqual([
       'date',
@@ -849,7 +805,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     const eventRecording =
       eventBody.result?.structuredContent.event.recordings.items[0];
     expect(eventRecording?.webUrl).toBe(
-      `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${eventRecording?.audioHash}`,
+      `${BASE_URL}/catalog/${catalogId}/recording/${eventRecording?.audioHash}`,
     );
     expect(Object.keys(eventRecording!).sort()).toEqual([
       'audioHash',
@@ -894,7 +850,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       audioHash,
     );
     expect(recordingBody.result?.structuredContent.recording.webUrl).toBe(
-      `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}`,
+      `${BASE_URL}/catalog/${catalogId}/recording/${audioHash}`,
     );
     expect(recordingBody.result?.structuredContent.event?.id).toBe(event!.id);
     expect(recordingBody.result?.structuredContent.event?.webUrl).toBe(
@@ -970,9 +926,9 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       JSON.stringify(transcriptBody),
     ).not.toBe(true);
     expect(transcriptBody.result?.structuredContent).toMatchObject({
-      catalogId: result?.defaultCatalogId,
+      catalogId: catalogId,
       audioHash,
-      recordingWebUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}`,
+      recordingWebUrl: `${BASE_URL}/catalog/${catalogId}/recording/${audioHash}`,
       segments: {
         totalMatching: 2,
       },
@@ -991,7 +947,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       text: 'Besedy MCP transcript fixture opens the discussion.',
       startSec: 0,
       endSec: 5,
-      webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=0&end=5`,
+      webUrl: `${BASE_URL}/catalog/${catalogId}/recording/${audioHash}?seek=0&end=5`,
     });
     expect(transcriptBody.result?.content?.[0]?.text).toContain(
       'Besedy MCP transcript fixture opens the discussion.',
@@ -1050,7 +1006,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       true,
     );
     expect(searchBody.result?.structuredContent).toMatchObject({
-      catalogId: result?.defaultCatalogId,
+      catalogId: catalogId,
       query: 'Besedy MCP deterministic search',
       results: [
         {
@@ -1066,7 +1022,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
           },
           match: {
             text: 'Deterministic Besedy MCP search evidence.',
-            webUrl: `${BASE_URL}/catalog/${result?.defaultCatalogId}/recording/${audioHash}?seek=5&end=10`,
+            webUrl: `${BASE_URL}/catalog/${catalogId}/recording/${audioHash}?seek=5&end=10`,
           },
           context: {
             beforeText: 'Neighbor context before the deterministic evidence.',
@@ -1258,14 +1214,12 @@ test('@smoke MCP enforces listener visibility and hidden-target semantics', asyn
     );
     sessions.push(listener);
 
-    const catalogs = await callMcpTool<{
-      catalogs: Array<{ id: string; isDefault: boolean }>;
-      defaultCatalogId: string | null;
-    }>(request, listener, 'list_catalogs', {});
-    expect(catalogs.result?.isError).not.toBe(true);
-    expect(catalogs.result?.structuredContent.catalogs).toHaveLength(1);
-    const catalogId = catalogs.result!.structuredContent.defaultCatalogId!;
-    expect(catalogId).toBe(catalogs.result!.structuredContent.catalogs[0]!.id);
+    const archiveIdentity = await callMcpTool<{
+      authorization: { archive: { id: string; label: string | null } | null };
+    }>(request, listener, 'who_am_i', {});
+    expect(archiveIdentity.result?.isError).not.toBe(true);
+    const catalogId = archiveIdentity.result!.structuredContent.authorization.archive!.id;
+    expect(catalogId).toBe(TEST_CATALOG_ID);
 
     const events = await callMcpTool<{ events: McpListedEvent[] }>(
       request,
@@ -1515,8 +1469,8 @@ test('@smoke MCP enforces listener visibility and hidden-target semantics', asyn
       MCP_FIXTURE_SECONDARY_RECORDING.hash,
     ]);
 
-    // An active account with no catalog grant: every tool is discoverable, no
-    // catalog-scoped tool returns data, with or without an explicit catalog.
+    // An active account with no archive grant can diagnose identity but no
+    // content tool returns archive data.
     const noAccess = await authorizeMcpSession(
       await noAccessContext.newPage(),
       request,
@@ -1524,15 +1478,11 @@ test('@smoke MCP enforces listener visibility and hidden-target semantics', asyn
     );
     sessions.push(noAccess);
 
-    const emptyCatalogs = await callMcpTool<{
-      catalogs: unknown[];
-      defaultCatalogId: string | null;
-    }>(request, noAccess, 'list_catalogs', {});
-    expect(emptyCatalogs.result?.isError).not.toBe(true);
-    expect(emptyCatalogs.result?.structuredContent).toMatchObject({
-      catalogs: [],
-      defaultCatalogId: null,
-    });
+    const noAccessIdentity = await callMcpTool<{
+      authorization: { archive: null };
+    }>(request, noAccess, 'who_am_i', {});
+    expect(noAccessIdentity.result?.isError).not.toBe(true);
+    expect(noAccessIdentity.result?.structuredContent.authorization.archive).toBeNull();
 
     const catalogScopedCalls: Array<[McpToolName, Record<string, unknown>]> = [
       ['list_locations', {}],
@@ -1551,12 +1501,10 @@ test('@smoke MCP enforces listener visibility and hidden-target semantics', asyn
     for (const [tool, args] of catalogScopedCalls) {
       expectToolError(
         await callMcpTool(request, noAccess, tool, args),
-        'catalog_required',
-      );
-      expectToolError(
-        await callMcpTool(request, noAccess, tool, { ...args, catalogId }),
         'not_found',
       );
+      const retiredSelection = await callMcpTool(request, noAccess, tool, { ...args, catalogId });
+      expect(retiredSelection.result?.isError).toBe(true);
     }
   } finally {
     await Promise.all(

@@ -6,7 +6,7 @@ import {
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
   renderMcpListContent,
-  resolveToolCatalog,
+  resolveToolArchive,
   runReadTool,
   toolError,
 } from '@/lib/mcp/tools/shared';
@@ -53,20 +53,13 @@ export function registerListEventsTool(
       title: 'List Besedy events',
       description:
         'List visible events with their authoritative date and location.',
-      inputSchema: z.object({
-        catalogId: z
-          .string()
-          .min(1)
-          .optional()
-          .describe(
-            'Accessible Besedy catalog to browse. Omit it to use the effective default catalog.',
-          ),
+      inputSchema: z.strictObject({
         cursor: z
           .string()
           .min(1)
           .optional()
           .describe(
-            'Opaque continuation cursor returned by the previous page. Pass it back unchanged with the same catalog, order, and filters.',
+            'Opaque continuation cursor returned by the previous page. Pass it back unchanged with the same order and filters.',
           ),
         limit: z
           .number()
@@ -105,12 +98,12 @@ export function registerListEventsTool(
       outputSchema: ListEventsOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
-    async ({ catalogId, cursor, limit, order, query, date, locationId }) => {
-      const catalog = resolveToolCatalog(profile, catalogId);
-      if ('error' in catalog) return toolError(catalog.code, catalog.error);
+    async ({ cursor, limit, order, query, date, locationId }) => {
+      const archive = resolveToolArchive(profile);
+      if ('error' in archive) return toolError(archive.code, archive.error);
       return runReadTool(
         () =>
-          listMcpEvents(catalog.id, {
+          listMcpEvents(archive.id, {
             cursor,
             limit,
             order,

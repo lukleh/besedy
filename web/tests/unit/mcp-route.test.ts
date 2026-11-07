@@ -72,9 +72,7 @@ describe('MCP route hardening', () => {
   const activeAccessProfile = {
     userId: 'user-1',
     canEnterPortal: true,
-    defaultCatalogId: null,
-    defaultCatalogSource: null,
-    catalogs: [],
+    archive: null,
   } as const;
 
   beforeEach(() => {

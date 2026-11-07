@@ -5,7 +5,7 @@ import {
   formatMcpDate,
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
-  resolveToolCatalog,
+  resolveToolArchive,
   runReadTool,
   toolError,
 } from '@/lib/mcp/tools/shared';
@@ -49,14 +49,7 @@ export function registerGetEventTool(
     {
       title: 'Get a Besedy event',
       description: 'Get one visible event and its recording identifiers.',
-      inputSchema: z.object({
-        catalogId: z
-          .string()
-          .min(1)
-          .optional()
-          .describe(
-            'Accessible Besedy catalog containing the event. Omit it to use the effective default catalog.',
-          ),
+      inputSchema: z.strictObject({
         eventId: z
           .number()
           .int()
@@ -81,12 +74,12 @@ export function registerGetEventTool(
       outputSchema: GetEventOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
-    async ({ catalogId, eventId, recordingOffset, recordingLimit }) => {
-      const catalog = resolveToolCatalog(profile, catalogId);
-      if ('error' in catalog) return toolError(catalog.code, catalog.error);
+    async ({ eventId, recordingOffset, recordingLimit }) => {
+      const archive = resolveToolArchive(profile);
+      if ('error' in archive) return toolError(archive.code, archive.error);
       return runReadTool(
         () =>
-          getMcpEvent(catalog.id, eventId, {
+          getMcpEvent(archive.id, eventId, {
             offset: recordingOffset,
             limit: recordingLimit,
           }),

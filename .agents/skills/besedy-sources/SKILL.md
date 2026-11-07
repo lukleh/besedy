@@ -23,7 +23,8 @@ On a Codex host, help a user connect a missing dependency with
 `codex mcp login besedy` for OAuth. Installing this skill alone does not perform
 those configuration or authentication steps.
 
-Follow the live MCP guidance for tool choice, catalog resolution, search scope,
+Every Besedy tool uses the deployment's single archive; there is no catalog
+discovery or selection step. Follow the live MCP guidance for tool choice, search scope,
 evidence verification, and citations. Semantic search can use the user's
 language. For literal wording searches, use the language of the transcript
 wording and translate query terms into it; when unsure, run a semantic search

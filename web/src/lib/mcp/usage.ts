@@ -25,10 +25,6 @@ const CATALOG_SCOPED_TOOLS = new Set([
 
 type ToolResult = CallToolResult | InputRequiredResult;
 
-interface InvocationInputSummary {
-  catalogId: string | null;
-}
-
 interface InvocationResultSummary {
   outcome: McpToolOutcome;
   errorCode: string | null;
@@ -72,12 +68,6 @@ function sanitizeTelemetryLabel(
   return characters.slice(0, maxLength).join('');
 }
 
-export function summarizeMcpInvocationInput(
-  input: unknown,
-): InvocationInputSummary {
-  return { catalogId: nonEmptyString(asRecord(input)?.catalogId) };
-}
-
 export function summarizeMcpInvocationResult(
   result: ToolResult,
 ): InvocationResultSummary {
@@ -105,15 +95,13 @@ async function writeInvocation(params: {
   context: BesedyMcpRequestContext;
   toolName: string;
   durationMs: number;
-  input: InvocationInputSummary;
   result: InvocationResultSummary;
 }): Promise<void> {
   const clientName = sanitizeTelemetryLabel(params.context.clientName);
   const catalogId = sanitizeTelemetryLabel(
     params.result.catalogId ??
-      params.input.catalogId ??
       (CATALOG_SCOPED_TOOLS.has(params.toolName)
-        ? params.context.accessProfile.defaultCatalogId
+        ? params.context.accessProfile.archive?.id ?? null
         : null),
     MCP_TELEMETRY_CATALOG_ID_MAX_LENGTH,
   );
@@ -155,11 +143,9 @@ async function writeInvocation(params: {
 export async function trackMcpToolInvocation<T extends ToolResult>(
   context: BesedyMcpRequestContext,
   toolName: string,
-  input: unknown,
   operation: () => T | Promise<T>,
 ): Promise<T> {
   const startedAt = performance.now();
-  const inputSummary = summarizeMcpInvocationInput(input);
 
   try {
     const result = await operation();
@@ -167,7 +153,6 @@ export async function trackMcpToolInvocation<T extends ToolResult>(
       context,
       toolName,
       durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
-      input: inputSummary,
       result: summarizeMcpInvocationResult(result),
     });
     return result;
@@ -176,7 +161,6 @@ export async function trackMcpToolInvocation<T extends ToolResult>(
       context,
       toolName,
       durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
-      input: inputSummary,
       result: {
         outcome: McpToolOutcome.ERROR,
         errorCode: 'internal_error',
