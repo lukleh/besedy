@@ -326,24 +326,14 @@ export const UserListQuerySchema = z.object({
 
 /**
  * Add user to the allowlist (admin creates pending admission state, not a user row)
- * Optionally assign catalog access at the same time
+ * Every new invitation includes content access.
  */
-export const AddUserSchema = z
-  .object({
-    email: EmailSchema,
-    catalogId: TimestampIdSchema.optional(),
-    role: CatalogRoleSchema.optional(),
-    extraPermissions: ExtraPermissionsSchema.optional(),
-  })
-  .refine(
-    (data) => {
-      if (data.catalogId && !data.role) return false;
-      if (data.role && !data.catalogId) return false;
-      if (data.extraPermissions?.length && !data.catalogId) return false;
-      return true;
-    },
-    { message: "Both catalogId and role must be provided together" }
-  );
+export const AddUserSchema = z.object({
+  email: EmailSchema,
+  catalogId: TimestampIdSchema,
+  role: CatalogRoleSchema,
+  extraPermissions: ExtraPermissionsSchema.optional().default([]),
+});
 
 // =============================================================================
 // Catalog Management

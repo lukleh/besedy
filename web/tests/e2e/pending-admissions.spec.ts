@@ -12,6 +12,7 @@ import { waitForPageReady } from "./helpers/navigation";
 import {
   createPendingAdmission,
   deletePendingAdmission,
+  getPendingAdmission,
   listPendingAdmissions,
 } from "./helpers/pending-admissions";
 
@@ -22,20 +23,20 @@ test.describe("Pending Admission Management", () => {
     `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${suffix}@example.com`;
 
   test.describe("Admin API", () => {
-    test("admin can create pending admission without catalog access", async ({
+    test("admin cannot create a sign-in-only invitation", async ({
       page,
     }) => {
       // Login as admin to get auth cookies
       await loginAs(page, "admin");
 
-      // Create pending admission without catalog access (use page.request to share cookies)
       const email = uniqueEmail("basic");
-      const admission = await createPendingAdmission(page.request, { email });
+      const response = await page.request.post("/api/admin/portal-admissions", {
+        data: { email },
+      });
 
-      expect(admission.id).toBeDefined();
-      expect(admission.email).toBe(email);
-      expect(admission.status).toBe("PENDING");
-      expect(admission.catalogAccess).toBeNull();
+      expect(response.status()).toBe(400);
+      const admissions = await listPendingAdmissions(page.request);
+      expect(admissions.some((admission) => admission.email === email)).toBe(false);
     });
 
     test("admin can create pending admission with catalog access", async ({
@@ -61,7 +62,7 @@ test.describe("Pending Admission Management", () => {
 
       // Create a test pending admission
       const email = uniqueEmail("list");
-      await createPendingAdmission(page.request, { email });
+      await createPendingAdmission(page.request, { email, catalogId: TEST_CATALOG_ID, role: "reader" });
 
       // List pending admissions
       const admissions = await listPendingAdmissions(page.request);
@@ -72,12 +73,32 @@ test.describe("Pending Admission Management", () => {
       expect(found?.status).toBe("PENDING");
     });
 
+    test("editing cannot turn an invitation into sign-in-only access", async ({ page }) => {
+      await loginAs(page, "admin");
+      const email = uniqueEmail("retain-access");
+      await createPendingAdmission(page.request, {
+        email,
+        catalogId: TEST_CATALOG_ID,
+        role: "reader",
+      });
+
+      const response = await page.request.patch(
+        `/api/admin/portal-admissions/${encodeURIComponent(email)}`,
+        { data: { catalogId: null } }
+      );
+
+      expect(response.status()).toBe(400);
+      const admission = await getPendingAdmission(page.request, email);
+      expect(admission.catalogId).toBe(TEST_CATALOG_ID);
+      expect(admission.role).toBe("reader");
+    });
+
     test("admin can revoke pending admission", async ({ page }) => {
       await loginAs(page, "admin");
 
       // Create pending admission
       const email = uniqueEmail("revoke");
-      const admission = await createPendingAdmission(page.request, { email });
+      const admission = await createPendingAdmission(page.request, { email, catalogId: TEST_CATALOG_ID, role: "reader" });
 
       // Revoke it
       await deletePendingAdmission(page.request, admission.id);
@@ -98,13 +119,13 @@ test.describe("Pending Admission Management", () => {
       const email = uniqueEmail("duplicate");
 
       // First request creates the PENDING admission.
-      const first = await createPendingAdmission(page.request, { email });
+      const first = await createPendingAdmission(page.request, { email, catalogId: TEST_CATALOG_ID, role: "reader" });
       expect(first.status).toBe("PENDING");
 
       // A second request for the same email is treated as an update (the
       // admin-portal-admission-create flow only 409s on CLAIMED admissions
       // or existing users). Verify it succeeds and leaves exactly one row.
-      const second = await createPendingAdmission(page.request, { email });
+      const second = await createPendingAdmission(page.request, { email, catalogId: TEST_CATALOG_ID, role: "reader" });
       expect(second.status).toBe("PENDING");
 
       const admissions = await listPendingAdmissions(page.request);
@@ -195,6 +216,12 @@ test.describe("Pending Admission Management", () => {
 
       // Wait for dialog to close (indicates success)
       await expect(dialog).toBeHidden({ timeout: 10000 });
+
+      const created = (await listPendingAdmissions(page.request)).find(
+        (admission) => admission.email === email
+      );
+      expect(created?.catalogId).toBe(TEST_CATALOG_ID);
+      expect(created?.role).toBe("listener");
 
       // Refresh and verify pending admission appears in table
       await page.reload();

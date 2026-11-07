@@ -3,6 +3,7 @@ import {
   PortalAdmissionNotClaimedError,
   PortalAdmissionNotFoundError,
   PortalAdmissionUserStillExistsError,
+  PortalAdmissionMissingContentAccessError,
   resetClaimedPortalAdmission,
 } from "@/lib/admission/admin-reset";
 
@@ -38,6 +39,7 @@ describe("admission admin reset", () => {
           {
             catalogId: "20260101_000000",
             role: "curator",
+            catalog: { isActive: true },
             grantedById: "owner-1",
             grantedAt: new Date("2026-03-10T11:00:00.000Z"),
             notes: "catalog grant",
@@ -91,7 +93,10 @@ describe("admission admin reset", () => {
     });
   });
 
-  it("does not reopen grants when none were consumed", async () => {
+  it.each([
+    { consumedGrants: [] },
+    { consumedGrants: [{ catalogId: "20260101_000000", role: "reader", catalog: { isActive: false } }] },
+  ])("rejects resets without saved active content access before changing admission: %j", async ({ consumedGrants }) => {
     const tx = {
       portalAdmission: {
         findUnique: vi.fn().mockResolvedValue({
@@ -105,7 +110,7 @@ describe("admission admin reset", () => {
         update: vi.fn().mockResolvedValue(undefined),
       },
       pendingCatalogGrant: {
-        findMany: vi.fn().mockResolvedValue([]),
+        findMany: vi.fn().mockResolvedValue(consumedGrants),
         updateMany: vi.fn(),
       },
       user: {
@@ -115,14 +120,10 @@ describe("admission admin reset", () => {
 
     prisma.$transaction.mockImplementation(async (fn) => fn(tx));
 
-    const result = await resetClaimedPortalAdmission("user@example.com", "admin-2");
-
-    expect(result).toEqual({
-      portalAdmissionId: "portal-1",
-      email: "user@example.com",
-      pendingGrantCount: 0,
-      reopenedGrants: [],
-    });
+    await expect(
+      resetClaimedPortalAdmission("user@example.com", "admin-2")
+    ).rejects.toBeInstanceOf(PortalAdmissionMissingContentAccessError);
+    expect(tx.portalAdmission.update).not.toHaveBeenCalled();
     expect(tx.pendingCatalogGrant.updateMany).not.toHaveBeenCalled();
   });
 

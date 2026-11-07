@@ -67,10 +67,10 @@ export async function createPendingCatalogGrant(
 
     const catalog = await prisma.workflowGroup.findUnique({
       where: { id: catalogId },
-      select: { id: true, label: true },
+      select: { id: true, label: true, isActive: true },
     });
 
-    if (!catalog) {
+    if (!catalog?.isActive) {
       return notFound("catalog");
     }
 
