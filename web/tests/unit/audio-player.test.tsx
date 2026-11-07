@@ -1372,15 +1372,15 @@ describe("AudioPlayer external seek", () => {
     });
     expect(audio.currentTime).toBe(40);
 
-    // The page resets the handoff flag after 100 ms. A new callback must not
-    // turn that prop update into another request either.
+    // Clearing the caller's autoplay flag must not repeat the seek. A new
+    // callback must not turn that prop update into another request either.
     rerender(playerElement({ ...options, autoPlayOnSeek: false, onTimeUpdate: vi.fn() }));
     await loadMetadata(audio);
     expect(audio.currentTime).toBe(40);
     expect(audio.play).toHaveBeenCalledTimes(1);
   });
 
-  it("does not replay a completed handoff when autoplay resets", async () => {
+  it("does not replay a completed external seek when autoplay resets", async () => {
     const options = { seekTo: 30, seekKey: 1, autoPlayOnSeek: true };
     const { audio, container, rerender } = renderPlayer(options);
     audio.play = vi.fn().mockResolvedValue(undefined);
