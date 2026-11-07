@@ -105,6 +105,7 @@ services:
       NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL:-}
       NEXT_PUBLIC_SUPPORT_EMAIL_B64: ${NEXT_PUBLIC_SUPPORT_EMAIL_B64:-}
       # Internal jobs-service authentication
+      BESEDY_ARCHIVE_ID: ${BESEDY_ARCHIVE_ID:-}
       BESEDY_JOB_SERVICE_SECRET: ${BESEDY_JOB_SERVICE_SECRET:-}
       # scripts/run_web_compose.sh sets BESEDY_JOBS_API_HOST to this mode's jobs
       # container; the bare service name jobs-api resolves to every runtime.

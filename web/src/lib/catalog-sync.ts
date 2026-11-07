@@ -2,6 +2,7 @@ import Papa from 'papaparse';
 import { Prisma } from '@/generated/prisma/client';
 import { replaceLostPrimaryRecording } from '@/lib/catalog-events/primary-succession';
 import prisma from '@/lib/db';
+import { assertArchiveCatalogId, getConfiguredArchive } from '@/lib/archive';
 import fs from 'fs/promises';
 import { syncCatalogEntries } from '@/lib/catalog-sync/entries';
 import { readSourceSnapshot } from '@/lib/catalog-sync/source-snapshot';
@@ -1256,14 +1257,16 @@ export async function syncCatalogGroup(
   groupId: string,
   options: { force?: boolean; allowRowCountDrop?: boolean } = {},
 ): Promise<CatalogSyncResult> {
+  await assertArchiveCatalogId(groupId);
   return syncCatalogGroupAttempt(groupId, options);
 }
 
 export async function syncActiveCatalogs(
   options: { force?: boolean; allowRowCountDrop?: boolean } = {},
 ): Promise<CatalogSyncResult[]> {
+  const archive = await getConfiguredArchive();
   const groups = await prisma.workflowGroup.findMany({
-    where: { isActive: true },
+    where: { isActive: true, ...(archive ? { id: archive.id } : {}) },
     select: { id: true },
     orderBy: { id: 'asc' },
   });

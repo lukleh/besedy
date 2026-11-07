@@ -1,3 +1,4 @@
+import { assertArchiveCatalogId } from '@/lib/archive';
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
@@ -32,6 +33,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const intake = await prisma.recordingIntake.findUnique({ where: { id: intakeId } });
     if (!intake) return notFound("intake");
+    await assertArchiveCatalogId(intake.workflowGroupId);
     if (intake.status !== "UPLOADING") {
       return conflict("Only uploads that have not been submitted can be aborted");
     }

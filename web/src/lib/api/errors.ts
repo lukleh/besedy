@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { AuthError } from "@/lib/auth/permissions";
+import { ArchiveConfigurationError, ArchiveScopeError } from "@/lib/archive";
 
 /**
  * API error codes for machine-readable error handling.
@@ -79,6 +80,14 @@ export function handlePrismaError(
   resourceName: string,
   operation: "fetch" | "create" | "update" | "delete" | "revoke" | "restore"
 ): NextResponse<ApiErrorResponse> {
+  if (error instanceof ArchiveConfigurationError) {
+    return NextResponse.json(
+      { error: error.message, code: ApiErrorCode.INTERNAL },
+      { status: 503 },
+    );
+  }
+  if (error instanceof ArchiveScopeError) return notFound("catalog");
+
   // Handle auth errors first
   if (error instanceof AuthError) {
     const code = error.statusCode === 401 ? ApiErrorCode.UNAUTHORIZED : ApiErrorCode.FORBIDDEN;

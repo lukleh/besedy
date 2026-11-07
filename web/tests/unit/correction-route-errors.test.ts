@@ -1,12 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { CorrectionError } from "@/lib/correction/errors";
 import { handleCorrectionRouteError } from "@/lib/correction/route-errors";
+import { ArchiveConfigurationError, ArchiveScopeError } from "@/lib/archive";
 
 vi.mock("@/lib/log/server", () => ({
   createServerLogger: () => ({ warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() }),
 }));
 
 describe("handleCorrectionRouteError", () => {
+  it("keeps internal archive scope and configuration failures as 404 and 503", () => {
+    expect(handleCorrectionRouteError(new ArchiveScopeError(), "fetch").status).toBe(404);
+    expect(handleCorrectionRouteError(new ArchiveConfigurationError("Invalid archive configuration"), "update").status).toBe(503);
+  });
   it("answers a correction error with its own status and code", async () => {
     const response = handleCorrectionRouteError(
       new CorrectionError("REVISION_CONFLICT", "moved", { currentRevisionId: "r2" }),

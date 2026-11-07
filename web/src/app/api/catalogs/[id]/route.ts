@@ -1,3 +1,4 @@
+import { getConfiguredArchive } from '@/lib/archive';
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { requireAuth } from "@/lib/auth/permissions";
@@ -10,6 +11,7 @@ import {
   validateParams,
   validateRequestBody,
   forbidden,
+  badRequest,
   notFound,
   handlePrismaError,
 } from "@/lib/api";
@@ -116,6 +118,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const bodyResult = await validateRequestBody(request, UpdateCatalogSchema);
     if (!bodyResult.success) return bodyResult.response;
     const updates = bodyResult.data;
+    if (updates.isActive === false && await getConfiguredArchive()) {
+      return badRequest('The deployment archive cannot be deactivated');
+    }
 
     // Check if group exists
     const existing = await prisma.workflowGroup.findUnique({
@@ -223,6 +228,10 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     if (!existing) {
       return notFound("catalog");
+    }
+
+    if (await getConfiguredArchive()) {
+      return badRequest('The deployment archive cannot be deactivated');
     }
 
     // Deactivating clears the active and default flags, which PUT reserves for

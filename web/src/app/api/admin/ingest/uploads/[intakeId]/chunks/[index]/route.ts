@@ -1,3 +1,4 @@
+import { assertArchiveCatalogId } from '@/lib/archive';
 import { NextRequest, NextResponse } from 'next/server';
 import { createWriteStream } from 'fs';
 import fs from 'fs/promises';
@@ -121,6 +122,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       where: { id: intakeId },
     });
     if (!intake) return notFound('intake');
+    await assertArchiveCatalogId(intake.workflowGroupId);
     if (intake.status !== 'UPLOADING') {
       return conflict('Upload is no longer accepting chunks');
     }

@@ -3,6 +3,7 @@ import type { Dirent } from 'fs';
 import path from 'path';
 import { Prisma } from '@/generated/prisma/client';
 import prisma from '@/lib/db';
+import { assertArchiveCatalogId, assertConfiguredArchiveId } from '@/lib/archive';
 import { syncCatalogGroup } from '@/lib/catalog-sync';
 import { getUploadsDir } from '@/lib/config';
 import { ingestJobSchema, type IngestJob } from '@/lib/jobs-api/schemas';
@@ -64,6 +65,7 @@ export function resolveIntakeIncomingDir(
   catalogId: string,
   intakeId: string,
 ): string {
+  assertConfiguredArchiveId(catalogId);
   return path.join(getUploadsDir(), catalogId, 'incoming', intakeId);
 }
 
@@ -71,6 +73,7 @@ export function resolveIntakeAcceptedDir(
   catalogId: string,
   intakeId: string,
 ): string {
+  assertConfiguredArchiveId(catalogId);
   return path.join(getUploadsDir(), catalogId, 'accepted', intakeId);
 }
 
@@ -113,6 +116,7 @@ export async function ensureSharedIntakeDir(
   catalogId: string,
   intakeId: string,
 ): Promise<string> {
+  await assertArchiveCatalogId(catalogId);
   const root = getUploadsDir();
   const dir = resolveIntakeIncomingDir(catalogId, intakeId);
   await fs.mkdir(dir, { recursive: true, mode: SHARED_INTAKE_DIR_MODE });
@@ -132,6 +136,7 @@ export async function removeIntakeDir(
   catalogId: string,
   intakeId: string,
 ): Promise<void> {
+  await assertArchiveCatalogId(catalogId);
   await fs.rm(resolveIntakeIncomingDir(catalogId, intakeId), {
     recursive: true,
     force: true,
@@ -143,6 +148,7 @@ export async function removeAllIntakeDirs(
   catalogId: string,
   intakeId: string,
 ): Promise<void> {
+  await assertArchiveCatalogId(catalogId);
   const root = path.join(getUploadsDir(), catalogId);
   await Promise.all(
     ['incoming', 'accepted', 'rejected'].map((bucket) =>
@@ -274,6 +280,7 @@ async function transitionIntake(
   row: IntakeRow,
   data: Prisma.RecordingIntakeUpdateManyMutationInput,
 ): Promise<IntakeRow> {
+  await assertArchiveCatalogId(row.workflowGroupId);
   await prisma.recordingIntake.updateMany({
     where: { id: row.id, status: row.status },
     data,
@@ -445,6 +452,9 @@ export interface ReconciledIntake {
 export async function reconcileActiveIntakes(
   rows: IntakeRow[],
 ): Promise<ReconciledIntake[]> {
+  for (const catalogId of new Set(rows.map((row) => row.workflowGroupId))) {
+    await assertArchiveCatalogId(catalogId);
+  }
   const results: ReconciledIntake[] = rows.map((row) => ({
     row,
     prefectStateName: null,

@@ -1,3 +1,4 @@
+import { assertArchiveCatalogId } from '@/lib/archive';
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { badRequest, handlePrismaError, notFound, validateMutationSource } from "@/lib/api";
@@ -28,6 +29,7 @@ export async function GET(request: NextRequest) {
     const parsed = TimestampIdSchema.safeParse(request.nextUrl.searchParams.get("groupId"));
     if (!parsed.success) return badRequest("A valid groupId is required");
     const groupId = parsed.data;
+    await assertArchiveCatalogId(groupId);
     const group = await prisma.workflowGroup.findUnique({ where: { id: groupId }, select: { id: true } });
     if (!group) return notFound("catalog");
     const sources = await prisma.catalogSyncState.findMany({

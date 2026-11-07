@@ -1,9 +1,10 @@
+import { getConfiguredArchive } from '@/lib/archive';
 import { NextResponse } from "next/server";
 import { discoverGroups, formatTimestampLabel } from "@/lib/groups";
 import { getCatalogsDir } from "@/lib/paths";
 import prisma from "@/lib/db";
 import { requireAdminCapability } from "@/lib/access/require-admin";
-import { handlePrismaError } from "@/lib/api";
+import { badRequest, handlePrismaError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,10 @@ export async function GET() {
     await requireAdminCapability({
       message: "Permission denied. Requires catalog management access.",
     });
+
+    if (await getConfiguredArchive()) {
+      return badRequest('Catalog discovery is unavailable for a bound archive');
+    }
 
     // Get catalogs directory from config
     const catalogsDir = getCatalogsDir();
