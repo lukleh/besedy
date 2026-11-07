@@ -32,12 +32,6 @@ vi.mock('@/components/offline/downloads-content', () => ({
   DownloadsContent: () => <div data-testid="downloads-content" />,
 }));
 
-vi.mock('@/components/offline/local-event-list', () => ({
-  LocalEventList: ({ catalogId }: { catalogId: string }) => (
-    <div data-testid="local-event-list" data-catalog={catalogId} />
-  ),
-}));
-
 vi.mock('@/components/catalog/event-detail', () => ({
   EventDetail: (props: unknown) => {
     mocks.eventDetail(props);
@@ -62,10 +56,7 @@ describe('resolveLocalRoute', () => {
     expect(resolveLocalRoute('/downloads')).toEqual({ kind: 'downloads' });
     expect(resolveLocalRoute('/')).toEqual({ kind: 'downloads' });
     expect(resolveLocalRoute('/catalog')).toEqual({ kind: 'downloads' });
-    expect(resolveLocalRoute('/catalog/cat-1')).toEqual({
-      kind: 'catalog',
-      catalogId: 'cat-1',
-    });
+    expect(resolveLocalRoute('/catalog/cat-1')).toEqual({ kind: 'downloads' });
     expect(resolveLocalRoute('/catalog/cat-1/event/7')).toEqual({
       kind: 'event',
       catalogId: 'cat-1',
@@ -167,13 +158,16 @@ describe('LocalModeShell', () => {
     );
   });
 
-  it('renders the downloaded events of a catalog for its list URL', () => {
+  it('shows Downloads directly when a catalog navigation cannot reach the server', () => {
     mocks.pathname = '/catalog/cat-1';
+    mocks.search = 'tab=events&search=talk';
+    const replaceState = vi.spyOn(window.history, 'replaceState');
     render(<LocalModeShell />);
-    expect(screen.getByTestId('local-event-list')).toHaveAttribute(
-      'data-catalog',
-      'cat-1',
-    );
+    expect(screen.getByTestId('downloads-content')).toBeInTheDocument();
+    expect(mocks.eventDetail).not.toHaveBeenCalled();
+    expect(mocks.recordingContent).not.toHaveBeenCalled();
+    expect(replaceState).not.toHaveBeenCalled();
+    replaceState.mockRestore();
   });
 
   it('explains that other pages need a connection and links to Downloads', () => {
