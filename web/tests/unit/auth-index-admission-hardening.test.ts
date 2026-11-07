@@ -297,7 +297,7 @@ describe("auth admission hardening", () => {
     });
   });
 
-  it("preserves superadmin bootstrap when invitation claim misses", async () => {
+  it("preserves superadmin bootstrap without requiring archive or invitation claim", async () => {
     mocks.prisma.user.findUnique.mockResolvedValue({
       email: "superadmin@example.com",
       isSuperadmin: true,
@@ -311,10 +311,7 @@ describe("auth admission hardening", () => {
       })
     ).resolves.toBeUndefined();
 
-    expect(mocks.consumePortalAdmissionForUser).toHaveBeenCalledWith({
-      id: "super-1",
-      email: "superadmin@example.com",
-    });
+    expect(mocks.consumePortalAdmissionForUser).not.toHaveBeenCalled();
     expect(mocks.prisma.user.delete).not.toHaveBeenCalled();
   });
 });

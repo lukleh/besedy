@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { requireArchive } from "@/lib/archive";
 import { requireAuth } from "@/lib/auth/permissions";
 import { resolveCatalogManagementActor } from "@/lib/access/catalog-management-route-access";
 import {
@@ -8,6 +9,7 @@ import {
 } from "@/lib/audit/logger";
 import {
   AdminDeniedAdmissionReopenError,
+  PendingAdmissionUnavailableError,
   syncPendingAdmissionState,
 } from "@/lib/admission/pending-admission-sync";
 import { CreatePendingCatalogGrantSchema } from "@/lib/validation/schemas";
@@ -33,6 +35,8 @@ export async function createPendingCatalogGrant(
 ) {
   try {
     const userId = await requireAuth();
+    const archive = await requireArchive();
+    if (catalogId !== archive.id) return notFound("catalog");
 
     const managementAccess = await resolveCatalogManagementActor(catalogId, {
       userId,
@@ -195,6 +199,7 @@ export async function createPendingCatalogGrant(
         pendingAdmissionInput,
         {
           allowAdminDeniedReopen: managementAccess.actor.isCatalogAdmin,
+          expectedGrant: existingPendingGrant,
         },
         tx
       );
@@ -232,6 +237,8 @@ export async function createPendingCatalogGrant(
       isUpdatedPendingGrant,
     });
   } catch (error) {
+    if (error instanceof PendingAdmissionUnavailableError)
+      return conflict(error.message);
     if (error instanceof AdminDeniedAdmissionReopenError) {
       return forbidden(
         "Only administrators can reopen admin-denied admissions"

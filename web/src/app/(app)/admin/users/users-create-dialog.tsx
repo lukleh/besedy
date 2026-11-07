@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { Loader2, Plus, UserPlus } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { CatalogRole } from "@/generated/prisma/enums";
+import type { Archive } from "@/hooks/use-archive";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,41 +26,33 @@ import {
 } from "@/components/ui/responsive-select";
 import { CATALOG_ROLE_VALUES } from "./users-content-types";
 
-interface CatalogOption {
-  id: string;
-  isDefault?: boolean;
-  label: string | null;
-}
-
 export interface UsersCreateDialogProps {
-  catalogs?: CatalogOption[];
+  archive?: Archive;
+  archiveStatus: string;
   createDialogOpen: boolean;
   createUserPending: boolean;
   getCatalogRoleDesc: (role: CatalogRole) => string;
   getCatalogRoleLabel: (role: CatalogRole) => string;
   newEmail: string;
-  onCatalogChange: (value: string) => void;
   onDialogOpenChange: (open: boolean) => void;
   onEmailChange: (value: string) => void;
   onRoleChange: (value: CatalogRole | "") => void;
   onSubmit: (event: FormEvent) => void;
-  selectedCatalog: string;
   selectedRole: CatalogRole | "";
 }
 
 export function UsersCreateDialog({
-  catalogs,
+  archive,
+  archiveStatus,
   createDialogOpen,
   createUserPending,
   getCatalogRoleDesc,
   getCatalogRoleLabel,
   newEmail,
-  onCatalogChange,
   onDialogOpenChange,
   onEmailChange,
   onRoleChange,
   onSubmit,
-  selectedCatalog,
   selectedRole,
 }: UsersCreateDialogProps) {
   const t = useTranslations("admin");
@@ -103,44 +96,13 @@ export function UsersCreateDialog({
               </Label>
               <div className="mt-2 grid gap-3">
                 <div>
-                  <Label htmlFor="catalog">
-                    {t("pendingAdmissions.dialog.catalog")}
-                  </Label>
-                  <ResponsiveSelect
-                    value={selectedCatalog}
-                    onValueChange={onCatalogChange}
-                  >
-                    <ResponsiveSelectTrigger
-                      className="mt-1"
-                      aria-label={t("pendingAdmissions.dialog.catalog")}
-                    >
-                      <ResponsiveSelectValue
-                        placeholder={t("pendingAdmissions.dialog.selectCatalog")}
-                        displayValue={
-                          selectedCatalog
-                            ? catalogs?.find(
-                                (catalog) => catalog.id === selectedCatalog
-                              )?.label || selectedCatalog
-                            : undefined
-                        }
-                      />
-                    </ResponsiveSelectTrigger>
-                    <ResponsiveSelectContent
-                      title={t("pendingAdmissions.dialog.catalog")}
-                    >
-                      {catalogs?.map((catalog) => (
-                        <ResponsiveSelectItem
-                          key={catalog.id}
-                          value={catalog.id}
-                        >
-                          {catalog.label || catalog.id}
-                        </ResponsiveSelectItem>
-                      ))}
-                    </ResponsiveSelectContent>
-                  </ResponsiveSelect>
+                  <Label>{t("pendingAdmissions.dialog.catalog")}</Label>
+                  <p className="mt-1 text-sm">
+                    {archive?.label || archive?.id || archiveStatus}
+                  </p>
                 </div>
 
-                {selectedCatalog && (
+                {archive && (
                   <div>
                     <Label htmlFor="role">
                       {t("pendingAdmissions.dialog.role")}
@@ -196,9 +158,7 @@ export function UsersCreateDialog({
             </Button>
             <Button
               type="submit"
-              disabled={
-                createUserPending || !selectedCatalog || !selectedRole
-              }
+              disabled={createUserPending || !archive || !selectedRole}
             >
               {createUserPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

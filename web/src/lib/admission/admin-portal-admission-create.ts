@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { AddUserSchema } from "@/lib/validation/schemas";
-import { validateRequestBody, conflict, notFound, handlePrismaError } from "@/lib/api";
+import {
+  validateRequestBody,
+  conflict,
+  notFound,
+  handlePrismaError,
+} from "@/lib/api";
 import { logPendingCatalogGrantEvent } from "@/lib/audit/logger";
-import { syncPendingAdmissionState } from "@/lib/admission/pending-admission-sync";
+import {
+  PendingAdmissionUnavailableError,
+  syncPendingAdmissionState,
+} from "@/lib/admission/pending-admission-sync";
+import { requireArchive } from "@/lib/archive";
 import { requireAdminCapability } from "@/lib/access/require-admin";
 
 export async function createPortalAdmission(request: NextRequest) {
@@ -16,11 +25,8 @@ export async function createPortalAdmission(request: NextRequest) {
     if (!bodyResult.success) return bodyResult.response;
     const { email, catalogId, role, extraPermissions } = bodyResult.data;
 
-    const catalog = await prisma.workflowGroup.findUnique({
-      where: { id: catalogId },
-      select: { isActive: true },
-    });
-    if (!catalog?.isActive) return notFound("catalog");
+    const archive = await requireArchive();
+    if (catalogId !== archive.id) return notFound("catalog");
 
     const existingUser = await prisma.user.findUnique({
       where: { email },
@@ -77,6 +83,8 @@ export async function createPortalAdmission(request: NextRequest) {
       catalogAccess: { catalogId, role, extraPermissions },
     });
   } catch (error) {
+    if (error instanceof PendingAdmissionUnavailableError)
+      return conflict(error.message);
     return handlePrismaError(error, "portal admission", "create");
   }
 }

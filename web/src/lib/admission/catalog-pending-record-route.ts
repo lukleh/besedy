@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { requireArchive } from "@/lib/archive";
 import { requireAuth } from "@/lib/auth/permissions";
 import { logPendingCatalogGrantEvent } from "@/lib/audit/logger";
 import { resolveCatalogManagementActor } from "@/lib/access/catalog-management-route-access";
 import {
   AdminDeniedAdmissionReopenError,
+  PendingAdmissionUnavailableError,
   revokePendingAdmissionState,
   syncPendingAdmissionState,
 } from "@/lib/admission/pending-admission-sync";
@@ -12,6 +14,7 @@ import { canonicalizeEmail } from "@/lib/email";
 import {
   validateRequestBody,
   forbidden,
+  conflict,
   notFound,
   handlePrismaError,
 } from "@/lib/api";
@@ -41,6 +44,8 @@ export async function deletePendingCatalogRecord(
 ) {
   try {
     const userId = await requireAuth();
+    const archive = await requireArchive();
+    if (catalogId !== archive.id) return notFound("catalog");
 
     const managementAccess = await resolveCatalogManagementActor(catalogId, {
       userId,
@@ -65,6 +70,7 @@ export async function deletePendingCatalogRecord(
           email: pendingEmail,
           catalogId,
         },
+        status: "PENDING",
       },
       select: {
         email: true,
@@ -104,6 +110,7 @@ export async function deletePendingCatalogRecord(
         {
           actorId: userId,
           reason: "LAST_SPONSOR_REMOVED",
+          expectedGrant: { ...pendingGrant, status: "PENDING" },
         },
         tx
       );
@@ -127,6 +134,8 @@ export async function deletePendingCatalogRecord(
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof PendingAdmissionUnavailableError)
+      return conflict(error.message);
     return handlePrismaError(error, "pending catalog grant", "delete");
   }
 }
@@ -138,6 +147,8 @@ export async function updatePendingCatalogRecord(
 ) {
   try {
     const userId = await requireAuth();
+    const archive = await requireArchive();
+    if (catalogId !== archive.id) return notFound("catalog");
 
     const managementAccess = await resolveCatalogManagementActor(catalogId, {
       userId,
@@ -169,6 +180,7 @@ export async function updatePendingCatalogRecord(
           email: pendingEmail,
           catalogId,
         },
+        status: "PENDING",
       },
       select: {
         email: true,
@@ -223,6 +235,8 @@ export async function updatePendingCatalogRecord(
         pendingAdmissionInput,
         {
           allowAdminDeniedReopen: managementAccess.actor.isCatalogAdmin,
+          requirePending: true,
+          expectedGrant: { ...pendingGrant, status: "PENDING" },
         },
         tx
       );
@@ -255,6 +269,8 @@ export async function updatePendingCatalogRecord(
       notes: normalizedNotes,
     });
   } catch (error) {
+    if (error instanceof PendingAdmissionUnavailableError)
+      return conflict(error.message);
     if (error instanceof AdminDeniedAdmissionReopenError) {
       return forbidden(
         "Only administrators can reopen admin-denied admissions"
