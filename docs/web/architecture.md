@@ -102,6 +102,19 @@ Access tiers: Public (`/api/auth/*`, `/api/health`, `/api/csp-report`) -- Authen
 
 Per-catalog authorization no longer uses an ordered access-level scale. An actor holds a `CatalogRole` (`listener`, `reader`, `corrector`, `host`, `curator`, `catalog_admin`) plus additive `extraPermissions`; every gate below asks whether a specific permission (e.g. `browse_recordings`, `edit_metadata`, `manage_access`) is present rather than whether a level is high enough. See [ADR 0005](../adr/0005-catalog-permission-model.md) for the full permission catalogue and role table, and `web/src/lib/policy/*.ts` for the gates themselves.
 
+### Website archive selection
+
+The website uses the deployment's explicit `BESEDY_ARCHIVE_ID`. An authenticated
+`GET /api/archive` returns only its ID and label after the existing content-access
+check. The header, user menu and catalog-page validation use that response;
+opening a page never reads or saves an active-catalog preference. `/catalog`
+opens this archive directly, and PWA resume ignores saved URLs for other sources.
+`/admin/catalogs` opens the archive's existing source-settings page. Website
+catalog discovery, creation, default selection and activation controls are gone.
+Source IDs remain in recording/event URLs and stored data. Display preferences
+remain available; the retired active-catalog database column awaits schema
+cleanup after MCP and membership migration.
+
 ### Catalog Endpoints
 
 | Method | Endpoint | Access | Description |
@@ -253,7 +266,8 @@ See [recording-ingest.md](recording-ingest.md) for the end-to-end flow.
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
 | * | `/api/auth/*` | Public | Better Auth (session, signin, callback) |
-| GET/PATCH | `/api/preferences` | Auth | Get/update preferences |
+| GET | `/api/archive` | Auth + archive access | Configured archive ID and label |
+| GET/PATCH | `/api/preferences` | Auth | Get/update display preferences; no active-catalog selection |
 | GET | `/api/me/permissions` | Auth | Current user's permission flags |
 | GET | `/api/health` | Public | Health check |
 | GET | `/api/version` | Public | Build version and commit info |

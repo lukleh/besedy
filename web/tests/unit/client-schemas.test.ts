@@ -7,8 +7,6 @@ describe("client response schemas", () => {
   it("rejects unexpected keys in preferences payloads", () => {
     const result = preferencesResponseSchema.safeParse({
       userId: "user-1",
-      activeGroupId: null,
-      activeGroup: null,
       theme: "system",
       catalogColumns: [],
       settings: {},

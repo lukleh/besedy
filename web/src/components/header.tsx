@@ -5,11 +5,9 @@ import { useTranslations } from "next-intl";
 import { Bookmark, ClipboardCheck, Download, Music2, Wrench, Mail, WifiOff } from "lucide-react";
 import { openSupportEmail } from "@/lib/support-email";
 import { useSession } from "@/contexts/session-context";
-import { useCatalogs } from "@/hooks/use-catalogs";
-import { useActiveGroup } from "@/hooks/use-active-group";
+import { useArchive } from "@/hooks/use-archive";
 import { useCatalogAccessSummary } from "@/hooks/use-catalog-access-summary";
 import { useCatalogRouteState } from "@/hooks/use-catalog-route-state";
-import { useEffectiveCatalogId } from "@/hooks/use-effective-catalog-id";
 import { useDownloadManager } from "@/hooks/use-downloads";
 import { useReturnHref } from "@/hooks/use-return-href";
 import { useOnlineStatus } from "@/hooks/use-online-status";
@@ -70,15 +68,8 @@ export function Header({ sessionRecovering = false }: HeaderProps = {}) {
   const downloadsHref = useReturnHref(DOWNLOADS_PATH);
   const bookmarksHref = useReturnHref("/bookmarks");
 
-  // Fetch catalogs and preferences (skip on auth pages)
-  const { data: groups } = useCatalogs({ enabled: !isAuthPage });
-  const preferences = useActiveGroup({ enabled: !isAuthPage });
-  const validGroupIds = groups?.map((group) => group.id) ?? null;
-  const { effectiveCatalogId } = useEffectiveCatalogId({
-    routeGroupId: route.routeGroupId,
-    activeGroupId: preferences.activeGroupId,
-    validGroupIds,
-  });
+  const { data: archive } = useArchive({ enabled: !isAuthPage && isSignedIn });
+  const effectiveCatalogId = archive?.id ?? null;
 
   // Fetch catalog access for the active group (to show settings gear)
   const { data: catalogAccess } = useCatalogAccessSummary(effectiveCatalogId, {

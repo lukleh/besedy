@@ -7,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import { CatalogSettingsSyncStatus } from "./catalog-settings-sync-status";
 import type {
   CatalogConfig,
@@ -191,30 +190,6 @@ export function CatalogSettingsConfigCard({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-6">
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="config-active"
-                  checked={configDraft.isActive}
-                  onCheckedChange={(value) =>
-                    updateDraft((draft) => ({ ...draft, isActive: value }))
-                  }
-                  disabled={pathsAndFlagsDisabled}
-                />
-                <Label htmlFor="config-active">{t("configuration.active")}</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="config-default"
-                  checked={configDraft.isDefault}
-                  onCheckedChange={(value) =>
-                    updateDraft((draft) => ({ ...draft, isDefault: value }))
-                  }
-                  disabled={pathsAndFlagsDisabled}
-                />
-                <Label htmlFor="config-default">{t("configuration.defaultCatalog")}</Label>
-              </div>
-            </div>
             {!canEditPathsAndFlags && (
               <p className="text-sm text-muted-foreground">
                 {t("configuration.pathsAndFlagsAdminOnly")}
