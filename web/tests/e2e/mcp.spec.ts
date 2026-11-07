@@ -1469,8 +1469,8 @@ test('@smoke MCP enforces listener visibility and hidden-target semantics', asyn
       MCP_FIXTURE_SECONDARY_RECORDING.hash,
     ]);
 
-    // An active account with no archive grant can diagnose identity but no
-    // content tool returns archive data.
+    // A valid bearer token does not replace active archive membership. The
+    // resource must reject this actor before listing or running any tools.
     const noAccess = await authorizeMcpSession(
       await noAccessContext.newPage(),
       request,
@@ -1478,34 +1478,21 @@ test('@smoke MCP enforces listener visibility and hidden-target semantics', asyn
     );
     sessions.push(noAccess);
 
-    const noAccessIdentity = await callMcpTool<{
-      authorization: { archive: null };
-    }>(request, noAccess, 'who_am_i', {});
-    expect(noAccessIdentity.result?.isError).not.toBe(true);
-    expect(noAccessIdentity.result?.structuredContent.authorization.archive).toBeNull();
-
-    const catalogScopedCalls: Array<[McpToolName, Record<string, unknown>]> = [
-      ['list_locations', {}],
-      ['list_recorders', {}],
-      ['list_events', {}],
-      ['get_event', { eventId: releasedEventId }],
-      ['get_recording', { audioHash: MCP_FIXTURE_RECORDING.hash }],
-      [
-        'get_transcript',
-        { audioHash: MCP_FIXTURE_RECORDING.hash, mode: 'page' },
-      ],
-      ['search_transcripts', { query: 'Besedy MCP deterministic search' }],
-      ['find_transcript_mentions', { query: 'deterministic evidence' }],
-      ['list_bookmarks', {}],
-    ];
-    for (const [tool, args] of catalogScopedCalls) {
-      expectToolError(
-        await callMcpTool(request, noAccess, tool, args),
-        'not_found',
-      );
-      const retiredSelection = await callMcpTool(request, noAccess, tool, { ...args, catalogId });
-      expect(retiredSelection.result?.isError).toBe(true);
-    }
+    const denied = await request.post(MCP_RESOURCE, {
+      headers: {
+        Authorization: `Bearer ${noAccess.accessToken}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
+      },
+      data: { jsonrpc: '2.0', id: ++mcpRequestId, method: 'tools/list' },
+    });
+    expect(denied.status()).toBe(403);
+    await expect(denied.json()).resolves.toEqual({
+      jsonrpc: '2.0',
+      error: { code: -32001, message: 'Active Besedy portal access is required' },
+      id: null,
+    });
   } finally {
     await Promise.all(
       sessions.map((session) => removeLocalTestClient(session.clientId)),

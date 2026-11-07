@@ -37,6 +37,27 @@ catalog picker. Source IDs remain in existing URLs and download snapshots;
 unknown IDs are not rewritten onto the archive. Display settings still use
 `/api/preferences`, whose API no longer accepts an active-catalog selection.
 
+## Membership uses existing source grants
+
+When a binding is configured, an ordinary active account may enter the portal
+only if its existing `catalog_access` row for that source is `ACTIVE`. An active
+or more privileged grant for another source cannot substitute for a missing or
+revoked bound grant. Active system administrators and the superadmin bootstrap
+retain their existing exception; blocked and pending accounts remain denied.
+
+The existing `(user_id, catalog_id)` unique key already supplies one membership
+per person for the selected archive. Keep those rows, their role/extras, actor
+and revocation fields, source foreign keys and stable identifiers. Other-source
+grants remain historical records; this change neither copies nor unions them.
+No new membership table or physical permission migration is needed. Account
+identities, authored state and audit evidence survive loss of access.
+
+Before activation, review the preflight's users without access to the selected
+source. Resolve any intended grants explicitly; selecting the archive does not
+grant permissions to those accounts automatically. An unset binding retains the
+prerequisite release's transitional behavior until the client cutover requires
+configuration.
+
 ## Read-only preflight
 
 Run this against an explicitly selected environment's database, with a candidate
@@ -75,8 +96,9 @@ No preflight result authorizes an automatic merge, grant or deletion.
 3. Restart the matching services through their existing deployment procedures.
    Verify web readiness and ordinary user/admin access. No production ID is
    supplied by this change; choosing it is an operator action after preflight.
-4. Apply later membership/invitation migrations through the documented migration
-   procedure. Keep source IDs in correction provenance, downloads, queued jobs,
+4. Complete the remaining invitation/application cutovers in their reviewed PRs;
+   any required schema changes follow the documented migration procedure. Keep
+   source IDs in correction provenance, downloads, queued jobs,
    search scope and timestamped artifacts. Preserve identities and audit history.
 
 The general CLI pipeline remains able to process explicitly named catalogs.
