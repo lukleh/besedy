@@ -1,20 +1,20 @@
 # Besedy MCP Tool Reference
 
-> Last updated: 2026-11-02
+> Last updated: 2026-11-07
 
-This is the human-readable reference for the eleven Besedy MCP tools. The
+This is the human-readable reference for the ten Besedy MCP tools. The
 authoritative contract is the code: input schemas live in each registrar under
 `web/src/lib/mcp/tools/`, success shapes in
 `web/src/lib/mcp/tools/output-schemas.ts`, and both are advertised live through
 `tools/list`. When this page and the code disagree, the code wins; update this
 page in the same change.
 
-For authentication, the access matrix, catalog resolution, telemetry, and the
+For authentication, the access matrix, archive binding, telemetry, and the
 architectural rules behind these tools, see [mcp-server.md](mcp-server.md).
 
 ## Conventions
 
-All eleven tools are read-only, idempotent, and limited to Besedy data rather
+All ten tools are read-only, idempotent, and limited to Besedy data rather
 than the open web. Successful calls return machine-readable JSON in
 `structuredContent`. Every tool advertises an `outputSchema` through
 `tools/list`, so an agent can understand the success response before its first
@@ -53,28 +53,37 @@ every matching segment in one response.
 
 | Tool                       | Use it to                                                        | Required data access                       |
 | -------------------------- | ---------------------------------------------------------------- | ------------------------------------------ |
-| `who_am_i`                 | Inspect the account, OAuth client, scopes, and default catalog   | Active portal user                         |
-| `list_catalogs`            | Discover accessible catalogs and the effective default           | Active portal user                         |
-| `list_locations`           | Discover location IDs used by listener-visible events            | Accessible catalog                         |
-| `list_recorders`           | Discover recorder IDs used by listener-visible recordings        | Accessible catalog                         |
-| `list_events`              | Page and filter released events                                  | Accessible catalog                         |
-| `get_event`                | Read one released event and its visible recordings               | Accessible catalog and listener visibility |
-| `get_recording`            | Read one published, ready recording linked to a released event   | Accessible catalog and listener visibility |
-| `get_transcript`           | Read its transcript when linked to a released event              | Accessible catalog and listener visibility |
-| `search_transcripts`       | Find event-scoped passages by meaning, including different words | Accessible catalog and listener visibility |
-| `find_transcript_mentions` | Exhaustively find event-scoped indexed wording                   | Accessible catalog and listener visibility |
-| `list_bookmarks`           | List the user's own bookmarks and their comments                 | `besedy:bookmarks` scope, accessible catalog, and listener visibility |
+| `who_am_i`                 | Inspect the account, OAuth client, scopes, and archive access   | Active portal user                         |
+| `list_locations`           | Discover location IDs used by listener-visible events            | Archive membership                         |
+| `list_recorders`           | Discover recorder IDs used by listener-visible recordings        | Archive membership                         |
+| `list_events`              | Page and filter released events                                  | Archive membership                         |
+| `get_event`                | Read one released event and its visible recordings               | Archive membership and listener visibility |
+| `get_recording`            | Read one published, ready recording linked to a released event   | Archive membership and listener visibility |
+| `get_transcript`           | Read its transcript when linked to a released event              | Archive membership and listener visibility |
+| `search_transcripts`       | Find event-scoped passages by meaning, including different words | Archive membership and listener visibility |
+| `find_transcript_mentions` | Exhaustively find event-scoped indexed wording                   | Archive membership and listener visibility |
+| `list_bookmarks`           | List the user's own bookmarks and their comments                 | `besedy:bookmarks` scope, archive membership, and listener visibility |
 
 All tools except `list_bookmarks` are discoverable by an active portal user;
 `list_bookmarks` is listed only to a client granted the `besedy:bookmarks`
 scope. Discovery is only a
-usability surface: every catalog-scoped call authorizes its resolved catalog and
-applies listener visibility again.
+usability surface: every content call checks live access to the bound archive and applies listener
+visibility again.
+
+All content tools use the deployment's explicit archive binding. They do not
+accept `catalogId`, and there is no `list_catalogs` tool or default-selection
+chain. Input objects reject unknown fields, including retired catalog-selection
+arguments. Clients must refresh their tool schemas after this change.
+
+Result `catalogId` values, source URLs and opaque cursors retain the existing
+pipeline source identity for provenance. Callable transcript requests and
+continuations omit that field and can be passed directly to `get_transcript`.
+Cursors from a different archive remain invalid.
 
 ## `who_am_i`
 
 Use this tool to confirm which account and OAuth application a client is using,
-especially when diagnosing an unexpected catalog list or missing tool. It takes
+especially when diagnosing missing archive access or a missing tool. It takes
 no arguments.
 
 The response has two objects:
@@ -83,10 +92,10 @@ The response has two objects:
   `profile` OAuth scope and `email` requires the `email` scope. A field hidden by
   scope is returned as `null`.
 - `authorization` contains `clientId`, `clientName`, the effective
-  `grantedScopes`, and `defaultCatalogId`.
+  `grantedScopes`, and `archive` (`id` and nullable `label`, or `null` without access).
 
 This tool reports authorization state; it does not grant access or change the
-active catalog.
+archive binding.
 
 Example return value:
 
@@ -101,45 +110,8 @@ Example return value:
     "clientId": "client_example",
     "clientName": "Example MCP client",
     "grantedScopes": ["openid", "profile", "email", "besedy:read"],
-    "defaultCatalogId": "20990101_000000"
+    "archive": { "id": "20990101_000000", "label": "Besedy" }
   }
-}
-```
-
-## `list_catalogs`
-
-Use this as the entry point when the catalog is unknown or when a later tool
-returns a catalog-related not-found error.
-
-| Argument | Type                  | Default | Meaning                                       |
-| -------- | --------------------- | ------- | --------------------------------------------- |
-| `cursor` | string                | omitted | ID of the last catalog from the previous page |
-| `limit`  | integer from 1 to 100 | `50`    | Maximum catalogs in the page                  |
-
-Each item in `catalogs` contains `id`, `label`, and `isDefault`, which marks
-the effective default.
-The top-level `defaultCatalogId` is the catalog selected when a catalog-scoped
-tool omits `catalogId`; `defaultCatalogSource` is `user_preference`,
-`global_default`, `most_recent`, or `null`.
-
-Pass `nextCursor` unchanged to fetch the next page. `nextCursor: null` means the
-list is complete. A malformed, stale, or request-mismatched cursor returns
-`invalid_cursor`.
-
-Example return value:
-
-```json
-{
-  "catalogs": [
-    {
-      "id": "20990101_000000",
-      "label": "Example catalog",
-      "isDefault": true
-    }
-  ],
-  "defaultCatalogId": "20990101_000000",
-  "defaultCatalogSource": "user_preference",
-  "nextCursor": null
 }
 ```
 
@@ -151,7 +123,6 @@ contain only locations used by visible events.
 
 | Argument    | Type                                     | Default           | Meaning                                                          |
 | ----------- | ---------------------------------------- | ----------------- | ---------------------------------------------------------------- |
-| `catalogId` | string                                   | effective default | Catalog whose visible location usage is counted                  |
 | `query`     | non-empty string, at most 200 characters | omitted           | Case-insensitive substring match against the location name       |
 | `cursor`    | opaque string                            | omitted           | Continuation token returned as `nextCursor` by the previous page |
 | `limit`     | integer from 1 to 100                    | `50`              | Maximum locations in the page                                    |
@@ -190,7 +161,6 @@ by recordings the caller can read.
 
 | Argument    | Type                                     | Default           | Meaning                                                          |
 | ----------- | ---------------------------------------- | ----------------- | ---------------------------------------------------------------- |
-| `catalogId` | string                                   | effective default | Catalog whose visible recorder usage is counted                  |
 | `query`     | non-empty string, at most 200 characters | omitted           | Case-insensitive substring match against the recorder name       |
 | `cursor`    | opaque string                            | omitted           | Continuation token returned as `nextCursor` by the previous page |
 | `limit`     | integer from 1 to 100                    | `50`              | Maximum recorders in the page                                    |
@@ -224,7 +194,6 @@ Use this tool to browse events or resolve an event ID before calling
 
 | Argument     | Type                                     | Default           | Meaning                                                                |
 | ------------ | ---------------------------------------- | ----------------- | ---------------------------------------------------------------------- |
-| `catalogId`  | string                                   | effective default | Catalog to read                                                        |
 | `cursor`     | opaque string                            | omitted           | Continuation token returned as `nextCursor` by the previous page       |
 | `limit`      | integer from 1 to 100                    | `25`              | Maximum events in the page                                             |
 | `order`      | `asc` or `desc`                          | `desc`            | Chronological date order; ascending returns oldest events first        |
@@ -271,7 +240,6 @@ recordings are needed.
 
 | Argument          | Type                  | Default           | Meaning                                 |
 | ----------------- | --------------------- | ----------------- | --------------------------------------- |
-| `catalogId`       | string                | effective default | Catalog containing the event            |
 | `eventId`         | positive integer      | required          | Stable event ID                         |
 | `recordingOffset` | non-negative integer  | `0`               | Offset into visible attached recordings |
 | `recordingLimit`  | integer from 1 to 100 | `25`              | Maximum recording summaries in the page |
@@ -316,7 +284,6 @@ hash returned by an event, search, or transcript response.
 
 | Argument    | Type                            | Default           | Meaning                          |
 | ----------- | ------------------------------- | ----------------- | -------------------------------- |
-| `catalogId` | string                          | effective default | Catalog containing the recording |
 | `audioHash` | 64-character hexadecimal string | required          | Stable recording identifier      |
 
 `recording` contains the title, album, duration, date, location, recorder, and
@@ -361,7 +328,6 @@ catalog, recording, and relevant time window remain aligned.
 
 | Argument        | Type                            | Default                 | Meaning                                                                    |
 | --------------- | ------------------------------- | ----------------------- | -------------------------------------------------------------------------- |
-| `catalogId`     | string                          | effective default       | Catalog containing the recording                                           |
 | `audioHash`     | 64-character hexadecimal string | required                | Stable recording identifier                                                |
 | `startSec`      | number at least 0               | start of transcript     | Inclusive start of the time window                                         |
 | `endSec`        | positive number                 | end of transcript       | Exclusive end of the time window; must exceed `startSec` when both are set |
@@ -391,8 +357,7 @@ The response reports the unbounded `recordingWebUrl`.
 Each segment link includes both `seek` and `end` timestamps.
 The player stops once at the linked end; pressing play again continues through
 the recording. The `segments` object contains the items and `totalMatching`.
-When more page-mode data exists, `continuation` preserves the catalog,
-recording, mode, window, limits, and next offset and can be passed
+When more page-mode data exists, `continuation` preserves the recording, mode, window, limits, and next offset and can be passed
 unchanged as the next call's arguments. Otherwise it is `null`.
 
 The result intentionally carries no recording duration; `get_recording` reports
@@ -439,7 +404,6 @@ Page mode has the same top-level shape and may return a continuation descriptor:
     ]
   },
   "continuation": {
-    "catalogId": "20990101_000000",
     "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "mode": "page",
     "segmentOffset": 1,
@@ -453,12 +417,12 @@ Page mode has the same top-level shape and may return a continuation descriptor:
 
 Use this tool for literal words, proper names, quotations, fixed phrases, and
 prefixes. It searches every indexed chunk belonging to visible recordings under
-released events authorized by the resolved catalog and filters. Its
+released events authorized by the bound archive and filters. Its
 `totalMatches` is the number of matching indexed chunks before `limit` and
 `maxPerRecording` reduce the returned list; it is not a count of distinct events.
 Numeric text-match scores are not exposed.
 
-It has the same `catalogId`, `limit`, `contextChunks`, `maxPerRecording`, and
+It has the same `limit`, `contextChunks`, `maxPerRecording`, and
 `filters` contract as `search_transcripts`, plus `matchMode`:
 
 | Mode        | Meaning                                                    |
@@ -481,7 +445,7 @@ object with the applied `matchMode` and the complete `totalMatches`. Use
 `get_transcript` to verify important matches, widening the request's time window
 because the unchanged request only replays the matched passage. A zero result
 establishes only that the chosen literal token pattern is absent under the
-chosen catalog, authorization scope, filters, and match mode; it does not
+archive, authorization scope, filters, and match mode; it does not
 establish conceptual absence. Rendered text repeats that scope, distinguishes
 the complete indexed `totalMatches` count from capped returned passages, and
 includes event date and location plus each non-null `transcriptRequest` for
@@ -500,7 +464,6 @@ internal numeric retrieval scores are not exposed.
 
 | Argument          | Type                                       | Default           | Meaning                                                                   |
 | ----------------- | ------------------------------------------ | ----------------- | ------------------------------------------------------------------------- |
-| `catalogId`       | string                                     | effective default | Catalog to search                                                         |
 | `query`           | non-empty string, at most 1,000 characters | required          | Natural-language question or description of the meaning to find           |
 | `limit`           | integer from 1 to 200                      | `50`              | Maximum matches; smaller limits are for orientation or focused follow-ups |
 | `contextChunks`   | integer from 0 to 3                        | `1`               | Adjacent indexed chunks returned before and after a match                 |
@@ -567,7 +530,6 @@ The generated request can be passed directly to `get_transcript`:
 
 ```json
 {
-  "catalogId": "20990101_000000",
   "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "mode": "page",
   "startSec": 600,
@@ -599,7 +561,7 @@ structured response before requesting the next one. Use the maximum of `200`
 when the question requires wider coverage rather than lowering the limit merely
 to shorten tool output. Meaning-based retrieval remains non-exhaustive even at
 the maximum.
-`search_not_configured` means the catalog has no search bundle and is
+`search_not_configured` means the archive has no search bundle and is
 not retryable. `search_unavailable` means the search service is temporarily
 unavailable and is retryable.
 
@@ -634,7 +596,6 @@ Example return value:
         "afterText": "Example following context."
       },
       "transcriptRequest": {
-        "catalogId": "20990101_000000",
         "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "mode": "page",
         "startSec": 580,
@@ -655,7 +616,6 @@ granted the `besedy:bookmarks` OAuth scope; other clients do not see it in
 
 | Argument    | Type                                     | Default           | Meaning                                                            |
 | ----------- | ---------------------------------------- | ----------------- | ------------------------------------------------------------------ |
-| `catalogId` | string                                   | effective default | Catalog whose bookmarks are listed                                 |
 | `query`     | non-empty string, at most 200 characters | omitted           | Case-insensitive substring match against the comment and excerpt   |
 | `audioHash` | 64-character hexadecimal string          | omitted           | Only list bookmarks in this recording                              |
 | `cursor`    | opaque string                            | omitted           | Continuation token returned as `nextCursor` by the previous page   |
@@ -679,7 +639,7 @@ it as the user's interest or opinion and never cite it as what was said. The
 excerpt is a snapshot that later transcript corrections do not update, so read
 the passage through `transcriptRequest` before relying on its wording.
 
-Pass `nextCursor` unchanged with the same catalog, `query`, and `audioHash`.
+Pass `nextCursor` unchanged with the same `query` and `audioHash`.
 The cursor is the creation time and ID of the last returned bookmark, so a
 bookmark deleted between pages cannot invalidate it. A malformed or mismatched
 cursor returns `invalid_cursor`.
@@ -711,7 +671,6 @@ Example return value:
         "isPrimary": true
       },
       "transcriptRequest": {
-        "catalogId": "20990101_000000",
         "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "mode": "page",
         "startSec": 694.2,
@@ -732,7 +691,7 @@ Expected tool failures set `isError: true` and return the same object in
 {
   "error": {
     "code": "not_found",
-    "message": "Catalog not found or inaccessible",
+    "message": "Archive not found or inaccessible",
     "retryable": false
   }
 }
@@ -740,14 +699,13 @@ Expected tool failures set `isError: true` and return the same object in
 
 | Code                    | Meaning                                                                            |
 | ----------------------- | ---------------------------------------------------------------------------------- |
-| `catalog_required`      | No effective default exists; supply `catalogId`                                    |
 | `invalid_cursor`        | A list cursor is malformed, stale, or does not match the current request           |
-| `not_found`             | The catalog, event, or recording is absent or deliberately hidden by access policy |
+| `not_found`             | The archive, event, or recording is absent or deliberately hidden by access policy |
 | `identity_unavailable`  | The authenticated account disappeared before identity serialization                |
 | `transcript_not_found`  | The recording has no readable transcript                                           |
 | `invalid_window`        | `endSec` is not greater than `startSec`                                            |
 | `response_too_large`    | A full transcript window exceeds the hard response ceiling                         |
-| `search_not_configured` | The catalog has no transcript search bundle                                        |
+| `search_not_configured` | The archive has no transcript search bundle                                        |
 | `search_unavailable`    | The transcript search service is temporarily unavailable                           |
 | `internal_error`        | An unexpected server failure was logged without exposing its details               |
 

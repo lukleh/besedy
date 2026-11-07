@@ -5,7 +5,7 @@ import {
   READ_ONLY_TOOL_ANNOTATIONS,
   TRANSCRIPT_VERIFICATION_GUIDANCE,
   registerBesedyTool,
-  resolveToolCatalog,
+  resolveToolArchive,
   runReadTool,
   toolError,
 } from '@/lib/mcp/tools/shared';
@@ -51,14 +51,7 @@ export function registerGetTranscriptTool(
       title: 'Get a Besedy transcript',
       description: `Read transcript context for a visible recording linked to a released event. ${TRANSCRIPT_VERIFICATION_GUIDANCE} Page mode is bounded; full mode returns the complete selected window up to a hard response ceiling. Each segment includes a bounded citation URL.`,
       inputSchema: z
-        .object({
-          catalogId: z
-            .string()
-            .min(1)
-            .optional()
-            .describe(
-              'Accessible Besedy catalog containing the recording. Omit it to use the effective default catalog.',
-            ),
+        .strictObject({
           audioHash: HashSchema.transform((value) =>
             value.toLowerCase(),
           ).describe(
@@ -130,7 +123,6 @@ export function registerGetTranscriptTool(
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async ({
-      catalogId,
       audioHash,
       startSec,
       endSec,
@@ -139,11 +131,11 @@ export function registerGetTranscriptTool(
       segmentLimit,
       maxTextChars,
     }) => {
-      const catalog = resolveToolCatalog(profile, catalogId);
-      if ('error' in catalog) return toolError(catalog.code, catalog.error);
+      const archive = resolveToolArchive(profile);
+      if ('error' in archive) return toolError(archive.code, archive.error);
       return runReadTool(
         () =>
-          getMcpTranscript(catalog.id, audioHash, {
+          getMcpTranscript(archive.id, audioHash, {
             startSec,
             endSec,
             ...(mode === 'full'
