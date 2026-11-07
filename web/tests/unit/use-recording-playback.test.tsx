@@ -195,8 +195,8 @@ describe("useRecordingPlayback", () => {
   });
 
   it("restores a saved position synchronously under React Strict Mode", async () => {
-    // Twin of the handoff seek: the same StrictMode setup -> cleanup -> setup
-    // would drop a deferred-microtask restore, so it must be synchronous.
+    // StrictMode's setup -> cleanup -> setup would drop a deferred-microtask
+    // restore, so restoring the saved position must be synchronous.
     localStorage.setItem(STORAGE_KEY, "47");
 
     const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH), {
