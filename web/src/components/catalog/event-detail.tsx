@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CalendarX, ChevronDown, Mic, RefreshCw } from "lucide-react";
+import { ArrowLeft, CalendarX, Mic, RefreshCw } from "lucide-react";
 import RecordingContent from "@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content";
 import { formatPartialDate } from "@/lib/date-format";
 import { isNetworkFailure } from "@/lib/api/fetch-json";
@@ -25,13 +25,6 @@ import { EventArtworkSwipe } from "@/components/catalog/event-artwork-swipe";
 import { eventDetailQueryOptions, selectShownEventArtwork } from "@/components/catalog/event-detail-query";
 import { EventEditMenu } from "@/components/catalog/event-edit-menu";
 import { CorrectionLink } from "@/components/correction/correction-link";
-import {
-  ResponsiveMenu,
-  ResponsiveMenuContent,
-  ResponsiveMenuRadioGroup,
-  ResponsiveMenuRadioItem,
-  ResponsiveMenuTrigger,
-} from "@/components/ui/responsive-menu";
 import { SessionOrdinalBadge } from "./session-ordinal-badge";
 
 interface EventDetailProps {
@@ -51,7 +44,6 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [selectedHash, setSelectedHash] = useState<string>("");
   const handledReadOnlyRef = useRef<string | null>(null);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery<EventDetailResponse>(
@@ -65,40 +57,28 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
   }, [isHidden]);
   const localArtworkUrl = useLocalArtworkUrl(catalogId, eventId, data?.publishedArtwork?.id ?? null);
 
-  const defaultSelectedHash = useMemo(
-    () => data?.recordings.find((recording) => recording.isPrimary)?.audioHash ?? data?.recordings[0]?.audioHash ?? "",
-    [data]
-  );
-
-  const activeSelectedHash = useMemo(() => {
-    if (!data) return "";
-    return data.recordings.some((recording) => recording.audioHash === selectedHash)
-      ? selectedHash
-      : defaultSelectedHash;
-  }, [data, selectedHash, defaultSelectedHash]);
-
-  const selectedRecording = useMemo(
-    () => data?.recordings.find((recording) => recording.audioHash === activeSelectedHash) ?? null,
-    [data, activeSelectedHash]
-  );
+  // Released events have one preferred recording. The first-recording fallback
+  // also serves an unreleased event or an older downloaded capture snapshot.
+  const preferredRecording =
+    data?.recordings.find((recording) => recording.isPrimary) ?? data?.recordings[0] ?? null;
 
   // The recording page asks for the same entry, so this shares its cache. It
   // is where the right to correct the transcript, and whether this recording
   // is in correction scope, are reported.
-  const { data: selectedEntry } = useRecordingEntry({
+  const { data: preferredEntry } = useRecordingEntry({
     catalogId,
-    hash: activeSelectedHash,
-    enabled: !!selectedRecording,
+    hash: preferredRecording?.audioHash ?? "",
+    enabled: !!preferredRecording,
   });
   // Correction belongs to the event's primary recording, so the button offers it
-  // only while that one is selected. An unavailable recording renders no
+  // only for that one. An unavailable recording renders no
   // transcript, so it offers no correction either.
   const correctionHash =
-    selectedRecording?.isPrimary &&
-    selectedEntry?.entry.isActionable &&
-    selectedEntry.canCorrectTranscripts &&
-    selectedEntry.correctionEligible
-      ? selectedRecording.audioHash
+    preferredRecording?.isPrimary &&
+    preferredEntry?.entry.isActionable &&
+    preferredEntry.canCorrectTranscripts &&
+    preferredEntry.correctionEligible
+      ? preferredRecording.audioHash
       : null;
 
   useEffect(() => {
@@ -176,8 +156,7 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     );
   }
 
-  const showRecorderMenu = data.recordings.length > 1;
-  const selectedRecorderName = selectedRecording?.recorder?.name ?? t("unknownRecorder");
+  const preferredRecorderName = preferredRecording?.recorder?.name ?? t("unknownRecorder");
   const canViewArtworkCandidates = data.canViewArtworkCandidates ?? false;
   const canManageSources = data.canManageSources ?? false;
   const publishedArtwork = data.publishedArtwork ?? null;
@@ -247,8 +226,8 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
       catalogId={catalogId}
       eventId={eventId}
       canEditEvent={canEdit}
-      metadataHash={data.canEditMetadata && selectedRecording ? selectedRecording.audioHash : null}
-      metadataRecorderName={showRecorderMenu ? selectedRecorderName : null}
+      metadataHash={data.canEditMetadata && preferredRecording ? preferredRecording.audioHash : null}
+      metadataRecorderName={data.recordings.length > 1 ? preferredRecorderName : null}
       canEditArtwork={canViewArtworkCandidates}
       artworkHint={artworkHint}
       canManageSources={canManageSources}
@@ -264,42 +243,11 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     </>
   );
 
-  const eventHeaderIdentity = selectedRecording ? (
-    showRecorderMenu ? (
-      <ResponsiveMenu>
-        <ResponsiveMenuTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className="max-w-full justify-start sm:justify-end"
-            aria-label={t("selectRecorder")}
-          >
-            <Mic className="mr-2 h-4 w-4 shrink-0" />
-            <span className="truncate">{selectedRecorderName}</span>
-            <ChevronDown className="ml-2 h-4 w-4 shrink-0" />
-          </Button>
-        </ResponsiveMenuTrigger>
-        <ResponsiveMenuContent align="end" title={t("recordingsMenuTitle")}>
-          <ResponsiveMenuRadioGroup value={activeSelectedHash} onValueChange={(value) => setSelectedHash(value)}>
-            {data.recordings.map((recording) => (
-              <ResponsiveMenuRadioItem key={recording.audioHash} value={recording.audioHash}>
-                <div className="flex min-w-0 items-center justify-between gap-3">
-                  <span className="truncate">{recording.recorder?.name ?? t("unknownRecorder")}</span>
-                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                    {recording.durationHms ?? "--:--:--"}
-                  </span>
-                </div>
-              </ResponsiveMenuRadioItem>
-            ))}
-          </ResponsiveMenuRadioGroup>
-        </ResponsiveMenuContent>
-      </ResponsiveMenu>
-    ) : (
-      <div className="inline-flex max-w-full items-center gap-2 text-sm text-muted-foreground">
-        <Mic className="h-4 w-4 shrink-0" />
-        <span className="truncate">{selectedRecorderName}</span>
-      </div>
-    )
+  const eventHeaderIdentity = preferredRecording ? (
+    <div className="inline-flex max-w-full items-center gap-2 text-sm text-muted-foreground">
+      <Mic className="h-4 w-4 shrink-0" />
+      <span className="truncate">{preferredRecorderName}</span>
+    </div>
   ) : null;
 
   // The event title is derived from its date and location, which the recording heading already shows.
@@ -314,11 +262,11 @@ export function EventDetail({ catalogId, eventId, canEdit, showAllColumns, showR
     />
   );
 
-  if (selectedRecording) {
+  if (preferredRecording) {
     return (
       <RecordingContent
-        key={selectedRecording.audioHash}
-        params={{ catalogId, hash: selectedRecording.audioHash }}
+        key={preferredRecording.audioHash}
+        params={{ catalogId, hash: preferredRecording.audioHash }}
         downloadEventId={eventId}
         headingContext={{
           dateYear: data.dateYear,

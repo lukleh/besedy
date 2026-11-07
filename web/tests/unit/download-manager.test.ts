@@ -1220,6 +1220,22 @@ describe('download manager', () => {
     expect(downloadManager.getSnapshot().records).toHaveLength(1);
   });
 
+  it('does not download another capture when the explicitly requested recording left the event', async () => {
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+
+    await expect(downloadManager.enqueueEvent({
+      catalogId: CATALOG,
+      eventId: 7,
+      hash: 'e'.repeat(64),
+    })).rejects.toThrow('This recording is no longer attached to the event');
+
+    expect(downloadManager.getSnapshot().records).toHaveLength(0);
+    expect(server.audioRequests).toHaveLength(0);
+  });
+
   it('upgrades an existing recording download into an event download', async () => {
     const server = createFakeServer();
     vi.stubGlobal('fetch', server.fetchMock);
