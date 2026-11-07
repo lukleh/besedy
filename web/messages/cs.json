@@ -26,7 +26,7 @@
     "downloads": "Stažené",
     "admin": "Administrace",
     "enums": "Číselníky katalogu",
-    "catalogSettings": "Nastavení katalogu",
+    "catalogSettings": "Nastavení archivu",
     "signIn": "Přihlásit",
     "signOut": "Odhlásit",
     "toggleTheme": "Přepnout téma",
@@ -503,43 +503,6 @@
     "clear": "Vymazat",
     "clearField": "Vymazat {field}"
   },
-  "settings": {
-    "title": "Spravovat katalogy",
-    "description": "Nastavte a spravujte pracovní skupiny katalogu.",
-    "backToCatalog": "Zpět do katalogu",
-    "workflowGroups": "Pracovní skupiny",
-    "workflowGroupsDescription": "Registrované pracovní skupiny dostupné k procházení.",
-    "workflowGroup": "Pracovní skupina",
-    "scanGroups": "Vyhledat skupiny",
-    "scanning": "Vyhledávání...",
-    "discoverGroups": "Objevit skupiny",
-    "discoverDescription": "Prohledat základní adresář pro pracovní skupiny k přidání.",
-    "manualEntry": "Ruční zadání",
-    "manualEntryDescription": "Přidat pracovní skupinu ručně zadáním cest.",
-    "groupId": "ID skupiny",
-    "groupLabel": "Název",
-    "archivedPath": "Cesta k archivovanému katalogu",
-    "metadataPath": "Cesta ke katalogu metadat",
-    "transcriptsPath": "Cesta k přepisům",
-    "addGroup": "Přidat skupinu",
-    "initialSyncFailedTitle": "Katalog byl přidán, ale jeho první synchronizace selhala",
-    "initialSyncFailedDescription": "Nahrávky se zobrazí po úspěšné synchronizaci. Opravte cesty ke katalogu a pak použijte Synchronizovat katalog v Nastavení katalogu. Chyba: {error}",
-    "add": "Přidat",
-    "noGroups": "Zatím nejsou nakonfigurovány žádné pracovní skupiny.",
-    "noGroupsDescription": "Použijte funkci objevování níže k nalezení a přidání skupin.",
-    "allRegistered": "Všechny objevené skupiny jsou již zaregistrovány.",
-    "hasTranscripts": "Přepisy",
-    "noTranscripts": "Bez přepisů",
-    "default": "Výchozí",
-    "editLabel": "Upravit název",
-    "saveLabel": "Uložit název",
-    "cancelEdit": "Zrušit",
-    "selectGroup": "Vyberte katalog...",
-    "manageCatalogs": "Spravovat katalogy",
-    "switchingTo": "Přepínání na {name}...",
-    "noCatalogsAvailable": "Žádné katalogy nejsou k dispozici",
-    "noCatalogsDescription": "Nejsou nakonfigurovány žádné aktivní pracovní skupiny."
-  },
   "admin": {
     "title": "Administrace",
     "nav": {
@@ -815,8 +778,8 @@
         "addUserDesc": "Pozvat nového uživatele",
         "manageUsers": "Spravovat uživatele",
         "manageUsersDesc": "Zobrazit a spravovat všechny uživatele",
-        "catalogSettings": "Nastavení katalogů",
-        "catalogSettingsDesc": "Nastavit katalogy a přístup"
+        "catalogSettings": "Nastavení archivu",
+        "catalogSettingsDesc": "Nastavit archiv a přístup"
       },
       "recentActivity": {
         "title": "Nedávná aktivita",
@@ -1773,7 +1736,7 @@
       "transcriptsPath": "Cesta k přepisům",
       "active": "Aktivní",
       "defaultCatalog": "Výchozí katalog",
-      "pathsAndFlagsAdminOnly": "Cesty a příznaky aktivní a výchozí může měnit jen správce systému."
+      "pathsAndFlagsAdminOnly": "Zdrojové cesty může měnit jen správce systému."
     },
     "syncStatus": {
       "title": "Synchronizace CSV",

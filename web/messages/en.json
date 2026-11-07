@@ -26,7 +26,7 @@
     "downloads": "Downloads",
     "admin": "Admin",
     "enums": "Catalog Enums",
-    "catalogSettings": "Catalog Settings",
+    "catalogSettings": "Archive Settings",
     "signIn": "Sign In",
     "signOut": "Sign Out",
     "toggleTheme": "Toggle theme",
@@ -503,43 +503,6 @@
     "clear": "Clear",
     "clearField": "Clear {field}"
   },
-  "settings": {
-    "title": "Manage Catalogs",
-    "description": "Configure and manage catalog workflow groups.",
-    "backToCatalog": "Back to catalog",
-    "workflowGroups": "Workflow Groups",
-    "workflowGroupsDescription": "Registered workflow groups available for browsing.",
-    "workflowGroup": "Workflow Group",
-    "scanGroups": "Scan for Groups",
-    "scanning": "Scanning...",
-    "discoverGroups": "Discover Groups",
-    "discoverDescription": "Scan the base directory for workflow groups to add.",
-    "manualEntry": "Manual Entry",
-    "manualEntryDescription": "Add a workflow group manually by specifying paths.",
-    "groupId": "Group ID",
-    "groupLabel": "Label",
-    "archivedPath": "Archived Catalog Path",
-    "metadataPath": "Metadata Catalog Path",
-    "transcriptsPath": "Transcripts Path",
-    "addGroup": "Add Group",
-    "initialSyncFailedTitle": "Catalog added, but its initial sync failed",
-    "initialSyncFailedDescription": "Its recordings will appear after a successful sync. Fix the catalog paths, then use Sync Catalog in its Catalog Settings. Error: {error}",
-    "add": "Add",
-    "noGroups": "No workflow groups configured yet.",
-    "noGroupsDescription": "Use the discovery feature below to find and add groups.",
-    "allRegistered": "All discovered groups are already registered.",
-    "hasTranscripts": "Transcripts",
-    "noTranscripts": "No transcripts",
-    "default": "Default",
-    "editLabel": "Edit label",
-    "saveLabel": "Save label",
-    "cancelEdit": "Cancel",
-    "selectGroup": "Select catalog...",
-    "manageCatalogs": "Manage Catalogs",
-    "switchingTo": "Switching to {name}...",
-    "noCatalogsAvailable": "No catalogs available",
-    "noCatalogsDescription": "There are no active workflow groups configured."
-  },
   "admin": {
     "title": "Admin",
     "nav": {
@@ -815,8 +778,8 @@
         "addUserDesc": "Invite a new user to the platform",
         "manageUsers": "Manage Users",
         "manageUsersDesc": "View and manage all users",
-        "catalogSettings": "Catalog Settings",
-        "catalogSettingsDesc": "Configure catalogs and access"
+        "catalogSettings": "Archive Settings",
+        "catalogSettingsDesc": "Configure the archive and access"
       },
       "recentActivity": {
         "title": "Recent Activity",
@@ -1774,7 +1737,7 @@
       "transcriptsPath": "Transcripts path",
       "active": "Active",
       "defaultCatalog": "Default catalog",
-      "pathsAndFlagsAdminOnly": "Only system administrators can change the paths and the active and default flags."
+      "pathsAndFlagsAdminOnly": "Only system administrators can change source paths."
     },
     "syncStatus": {
       "title": "CSV synchronization",

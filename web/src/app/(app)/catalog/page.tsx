@@ -1,10 +1,9 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import prisma from "@/lib/db";
+import { requireArchive } from "@/lib/archive";
 import { getSession } from "@/lib/auth/session";
 import {
-  getAdminCapability,
-  getCatalogDiscoveryCapability,
+  getCatalogCapability,
 } from "@/lib/access/capabilities";
 import {
   LAST_ROUTE_COOKIE,
@@ -48,56 +47,25 @@ export default async function CatalogIndexPage({
     redirect("/auth/signin");
   }
 
-  // The installed app launches here; resume on the last visited page.
+  const archive = await requireArchive();
+  const capability = await getCatalogCapability(archive.id, session.user.id);
+  if (!capability.hasAccess) {
+    redirect("/auth/no-access");
+  }
+
+  // Resume only inside the configured archive or source-neutral settings.
   if (resolvedSearchParams?.[PWA_LAUNCH_PARAM] === PWA_LAUNCH_VALUE) {
     const cookieStore = await cookies();
     const lastRoute = resolveRestorableRoute(cookieStore.get(LAST_ROUTE_COOKIE)?.value);
-    if (lastRoute) {
+    const savedPath = lastRoute?.split("?", 1)[0];
+    if (lastRoute && (
+      savedPath === "/settings" || savedPath?.startsWith("/settings/") ||
+      savedPath === `/catalog/${archive.id}` ||
+      savedPath?.startsWith(`/catalog/${archive.id}/`)
+    )) {
       redirect(lastRoute);
     }
   }
 
-  const userId = session.user.id ?? "local";
-  const [discovery, adminCapability] = await Promise.all([
-    getCatalogDiscoveryCapability(userId),
-    getAdminCapability(userId),
-  ]);
-  const accessibleIds = discovery.accessibleCatalogIds;
-
-  // No catalog access - redirect to no-access page
-  // (admins/superadmins always have access via catalog discovery)
-  if (accessibleIds.length === 0) {
-    if (adminCapability.canAccessAdmin) {
-      // Admins without explicit access can still manage catalogs
-      redirect("/admin/catalogs");
-    }
-    redirect("/auth/no-access");
-  }
-
-  // Check user's active group preference
-  const prefs = await prisma.userPreferences.findUnique({
-    where: { userId },
-    include: { activeGroup: true },
-  });
-
-  // If user has an active preference and it's accessible, use it
-  if (prefs?.activeGroup?.isActive && accessibleIds.includes(prefs.activeGroup.id)) {
-    redirect(`/catalog/${prefs.activeGroup.id}${querySuffix}`);
-  }
-
-  // Find first accessible catalog (prefer default, then latest)
-  const accessibleCatalog = await prisma.workflowGroup.findFirst({
-    where: {
-      id: { in: accessibleIds },
-      isActive: true,
-    },
-    orderBy: [{ isDefault: "desc" }, { id: "desc" }],
-  });
-
-  if (accessibleCatalog) {
-    redirect(`/catalog/${accessibleCatalog.id}${querySuffix}`);
-  }
-
-  // Fallback: no accessible active catalogs
-  redirect("/auth/no-access");
+  redirect(`/catalog/${archive.id}${querySuffix}`);
 }

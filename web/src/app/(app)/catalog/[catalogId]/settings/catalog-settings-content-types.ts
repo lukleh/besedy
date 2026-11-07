@@ -62,8 +62,6 @@ export interface CatalogConfigDraft {
   metadataCatalogPath: string;
   duplicatesCatalogPath: string;
   transcriptsPath: string;
-  isDefault: boolean;
-  isActive: boolean;
 }
 
 export interface PendingCatalogGrant {
