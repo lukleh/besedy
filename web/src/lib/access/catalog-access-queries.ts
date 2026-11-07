@@ -1,4 +1,5 @@
 import prisma from "@/lib/db";
+import { getConfiguredArchive } from "@/lib/archive";
 import {
   hasSystemCatalogAuthority,
   type PortalActorContext,
@@ -15,9 +16,11 @@ export async function listUserCatalogAccessEntries(
     return [];
   }
 
+  const archive = await getConfiguredArchive();
+
   if (hasSystemCatalogAuthority(actor)) {
     const allCatalogs = await prisma.workflowGroup.findMany({
-      where: { isActive: true },
+      where: { isActive: true, ...(archive ? { id: archive.id } : {}) },
       select: { id: true },
     });
 
@@ -30,6 +33,7 @@ export async function listUserCatalogAccessEntries(
     where: {
       userId: actor.userId,
       status: "ACTIVE",
+      ...(archive ? { catalogId: archive.id } : {}),
     },
     select: {
       catalogId: true,

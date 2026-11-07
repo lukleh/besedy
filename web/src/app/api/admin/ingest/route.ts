@@ -1,3 +1,4 @@
+import { assertArchiveCatalogId, getConfiguredArchive } from '@/lib/archive';
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/db";
@@ -34,9 +35,12 @@ export async function GET(request: NextRequest) {
       return badRequest(parsed.error.issues[0]?.message || "Invalid query");
     }
     const { catalogId, limit } = parsed.data;
+    const archive = await getConfiguredArchive();
+    if (catalogId) await assertArchiveCatalogId(catalogId);
+    const scopedCatalogId = archive?.id ?? catalogId;
 
     const rows = await prisma.recordingIntake.findMany({
-      where: catalogId ? { workflowGroupId: catalogId } : undefined,
+      where: scopedCatalogId ? { workflowGroupId: scopedCatalogId } : undefined,
       orderBy: { createdAt: "desc" },
       take: limit,
       include: INTAKE_INCLUDE,

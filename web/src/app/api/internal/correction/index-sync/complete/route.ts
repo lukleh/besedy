@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { assertArchiveCatalogId } from "@/lib/archive";
 import { z } from "zod";
 import { validateRequestBody } from "@/lib/api";
 import { authorizeJobServiceRequest } from "@/lib/security/job-service-auth";
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
 
     const bodyResult = await validateRequestBody(request, CompletionSchema);
     if (!bodyResult.success) return bodyResult.response;
+    await assertArchiveCatalogId(bodyResult.data.catalogId);
 
     const result = await completeIndexSync(bodyResult.data);
     return NextResponse.json({ ok: true, ...result });

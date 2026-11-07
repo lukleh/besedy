@@ -17,6 +17,7 @@ vi.mock("@/lib/db", () => ({
     auditLog: {
       findFirst: vi.fn(),
     },
+    audioMetadata: { findFirst: vi.fn() },
     workflowGroup: {
       findUnique: vi.fn(),
     },
@@ -38,6 +39,7 @@ describe("admin audit detail route", () => {
     auditLog: {
       findFirst: ReturnType<typeof vi.fn>;
     };
+    audioMetadata: { findFirst: ReturnType<typeof vi.fn> };
     workflowGroup: {
       findUnique: ReturnType<typeof vi.fn>;
     };
@@ -194,4 +196,25 @@ describe("admin audit detail route", () => {
       },
     });
   });
+
+  it("keeps foreign historical provenance without resolving the recording in the bound archive", async () => {
+    vi.stubEnv("BESEDY_ARCHIVE_ID", "20251225_120000");
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: "20251225_120000", label: "Archive", isActive: true });
+    prisma.auditLog.findFirst.mockResolvedValue({
+      id: "historical-audio", userId: "admin-1", action: "AUDIO_STREAMED",
+      resource: "audio", resourceId: "a".repeat(64), catalogId: "20260101_120000",
+      details: null, ipAddress: null, userAgent: null,
+      createdAt: "2026-03-10T12:00:00.000Z", user: null,
+    });
+    const response = await getAuditDetail(new NextRequest("http://localhost/api/admin/audit/historical-audio?expand=true"), {
+      params: Promise.resolve({ id: "historical-audio" }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      target: { catalogId: "20260101_120000" },
+      relatedEntity: { type: "audio", found: false, data: null, error: "Historical recording belongs to another source" },
+    });
+    expect(prisma.audioMetadata.findFirst).not.toHaveBeenCalled();
+  });
+
 });

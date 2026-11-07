@@ -1,5 +1,6 @@
 import { UserStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
+import { ArchiveScopeError } from "@/lib/archive";
 import {
   listUserCatalogAccessEntries,
 } from "@/lib/access/catalog-access-queries";
@@ -7,6 +8,7 @@ import {
   hasSystemAdminAuthority,
   resolveCatalogActorContext,
   resolvePortalActorContext,
+  type CatalogActorContext,
 } from "@/lib/policy/actor";
 import {
   canBatchEditCatalogMetadata,
@@ -235,7 +237,16 @@ export async function getCatalogCapability(
   userId?: string,
   options: CatalogCapabilityOptions = {}
 ): Promise<CatalogCapability> {
-  const actor = await resolveCatalogActorContext(catalogId, userId, options);
+  let actor: CatalogActorContext;
+  try {
+    actor = await resolveCatalogActorContext(catalogId, userId, options);
+  } catch (error) {
+    if (!(error instanceof ArchiveScopeError)) throw error;
+    // Page callers use catalogExists to choose their existing 404 path.
+    // Management actors keep throwing so admin normalization cannot elevate
+    // a foreign source into an editable catalog.
+    return buildCatalogCapability(await getPortalCapability(userId), catalogId, false, null, false);
+  }
   const portal: PortalCapability = {
     userId: actor.userId,
     isAuthenticated: actor.isAuthenticated,

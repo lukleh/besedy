@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { getConfiguredArchive } from "@/lib/archive";
 import {
   isAdmin,
   isSuperadmin,
@@ -39,7 +40,8 @@ function isAuthError(error: unknown): error is { message: string; statusCode: nu
  */
 async function fetchRelatedEntity(
   resource: string,
-  resourceId: string | null
+  resourceId: string | null,
+  recordedCatalogId: string | null = null,
 ): Promise<RelatedEntity | null> {
   if (!resourceId) return null;
 
@@ -84,10 +86,18 @@ async function fetchRelatedEntity(
       case "audio":
       case "transcript":
       case "metadata": {
+        const archive = await getConfiguredArchive();
+        if (archive && recordedCatalogId && recordedCatalogId !== archive.id) {
+          return {
+            type: "audio", found: false, data: null,
+            error: "Historical recording belongs to another source",
+          };
+        }
+        const scopedCatalogId = recordedCatalogId ?? archive?.id;
         // resourceId is an audio hash (SHA-256)
         // First try to get curated metadata from database
         const audioMetadata = await prisma.audioMetadata.findFirst({
-          where: { audioHash: resourceId },
+          where: { audioHash: resourceId, ...(scopedCatalogId ? { workflowGroupId: scopedCatalogId } : {}) },
           include: {
             album: true,
             recorder: true,
@@ -155,10 +165,11 @@ async function fetchRelatedEntity(
           };
         }
 
-        // No curated metadata, try to find in any active catalog
+        // Preserve recorded provenance; unscoped legacy rows may use the
+        // bound archive, never a different source selected by recency/default.
         const activeGroup = await prisma.workflowGroup.findFirst({
-          where: { isActive: true },
-          orderBy: { isDefault: "desc" },
+          where: scopedCatalogId ? { id: scopedCatalogId } : { isActive: true },
+          ...(scopedCatalogId ? {} : { orderBy: { isDefault: "desc" as const } }),
         });
 
         if (activeGroup) {
@@ -448,12 +459,15 @@ export async function GET(
     }
 
     // If expand is requested, fetch related entity
+    const detail = mapAuditLogToDetailViewModel(log, null);
     let relatedEntity: RelatedEntity | null = null;
     if (expand) {
-      relatedEntity = await fetchRelatedEntity(log.resource, log.resourceId);
+      relatedEntity = await fetchRelatedEntity(
+        log.resource, log.resourceId, log.catalogId ?? detail.target?.catalogId,
+      );
     }
 
-    return NextResponse.json(mapAuditLogToDetailViewModel(log, relatedEntity));
+    return NextResponse.json({ ...detail, relatedEntity });
   } catch (error) {
     if (isAuthError(error)) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });

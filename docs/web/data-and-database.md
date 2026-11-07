@@ -1,5 +1,8 @@
 # Web Data Model and Database
 
+For the staged deployment binding and read-only migration inventory, see
+[single-archive configuration](single-archive.md).
+
 > **Last Updated:** 2026-04-04
 
 How the web app models and serves catalog data (PostgreSQL + CSVs), database migration safety, and key environment configuration. For core pipeline data contracts (transcript schemas, storage layout), see [../data-model.md](../data-model.md).

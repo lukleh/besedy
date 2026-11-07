@@ -4,6 +4,7 @@ import type {
   PrismaClient,
 } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
+import { assertArchiveCatalogId } from "@/lib/archive";
 import { canonicalizeEmail } from "@/lib/email";
 import { grantFieldsForRole } from "@/lib/policy/catalog-permissions";
 
@@ -53,6 +54,7 @@ export async function syncPendingAdmissionState(
   options: SyncPendingAdmissionStateOptions = {},
   db: PendingAdmissionSyncClient = prisma
 ) {
+  if (input.catalogId !== null) await assertArchiveCatalogId(input.catalogId);
   const email = canonicalizeEmail(input.email);
   const grantBacked = hasPendingGrant(input);
   const existingAdmission = await db.portalAdmission.findUnique({

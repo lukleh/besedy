@@ -1,3 +1,4 @@
+import { assertArchiveCatalogId } from '@/lib/archive';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/db';
@@ -62,6 +63,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       include: INTAKE_INCLUDE,
     });
     if (!intake) return notFound('intake');
+    await assertArchiveCatalogId(intake.workflowGroupId);
 
     if (TERMINAL_STATUSES.has(intake.status)) {
       return NextResponse.json({
