@@ -53,6 +53,8 @@ describe("access capabilities", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
+    vi.stubEnv("BESEDY_ARCHIVE_ID", "20251225_120000");
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: "20251225_120000", isActive: true });
   });
 
   it("returns unauthenticated portal capability when no user is logged in", async () => {
@@ -96,17 +98,17 @@ describe("access capabilities", () => {
       isAdmin: false,
       isSuperadmin: false,
     });
-    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "catalog-1" });
+    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "20251225_120000" });
     prisma.catalogAccess.findUnique.mockResolvedValue({
       role: "reader",
       extraPermissions: [],
       status: "ACTIVE",
     });
 
-    const result = await getCatalogCapability("catalog-1", "user-1");
+    const result = await getCatalogCapability("20251225_120000", "user-1");
 
     expect(result).toMatchObject({
-      catalogId: "catalog-1",
+      catalogId: "20251225_120000",
       catalogExists: true,
       hasAccess: true,
       catalogGrant: grantForRole("reader"),
@@ -141,17 +143,17 @@ describe("access capabilities", () => {
       isAdmin: false,
       isSuperadmin: false,
     });
-    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "catalog-1" });
+    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "20251225_120000" });
     prisma.catalogAccess.findUnique.mockResolvedValue({
       role: "host",
       extraPermissions: [],
       status: "ACTIVE",
     });
 
-    const result = await getCatalogCapability("catalog-1", "host-1");
+    const result = await getCatalogCapability("20251225_120000", "host-1");
 
     expect(result).toMatchObject({
-      catalogId: "catalog-1",
+      catalogId: "20251225_120000",
       catalogExists: true,
       hasAccess: true,
       catalogGrant: grantForRole("host"),
@@ -180,17 +182,17 @@ describe("access capabilities", () => {
       isAdmin: false,
       isSuperadmin: false,
     });
-    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "catalog-1" });
+    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "20251225_120000" });
     prisma.catalogAccess.findUnique.mockResolvedValue({
       role: "curator",
       extraPermissions: [],
       status: "ACTIVE",
     });
 
-    const result = await getCatalogCapability("catalog-1", "curator-1");
+    const result = await getCatalogCapability("20251225_120000", "curator-1");
 
     expect(result).toMatchObject({
-      catalogId: "catalog-1",
+      catalogId: "20251225_120000",
       catalogExists: true,
       hasAccess: true,
       catalogGrant: grantForRole("curator"),
@@ -216,12 +218,12 @@ describe("access capabilities", () => {
       isAdmin: true,
       isSuperadmin: false,
     });
-    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "catalog-1" });
+    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "20251225_120000" });
 
-    const result = await getCatalogCapability("catalog-1", "admin-1");
+    const result = await getCatalogCapability("20251225_120000", "admin-1");
 
     expect(result).toMatchObject({
-      catalogId: "catalog-1",
+      catalogId: "20251225_120000",
       catalogExists: true,
       hasAccess: true,
       catalogGrant: null,
@@ -264,7 +266,7 @@ describe("access capabilities", () => {
       isAdmin: false,
       isSuperadmin: false,
     });
-    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "catalog-1" });
+    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "20251225_120000" });
     prisma.catalogEntry.findUnique.mockResolvedValue({
       isActionable: true,
       isPublished: false,
@@ -275,10 +277,10 @@ describe("access capabilities", () => {
       status: "ACTIVE",
     });
 
-    const result = await getRecordingCapability("catalog-1", "hash-1", "listener-1");
+    const result = await getRecordingCapability("20251225_120000", "hash-1", "listener-1");
 
     expect(result).toMatchObject({
-      catalogId: "catalog-1",
+      catalogId: "20251225_120000",
       hash: "hash-1",
       hasAccess: true,
       canAccessRecording: false,
@@ -290,35 +292,12 @@ describe("access capabilities", () => {
     });
   });
 
-  it("allows hosts to resolve inactive catalog settings when explicitly requested", async () => {
-    prisma.user.findUnique.mockResolvedValue({
-      status: "ACTIVE",
-      isAdmin: false,
-      isSuperadmin: false,
-    });
-    prisma.workflowGroup.findFirst.mockImplementation(({ where }: { where: { id: string; isActive?: boolean } }) =>
-      Promise.resolve(where.isActive === undefined ? { id: "catalog-1" } : null)
-    );
-    prisma.catalogAccess.findUnique.mockResolvedValue({
-      role: "host",
-      extraPermissions: [],
-      status: "ACTIVE",
-    });
-
-    const result = await getCatalogCapability("catalog-1", "host-1", {
+  it("refuses an inactive bound archive even when inactive settings are requested", async () => {
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: "20251225_120000", isActive: false });
+    await expect(getCatalogCapability("20251225_120000", "host-1", {
       activeCatalogOnly: false,
-    });
-
-    expect(result).toMatchObject({
-      catalogId: "catalog-1",
-      catalogExists: true,
-      hasAccess: true,
-      canAccessSettings: true,
-    });
-    expect(prisma.workflowGroup.findFirst).toHaveBeenCalledWith({
-      where: { id: "catalog-1" },
-      select: { id: true },
-    });
+    })).rejects.toThrow(ArchiveConfigurationError);
+    expect(prisma.workflowGroup.findFirst).not.toHaveBeenCalled();
   });
 
   it("denies reader recording capabilities when the catalog entry is missing", async () => {
@@ -327,7 +306,7 @@ describe("access capabilities", () => {
       isAdmin: false,
       isSuperadmin: false,
     });
-    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "catalog-1" });
+    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "20251225_120000" });
     prisma.catalogAccess.findUnique.mockResolvedValue({
       role: "reader",
       extraPermissions: [],
@@ -335,10 +314,10 @@ describe("access capabilities", () => {
     });
     prisma.catalogEntry.findUnique.mockResolvedValue(null);
 
-    const result = await getRecordingCapability("catalog-1", "hash-1", "reader-1");
+    const result = await getRecordingCapability("20251225_120000", "hash-1", "reader-1");
 
     expect(result).toMatchObject({
-      catalogId: "catalog-1",
+      catalogId: "20251225_120000",
       hash: "hash-1",
       hasAccess: true,
       canAccessRecording: false,
@@ -354,7 +333,7 @@ describe("access capabilities", () => {
       isAdmin: false,
       isSuperadmin: false,
     });
-    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "catalog-1" });
+    prisma.workflowGroup.findFirst.mockResolvedValue({ id: "20251225_120000" });
     prisma.catalogAccess.findUnique.mockResolvedValue({
       role: "curator",
       extraPermissions: [],
@@ -362,10 +341,10 @@ describe("access capabilities", () => {
     });
     prisma.catalogEntry.findUnique.mockResolvedValue(null);
 
-    const result = await getRecordingCapability("catalog-1", "hash-1", "curator-1");
+    const result = await getRecordingCapability("20251225_120000", "hash-1", "curator-1");
 
     expect(result).toMatchObject({
-      catalogId: "catalog-1",
+      catalogId: "20251225_120000",
       hash: "hash-1",
       hasAccess: true,
       canAccessRecording: false,

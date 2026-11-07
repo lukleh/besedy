@@ -5,12 +5,13 @@ import {
   getCatalogStartupSyncState,
 } from '@/lib/catalog-sync-startup';
 
-const { mockQueryRaw } = vi.hoisted(() => ({
+const { mockQueryRaw, mockSource } = vi.hoisted(() => ({
   mockQueryRaw: vi.fn(),
+  mockSource: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({
-  default: { $queryRaw: mockQueryRaw },
+  default: { $queryRaw: mockQueryRaw, workflowGroup: { findUnique: mockSource } },
 }));
 
 vi.mock('@/lib/catalog-sync-startup', () => ({
@@ -21,6 +22,8 @@ vi.mock('@/lib/catalog-sync-startup', () => ({
 describe('health route catalog projection state', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('BESEDY_ARCHIVE_ID', '20251225_120000');
+    mockSource.mockResolvedValue({ id: '20251225_120000', isActive: true });
     delete process.env.CATALOG_SYNC_REQUIRED_FOR_READINESS;
     mockQueryRaw.mockResolvedValue([{ ok: 1 }]);
     vi.mocked(getCatalogStartupSyncConfig).mockReturnValue({
@@ -102,4 +105,15 @@ describe('health route catalog projection state', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ status: 'ok' });
   });
+  it.each([undefined, "", "latest"])("refuses readiness without a valid archive binding: %j", async (value) => {
+    vi.stubEnv("BESEDY_ARCHIVE_ID", value);
+    expect((await GET()).status).toBe(503);
+    expect(mockSource).not.toHaveBeenCalled();
+  });
+
+  it.each([null, { id: "20251225_120000", isActive: false }])("refuses readiness when the bound source is unavailable: %j", async (source) => {
+    mockSource.mockResolvedValue(source);
+    expect((await GET()).status).toBe(503);
+  });
+
 });

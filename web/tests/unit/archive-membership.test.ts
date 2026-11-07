@@ -114,10 +114,10 @@ describe("portal entry through the bound archive membership", () => {
     expect(prisma.workflowGroup.findUnique).not.toHaveBeenCalled();
   });
 
-  it("retains the transitional unconfigured runtime without selecting or migrating grants", async () => {
+  it("refuses an unconfigured runtime before selecting or migrating grants", async () => {
     vi.stubEnv("BESEDY_ARCHIVE_ID", "");
 
-    expect((await resolvePortalActorContext(USER_ID)).canEnterPortal).toBe(true);
+    await expect(resolvePortalActorContext(USER_ID)).rejects.toThrow(ArchiveConfigurationError);
     expect(prisma.workflowGroup.findUnique).not.toHaveBeenCalled();
     expect(prisma.catalogAccess.findUnique).not.toHaveBeenCalled();
   });

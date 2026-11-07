@@ -19,11 +19,14 @@ export interface ArchiveBinding {
   label: string | null;
 }
 
-/** Unset is transitional only, until the single-archive client cutover. */
-export function getConfiguredArchiveId(
+export function requireArchiveId(
   raw = process.env.BESEDY_ARCHIVE_ID,
-): string | null {
-  if (raw === undefined || raw.trim() === '') return null;
+): string {
+  if (raw === undefined || raw.trim() === '') {
+    throw new ArchiveConfigurationError(
+      'BESEDY_ARCHIVE_ID is required; choose a source after running the archive preflight',
+    );
+  }
   const parsed = TimestampIdSchema.safeParse(raw.trim());
   if (!parsed.success) {
     throw new ArchiveConfigurationError(
@@ -33,20 +36,9 @@ export function getConfiguredArchiveId(
   return parsed.data;
 }
 
-export function requireArchiveId(): string {
-  const id = getConfiguredArchiveId();
-  if (!id) {
-    throw new ArchiveConfigurationError(
-      'BESEDY_ARCHIVE_ID is required; choose a source after running the archive preflight',
-    );
-  }
-  return id;
-}
-
 /** Validate the configured record on every request; deactivation fails closed. */
-export async function getConfiguredArchive(): Promise<ArchiveBinding | null> {
-  const id = getConfiguredArchiveId();
-  if (!id) return null;
+export async function requireArchive(): Promise<ArchiveBinding> {
+  const id = requireArchiveId();
   const { default: prisma } = await import('@/lib/db');
   const group = await prisma.workflowGroup.findUnique({
     where: { id },
@@ -60,18 +52,12 @@ export async function getConfiguredArchive(): Promise<ArchiveBinding | null> {
   return { id: group.id, label: group.label };
 }
 
-export async function requireArchive(): Promise<ArchiveBinding> {
-  requireArchiveId();
-  return (await getConfiguredArchive())!;
-}
-
 export async function assertArchiveCatalogId(catalogId: string): Promise<void> {
-  const archive = await getConfiguredArchive();
-  if (archive && archive.id !== catalogId) throw new ArchiveScopeError();
+  const archive = await requireArchive();
+  if (archive.id !== catalogId) throw new ArchiveScopeError();
 }
 
 /** Filesystem resolvers also refuse foreign IDs before constructing a path. */
 export function assertConfiguredArchiveId(catalogId: string): void {
-  const id = getConfiguredArchiveId();
-  if (id && id !== catalogId) throw new ArchiveScopeError();
+  if (requireArchiveId() !== catalogId) throw new ArchiveScopeError();
 }
