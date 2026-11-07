@@ -6,8 +6,9 @@
  * The service worker answers a failed navigation with the cached, session-free
  * `/downloads` document at the requested URL. This component reads that URL
  * and renders the shared presentation for it from local download packages:
- * the Downloads library, a catalog's downloaded events, or the normal event or
- * recording page. Navigation between these pages is ordinary: a Next.js link
+ * the Downloads library or the normal event or recording page. Failed catalog
+ * navigation shows Downloads directly, without another network navigation.
+ * Navigation between these pages is ordinary: a Next.js link
  * whose data fetch fails becomes a full navigation, which the worker answers
  * with this document again.
  *
@@ -26,7 +27,6 @@ import { useIsHydrated } from '@/hooks/use-is-hydrated';
 import { DOWNLOADS_PATH } from '@/lib/offline/cache-names';
 import { resolveLocalRoute } from '@/lib/offline/local-route';
 import { DownloadsContent } from './downloads-content';
-import { LocalEventList } from './local-event-list';
 
 /**
  * A worker from before the URL-preserving shell answers a failed navigation
@@ -80,8 +80,6 @@ export function LocalModeShell() {
   switch (route.kind) {
     case 'downloads':
       return <DownloadsContent />;
-    case 'catalog':
-      return <LocalEventList catalogId={route.catalogId} />;
     case 'event':
       return (
         <EventDetail
