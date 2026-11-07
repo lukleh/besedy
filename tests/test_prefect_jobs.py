@@ -27,6 +27,11 @@ CATALOG_ID = "20260201_120000"
 INTAKE_ID = "cmf9abcdefghijklmnopqrstu"
 
 
+@pytest.fixture(autouse=True)
+def bound_archive(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BESEDY_ARCHIVE_ID", CATALOG_ID)
+
+
 def _request_json(
     method: str,
     url: str,
@@ -302,19 +307,16 @@ def test_unsupported_runs_are_hidden_and_cannot_be_cancelled(jobs_server, tags) 
     assert client.cancelled is False
 
 
-def test_list_jobs_sanitizes_tags_and_passes_status_filter() -> None:
+def test_list_jobs_uses_bound_archive_sanitizes_actor_and_passes_status_filter() -> None:
     client = FakePrefectClient()
-    client.flow_run.tags = ["job-kind:ingest", "catalog:catalog-1", "requested-by:admin-1"]
     client.flow_run.state_name = "Failed"
     client.flow_run.state_type = "FAILED"
     service = PrefectJobsApiService(client=client)
-    jobs = service.list_jobs(
-        raw_query="catalogId=Catalog%201&requestedById=Admin%201&status=FAILED"
-    )
+    jobs = service.list_jobs(raw_query="requestedById=Admin%201&status=FAILED")
     assert [job["id"] for job in jobs["jobs"]] == [client.flow_run_id]
     assert client.read_flow_runs_calls == [
         {
-            "tags": ["job-kind:ingest", "catalog:catalog-1", "requested-by:admin-1"],
+            "tags": ["job-kind:ingest", f"catalog:{CATALOG_ID}", "requested-by:admin-1"],
             "limit": 50,
             "state_names": ["Failed", "Crashed", "TimedOut"],
         }
