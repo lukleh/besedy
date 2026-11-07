@@ -86,6 +86,22 @@ Website access becomes one archive membership per user, retaining the existing
 role, extras, revocation state and audit evidence. MCP tools use that same
 archive and continue checking the actor and material on every request.
 
+### Invitations include content access
+
+Every invitation for a non-admin user includes the role and any authorized
+extras that define their content access. Accepting the invitation establishes
+that access. The target has one invitation flow, with one pending invitation
+per normalized email; it has no separate sign-in-only invitation or multi-catalog
+sponsorship lifecycle. Ordinary website access requires active membership;
+administrator bootstrap remains separate.
+
+Granular roles, protected-role delegation, blocking, revocation and audit
+history remain. Revoking access does not delete an identity needed by authored
+content or historical records, and an identity record alone grants no access.
+Existing sign-in-only invitations need an explicitly assigned role or
+cancellation before the invitation cutover; migration must not assign a default
+role to make those records valid.
+
 ## Pull request sequence
 
 Each row is an independently reviewable change with its own documentation and
@@ -102,7 +118,8 @@ The first two implementation rows can proceed independently of data migration.
 | 6 | Remove website catalog selection, active/default preferences, discovery/create/default controls and selection synchronization; retain one source-settings view | 5 | Header/navigation/upload/access management use the bound archive; no preference/default/recent selection chain remains; no database column removal yet |
 | 7 | Simplify MCP schemas, access profile and tools to the archive; retire catalog discovery/default selection; update tool docs and corpus skill together | 5 | Authenticated MCP smoke and capability tests pass; citations, pagination cursors and event/seek links resolve correctly |
 | 8 | Migrate per-catalog grants into one archive membership while preserving roles/extras/revocation and grant history | 6, 7, reviewed data preflight | Permission matrix is unchanged for migrated members; ambiguous grants require an explicit decision; no automatic union or promotion |
-| 9 | Remove obsolete catalog-selection schema, APIs and compatibility paths after consumers have moved | 6, 7, 8 | Fresh and upgraded disposable databases pass; source records and authored state survive; no supported client uses retired fields |
+| 9 | Replace separate sign-in-only invitations and multi-catalog sponsorship with one pending invitation per normalized email carrying role/extras | 8, reviewed invitation preflight | Creation and acceptance require authorized content access; accepting establishes membership atomically; blocking/revocation and protected-role/no-self-grant checks remain; history survives |
+| 10 | Remove obsolete catalog-selection and invitation schema, APIs and compatibility paths after consumers have moved | 6, 7, 8, 9 | Fresh and upgraded disposable databases pass; source records and authored state survive; no supported client uses retired fields |
 
 PR 4 may need two patches if extracting the shared listening presentation and
 switching audience routes cannot be reviewed clearly together. Its scope does
@@ -123,6 +140,12 @@ references. Select the intended archive explicitly. If more than one source
 contains retained material or conflicting memberships, prepare a reviewed
 mapping; do not merge, delete or grant access implicitly. The preflight is
 read-only and production inspection is a separate operator action.
+
+The invitation preflight also identifies pending admissions without content
+access, conflicting pending grants and existing accounts without active access.
+Resolve pending invitations explicitly before cutover. Existing accounts must
+not acquire access automatically or lose identity records referenced by content
+or audit history.
 
 Keep existing source identifiers in queued jobs, frozen provenance and downloaded
 packages until their consumers have a tested migration. Public URL changes may
@@ -147,14 +170,7 @@ catalog projection integration checks, fresh/upgrade migration checks and Compos
 rendering when configuration changes. Missing infrastructure must be reported;
 an unavailable check is not evidence that the migration is safe.
 
-## Deferred decisions
-
-The product has not decided whether non-admin accounts may enter the portal
-without archive access. Preserve the distinction between portal admission and
-membership until that is resolved. If every invitation includes a role, a later
-PR can replace the multi-catalog sponsorship machinery with one pending
-invitation per email. Blocking, revocation, protected-role delegation and audit
-requirements remain in either case.
+## Deferred work
 
 Event metadata/release ownership, processing one submitted recording instead of
 the whole backlog, on-demand sidecars, and old notification-table retirement are
