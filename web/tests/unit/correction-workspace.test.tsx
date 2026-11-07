@@ -89,7 +89,13 @@ const fetchJsonMock = vi.mocked(fetchJson);
 
 const ACCEPTED = { consent: { accepted: true, version: "v", text: "terms" } };
 
-function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unknown = ACCEPTED, canPublish = true, eventId: number | null = 42) {
+function renderWorkspace(
+  correctionState: ReturnType<typeof state>,
+  consent: unknown = ACCEPTED,
+  canPublish = true,
+  eventId: number | null = 42,
+  entryOverrides: Record<string, unknown> = {},
+) {
   fetchJsonMock.mockImplementation(async (input) => {
     const url = String(input);
     if (url.endsWith("/correction")) return correctionState;
@@ -110,6 +116,7 @@ function renderWorkspace(correctionState: ReturnType<typeof state>, consent: unk
         dateDay: 19,
         location: { id: 1, name: "Městská knihovna" },
         album: { name: "Cyklus besed" },
+        ...entryOverrides,
       },
     };
     throw new Error(`unexpected ${url}`);
@@ -145,6 +152,20 @@ it("keeps the heading as text when there is no visible event to link to", async 
     name: "19. Února 2005 · Městská knihovna · 1 h 2 min",
   });
   expect(within(heading).queryByRole("link")).not.toBeInTheDocument();
+});
+
+it("falls back to the source file's date for an uncurated recording", async () => {
+  renderWorkspace(state({}), ACCEPTED, false, null, {
+    curatedDate: null,
+    dateYear: null,
+    dateMonth: null,
+    dateDay: null,
+    date: "2005-02-19",
+  });
+
+  expect(await screen.findByRole("heading", {
+    name: "19. Února 2005 · Městská knihovna · 1 h 2 min",
+  })).toBeInTheDocument();
 });
 
 describe("CorrectionWorkspace publication card", () => {

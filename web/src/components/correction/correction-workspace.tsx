@@ -24,6 +24,7 @@ import {
 import { parseDuration } from "@/lib/catalog-filters";
 import { formatHoursMinutes } from "@/lib/correction/format";
 import { formatRecordingDate } from "@/lib/date-format";
+import { parseDateFromString } from "@/lib/date-utils";
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
 import { CorrectionConsentCard, useContributorConsent } from "./correction-consent-card";
 import { CorrectionSurface } from "./correction-surface";
@@ -84,10 +85,12 @@ export function CorrectionWorkspace({
     enabled: supported === true,
   });
   const recording = entryQuery.data?.entry;
+  // An uncurated recording still has the date its source file carried.
+  const sourceDate = recording?.dateYear ? null : parseDateFromString(recording?.date);
   const recordingDate = formatRecordingDate(
-    recording?.dateYear,
-    recording?.dateMonth,
-    recording?.dateDay,
+    recording?.dateYear ?? sourceDate?.year,
+    recording?.dateMonth ?? sourceDate?.month,
+    recording?.dateDay ?? sourceDate?.day,
     locale,
   );
   const durationSeconds =
