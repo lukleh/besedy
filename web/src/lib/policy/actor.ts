@@ -1,6 +1,6 @@
 import type { UserStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
-import { assertArchiveCatalogId } from "@/lib/archive";
+import { assertArchiveCatalogId, getConfiguredArchive } from "@/lib/archive";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 
 export type SystemRole = "USER" | "ADMIN" | "SUPERADMIN";
@@ -88,16 +88,29 @@ export async function resolvePortalActorContext(
     };
   }
 
+  const archive = await getConfiguredArchive();
+  const systemRole: SystemRole = user.isSuperadmin
+    ? "SUPERADMIN"
+    : user.isAdmin
+      ? "ADMIN"
+      : "USER";
+  let canEnterPortal = true;
+  if (archive && systemRole === "USER") {
+    const access = await prisma.catalogAccess.findUnique({
+      where: {
+        userId_catalogId: { userId: resolvedUserId, catalogId: archive.id },
+      },
+      select: { status: true },
+    });
+    canEnterPortal = access?.status === "ACTIVE";
+  }
+
   return {
     userId: resolvedUserId,
     isAuthenticated: true,
     userStatus: user.status,
-    systemRole: user.isSuperadmin
-      ? "SUPERADMIN"
-      : user.isAdmin
-        ? "ADMIN"
-        : "USER",
-    canEnterPortal: true,
+    systemRole,
+    canEnterPortal,
   };
 }
 
