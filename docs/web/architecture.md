@@ -137,6 +137,17 @@ Per-catalog authorization no longer uses an ordered access-level scale. An actor
 - For a grant without `see_unreleased`, an event is visible only once released, with a published, actionable primary recording; a grant holding `see_unreleased` (`curator`, `catalog_admin`) sees every event regardless of release state.
 - Release is a second gate on top of edit. `canReleaseEvent` in `web/src/lib/policy/event.ts` asks `release_events`; the PATCH route reaches it only after the `manage_events` check, so an actor needs both to release. The event detail response's `canRelease` flag drives the release control in the editor. Both permissions sit on `curator` and `catalog_admin` today and neither is grantable as an extra, so no current grant holds one without the other.
 
+The event page offers its preferred recording without a recorder switcher.
+Editors inspect alternate captures and choose the preferred one in the event
+editor. Direct recording links retain their exact audio hash for search,
+transcript variants, correction and saved positions. Online and downloaded
+events render through the same `EventDetail` and `RecordingContent` components;
+the local source supplies only the capture saved in that event's download
+package, even when another recording is now preferred or is also downloaded.
+When a download starts from a playing recording, its explicit hash must still
+belong to the event. A changed assignment asks the person to reload instead of
+silently downloading another capture.
+
 ### Transcript Endpoints
 
 All four routes first require the recording itself be visible (catalog access, release-scoped, as in the Catalog Endpoints table above), then the permission below.

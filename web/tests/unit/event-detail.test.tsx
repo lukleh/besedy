@@ -35,11 +35,12 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content", () => ({
-  default: (props: { beforeAudioPlayer?: ReactNode; afterAudioPlayer?: ReactNode; headerActions?: ReactNode }) => {
+  default: (props: { beforeAudioPlayer?: ReactNode; afterAudioPlayer?: ReactNode; headerActions?: ReactNode; headerIdentity?: ReactNode }) => {
     recordingContentMock(props);
     return (
       <div data-testid="recording-content">
         <div data-testid="header-actions">{props.headerActions}</div>
+        <div data-testid="header-identity">{props.headerIdentity}</div>
         {props.beforeAudioPlayer}
         {props.afterAudioPlayer}
       </div>
@@ -55,8 +56,6 @@ vi.mock("@/components/ui/responsive-menu", () => {
     ResponsiveMenuTrigger: Passthrough,
     ResponsiveMenuContent: ({ children }: { children?: ReactNode }) => <div role="menu">{children}</div>,
     ResponsiveMenuItem: Passthrough,
-    ResponsiveMenuRadioGroup: Passthrough,
-    ResponsiveMenuRadioItem: Passthrough,
   };
 });
 
@@ -169,6 +168,24 @@ describe("EventDetail recording heading", () => {
     const content = screen.getByTestId("recording-content");
     expect(content).not.toHaveTextContent("Library, Jun 2006");
     expect(content).toHaveTextContent("Event description");
+  });
+
+  it.each([false, true])("plays the preferred capture without a recorder switcher (canEdit=%s)", (canEdit) => {
+    const preferred = eventDetail().recordings[0];
+    renderEventDetail(eventDetail({
+      recordings: [
+        { ...preferred, audioHash: "b".repeat(64), isPrimary: false, recorder: { id: 2, name: "Alternative" } },
+        preferred,
+      ],
+    }), canEdit);
+
+    expect(recordingContentMock).toHaveBeenCalledWith(expect.objectContaining({
+      params: { catalogId: CATALOG_ID, hash: preferred.audioHash },
+      downloadEventId: EVENT_ID,
+    }));
+    expect(within(screen.getByTestId("header-identity")).getByText("Recorder")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "selectRecorder" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Alternative")).not.toBeInTheDocument();
   });
 });
 

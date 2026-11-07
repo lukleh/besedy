@@ -1641,8 +1641,6 @@
         "artwork": "Artwork",
         "sources": "Sources"
       },
-      "selectRecorder": "Select recorder",
-      "recordingsMenuTitle": "Recordings",
       "unknownRecorder": "Unknown recorder",
       "unknownLocation": "Unknown location",
       "noRecordings": "This event has no recordings attached yet.",
