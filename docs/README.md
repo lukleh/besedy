@@ -6,6 +6,7 @@ AGENTS.md is the starting point. These docs extend it with context that is not o
 
 - [architecture.md](architecture.md) -- pipeline flow, module layers, design decisions
 - [adr/](adr/README.md) -- durable architecture decision records and their status
+- [Single-archive rollout](adr/0014-single-archive-event-listening.md) -- agreed product scope and pull-request sequence for retiring radio, catalog selection and offline catalog browsing
 - [data-model.md](data-model.md) -- data contracts: storage layout, transcript/diarization schemas, directory structure
 - [patterns.md](patterns.md) -- development guardrails: error handling, CLI output, feature checklist, testing, common pitfalls
 - [troubleshooting.md](troubleshooting.md) -- operator runbook: common pipeline errors, causes, and debug commands
