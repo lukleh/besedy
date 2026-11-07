@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { AlertCircle, Download, Loader2, Pause } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useToast } from "@/hooks/use-toast";
-import { useCatalogs } from "@/hooks/use-catalogs";
+import { useArchive } from "@/hooks/use-archive";
 import { useDownloadManager, useDownloadRecord, useEventDownload } from "@/hooks/use-downloads";
 import { downloadManager, type DownloadRecord } from "@/lib/offline/download-manager";
 import { cn } from "@/lib/utils";
@@ -45,10 +45,10 @@ export function DownloadButton(props: DownloadButtonProps) {
   const eventRecord = useEventDownload(catalogId, isEvent ? props.eventId : null);
   const record: DownloadRecord | null = isEvent ? eventRecord : recordingRecord;
   const { supported, hydrated } = useDownloadManager();
-  // Catalog pages already populate this query. Keep the button read-only so it
+  // The header already populates this query. Keep the button read-only so it
   // can enrich the offline snapshot without introducing another request.
-  const { data: catalogs } = useCatalogs({ enabled: false });
-  const catalogLabel = catalogs?.find((catalog) => catalog.id === catalogId)?.label ?? null;
+  const { data: archive } = useArchive({ enabled: false });
+  const catalogLabel = archive?.id === catalogId ? archive.label : null;
   const t = useTranslations("downloads");
   const { toast } = useToast();
   const [isStarting, setIsStarting] = useState(false);

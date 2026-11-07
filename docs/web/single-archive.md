@@ -24,9 +24,18 @@ current runtime. A configured value activates the binding immediately:
 - Malformed configuration fails explicitly. A nonexistent or inactive web
   source fails requests and readiness with no alternate-source fallback.
 
-The required `requireArchive()` resolver rejects an absent binding too. The
-subsequent client/API cutover uses it and retires the temporary unconfigured
-path. Do not add a second feature flag or infer an ID from the database.
+The required `requireArchive()` resolver rejects an absent binding too. Website
+navigation and `GET /api/archive` use it: configure the source before deploying
+the client cutover. They never fall back to saved/default/recent catalogs.
+The temporary unconfigured server/job path remains only for the staged migration
+and must be removed after all consumers and environments have moved. Do not add
+a second feature flag or infer an ID from the database.
+
+The website has one archive-settings entry instead of catalog discovery and
+creation controls. Browser uploads use the server-selected archive without a
+catalog picker. Source IDs remain in existing URLs and download snapshots;
+unknown IDs are not rewritten onto the archive. Display settings still use
+`/api/preferences`, whose API no longer accepts an active-catalog selection.
 
 ## Read-only preflight
 

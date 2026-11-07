@@ -202,7 +202,7 @@ vi.mock("@/hooks/use-toast", () => ({
 vi.mock("@/hooks/use-catalog-context", () => ({
   useCatalogContext: () => ({
     catalogId: "catalog-1",
-    activeGroup: { id: "catalog-1", label: "Catalog 1" },
+    archive: { id: "catalog-1", label: "Catalog 1" },
     isLoading: false,
     catalogNotFound: false,
     catalogValidationLoading: false,
