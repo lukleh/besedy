@@ -106,8 +106,7 @@ export default function UsersPageContent() {
   const { data: catalogs } = useCatalogs();
 
   // Set default catalog and role when Add User dialog opens
-  // Note: We only set defaults when dialog opens (not when selectedCatalog changes)
-  // to allow users to clear the catalog selection
+  // Keep the existing listener default when the dialog opens.
   useEffect(() => {
     if (createDialogOpen && catalogs && catalogs.length > 0) {
       const defaultCatalog =
@@ -443,8 +442,8 @@ export default function UsersPageContent() {
   const createUser = useMutation({
     mutationFn: async (data: {
       email: string;
-      catalogId?: string;
-      role?: CatalogRole;
+      catalogId: string;
+      role: CatalogRole;
     }) => {
       return fetchJson("/api/admin/portal-admissions", {
         method: "POST",
@@ -461,19 +460,14 @@ export default function UsersPageContent() {
       setSelectedRole("");
       const catalogName = catalogs?.find(
         (catalog) => catalog.id === variables.catalogId
-      )?.label;
+      )?.label || variables.catalogId;
       toast({
         title: t("pendingAdmissions.toast.userAdded"),
-        description:
-          catalogName && variables.role
-            ? t("pendingAdmissions.toast.userAddedWithAccess", {
-                email: variables.email,
-                level: getCatalogRoleLabel(variables.role),
-                catalog: catalogName,
-              })
-            : t("pendingAdmissions.toast.userAddedSimple", {
-                email: variables.email,
-              }),
+        description: t("pendingAdmissions.toast.userAddedWithAccess", {
+          email: variables.email,
+          level: getCatalogRoleLabel(variables.role),
+          catalog: catalogName,
+        }),
       });
     },
     onError: (error: Error) => {
@@ -495,14 +489,11 @@ export default function UsersPageContent() {
 
   const handleCreate = (e: FormEvent) => {
     e.preventDefault();
-    if (newEmail.trim()) {
+    if (newEmail.trim() && selectedCatalog && selectedRole) {
       createUser.mutate({
         email: newEmail.trim(),
-        ...(selectedCatalog &&
-          selectedRole && {
-            catalogId: selectedCatalog,
-            role: selectedRole as CatalogRole,
-          }),
+        catalogId: selectedCatalog,
+        role: selectedRole,
       });
     }
   };

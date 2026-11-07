@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { AddUserSchema } from "@/lib/validation/schemas";
-import { validateRequestBody, conflict, handlePrismaError } from "@/lib/api";
-import {
-  logPendingCatalogGrantEvent,
-  logPortalAdmissionEvent,
-} from "@/lib/audit/logger";
+import { validateRequestBody, conflict, notFound, handlePrismaError } from "@/lib/api";
+import { logPendingCatalogGrantEvent } from "@/lib/audit/logger";
 import { syncPendingAdmissionState } from "@/lib/admission/pending-admission-sync";
 import { requireAdminCapability } from "@/lib/access/require-admin";
 
@@ -17,7 +14,13 @@ export async function createPortalAdmission(request: NextRequest) {
 
     const bodyResult = await validateRequestBody(request, AddUserSchema);
     if (!bodyResult.success) return bodyResult.response;
-    const { email, catalogId, role, extraPermissions = [] } = bodyResult.data;
+    const { email, catalogId, role, extraPermissions } = bodyResult.data;
+
+    const catalog = await prisma.workflowGroup.findUnique({
+      where: { id: catalogId },
+      select: { isActive: true },
+    });
+    if (!catalog?.isActive) return notFound("catalog");
 
     const existingUser = await prisma.user.findUnique({
       where: { email },
@@ -33,8 +36,6 @@ export async function createPortalAdmission(request: NextRequest) {
         status: true,
       },
     });
-    const existingAdmissionStatus = existingAdmission?.status ?? null;
-
     if (existingAdmission?.status === "CLAIMED") {
       return conflict("This email has already claimed portal access");
     }
@@ -44,9 +45,9 @@ export async function createPortalAdmission(request: NextRequest) {
         email,
         createdById: userId,
         createdAt: new Date(),
-        catalogId: catalogId ?? null,
-        role: catalogId && role ? role : null,
-        extraPermissions: catalogId && role ? extraPermissions : [],
+        catalogId,
+        role,
+        extraPermissions,
         notes: null,
       };
 
@@ -59,39 +60,21 @@ export async function createPortalAdmission(request: NextRequest) {
       );
     });
 
-    if (catalogId && role) {
-      await logPendingCatalogGrantEvent({
-        actorId: userId,
-        action: "PENDING_CATALOG_GRANT_CREATED",
-        resourceId: `${email}:${catalogId}`,
-        email,
-        catalogId,
-        role,
-        details: {
-          email,
-          catalogId,
-          role,
-          extraPermissions,
-        },
-      });
-    } else {
-      await logPortalAdmissionEvent({
-        actorId: userId,
-        action:
-          existingAdmissionStatus === "PENDING"
-            ? "PORTAL_ADMISSION_UPDATED"
-            : "PORTAL_ADMISSION_CREATED",
-        resourceId: email,
-        email,
-        details: { email },
-      });
-    }
+    await logPendingCatalogGrantEvent({
+      actorId: userId,
+      action: "PENDING_CATALOG_GRANT_CREATED",
+      resourceId: `${email}:${catalogId}`,
+      email,
+      catalogId,
+      role,
+      details: { email, catalogId, role, extraPermissions },
+    });
 
     return NextResponse.json({
       id: email,
       email,
       status: "PENDING",
-      catalogAccess: catalogId ? { catalogId, role, extraPermissions } : null,
+      catalogAccess: { catalogId, role, extraPermissions },
     });
   } catch (error) {
     return handlePrismaError(error, "portal admission", "create");

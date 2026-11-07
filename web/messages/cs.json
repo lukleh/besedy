@@ -941,16 +941,15 @@
         "description": "Přidat nového uživatele do systému. Může se přihlásit s touto emailovou adresou pomocí Google OAuth.",
         "emailLabel": "Emailová adresa",
         "emailPlaceholder": "uzivatel@example.com",
-        "assignAccess": "Volitelné: Přiřadit přístup ke katalogu",
+        "assignAccess": "Přiřadit přístup k obsahu",
         "catalog": "Katalog",
-        "noCatalog": "Bez katalogu (přidat později)",
+        "selectCatalog": "Vyberte katalog",
         "role": "Role",
         "selectRole": "Vybrat roli"
       },
       "toast": {
         "userAdded": "Uživatel přidán",
-        "userAddedWithAccess": "{email} byl přidán s přístupem {level} ke katalogu {catalog}.",
-        "userAddedSimple": "{email} byl přidán a nyní se může přihlásit."
+        "userAddedWithAccess": "{email} byl přidán s přístupem {level} ke katalogu {catalog}."
       }
     },
     "toasts": {

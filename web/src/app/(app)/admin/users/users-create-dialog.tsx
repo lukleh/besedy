@@ -107,17 +107,15 @@ export function UsersCreateDialog({
                     {t("pendingAdmissions.dialog.catalog")}
                   </Label>
                   <ResponsiveSelect
-                    value={selectedCatalog || "none"}
-                    onValueChange={(value: string) =>
-                      onCatalogChange(value === "none" ? "" : value)
-                    }
+                    value={selectedCatalog}
+                    onValueChange={onCatalogChange}
                   >
                     <ResponsiveSelectTrigger
                       className="mt-1"
                       aria-label={t("pendingAdmissions.dialog.catalog")}
                     >
                       <ResponsiveSelectValue
-                        placeholder={t("pendingAdmissions.dialog.noCatalog")}
+                        placeholder={t("pendingAdmissions.dialog.selectCatalog")}
                         displayValue={
                           selectedCatalog
                             ? catalogs?.find(
@@ -130,9 +128,6 @@ export function UsersCreateDialog({
                     <ResponsiveSelectContent
                       title={t("pendingAdmissions.dialog.catalog")}
                     >
-                      <ResponsiveSelectItem value="none">
-                        {t("pendingAdmissions.dialog.noCatalog")}
-                      </ResponsiveSelectItem>
                       {catalogs?.map((catalog) => (
                         <ResponsiveSelectItem
                           key={catalog.id}
@@ -202,7 +197,7 @@ export function UsersCreateDialog({
             <Button
               type="submit"
               disabled={
-                createUserPending || (!!selectedCatalog && !selectedRole)
+                createUserPending || !selectedCatalog || !selectedRole
               }
             >
               {createUserPending && (

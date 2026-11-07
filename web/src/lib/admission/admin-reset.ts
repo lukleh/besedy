@@ -38,6 +38,13 @@ export class PortalAdmissionUserStillExistsError extends Error {
   }
 }
 
+export class PortalAdmissionMissingContentAccessError extends Error {
+  constructor(email: string) {
+    super(`Portal admission for ${email} has no saved active content access`);
+    this.name = "PortalAdmissionMissingContentAccessError";
+  }
+}
+
 export async function resetClaimedPortalAdmission(
   email: string,
   actorId: string,
@@ -83,12 +90,17 @@ export async function resetClaimedPortalAdmission(
       select: {
         catalogId: true,
         role: true,
+        catalog: { select: { isActive: true } },
         grantedById: true,
         grantedAt: true,
         notes: true,
       },
       orderBy: [{ grantedAt: "asc" }, { catalogId: "asc" }],
     });
+
+    if (!consumedGrants.some((grant) => grant.catalog.isActive)) {
+      throw new PortalAdmissionMissingContentAccessError(canonicalEmail);
+    }
 
     await tx.portalAdmission.update({
       where: { email: canonicalEmail },
@@ -102,21 +114,19 @@ export async function resetClaimedPortalAdmission(
       },
     });
 
-    if (consumedGrants.length > 0) {
-      await tx.pendingCatalogGrant.updateMany({
-        where: {
-          email: canonicalEmail,
-          status: "CONSUMED",
-        },
-        data: {
-          status: "PENDING",
-          consumedById: null,
-          consumedAt: null,
-          revokedById: null,
-          revokedAt: null,
-        },
-      });
-    }
+    await tx.pendingCatalogGrant.updateMany({
+      where: {
+        email: canonicalEmail,
+        status: "CONSUMED",
+      },
+      data: {
+        status: "PENDING",
+        consumedById: null,
+        consumedAt: null,
+        revokedById: null,
+        revokedAt: null,
+      },
+    });
 
     return {
       portalAdmissionId: admission.id,
