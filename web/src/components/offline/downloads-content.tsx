@@ -42,7 +42,34 @@ import { withBackTo } from '@/lib/navigation/back-to';
 import { cn } from '@/lib/utils';
 import { EventPlaybackProgress } from '@/components/catalog/event-playback-progress';
 import { SessionOrdinalBadge } from '@/components/catalog/session-ordinal-badge';
-import { localPlaybackSummary } from './local-event-list';
+import { summarizePlaybackProgress } from '@/lib/playback-progress';
+import {
+  getSavedPlaybackPosition,
+  isPlaybackCompleted,
+} from '@/lib/playback-position';
+
+function durationSeconds(durationHms: string | null): number | null {
+  if (!durationHms) return null;
+  const parts = durationHms.split(':').map((part) => Number(part));
+  if (parts.some((part) => !Number.isFinite(part))) return null;
+  const seconds = parts.reduce((total, part) => total * 60 + part, 0);
+  return seconds > 0 ? seconds : null;
+}
+
+/** Listening progress saved on this device for a downloaded recording. */
+function localPlaybackSummary(record: DownloadRecord) {
+  const completed = isPlaybackCompleted(record.hash);
+  const positionSec = getSavedPlaybackPosition(record.hash) ?? 0;
+  if (!completed && positionSec <= 0) return null;
+  return summarizePlaybackProgress(
+    {
+      positionSec,
+      durationSec: null,
+      completedAt: completed ? new Date(0) : null,
+    },
+    durationSeconds(record.recording?.durationHms ?? null),
+  );
+}
 
 export function DownloadsContent() {
   const t = useTranslations('downloads');
