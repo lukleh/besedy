@@ -234,3 +234,28 @@ export async function loadReadableCatalogEvent(
     recordings,
   };
 }
+
+/**
+ * The event a recording is assigned to, or null when there is none or the
+ * actor's grant may not see it. One unique-row lookup, then at most one
+ * single-event visibility check: callers that need just the link never pay
+ * for the catalog-wide released-events scan.
+ */
+export async function loadReadableRecordingEventId(
+  catalogId: string,
+  audioHash: string,
+  catalogGrant: CatalogGrant | null,
+): Promise<number | null> {
+  const assignment = await prisma.catalogEventRecording.findUnique({
+    where: { workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash } },
+    select: { eventId: true },
+  });
+  if (!assignment) return null;
+  if (
+    requiresReleasedEventVisibilityScope(catalogGrant) &&
+    !(await isPublishedVisibleEvent(prisma, catalogId, assignment.eventId))
+  ) {
+    return null;
+  }
+  return assignment.eventId;
+}

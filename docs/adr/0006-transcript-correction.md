@@ -378,10 +378,10 @@ changes. Speaker attribution itself remains out of scope.
 
 Correction lives on a dedicated page rather than as controls added to the
 reader. The page owns segment playback, keyboard handling, text editing and
-history. It always identifies the recording being corrected — event, recording
-title and date — and the frozen source it works against, so a corrector with
-several recordings in progress, or a curator about to publish, never has to
-trust the URL.
+history. It always identifies the recording being corrected — its date, place
+and duration, linked to its event when the corrector may see it — and the
+frozen source it works against, so a corrector with several recordings in
+progress, or a curator about to publish, never has to trust the URL.
 
 Correction is supported only on desktop and on a tablet in landscape
 orientation. A phone or portrait tablet shows an explanation to use a larger

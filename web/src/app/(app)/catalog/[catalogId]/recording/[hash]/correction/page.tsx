@@ -2,11 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getRecordingCapability } from "@/lib/access/capabilities";
 import { getSession } from "@/lib/auth/session";
 import { CorrectionWorkspace } from "@/components/correction/correction-workspace";
-import prisma from "@/lib/db";
-import {
-  catalogEventRecordingVisibilityWhere,
-  resolveReadableEventIds,
-} from "@/lib/catalog-events/read-service";
+import { loadReadableRecordingEventId } from "@/lib/catalog-events/read-service";
 
 interface CorrectionPageProps {
   params: Promise<{ catalogId: string; hash: string }>;
@@ -30,15 +26,7 @@ export default async function CorrectionPage({ params }: CorrectionPageProps) {
     notFound();
   }
 
-  const readableEventIds = await resolveReadableEventIds(catalogId, capability.catalogGrant);
-  const assignment = await prisma.catalogEventRecording.findFirst({
-    where: {
-      workflowGroupId: catalogId,
-      audioHash: hash,
-      ...catalogEventRecordingVisibilityWhere(readableEventIds),
-    },
-    select: { eventId: true },
-  });
+  const eventId = await loadReadableRecordingEventId(catalogId, hash, capability.catalogGrant);
 
   return (
     <CorrectionWorkspace
@@ -46,7 +34,7 @@ export default async function CorrectionPage({ params }: CorrectionPageProps) {
       hash={hash}
       userId={session.user.id}
       canPublish={capability.canPublishTranscript}
-      eventId={assignment?.eventId ?? null}
+      eventId={eventId}
     />
   );
 }

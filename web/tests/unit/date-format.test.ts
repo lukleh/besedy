@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getMonthName, formatPartialDate } from "@/lib/date-format";
+import { getMonthName, formatPartialDate, formatRecordingDate } from "@/lib/date-format";
 
 describe("getMonthName", () => {
   describe("English locale", () => {
@@ -96,5 +96,22 @@ describe("formatPartialDate", () => {
 
   it("falls back to English for unknown locales", () => {
     expect(formatPartialDate(2025, 12, 14, "unknown")).toBe("Dec 14, 2025");
+  });
+});
+
+describe("formatRecordingDate", () => {
+  it("uses the medium style for a full date", () => {
+    expect(formatRecordingDate(2005, 2, 19, "cs")).toBe("19. Února 2005");
+    expect(formatRecordingDate(2005, 2, 19, "en")).toBe("Feb 19, 2005");
+  });
+
+  it("falls back to month and year, or year alone, without a day", () => {
+    expect(formatRecordingDate(2024, 3, null, "cs")).toBe("Březen 2024");
+    expect(formatRecordingDate(2024, null, 18, "en")).toBe("2024");
+  });
+
+  it("returns null without a year", () => {
+    expect(formatRecordingDate(null, 2, 19, "cs")).toBeNull();
+    expect(formatRecordingDate(undefined, undefined, undefined, "en")).toBeNull();
   });
 });

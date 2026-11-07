@@ -23,7 +23,7 @@ import {
 } from "@/lib/api/recording-urls";
 import { parseDuration } from "@/lib/catalog-filters";
 import { formatHoursMinutes } from "@/lib/correction/format";
-import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
+import { formatRecordingDate } from "@/lib/date-format";
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
 import { CorrectionConsentCard, useContributorConsent } from "./correction-consent-card";
 import { CorrectionSurface } from "./correction-surface";
@@ -84,11 +84,12 @@ export function CorrectionWorkspace({
     enabled: supported === true,
   });
   const recording = entryQuery.data?.entry;
-  const recordingDate = recording?.dateYear
-    ? recording.dateMonth && recording.dateDay
-      ? formatMediumDate(recording.dateYear, recording.dateMonth, recording.dateDay, locale)
-      : formatPartialDate(recording.dateYear, recording.dateMonth, null, locale)
-    : recording?.curatedDate || recording?.date;
+  const recordingDate = formatRecordingDate(
+    recording?.dateYear,
+    recording?.dateMonth,
+    recording?.dateDay,
+    locale,
+  );
   const durationSeconds =
     parseDuration(recording?.duration) ?? stateQuery.data?.workspace?.spanDurationSeconds;
   const recordingHeading = [
@@ -98,6 +99,7 @@ export function CorrectionWorkspace({
   ]
     .filter((part): part is string => Boolean(part))
     .join(" · ");
+  const headingText = recordingHeading || hash.slice(0, 16);
 
   const refreshState = useCallback(() => {
     void queryClient.invalidateQueries({
@@ -200,9 +202,9 @@ export function CorrectionWorkspace({
                 href={buildEventPagePath(catalogId, eventId)}
                 className="underline decoration-muted-foreground/50 underline-offset-4 hover:decoration-current"
               >
-                {recordingHeading || hash.slice(0, 16)}
+                {headingText}
               </Link>
-            ) : recordingHeading || hash.slice(0, 16)}
+            ) : headingText}
           </h1>
           {state?.workspace && (
             <p className="break-all text-xs text-muted-foreground">

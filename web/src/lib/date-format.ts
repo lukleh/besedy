@@ -114,6 +114,22 @@ export function formatPartialDate(
 }
 
 /**
+ * The date part of a recording heading: the medium style for a full date,
+ * month or year alone when the day is unknown, null without a year.
+ */
+export function formatRecordingDate(
+  year: number | null | undefined,
+  month: number | null | undefined,
+  day: number | null | undefined,
+  locale: string
+): string | null {
+  if (!year) return null;
+  return month && day
+    ? formatMediumDate(year, month, day, locale)
+    : formatPartialDate(year, month, null, locale);
+}
+
+/**
  * Format relative time with proper locale support.
  *
  * Use this instead of date-fns formatDistanceToNow directly to ensure
