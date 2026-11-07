@@ -25,6 +25,7 @@ import { PrismaClient, UserStatus, CatalogRole } from "../src/generated/prisma/c
 import { PrismaPg } from "@prisma/adapter-pg";
 import { TEST_USERS } from "./test-data";
 import { syncSeedPendingAdmissions } from "./seed-pending-admissions";
+import { ArchiveConfigurationError, requireArchiveId } from "../src/lib/archive";
 
 // Superadmin is created directly (needed as actor for seeded admissions)
 const SUPERADMIN = {
@@ -75,17 +76,13 @@ async function main() {
   try {
     console.log("\n=== Seeding Dev/Test Environment ===\n");
 
-    // Get the default catalog (for seeded pending grant access levels)
-    const defaultCatalog = await prisma.workflowGroup.findFirst({
-      where: { isActive: true },
-      orderBy: [{ isDefault: "desc" }, { id: "desc" }],
+    const archive = await prisma.workflowGroup.findUnique({
+      where: { id: requireArchiveId() },
     });
-
-    if (defaultCatalog) {
-      console.log(`[i] Using catalog: ${defaultCatalog.id}`);
-    } else {
-      console.warn("[!] No active catalog found - pending admissions will be created without catalog access");
+    if (!archive?.isActive) {
+      throw new ArchiveConfigurationError("BESEDY_ARCHIVE_ID must name an existing active source before seeding users");
     }
+    console.log(`[i] Using archive: ${archive.id}`);
 
     // 1. Create superadmin user (required as inviter for other users)
     console.log("\n[1/3] Creating superadmin user...");
@@ -147,7 +144,7 @@ async function main() {
         email: userData.email,
         createdById: superadmin.id,
         createdAt: new Date(),
-        catalogId: userData.role ? defaultCatalog?.id ?? null : null,
+        catalogId: userData.role ? archive.id : null,
         role: userData.role ?? null,
         extraPermissions: userData.extraPermissions,
         notes: `Test user: ${userData.name}`,
