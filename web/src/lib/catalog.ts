@@ -32,13 +32,11 @@ export {
   compareNumbers,
   compareNumbersNullFirst,
   compareStrings,
-  extractDateParts,
   formatDuration,
   isCatalogEntryReady,
   parseDuration,
   scopeCatalogEntriesForAccess,
 } from "./catalog-filters";
-export { parseDateFromString } from "./date-utils";
 
 function compareCatalogEntryTitles(a: CatalogEntry, b: CatalogEntry): number {
   const aTitle = a.title || a.filename || a.hash;
@@ -315,21 +313,12 @@ export async function loadEnrichedCatalogEntries(
 
   return entries.map(({ entry, duplicateCount }) => {
     const meta = metadataByHash.get(entry.hash);
-    let curatedDate: string | null = null;
-    if (meta?.dateYear || meta?.dateMonth || meta?.dateDay) {
-      const parts: string[] = [];
-      if (meta.dateDay) parts.push(String(meta.dateDay));
-      if (meta.dateMonth) parts.push(String(meta.dateMonth));
-      if (meta.dateYear) parts.push(String(meta.dateYear));
-      curatedDate = parts.join(".");
-    }
 
     return {
       ...entry,
       curated: !!meta,
       curatedTitle: meta?.title,
       curatedArtist: meta?.artist,
-      curatedDate,
       dateYear: meta?.dateYear ?? null,
       dateMonth: meta?.dateMonth ?? null,
       dateDay: meta?.dateDay ?? null,

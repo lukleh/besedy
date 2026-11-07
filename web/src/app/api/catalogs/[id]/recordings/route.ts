@@ -3,7 +3,6 @@ import {
   loadEnrichedCatalogEntries,
   parseDuration,
   applyFilters,
-  extractDateParts,
   compareStrings,
   compareNumbers,
   compareNumbersNullFirst,
@@ -12,6 +11,7 @@ import {
   type EnrichedCatalogEntry,
   type CatalogFilters,
 } from "@/lib/catalog";
+import { recordingDateParts } from "@/lib/date-utils";
 import { findActiveCatalog } from "@/lib/catalog/resolve-group";
 import { validateParams } from "@/lib/api";
 import { TimestampIdParamSchema } from "@/lib/validation/schemas";
@@ -185,7 +185,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const datePartsMap = new Map<string, { year: number; month: number | null; day: number | null }>();
     for (const entry of visibleEntries) {
       if (entry.part !== null && entry.part !== undefined) partsSet.add(entry.part);
-      const dateParts = extractDateParts(entry);
+      const dateParts = recordingDateParts(entry);
       if (dateParts?.year) {
         const key = `${dateParts.year}-${dateParts.month ?? "00"}-${dateParts.day ?? "00"}`;
         if (!datePartsMap.has(key)) {
@@ -225,8 +225,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       b: EnrichedCatalogEntry,
       direction: SortDirection
     ): number => {
-      const aParts = extractDateParts(a);
-      const bParts = extractDateParts(b);
+      const aParts = recordingDateParts(a);
+      const bParts = recordingDateParts(b);
       const aKey = aParts?.year
         ? (aParts.year * 10000) + (aParts.month ?? 0) * 100 + (aParts.day ?? 0)
         : null;

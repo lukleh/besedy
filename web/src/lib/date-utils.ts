@@ -58,3 +58,28 @@ export function parseDateFromString(date?: string | null): {
 
   return null;
 }
+
+/**
+ * The date a recording shows: the curated parts as a whole when any of them
+ * is set, else the date parsed from the source file's tag. Never a per-part
+ * mix of the two.
+ */
+export function recordingDateParts(entry: {
+  date?: string | null;
+  dateYear?: number | null;
+  dateMonth?: number | null;
+  dateDay?: number | null;
+}): {
+  year?: number;
+  month?: number;
+  day?: number;
+} | null {
+  if (entry.dateYear || entry.dateMonth || entry.dateDay) {
+    return {
+      year: entry.dateYear ?? undefined,
+      month: entry.dateMonth ?? undefined,
+      day: entry.dateDay ?? undefined,
+    };
+  }
+  return parseDateFromString(entry.date);
+}

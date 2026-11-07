@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatPartialDate } from "@/lib/date-format";
-import { parseDateFromString } from "@/lib/date-utils";
+import { recordingDateParts } from "@/lib/date-utils";
 import { DownloadButton } from "@/components/offline/download-button";
 import {
   CheckboxCellEditor,
@@ -131,10 +131,8 @@ export function DesktopCatalogTableRow({
       ? null
       : entry.album;
 
-  const fallbackDate =
-    dateYear == null && dateMonth == null && dateDay == null
-      ? parseDateFromString(entry.date)
-      : null;
+  // The editor starts from the date the row shows: curated parts, else the source file's date.
+  const editorDate = recordingDateParts({ date: entry.date, dateYear, dateMonth, dateDay });
 
   return (
     <TableRow
@@ -232,9 +230,9 @@ export function DesktopCatalogTableRow({
             editor={
               <DateCellEditor
                 value={{
-                  year: dateYear ?? fallbackDate?.year ?? null,
-                  month: dateMonth ?? fallbackDate?.month ?? null,
-                  day: dateDay ?? fallbackDate?.day ?? null,
+                  year: editorDate?.year ?? null,
+                  month: editorDate?.month ?? null,
+                  day: editorDate?.day ?? null,
                 }}
                 onChange={(value) => {
                   inlineEdit.updateField(entry.hash, "dateYear", value.year);

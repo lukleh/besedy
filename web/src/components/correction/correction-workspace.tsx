@@ -21,9 +21,10 @@ import {
   buildEventPagePath,
   buildRecordingEntryUrl,
 } from "@/lib/api/recording-urls";
-import { extractDateParts, parseDuration } from "@/lib/catalog-filters";
+import { parseDuration } from "@/lib/catalog-filters";
 import { formatHoursMinutes } from "@/lib/correction/format";
 import { formatRecordingDate } from "@/lib/date-format";
+import { recordingDateParts } from "@/lib/date-utils";
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
 import { CorrectionConsentCard, useContributorConsent } from "./correction-consent-card";
 import { CorrectionSurface } from "./correction-surface";
@@ -84,9 +85,7 @@ export function CorrectionWorkspace({
     enabled: supported === true,
   });
   const recording = entryQuery.data?.entry;
-  // Curated date parts as a whole, else the source file's date: the same
-  // rule the catalog list applies.
-  const dateParts = recording ? extractDateParts(recording) : null;
+  const dateParts = recording ? recordingDateParts(recording) : null;
   const recordingDate = formatRecordingDate(
     dateParts?.year,
     dateParts?.month,

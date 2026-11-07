@@ -64,7 +64,6 @@ function createEntry(overrides: Partial<EnrichedCatalogEntry> = {}): EnrichedCat
     albumId: null,
     album: null,
     date: "2024-01-01",
-    curatedDate: null,
     dateYear: 2024,
     dateMonth: 1,
     dateDay: 1,
