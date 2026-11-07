@@ -29,14 +29,14 @@ function Probe({ timerRef }: { timerRef: { current: Timer | null } }) {
 
 function setup() {
   const timerRef: { current: Timer | null } = { current: null };
-  const cancelRadioFade = vi.fn();
-  const radioFade = vi.fn(() => cancelRadioFade);
+  const cancelPrimaryFade = vi.fn();
+  const primaryFade = vi.fn(() => cancelPrimaryFade);
   const playerFade = vi.fn(() => () => {});
-  const tree = (radioPlaying: boolean, player: boolean | null, playerEnabled = true) => (
+  const tree = (primaryPlaying: boolean, player: boolean | null, playerEnabled = true) => (
     <StrictMode>
       <SleepTimerProvider>
         <Probe timerRef={timerRef} />
-        <Target playing={radioPlaying} onFade={radioFade} />
+        <Target playing={primaryPlaying} onFade={primaryFade} />
         {player !== null && <Target playing={player} onFade={playerFade} enabled={playerEnabled} />}
       </SleepTimerProvider>
     </StrictMode>
@@ -44,11 +44,11 @@ function setup() {
   const view = render(tree(false, null));
   return {
     timer: () => timerRef.current!,
-    radioFade,
-    cancelRadioFade,
+    primaryFade,
+    cancelPrimaryFade,
     playerFade,
-    rerender: (radioPlaying: boolean, player: boolean | null, playerEnabled = true) =>
-      view.rerender(tree(radioPlaying, player, playerEnabled)),
+    rerender: (primaryPlaying: boolean, player: boolean | null, playerEnabled = true) =>
+      view.rerender(tree(primaryPlaying, player, playerEnabled)),
   };
 }
 
@@ -62,17 +62,17 @@ describe("SleepTimerProvider", () => {
   });
 
   it("is off by default and does nothing while off", () => {
-    const { timer, radioFade, rerender } = setup();
+    const { timer, primaryFade, rerender } = setup();
     expect(timer().remainingMs).toBeNull();
     expect(timer().minutes).toBeNull();
 
     rerender(true, null);
     act(() => vi.advanceTimersByTime(2 * 60 * 60_000));
-    expect(radioFade).not.toHaveBeenCalled();
+    expect(primaryFade).not.toHaveBeenCalled();
   });
 
   it("counts only while something plays, then fades every player once and switches off", () => {
-    const { timer, radioFade, playerFade, rerender } = setup();
+    const { timer, primaryFade, playerFade, rerender } = setup();
     rerender(false, false);
     act(() => timer().start(15));
     expect(timer().minutes).toBe(15);
@@ -88,11 +88,11 @@ describe("SleepTimerProvider", () => {
     rerender(false, false);
     act(() => vi.advanceTimersByTime(60 * 60_000));
     expect(timer().remainingMs).toBe(5 * 60_000);
-    expect(radioFade).not.toHaveBeenCalled();
+    expect(primaryFade).not.toHaveBeenCalled();
 
     rerender(false, true);
     act(() => vi.advanceTimersByTime(5 * 60_000));
-    expect(radioFade).toHaveBeenCalledTimes(1);
+    expect(primaryFade).toHaveBeenCalledTimes(1);
     expect(playerFade).toHaveBeenCalledTimes(1);
     expect(timer().remainingMs).toBeNull();
     expect(timer().minutes).toBeNull();
@@ -102,7 +102,7 @@ describe("SleepTimerProvider", () => {
     expect(playerFade).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps counting when radio hands playback to a recording player", () => {
+  it("keeps counting when playback moves between registered players", () => {
     const { timer, playerFade, rerender } = setup();
     rerender(true, null);
     act(() => timer().start(30));
@@ -125,7 +125,7 @@ describe("SleepTimerProvider", () => {
   });
 
   it("excludes a disabled target from counting and another player's expiration", () => {
-    const { timer, playerFade, radioFade, rerender } = setup();
+    const { timer, playerFade, primaryFade, rerender } = setup();
     rerender(false, true, false);
     act(() => timer().start(15));
     act(() => vi.advanceTimersByTime(30 * 60_000));
@@ -133,7 +133,7 @@ describe("SleepTimerProvider", () => {
 
     rerender(true, true, false);
     act(() => vi.advanceTimersByTime(15 * 60_000));
-    expect(radioFade).toHaveBeenCalledTimes(1);
+    expect(primaryFade).toHaveBeenCalledTimes(1);
     expect(playerFade).not.toHaveBeenCalled();
   });
 
@@ -155,26 +155,26 @@ describe("SleepTimerProvider", () => {
   });
 
   it("stops a running fade when the listener sets the timer again or turns it off", () => {
-    const { timer, radioFade, cancelRadioFade, rerender } = setup();
+    const { timer, primaryFade, cancelPrimaryFade, rerender } = setup();
     rerender(true, null);
     act(() => timer().start(15));
     act(() => vi.advanceTimersByTime(15 * 60_000));
-    expect(radioFade).toHaveBeenCalledTimes(1);
+    expect(primaryFade).toHaveBeenCalledTimes(1);
 
     act(() => timer().start(30));
-    expect(cancelRadioFade).toHaveBeenCalledTimes(1);
+    expect(cancelPrimaryFade).toHaveBeenCalledTimes(1);
 
     act(() => vi.advanceTimersByTime(30 * 60_000));
-    expect(radioFade).toHaveBeenCalledTimes(2);
+    expect(primaryFade).toHaveBeenCalledTimes(2);
     act(() => timer().cancel());
-    expect(cancelRadioFade).toHaveBeenCalledTimes(2);
+    expect(cancelPrimaryFade).toHaveBeenCalledTimes(2);
     // Each fade is cancelled once.
     act(() => timer().cancel());
-    expect(cancelRadioFade).toHaveBeenCalledTimes(2);
+    expect(cancelPrimaryFade).toHaveBeenCalledTimes(2);
   });
 
   it("can be cancelled", () => {
-    const { timer, radioFade, rerender } = setup();
+    const { timer, primaryFade, rerender } = setup();
     rerender(true, null);
     act(() => timer().start(15));
     act(() => timer().cancel());
@@ -182,6 +182,6 @@ describe("SleepTimerProvider", () => {
     expect(timer().minutes).toBeNull();
 
     act(() => vi.advanceTimersByTime(30 * 60_000));
-    expect(radioFade).not.toHaveBeenCalled();
+    expect(primaryFade).not.toHaveBeenCalled();
   });
 });

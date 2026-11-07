@@ -112,12 +112,6 @@ complete download will play, and ends after 3 s, when the player starts on the
 WebM. A WebM download that was paused before the copy
 existed restarts from the beginning as the copy when it is resumed (the key
 differs), on purpose: finishing it would leave a package Safari cannot stream.
-The radio asks for the copy only after the controlling service worker confirms it
-keys audio by `format` (`GET_AUDIO_FORMAT_SUPPORT`); a worker from before that
-key would answer with a downloaded WebM, so until it updates the radio keeps
-the WebM. An AAC track
-that fails moves on to the next track like any other; there is no fallback
-between formats, since a catalogued file is either there or not.
 
 On WebKit a WebM package downloaded before the copy existed still plays through
 the worker only up to Safari's first capped response, so the Downloads page

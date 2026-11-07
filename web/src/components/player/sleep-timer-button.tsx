@@ -41,13 +41,8 @@ function SleepTimerOption({
   );
 }
 
-interface SleepTimerButtonProps {
-  /** `player`: the recording player's control row; `banner`: the radio bar. */
-  variant: "player" | "banner";
-}
-
 /** Sets, shows and turns off the shared sleep timer. */
-export function SleepTimerButton({ variant }: SleepTimerButtonProps) {
+export function SleepTimerButton() {
   const t = useTranslations("sleepTimer");
   const timer = useSleepTimer();
   if (!timer) return null;
@@ -68,19 +63,14 @@ export function SleepTimerButton({ variant }: SleepTimerButtonProps) {
           aria-label={t("label")}
           data-testid="sleep-timer-button"
           className={cn(
-            "flex-col gap-0",
-            variant === "player" ? "h-12 w-12 sm:h-14 sm:w-14" : "h-9 w-auto min-w-9 px-1",
+            "flex-col gap-0 h-12 w-12 sm:h-14 sm:w-14",
             remaining !== null && "text-primary",
           )}
         >
-          <MoonStar className={variant === "player" ? "size-6" : "h-5 w-5"} />
+          <MoonStar className="size-6" />
           {remaining !== null && (
             <span
-              className={cn(
-                "text-[10px] font-semibold leading-none tabular-nums",
-                // The radio bar is too narrow on phones for the time.
-                variant === "banner" && "hidden sm:inline",
-              )}
+              className="text-[10px] font-semibold leading-none tabular-nums"
               data-testid="sleep-timer-remaining"
             >
               {remaining}

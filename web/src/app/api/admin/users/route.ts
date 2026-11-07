@@ -19,9 +19,8 @@ interface UserActivityRow {
  * playback progress save and the latest audited audio stream or download.
  * The player saves progress every few seconds while a recording plays, and
  * offline listening saves when it syncs, but progress rows only exist since
- * they were introduced, and radio playback never saves them. The audit
- * entries cover those plays, but also the player's metadata preload when a
- * recording page opens, radio prefetches and downloads, so the column means
+ * they were introduced. The audit entries also cover the player's metadata
+ * preload when a recording page opens and downloads, so the column means
  * the last audio access, not a confirmed play. Last activity also counts
  * audited actions (user_id is always the actor), MCP tool calls, and the
  * last sign-in. GREATEST ignores NULLs.

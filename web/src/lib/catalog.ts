@@ -77,41 +77,6 @@ export async function getCatalogEntry(
   return mapCatalogEntryRowToCatalogEntry(row);
 }
 
-/**
- * Fetch catalog entries for a specific set of audio hashes. Lets callers (e.g.
- * radio mode) load only the entries they need — such as the event primary
- * recordings — instead of the whole catalog. Returned in no particular order.
- */
-export async function getCatalogEntriesByHashes(
-  groupId: string,
-  hashes: string[],
-): Promise<CatalogEntry[]> {
-  if (hashes.length === 0) {
-    return [];
-  }
-  const rows = await prisma.catalogEntry.findMany({
-    where: { workflowGroupId: groupId, audioHash: { in: hashes } },
-    select: {
-      audioHash: true,
-      compressedPath: true,
-      compressedAacPath: true,
-      filename: true,
-      originalPath: true,
-      scanRoot: true,
-      durationHms: true,
-      sourceTitle: true,
-      sourceArtist: true,
-      sourceAlbum: true,
-      sourceDate: true,
-      hasArchived: true,
-      hasMetadata: true,
-      isActionable: true,
-      isPublished: true,
-    },
-  });
-  return rows.map(mapCatalogEntryRowToCatalogEntry);
-}
-
 export async function loadCatalogHashes(groupId: string): Promise<Set<string>> {
   const rows = await prisma.catalogEntry.findMany({
     where: { workflowGroupId: groupId },

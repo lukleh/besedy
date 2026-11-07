@@ -100,7 +100,6 @@ export default function RecordingContent({
     skipCatalogValidation,
   });
   const {
-    autoPlayOnSeek,
     clock,
     handleAudioEnded,
     handleDurationChange,
@@ -251,7 +250,6 @@ export default function RecordingContent({
         }
         afterAudioPlayer={afterAudioPlayer}
         audioUrl={audioUrl}
-        autoPlayOnSeek={autoPlayOnSeek}
         bookmarkMarkers={bookmarkMarkers}
         onBookmark={signedIn ? bookmarkDraft.startDraft : undefined}
         bookmarksPanel={
