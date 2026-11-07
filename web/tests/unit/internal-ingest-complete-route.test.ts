@@ -18,6 +18,7 @@ vi.mock("@/lib/catalog-sync", () => ({
 
 vi.mock("@/lib/db", () => ({
   default: {
+    workflowGroup: { findUnique: vi.fn() },
     recordingIntake: {
       findUnique: vi.fn(),
       update: vi.fn(),
@@ -69,6 +70,7 @@ function row(overrides: Record<string, unknown> = {}) {
 describe("internal ingest completion route", () => {
   let syncCatalogGroup: ReturnType<typeof vi.fn>;
   let prisma: {
+    workflowGroup: { findUnique: ReturnType<typeof vi.fn> };
     recordingIntake: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
   };
 
@@ -208,4 +210,17 @@ describe("internal ingest completion route", () => {
     });
     expect(invalid.status).toBe(400);
   });
+
+  it("rejects completion for a foreign intake before cleanup, sync or status changes", async () => {
+    process.env.BESEDY_ARCHIVE_ID = "20251225_120000";
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: "20251225_120000", label: "Archive", isActive: true });
+    prisma.recordingIntake.findUnique.mockResolvedValue(row());
+    const response = await completeIngest(request({ status: "REMOVED", audioHash: HASH }), {
+      params: Promise.resolve({ intakeId: INTAKE_ID }),
+    });
+    expect(response.status).toBe(404);
+    expect(syncCatalogGroup).not.toHaveBeenCalled();
+    expect(prisma.recordingIntake.update).not.toHaveBeenCalled();
+  });
+
 });

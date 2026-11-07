@@ -1,3 +1,4 @@
+import { assertArchiveCatalogId } from '@/lib/archive';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/db';
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest) {
     const bodyResult = await validateRequestBody(request, CreateUploadSchema);
     if (!bodyResult.success) return bodyResult.response;
     const { catalogId, filename, sizeBytes, mimeType } = bodyResult.data;
+    await assertArchiveCatalogId(catalogId);
 
     const extension = getAllowedIngestExtension(filename);
     if (!extension) {

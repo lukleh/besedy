@@ -1,10 +1,11 @@
+import { getConfiguredArchive } from '@/lib/archive';
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { requireAuth, getCurrentUserId } from "@/lib/auth/permissions";
 import { getCatalogDiscoveryCapability } from "@/lib/access/capabilities";
 import { requireAdminCapability } from "@/lib/access/require-admin";
 import { CreateFullCatalogSchema } from "@/lib/validation/schemas";
-import { validateMutationSource, validateRequestBody, handlePrismaError } from "@/lib/api";
+import { badRequest, validateMutationSource, validateRequestBody, handlePrismaError } from "@/lib/api";
 import { logCatalogLifecycleEvent } from "@/lib/audit/logger";
 import { syncCatalogGroup, type CatalogSyncResult } from "@/lib/catalog-sync";
 
@@ -64,6 +65,10 @@ export async function POST(request: NextRequest) {
     await requireAdminCapability({
       message: "Permission denied. Requires catalog management access.",
     });
+
+    if (await getConfiguredArchive()) {
+      return badRequest('This deployment is bound to one archive; additional catalogs cannot be created');
+    }
 
     const bodyResult = await validateRequestBody(request, CreateFullCatalogSchema);
     if (!bodyResult.success) return bodyResult.response;

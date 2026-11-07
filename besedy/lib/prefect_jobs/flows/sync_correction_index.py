@@ -32,8 +32,8 @@ from besedy.lib.rag_colbert_source_state import read_source_state
 from ..json_types import JsonDict
 from ..models import (
     validate_audio_hash,
-    validate_catalog_id,
     validate_correction_index_operation,
+    validate_deployment_catalog_id,
     validate_operation_token,
 )
 from .ingest_recording import MAX_ERROR_MESSAGE_LENGTH, IngestFlowError, run_catalog_cli
@@ -75,6 +75,7 @@ def resolve_catalog_transcripts_root(catalog_id: str) -> Path:
     rather than to whatever generation the ``transcripts`` symlink currently
     points at, which may belong to another catalog.
     """
+    catalog_id = validate_deployment_catalog_id(catalog_id)
     root = resolve_transcripts_parent() / f"transcripts_{catalog_id}"
     if not root.is_dir():
         raise CorrectionIndexFlowError(
@@ -139,7 +140,7 @@ def sync_correction_index_flow(
     backend: str | None = None,
 ) -> JsonDict:
     del requested_by_id
-    catalog_id = validate_catalog_id(catalog_id)
+    catalog_id = validate_deployment_catalog_id(catalog_id)
     audio_hash = validate_audio_hash(audio_hash)
     operation = validate_correction_index_operation(operation)
     operation_token = validate_operation_token(operation_token)

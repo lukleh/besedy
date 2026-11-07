@@ -8,6 +8,8 @@ import {
 } from "@/lib/access/capabilities";
 import * as session from "@/lib/auth/session";
 import { grantForRole } from "@/lib/policy/catalog-permissions";
+import { ArchiveConfigurationError, ArchiveScopeError } from "@/lib/archive";
+import { resolveCatalogActorContext } from "@/lib/policy/actor";
 
 vi.mock("@/lib/auth/session", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/session")>("@/lib/auth/session");
@@ -24,6 +26,7 @@ vi.mock("@/lib/db", () => ({
     },
     workflowGroup: {
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
     },
     catalogAccess: {
       findFirst: vi.fn(),
@@ -39,7 +42,7 @@ vi.mock("@/lib/db", () => ({
 describe("access capabilities", () => {
   let prisma: {
     user: { findUnique: ReturnType<typeof vi.fn> };
-    workflowGroup: { findFirst: ReturnType<typeof vi.fn> };
+    workflowGroup: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
     catalogAccess: {
       findFirst: ReturnType<typeof vi.fn>;
       findMany: ReturnType<typeof vi.fn>;
@@ -392,4 +395,23 @@ describe("access capabilities", () => {
       canEditRecording: true,
     });
   });
+
+  it("treats foreign page catalogs as missing while management actors still reject them", async () => {
+    vi.stubEnv("BESEDY_ARCHIVE_ID", "20251225_120000");
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: "20251225_120000", label: "Archive", isActive: true });
+    prisma.user.findUnique.mockResolvedValue({ status: "ACTIVE", isAdmin: true, isSuperadmin: false });
+    const capability = await getCatalogCapability("20260101_120000", "admin-1");
+    expect(capability).toMatchObject({ catalogExists: false, hasAccess: false, isCatalogAdmin: false, canManageCatalogConfiguration: false });
+    const recording = await getRecordingCapability("20260101_120000", "a".repeat(64), "admin-1");
+    expect(recording.canAccessRecording).toBe(false);
+    expect(prisma.catalogEntry.findUnique).not.toHaveBeenCalled();
+    await expect(resolveCatalogActorContext("20260101_120000", "admin-1", { activeCatalogOnly: false })).rejects.toThrow(ArchiveScopeError);
+  });
+
+  it("keeps configured archive failures distinct from a missing page catalog", async () => {
+    vi.stubEnv("BESEDY_ARCHIVE_ID", "20251225_120000");
+    prisma.workflowGroup.findUnique.mockResolvedValue(null);
+    await expect(getCatalogCapability("20251225_120000", "user-1")).rejects.toThrow(ArchiveConfigurationError);
+  });
+
 });

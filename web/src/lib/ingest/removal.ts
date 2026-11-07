@@ -1,5 +1,6 @@
 import { replaceLostPrimaryRecording } from '@/lib/catalog-events/primary-succession';
 import prisma from '@/lib/db';
+import { assertArchiveCatalogId } from '@/lib/archive';
 
 export interface RecordingWebStateRemoval {
   detachedEventId: number | null;
@@ -24,6 +25,7 @@ export async function removeRecordingWebState(
   catalogId: string,
   audioHash: string,
 ): Promise<RecordingWebStateRemoval> {
+  await assertArchiveCatalogId(catalogId);
   return prisma.$transaction(async (tx) => {
     let detachedEventId: number | null = null;
     let promotedAudioHash: string | null = null;

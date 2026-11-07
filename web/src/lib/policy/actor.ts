@@ -1,5 +1,6 @@
 import type { UserStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
+import { assertArchiveCatalogId } from "@/lib/archive";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 
 export type SystemRole = "USER" | "ADMIN" | "SUPERADMIN";
@@ -105,6 +106,7 @@ export async function resolveCatalogActorContext(
   userId?: string,
   options: ResolveCatalogActorContextOptions = {}
 ): Promise<CatalogActorContext> {
+  await assertArchiveCatalogId(catalogId);
   const [portal, catalog] = await Promise.all([
     resolvePortalActorContext(userId),
     prisma.workflowGroup.findFirst({

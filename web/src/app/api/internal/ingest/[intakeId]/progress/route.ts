@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/db';
+import { ArchiveScopeError, getConfiguredArchive } from '@/lib/archive';
 import {
   handlePrismaError,
   notFound,
@@ -50,9 +51,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const bodyResult = await validateRequestBody(request, ProgressSchema);
     if (!bodyResult.success) return bodyResult.response;
     const { step, total, label } = bodyResult.data;
+    const archive = await getConfiguredArchive();
 
     const now = new Date();
-    const active = { id: intakeId, status: { in: [...ACTIVE_INTAKE_STATUSES] } };
+    const active = {
+      id: intakeId,
+      status: { in: [...ACTIVE_INTAKE_STATUSES] },
+      ...(archive ? { workflowGroupId: archive.id } : {}),
+    };
     // The run's clock starts with its first report; the guard keeps the write
     // atomic, so a concurrent report never moves an existing start.
     await prisma.recordingIntake.updateMany({
@@ -72,9 +78,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (result.count === 0) {
       const exists = await prisma.recordingIntake.findUnique({
         where: { id: intakeId },
-        select: { id: true },
+        select: { id: true, workflowGroupId: true },
       });
       if (!exists) return notFound('intake');
+      if (archive && exists.workflowGroupId !== archive.id) throw new ArchiveScopeError();
     }
     return NextResponse.json({ ok: true, applied: result.count > 0 });
   } catch (error) {

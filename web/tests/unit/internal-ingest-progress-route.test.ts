@@ -4,6 +4,7 @@ import { POST as reportProgress } from "@/app/api/internal/ingest/[intakeId]/pro
 
 vi.mock("@/lib/db", () => ({
   default: {
+    workflowGroup: { findUnique: vi.fn() },
     recordingIntake: {
       findUnique: vi.fn(),
       updateMany: vi.fn(),
@@ -32,6 +33,7 @@ function call(body: unknown, token?: string | null) {
 
 describe("internal ingest progress route", () => {
   let prisma: {
+    workflowGroup: { findUnique: ReturnType<typeof vi.fn> };
     recordingIntake: {
       findUnique: ReturnType<typeof vi.fn>;
       updateMany: ReturnType<typeof vi.fn>;
@@ -116,4 +118,17 @@ describe("internal ingest progress route", () => {
 
     expect(response.status).toBe(404);
   });
+
+  it("scopes progress writes to the archive and rejects a foreign intake", async () => {
+    process.env.BESEDY_ARCHIVE_ID = "20251225_120000";
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: "20251225_120000", label: "Archive", isActive: true });
+    prisma.recordingIntake.findUnique.mockResolvedValue({ id: INTAKE_ID, workflowGroupId: "20260201_120000" });
+    prisma.recordingIntake.updateMany.mockResolvedValue({ count: 0 });
+    const response = await call({ label: "catalog add" });
+    expect(response.status).toBe(404);
+    for (const [query] of prisma.recordingIntake.updateMany.mock.calls) {
+      expect(query.where.workflowGroupId).toBe("20251225_120000");
+    }
+  });
+
 });
