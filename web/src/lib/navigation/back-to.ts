@@ -12,7 +12,7 @@ export const BACK_TO_PARAM = "backTo";
 
 /**
  * Parameters that act once when a page opens: the recording's start position
- * and search passage, the radio handoff, the read-only notice, the admin Add
+ * and search passage, the read-only notice, the admin Add
  * user dialog. Returning to the page must not replay them, so the origin
  * leaves them out. Parameters that describe the page (tab, filters) stay.
  */
@@ -21,7 +21,6 @@ const ONE_SHOT_PARAMS = [
   "seek",
   "end",
   "fromSearch",
-  "fromRadio",
   "readOnly",
   "action",
 ];

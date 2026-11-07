@@ -61,7 +61,7 @@ export function LocalModeShell() {
     // Restore the requested URL, search included. A plain state object lets
     // the Next.js router pick the change up, so usePathname and
     // useSearchParams then describe the requested page and routing below
-    // proceeds normally with its query parameters (seek, end, fromRadio).
+    // proceeds normally with its query parameters (seek, end).
     window.history.replaceState(null, '', redirectTarget);
   }, [redirectTarget]);
 

@@ -81,7 +81,6 @@ vi.mock("@/components/language-switcher", () => ({
 vi.mock("@/components/auth/user-menu", () => ({
   UserMenu: () => <div data-testid="user-menu" />,
 }));
-vi.mock("@/components/radio/radio-button", () => ({ RadioButton: () => null }));
 vi.mock("@/components/notifications/notification-bell", () => ({
   NotificationBell: () => null,
 }));

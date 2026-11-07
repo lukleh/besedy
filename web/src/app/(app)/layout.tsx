@@ -9,8 +9,6 @@ import { Header } from "@/components/header";
 import { GoogleTranslateWarning } from "@/components/google-translate-warning";
 import { InstallBanner } from "@/components/pwa/install-banner";
 import { LastRouteTracker } from "@/components/pwa/last-route-tracker";
-import { RadioBanner } from "@/components/radio/radio-banner";
-import { RadioSpacer } from "@/components/radio/radio-spacer";
 import { UpdateBanner } from "@/components/update-banner";
 import { MobileToastOverlay } from "@/components/mobile-toast-overlay";
 import { getSession } from "@/lib/auth/session";
@@ -83,12 +81,10 @@ export default async function RootLayout({
             <Header />
             {/* Spacer for fixed header */}
             <div className="h-14 safe-top" aria-hidden="true" />
-            <RadioSpacer />
             <main className="flex-1">{children}</main>
           </div>
           <Toaster richColors position="top-right" />
           <MobileToastOverlay />
-          <RadioBanner />
           <InstallBanner />
           <UpdateBanner />
         </AppProviders>

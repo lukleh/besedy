@@ -186,7 +186,6 @@ describe("RecordingAudioSection lock-screen metadata", () => {
     render(
       <RecordingAudioSection
         audioUrl="/audio"
-        autoPlayOnSeek={false}
         catalogId="c"
         currentTimeSetter={noop}
         hash={HASH}
@@ -216,7 +215,6 @@ describe("RecordingAudioSection metadata edit", () => {
     render(
       <RecordingAudioSection
         audioUrl="/audio"
-        autoPlayOnSeek={false}
         catalogId="c"
         currentTimeSetter={noop}
         hash={HASH}

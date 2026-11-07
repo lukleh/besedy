@@ -332,7 +332,7 @@ export function AudioPlayer({
   }, [src, recordingHash, onPlayingChange, resetForSource, clearMediaError, resetBufferDiagnostics, resetDebugEvents, cancelSleepFade, setCurrentTime, syncPlayRequest]);
 
   // Consume each external request once. Callback changes and the page clearing
-  // autoPlayOnSeek must not replay an old handoff over a later user seek. The
+  // autoPlayOnSeek must not replay an old request over a later user seek. The
   // recording identity survives transport changes; the source-switch effect
   // above restores the latest position before a genuinely new request is read.
   useEffect(() => {

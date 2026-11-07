@@ -68,14 +68,6 @@ vi.mock("@/components/pwa/install-banner", () => ({
   InstallBanner: () => <div data-testid="install-banner" />,
 }));
 
-vi.mock("@/components/radio/radio-banner", () => ({
-  RadioBanner: () => <div data-testid="radio-banner" />,
-}));
-
-vi.mock("@/components/radio/radio-spacer", () => ({
-  RadioSpacer: () => <div data-testid="radio-spacer" />,
-}));
-
 vi.mock("@/components/update-banner", () => ({
   UpdateBanner: () => <div data-testid="update-banner" />,
 }));

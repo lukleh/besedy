@@ -248,7 +248,7 @@ Catalog administrators may assign the curated extras `browse_recordings`,
 Delivery permissions never bypass the corresponding read/visibility gate.
 
 The recordings list is a separate surface from opening one recording through
-an event, search result, or radio. Offline caching likewise follows
+an event or search result. Offline caching likewise follows
 `stream_audio`; it has no separate permission and cannot widen what the source
 routes deliver.
 
@@ -417,7 +417,7 @@ same permission rather than asking about the switcher.
 
 **Only the list.** A single recording stays reachable: the events surface
 renders the recording page inside itself for an event's recordings, search
-results link straight to a recording at a timestamp, and radio plays one. Those
+results link straight to a recording at a timestamp. Those
 answer to `canAccessRecording`, `stream_audio` and `read_transcripts` as before.
 What the permission decides is whether the whole catalog is browsable as a list
 of recordings, which is the editorial view of the archive rather than the way it

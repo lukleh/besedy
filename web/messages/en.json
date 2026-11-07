@@ -226,19 +226,6 @@
     "bookmark": "Bookmark this moment (B)",
     "reconnecting": "Reconnecting..."
   },
-  "radio": {
-    "start": "Start radio",
-    "stop": "Stop radio",
-    "noEventsTitle": "No events to play",
-    "noEventsDescription": "This catalog has no released events yet.",
-    "loading": "Loading...",
-    "play": "Play",
-    "pause": "Pause",
-    "skip": "Skip to next",
-    "volume": "Volume",
-    "mute": "Mute",
-    "unmute": "Unmute"
-  },
   "sleepTimer": {
     "label": "Sleep timer",
     "activeLabel": "Sleep timer: {time} left",
