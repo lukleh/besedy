@@ -41,7 +41,6 @@ export interface CatalogEntryResponse {
   albumId?: number | null;
   album?: AlbumInfo | null;
   date?: string;
-  curatedDate?: string | null;
   dateYear?: number | null;
   dateMonth?: number | null;
   dateDay?: number | null;
@@ -77,7 +76,6 @@ interface CatalogEntryDtoSource {
   albumId?: number | null;
   album?: AlbumInfo | null;
   date?: string | null;
-  curatedDate?: string | null;
   dateYear?: number | null;
   dateMonth?: number | null;
   dateDay?: number | null;
@@ -112,7 +110,6 @@ export function toCatalogEntryResponse(
     albumId: entry.albumId ?? null,
     album: entry.album ?? null,
     date: entry.date ?? undefined,
-    curatedDate: entry.curatedDate ?? null,
     dateYear: entry.dateYear ?? null,
     dateMonth: entry.dateMonth ?? null,
     dateDay: entry.dateDay ?? null,

@@ -163,7 +163,6 @@ export interface EnrichedCatalogEntry extends CatalogEntry {
   curated: boolean;
   curatedTitle?: string | null;
   curatedArtist?: string | null;
-  curatedDate?: string | null;
   dateYear?: number | null;
   dateMonth?: number | null;
   dateDay?: number | null;

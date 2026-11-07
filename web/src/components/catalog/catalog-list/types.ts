@@ -12,7 +12,6 @@ export interface CatalogEntry {
   albumId?: number | null;
   album?: { id: number; name: string } | null;
   date?: string;
-  curatedDate?: string | null;
   dateYear?: number | null;
   dateMonth?: number | null;
   dateDay?: number | null;
@@ -94,7 +93,6 @@ export const catalogEntrySchema = z.object({
     .nullable()
     .optional(),
   date: z.string().optional(),
-  curatedDate: z.string().nullable().optional(),
   dateYear: z.number().nullable().optional(),
   dateMonth: z.number().nullable().optional(),
   dateDay: z.number().nullable().optional(),

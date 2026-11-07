@@ -12,7 +12,7 @@ import { readTranscriptFile } from "@/lib/transcript";
 import { resolveReaderTranscriptSources } from "@/lib/correction/resolve";
 import { readPublishedTranscriptFile } from "@/lib/correction/reader-transcript";
 import { resolveConfiguredDefaultBackend } from "@/lib/correction/source";
-import { parseDateFromString } from "@/lib/date-utils";
+import { recordingDateParts } from "@/lib/date-utils";
 import { validateParams, notFound } from "@/lib/api";
 import {
   TimestampIdParamSchema,
@@ -136,16 +136,9 @@ async function buildTranscriptHeaderContext(
     const metadata = metadataByHash.get(hash);
     const locationLabel = metadata?.location?.name?.trim() || "Unknown location";
 
-    const curatedDateParts =
-      metadata && (metadata.dateYear || metadata.dateMonth || metadata.dateDay)
-        ? {
-            year: metadata.dateYear ?? undefined,
-            month: metadata.dateMonth ?? undefined,
-            day: metadata.dateDay ?? undefined,
-          }
-        : null;
-    const fallbackDateParts = parseDateFromString(sourceDateByHash.get(hash) ?? null);
-    const dateLabel = formatDateLabel(curatedDateParts ?? fallbackDateParts);
+    const dateLabel = formatDateLabel(
+      recordingDateParts({ ...metadata, date: sourceDateByHash.get(hash) })
+    );
 
     contextByHash.set(hash, { dateLabel, locationLabel });
   }

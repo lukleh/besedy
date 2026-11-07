@@ -1,5 +1,5 @@
 import { scopeRecordingsForAccess } from "@/lib/policy/recording";
-import { parseDateFromString } from "./date-utils";
+import { recordingDateParts } from "./date-utils";
 import type {
   CatalogEntry,
   CatalogFilters,
@@ -38,23 +38,6 @@ export function scopeCatalogEntriesForAccess<
   T extends Pick<CatalogEntry, "isActionable" | "isPublished">,
 >(entries: T[], catalogGrant: CatalogGrant | null | undefined): T[] {
   return scopeRecordingsForAccess(entries, catalogGrant);
-}
-
-export function extractDateParts(
-  entry: Pick<EnrichedCatalogEntry, "date" | "dateYear" | "dateMonth" | "dateDay">,
-): {
-  year?: number;
-  month?: number;
-  day?: number;
-} | null {
-  if (entry.dateYear || entry.dateMonth || entry.dateDay) {
-    return {
-      year: entry.dateYear ?? undefined,
-      month: entry.dateMonth ?? undefined,
-      day: entry.dateDay ?? undefined,
-    };
-  }
-  return parseDateFromString(entry.date);
 }
 
 export function applyFilters(
@@ -136,7 +119,7 @@ export function applyFilters(
 
   if (filters.dateYear === EMPTY_FILTER) {
     filtered = filtered.filter((entry) => {
-      const parts = extractDateParts(entry);
+      const parts = recordingDateParts(entry);
       return !parts?.year;
     });
   } else if (filters.dateYear) {
@@ -144,7 +127,7 @@ export function applyFilters(
     const effectiveDateMonth = effectiveDateYear ? filters.dateMonth : null;
     const effectiveDateDay = effectiveDateYear && effectiveDateMonth ? filters.dateDay : null;
     filtered = filtered.filter((entry) => {
-      const parts = extractDateParts(entry);
+      const parts = recordingDateParts(entry);
       if (!parts?.year) return false;
       if (parts.year !== effectiveDateYear) return false;
       if (effectiveDateMonth && parts.month !== effectiveDateMonth) return false;

@@ -4,7 +4,7 @@ import { useState, useCallback, useId } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslations, useLocale } from "next-intl";
 import { formatLocalDate } from "@/lib/date-format";
-import { parseDateFromString } from "@/lib/date-utils";
+import { recordingDateParts } from "@/lib/date-utils";
 import {
   Check,
   Copy,
@@ -152,19 +152,16 @@ function MetadataEditorForm({
   const [title, setTitle] = useState<string>(() => curated.title || "");
   const [artist, setArtist] = useState<string>(() => curated.artist || "");
   const [albumId, setAlbumId] = useState<string>(() => curated.albumId?.toString() || "");
-  // Parse source.date as fallback when ALL curated date fields are empty
-  const sourceDateParts = (() => {
-    if (curated.dateYear || curated.dateMonth || curated.dateDay) return null;
-    return parseDateFromString(source.date);
-  })();
+  // The date the recording shows: curated parts, else the source file's date.
+  const initialDateParts = recordingDateParts({ ...curated, date: source.date });
   const [dateYear, setDateYear] = useState<string>(
-    () => curated.dateYear?.toString() || sourceDateParts?.year?.toString() || ""
+    () => initialDateParts?.year?.toString() || ""
   );
   const [dateMonth, setDateMonth] = useState<string>(
-    () => curated.dateMonth?.toString() || sourceDateParts?.month?.toString() || ""
+    () => initialDateParts?.month?.toString() || ""
   );
   const [dateDay, setDateDay] = useState<string>(
-    () => curated.dateDay?.toString() || sourceDateParts?.day?.toString() || ""
+    () => initialDateParts?.day?.toString() || ""
   );
   const [notes, setNotes] = useState<string>(() => curated.notes || "");
   const [tags, setTags] = useState<string[]>(() => curated.tags || []);
@@ -242,8 +239,7 @@ function MetadataEditorForm({
     } else if (field === "artist" && source.artist) {
       setArtist(source.artist);
     } else if (field === "date" && source.date) {
-      // Use parseDateFromString for consistent behavior with initial state
-      const parsed = parseDateFromString(source.date);
+      const parsed = recordingDateParts({ date: source.date });
       if (parsed) {
         setDateYear(parsed.year?.toString() || "");
         setDateMonth(parsed.month?.toString() || "");

@@ -98,23 +98,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const duplicateCounts = await countDuplicatesByHash(catalogId);
     const duplicateCount = duplicateCounts.get(hash) ?? 0;
 
-    // Format curated date as DD.MM.YYYY (or partial if incomplete)
-    let curatedDate: string | null = null;
-    if (metadata?.dateYear || metadata?.dateMonth || metadata?.dateDay) {
-      const parts: string[] = [];
-      if (metadata.dateDay) parts.push(String(metadata.dateDay));
-      if (metadata.dateMonth) parts.push(String(metadata.dateMonth));
-      if (metadata.dateYear) parts.push(String(metadata.dateYear));
-      curatedDate = parts.join(".");
-    }
-
     // Build enriched entry
     const enrichedEntry = {
       ...entry,
       curated: !!metadata,
       curatedTitle: metadata?.title,
       curatedArtist: metadata?.artist,
-      curatedDate,
       dateYear: metadata?.dateYear ?? null,
       dateMonth: metadata?.dateMonth ?? null,
       dateDay: metadata?.dateDay ?? null,

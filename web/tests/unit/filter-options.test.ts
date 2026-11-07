@@ -2,11 +2,10 @@ import { describe, it, expect } from "vitest";
 import { grantForRole } from "@/lib/policy/catalog-permissions";
 import {
   applyFilters,
-  extractDateParts,
-  parseDateFromString,
   scopeCatalogEntriesForAccess,
   type EnrichedCatalogEntry,
 } from "@/lib/catalog";
+import { parseDateFromString, recordingDateParts } from "@/lib/date-utils";
 
 // Helper to create a minimal enriched entry for testing
 function createEntry(overrides: Partial<EnrichedCatalogEntry> = {}): EnrichedCatalogEntry {
@@ -68,7 +67,7 @@ describe("parseDateFromString", () => {
   });
 });
 
-describe("extractDateParts", () => {
+describe("recordingDateParts", () => {
   it("should prefer explicit date fields over date string", () => {
     const entry = createEntry({
       dateYear: 2024,
@@ -76,17 +75,17 @@ describe("extractDateParts", () => {
       dateDay: 15,
       date: "2000-01-01",
     });
-    expect(extractDateParts(entry)).toEqual({ year: 2024, month: 6, day: 15 });
+    expect(recordingDateParts(entry)).toEqual({ year: 2024, month: 6, day: 15 });
   });
 
   it("should fall back to date string parsing", () => {
     const entry = createEntry({ date: "2024-06-15" });
-    expect(extractDateParts(entry)).toEqual({ year: 2024, month: 6, day: 15 });
+    expect(recordingDateParts(entry)).toEqual({ year: 2024, month: 6, day: 15 });
   });
 
   it("should handle partial date fields", () => {
     const entry = createEntry({ dateYear: 2024 });
-    expect(extractDateParts(entry)).toEqual({ year: 2024, month: undefined, day: undefined });
+    expect(recordingDateParts(entry)).toEqual({ year: 2024, month: undefined, day: undefined });
   });
 });
 
@@ -223,7 +222,7 @@ describe("applyFilters", () => {
   describe("date filter", () => {
     it("should filter by year", () => {
       const result = applyFilters(entries, { dateYear: 2024 });
-      expect(result.every((e) => extractDateParts(e)?.year === 2024)).toBe(true);
+      expect(result.every((e) => recordingDateParts(e)?.year === 2024)).toBe(true);
     });
 
     it("should ignore month filter without year", () => {
@@ -259,7 +258,7 @@ describe("applyFilters", () => {
         dateYear: 2024,
         verified: false,
       });
-      expect(result.every((e) => e.isActionable && extractDateParts(e)?.year === 2024 && !e.verified)).toBe(true);
+      expect(result.every((e) => e.isActionable && recordingDateParts(e)?.year === 2024 && !e.verified)).toBe(true);
     });
 
     it("should return empty array when no entries match", () => {

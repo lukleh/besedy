@@ -3,7 +3,6 @@ import prisma from "@/lib/db";
 import {
   loadEnrichedCatalogEntries,
   applyFilters,
-  extractDateParts,
   isCatalogEntryReady,
   parseDuration,
   EMPTY_FILTER,
@@ -12,6 +11,7 @@ import {
   type EnrichedCatalogEntry,
   type CatalogFilters,
 } from "@/lib/catalog";
+import { recordingDateParts } from "@/lib/date-utils";
 import { findActiveCatalog } from "@/lib/catalog/resolve-group";
 import { validateParams } from "@/lib/api";
 import { TimestampIdParamSchema } from "@/lib/validation/schemas";
@@ -315,7 +315,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const yearFiltered = applyFilters(visibleEntries, yearFilters);
     const yearCounts = new Map<number, number>();
     for (const entry of yearFiltered) {
-      const parts = extractDateParts(entry);
+      const parts = recordingDateParts(entry);
       if (parts?.year) {
         yearCounts.set(parts.year, (yearCounts.get(parts.year) || 0) + 1);
       }
@@ -331,7 +331,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const monthFiltered = applyFilters(visibleEntries, monthFilters);
       const monthCounts = new Map<number, number>();
       for (const entry of monthFiltered) {
-        const parts = extractDateParts(entry);
+        const parts = recordingDateParts(entry);
         if (parts?.year === filters.dateYear && parts?.month) {
           monthCounts.set(parts.month, (monthCounts.get(parts.month) || 0) + 1);
         }
@@ -348,7 +348,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const dayFiltered = applyFilters(visibleEntries, dayFilters);
       const dayCounts = new Map<number, number>();
       for (const entry of dayFiltered) {
-        const parts = extractDateParts(entry);
+        const parts = recordingDateParts(entry);
         if (parts?.year === filters.dateYear && parts?.month === filters.dateMonth && parts?.day) {
           dayCounts.set(parts.day, (dayCounts.get(parts.day) || 0) + 1);
         }

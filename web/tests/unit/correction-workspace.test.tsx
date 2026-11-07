@@ -110,7 +110,6 @@ function renderWorkspace(
         duration: "01:02:00",
         title: "Recording",
         curatedTitle: "Beseda v knihovně",
-        curatedDate: "19.2.2005",
         dateYear: 2005,
         dateMonth: 2,
         dateDay: 19,
@@ -156,7 +155,6 @@ it("keeps the heading as text when there is no visible event to link to", async 
 
 it("falls back to the source file's date for an uncurated recording", async () => {
   renderWorkspace(state({}), ACCEPTED, false, null, {
-    curatedDate: null,
     dateYear: null,
     dateMonth: null,
     dateDay: null,
@@ -170,7 +168,6 @@ it("falls back to the source file's date for an uncurated recording", async () =
 
 it("never mixes curated date parts with the source file's date", async () => {
   renderWorkspace(state({}), ACCEPTED, false, null, {
-    curatedDate: null,
     dateYear: null,
     dateMonth: 12,
     dateDay: null,
