@@ -22,9 +22,15 @@ Each workflow group (catalog) is identified by a timestamp ID like `20251201_143
 
 Optional artifacts: `audio_catalog_<id>_duplicates.csv` (duplicates), `transcripts_<id>/` (ASR output). CSV files are ingest input only -- API endpoints never parse them directly.
 
-### Discovery
+### Source registration
 
-The discovery endpoint (`/api/catalogs/discover`) scans `BESEDY_BASE_DIR` for files matching `audio_catalog_<id>.csv` that also have a matching archived catalog (`audio_catalog_<id>_loudness_archived.csv`). It returns only **unregistered** groups -- those not yet tracked in the `workflow_group` table.
+The website uses the explicitly configured archive. For a new database, register
+that source with `npm run archive:register`, supplying its paths as seen by the
+web container. The command creates only the `BESEDY_ARCHIVE_ID` row and refuses
+an existing ID; it does not discover sources, change grants or synchronize CSVs.
+See [archive bootstrap](single-archive.md#registering-a-source-on-a-new-database).
+The browser catalog-list, creation, discovery and deactivation endpoints have
+been retired. Existing source records and their historical references remain.
 
 ### Sync Rules
 

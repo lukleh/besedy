@@ -36,6 +36,41 @@ creation controls. Browser uploads use the server-selected archive without a
 catalog picker. Source IDs remain in existing URLs and download snapshots;
 unknown IDs are not rewritten onto the archive. Display settings still use
 `/api/preferences`, whose API no longer accepts an active-catalog selection.
+The old catalog list/create/discover and source deactivation APIs are removed.
+Source settings retain label and path updates with their existing permission
+checks; `isDefault` and `isActive` are no longer accepted update fields. Their
+stored values and source foreign keys remain available for historical records.
+
+## Registering a source on a new database
+
+Apply the normal migrations first. Before starting the bound application on a
+new database, explicitly register its source. `DATABASE_URL` must already point
+at the intended database; the command does not load environment files or choose
+an environment. Paths refer to the files as seen by the web container, which may
+differ from host paths.
+
+```bash
+cd web
+BESEDY_ARCHIVE_ID=YYYYMMDD_HHMMSS npm run archive:register -- \
+  --archived-catalog-path /data/text/catalogs/audio_catalog_YYYYMMDD_HHMMSS_loudness_archived.csv \
+  --metadata-catalog-path /data/text/catalogs/audio_catalog_YYYYMMDD_HHMMSS.csv \
+  --transcripts-path /data/text/transcripts/transcripts_YYYYMMDD_HHMMSS \
+  --label Archive
+```
+
+Optional flags are `--label`, `--transcripts-path` and
+`--duplicates-catalog-path`. The required metadata and archived paths use the
+same field validation as source settings. The source ID comes exclusively from
+`BESEDY_ARCHIVE_ID`. Registration performs a create, so an existing ID fails
+without rewriting its paths, state, grants or authored data. Use the settings
+page for an intentional update to an existing source.
+
+Registration does not open CSVs, synchronize projections or assign content
+access. Run the read-only preflight below, then the existing
+`npm run catalog:sync -- --group <source-id>` command using the same configuration
+and the documented [sync rules](data-and-database.md#sync-rules). An existing
+deployment with the selected row needs no registration step. Superadmin
+bootstrap remains the separate existing `db:seed` procedure.
 
 ## Membership uses existing source grants
 
