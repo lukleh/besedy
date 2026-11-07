@@ -1,6 +1,6 @@
 # ADR 0014: One archive and event-focused listening
 
-- **Status:** Accepted product direction; rollout below is planned
+- **Status:** Accepted product direction; implementation is in the review stack below
 - **Date:** 2026-11-07
 - **Canonical references:** [Web architecture](../web/architecture.md), [offline playback](../web/offline.md), [recording ingest](../web/recording-ingest.md), [permissions](0005-catalog-permission-model.md), [correction](0006-transcript-correction.md)
 
@@ -82,9 +82,13 @@ migration. The one source-binding record may remain useful after its cardinality
 becomes one. Renaming every artifact tree or dropping every source foreign key
 is not required to remove multiple website catalogs.
 
-Website access becomes one archive membership per user, retaining the existing
-role, extras, revocation state and audit evidence. MCP tools use that same
-archive and continue checking the actor and material on every request.
+Website access uses the existing grant for the bound source as each person's
+archive membership. The `(user_id, catalog_id)` unique key already provides one
+such row per person. Retain its role, extras, revocation state, source foreign
+key and audit evidence; no parallel membership table or permission-copy
+migration is needed. Grants for other sources remain historical records and
+cannot authorize the bound archive. MCP tools use that same archive and
+continue checking the actor and material on every request.
 
 ### Invitations include content access
 
@@ -106,31 +110,57 @@ role to make those records valid.
 
 Each row is an independently reviewable change with its own documentation and
 verification. The names are scopes, not promises to combine unrelated edits.
-The first two implementation rows can proceed independently of data migration.
+The listening changes can proceed independently of the archive cutover.
 
 | PR | Scope and code removed | Depends on | Acceptance evidence |
 | --- | --- | --- | --- |
 | 1 | Record this decision and rollout | None | Documentation links resolve; implemented behavior and planned changes are distinguished |
 | 2 | Remove radio runtime, provider, controls, history, retries and recording handoff; remove radio-only endpoints/helpers after caller checks | None | Ordinary playback/resume, media controls, sleep timer and reload protection pass; no live radio consumers remain |
 | 3 | Remove offline catalog lists and their data reconstruction; failed catalog navigation opens Downloads in the offline shell | None | Downloaded event and exact-capture routes still open; cached playback survives network loss/recovery; online browsing is unchanged |
-| 4 | Make preferred-capture event listening the audience surface; reuse a listener presentation for online/downloaded events; retain editorial capture inspection | 2, 3 | Audience cannot select alternates; editor can choose/inspect captures; transcript variants and correction access remain; links and seek targets preserve exact audio identity |
+| 4 | Make preferred-capture event listening the audience surface; reuse a listener presentation for online/downloaded events; retain editorial capture inspection | None; verify together with 2, 3 | Audience cannot select alternates; editor can choose/inspect captures; transcript variants and correction access remain; links and seek targets preserve exact audio identity |
 | 5 | Add the explicit deployment archive/source binding and a read-only migration preflight; scope startup/admin sync, upload and internal job entry points to it | 1 | Missing, conflicting or invalid binding fails clearly; production/test/dev cannot resolve each other's resources; no default/newest fallback |
 | 6 | Remove website catalog selection, active/default preferences, discovery/create/default controls and selection synchronization; retain one source-settings view | 5 | Header/navigation/upload/access management use the bound archive; no preference/default/recent selection chain remains; no database column removal yet |
 | 7 | Simplify MCP schemas, access profile and tools to the archive; retire catalog discovery/default selection; update tool docs and corpus skill together | 5 | Authenticated MCP smoke and capability tests pass; citations, pagination cursors and event/seek links resolve correctly |
-| 8 | Migrate per-catalog grants into one archive membership while preserving roles/extras/revocation and grant history | 6, 7, reviewed data preflight | Permission matrix is unchanged for migrated members; ambiguous grants require an explicit decision; no automatic union or promotion |
-| 9 | Replace separate sign-in-only invitations and multi-catalog sponsorship with one pending invitation per normalized email carrying role/extras | 8, reviewed invitation preflight | Creation and acceptance require authorized content access; accepting establishes membership atomically; blocking/revocation and protected-role/no-self-grant checks remain; history survives |
-| 10 | Remove obsolete catalog-selection and invitation schema, APIs and compatibility paths after consumers have moved | 6, 7, 8, 9 | Fresh and upgraded disposable databases pass; source records and authored state survive; no supported client uses retired fields |
+| 8 | Require the existing active bound grant for ordinary portal entry; retain source-scoped grant rows and history | 6, 7, reviewed activation preflight | Missing/revoked bound grants deny entry; foreign grants cannot substitute; all roles/extras and administrator/bootstrap exceptions remain; no grant-copy migration |
+| 9 | Use one logical invitation per normalized email with a bound role; remove sign-in-only creation and multi-catalog sponsorship paths | 8 for final cutover, reviewed invitation preflight | Creation and acceptance require authorized content access; accepting establishes membership atomically; blocking/revocation and protected-role/no-self-grant checks remain; preserve the admission's per-email denial state |
+| 10 | Remove proven-unused selection fields, APIs and transitional paths after consumers have moved; retain useful source foreign keys | 6, 7, 8, 9 | Fresh and upgraded disposable databases pass; source records and authored state survive; no supported client uses retired fields; no schema rewrite solely to rename the archive |
 
-PR 4 may need two patches if extracting the shared listening presentation and
-switching audience routes cannot be reviewed clearly together. Its scope does
-not include moving authored metadata between tables or removing independent
-recording-publication state; those require an explicit data mapping and a
-separate decision.
+The existing event page already shares its recording presentation online and
+offline, so PR 4 can remove recorder-selection state without extracting another
+listener abstraction. Its scope does not include moving authored metadata
+between tables or removing independent recording-publication state; those
+require an explicit data mapping and a separate decision.
+
+Likewise, PR 8 reuses existing grant rows. For PR 9,
+`PortalAdmission` can keep the per-email `ADMIN_DENIED` tombstone while the bound
+`PendingCatalogGrant` keeps role/extras. Removing multiple-catalog product
+behavior does not require replacing these tables or relocating denial history.
+The independent invitation preparation may land early: require an active source
+and role on new invitations and prevent edits/resets from removing their usable
+content access, while retaining read/revoke support for historical records.
 
 The later single-archive PRs should be based on their named prerequisites after
 review, rather than mixing source binding, permission changes and table drops
 into one migration. The radio and offline-navigation PRs can target main
 directly. Reconcile any overlapping playback/offline tests before merging both.
+
+### Implementation and review order
+
+The PR numbers below are GitHub numbers rather than the scope numbers above.
+The archive PRs use a linear stack so each review shows its own change. Review
+the parent before its child; after merging a parent, retarget or rebase the child
+before merging it. No PR in this rollout authorizes production activation.
+
+| Review group | Open PRs |
+| --- | --- |
+| Decision and rollout | [#478](https://github.com/lukleh/besedy/pull/478) |
+| Independent listening changes | [#479 radio removal](https://github.com/lukleh/besedy/pull/479), [#480 offline navigation](https://github.com/lukleh/besedy/pull/480), [#481 preferred event recording](https://github.com/lukleh/besedy/pull/481) |
+| Archive stack, in order | [#483 binding and preflight](https://github.com/lukleh/besedy/pull/483) → [#484 website](https://github.com/lukleh/besedy/pull/484) → [#485 MCP](https://github.com/lukleh/besedy/pull/485) → [#482 invitation preparation](https://github.com/lukleh/besedy/pull/482) → [#486 membership](https://github.com/lukleh/besedy/pull/486) |
+
+The invitation lifecycle cutover and final obsolete-API cleanup follow the
+membership PR. Physical removal of unused columns can wait until the cutover
+has been deployed and its rollback window reviewed. Keeping inert historical
+columns temporarily does not preserve the retired product behavior.
 
 ## Migration and verification
 
@@ -156,8 +186,8 @@ Unknown source IDs must not silently select the archive.
 Use the repository's migration creation/deployment procedure. Retain audit and
 correction history, and do not use database push/reset against retained data.
 Delay destructive schema cleanup until the application cutover and its rollback
-window have been reviewed. A new archive-binding schema is not a reason to
-rebuild user-authored state from CSVs.
+window have been reviewed. The archive binding is not a reason to rebuild
+user-authored state from CSVs.
 
 Each code PR runs focused unit coverage plus TypeScript, lint and the relevant
 broader web checks. Exercise playback/Downloads changes through the existing
