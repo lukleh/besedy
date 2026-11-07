@@ -9,6 +9,14 @@ import {
 const CATALOG_ID = "20260101_000000";
 const EMAIL = "pending@example.com";
 
+vi.mock("@/lib/archive", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/archive")>()),
+  requireArchive: vi.fn().mockResolvedValue({
+    id: "20260101_000000",
+    label: "Catalog One",
+  }),
+}));
+
 vi.mock("@/lib/auth/permissions", () => ({
   requireAuth: vi.fn(),
 }));
@@ -21,8 +29,10 @@ vi.mock("@/lib/audit/logger", () => ({
   logPendingCatalogGrantEvent: vi.fn(),
 }));
 
-vi.mock("@/lib/admission/pending-admission-sync", () => ({
-  AdminDeniedAdmissionReopenError: class AdminDeniedAdmissionReopenError extends Error {},
+vi.mock("@/lib/admission/pending-admission-sync", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/lib/admission/pending-admission-sync")
+  >()),
   revokePendingAdmissionState: vi.fn(),
   syncPendingAdmissionState: vi.fn(),
 }));
@@ -78,6 +88,34 @@ describe("catalog pending record route", () => {
     });
   });
 
+  it.each(["update", "delete"] as const)(
+    "rejects %s for a foreign source before reading or changing its historical grant",
+    async (operation) => {
+      const foreignCatalogId = "20260102_000000";
+      const response =
+        operation === "delete"
+          ? await deletePendingCatalogRecord(foreignCatalogId, EMAIL)
+          : await updatePendingCatalogRecord(
+              foreignCatalogId,
+              EMAIL,
+              new NextRequest(
+                `http://localhost/api/catalogs/${foreignCatalogId}/pending-catalog-grants/${EMAIL}`,
+                {
+                  method: "PUT",
+                  body: JSON.stringify({ role: "reader" }),
+                }
+              )
+            );
+
+      expect(response.status).toBe(404);
+      expect(resolveCatalogManagementActor).not.toHaveBeenCalled();
+      expect(prisma.pendingCatalogGrant.findUnique).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(syncPendingAdmissionState).not.toHaveBeenCalled();
+      expect(revokePendingAdmissionState).not.toHaveBeenCalled();
+    }
+  );
+
   it("blocks owners from revoking pending OWNER grants", async () => {
     prisma.pendingCatalogGrant.findUnique.mockResolvedValue({
       email: EMAIL,
@@ -92,6 +130,14 @@ describe("catalog pending record route", () => {
     const response = await deletePendingCatalogRecord(CATALOG_ID, EMAIL);
 
     expect(response.status).toBe(403);
+    expect(prisma.pendingCatalogGrant.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          email_catalogId: { email: EMAIL, catalogId: CATALOG_ID },
+          status: "PENDING",
+        },
+      })
+    );
     await expect(response.json()).resolves.toEqual({
       error: "Only catalog administrators can revoke this access",
       code: "FORBIDDEN",
@@ -155,6 +201,14 @@ describe("catalog pending record route", () => {
     );
 
     expect(response.status).toBe(403);
+    expect(prisma.pendingCatalogGrant.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          email_catalogId: { email: EMAIL, catalogId: CATALOG_ID },
+          status: "PENDING",
+        },
+      })
+    );
     await expect(response.json()).resolves.toEqual({
       error: "Only catalog administrators can modify this access",
       code: "FORBIDDEN",

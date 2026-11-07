@@ -4,6 +4,14 @@ import {
   listPendingAdminAdmissions,
 } from "@/lib/admission/admin-read-models";
 
+vi.mock("@/lib/archive", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/archive")>()),
+  requireArchive: vi.fn().mockResolvedValue({
+    id: "20260101_000000",
+    label: "Catalog One",
+  }),
+}));
+
 describe("admission admin read models", () => {
   it("maps pending admissions into the existing admin pending-item shape", async () => {
     const db = {
@@ -72,6 +80,7 @@ describe("admission admin read models", () => {
     expect(db.pendingCatalogGrant.findMany).toHaveBeenCalledWith({
       where: {
         status: "PENDING",
+        catalogId: "20260101_000000",
         email: { in: ["pending@example.com"] },
       },
       select: {
@@ -83,7 +92,6 @@ describe("admission admin read models", () => {
         grantedAt: true,
         grantedById: true,
       },
-      orderBy: [{ grantedAt: "desc" }, { catalogId: "asc" }],
     });
     expect(result).toEqual([
       {
@@ -312,7 +320,30 @@ describe("admission admin read models", () => {
     ]);
   });
 
-  it("summarizes multiple pending grants without pretending one catalog is the whole admission", async () => {
+  it("reads only the bound pending grant without combining or changing foreign provenance", async () => {
+    const storedGrants = [
+      {
+        email: "pending@example.com",
+        catalogId: "20260102_000000",
+        status: "PENDING",
+        role: "catalog_admin",
+        extraPermissions: ["download_original_audio"],
+        notes: "foreign grant",
+        grantedAt: new Date("2026-03-10T12:00:00.000Z"),
+        grantedById: "owner-2",
+      },
+      {
+        email: "pending@example.com",
+        catalogId: "20260101_000000",
+        status: "PENDING",
+        role: "reader",
+        extraPermissions: ["download_audio"],
+        notes: "bound grant",
+        grantedAt: new Date("2026-03-10T11:00:00.000Z"),
+        grantedById: "owner-1",
+      },
+    ];
+    const originalGrants = structuredClone(storedGrants);
     const db = {
       portalAdmission: {
         findMany: vi.fn().mockResolvedValue([
@@ -326,33 +357,23 @@ describe("admission admin read models", () => {
         ]),
       },
       pendingCatalogGrant: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            email: "pending@example.com",
-            catalogId: "20260102_000000",
-            role: "reader",
-            extraPermissions: [],
-            notes: "second grant",
-            grantedAt: new Date("2026-03-10T12:00:00.000Z"),
-            grantedById: "owner-2",
-          },
-          {
-            email: "pending@example.com",
-            catalogId: "20260101_000000",
-            role: "reader",
-            extraPermissions: [],
-            notes: "first grant",
-            grantedAt: new Date("2026-03-10T11:00:00.000Z"),
-            grantedById: "owner-1",
-          },
-        ]),
+        findMany: vi
+          .fn()
+          .mockImplementation(async ({ where }) =>
+            storedGrants.filter(
+              (grant) =>
+                grant.catalogId === where.catalogId &&
+                grant.status === where.status &&
+                where.email.in.includes(grant.email)
+            )
+          ),
       },
       user: {
         findMany: vi.fn().mockResolvedValue([
           {
-            id: "owner-2",
-            name: "Second Owner",
-            email: "owner2@example.com",
+            id: "owner-1",
+            name: "Bound Inviter",
+            email: "owner1@example.com",
           },
         ]),
       },
@@ -362,16 +383,37 @@ describe("admission admin read models", () => {
             id: "20260101_000000",
             label: "Catalog One",
           },
-          {
-            id: "20260102_000000",
-            label: "Catalog Two",
-          },
         ]),
       },
     };
 
     const result = await listPendingAdminAdmissions(undefined, db as never);
 
+    expect(db.pendingCatalogGrant.findMany).toHaveBeenCalledWith({
+      where: {
+        status: "PENDING",
+        catalogId: "20260101_000000",
+        email: { in: ["pending@example.com"] },
+      },
+      select: {
+        email: true,
+        catalogId: true,
+        role: true,
+        extraPermissions: true,
+        notes: true,
+        grantedAt: true,
+        grantedById: true,
+      },
+    });
+    expect(db.workflowGroup.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ["20260101_000000"] } },
+      select: { id: true, label: true },
+    });
+    expect(db.user.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ["owner-1"] } },
+      select: { id: true, name: true, email: true },
+    });
+    expect(storedGrants).toEqual(originalGrants);
     expect(result).toEqual([
       {
         id: "pending@example.com",
@@ -380,37 +422,28 @@ describe("admission admin read models", () => {
         invitedAt: "2026-03-10T10:00:00.000Z",
         pendingGrants: [
           {
-            catalogId: "20260102_000000",
-            catalogLabel: "Catalog Two",
-            role: "reader",
-            extraPermissions: [],
-            grantedAt: "2026-03-10T12:00:00.000Z",
-            grantedBy: {
-              id: "owner-2",
-              name: "Second Owner",
-              email: "owner2@example.com",
-            },
-            notes: "second grant",
-          },
-          {
             catalogId: "20260101_000000",
             catalogLabel: "Catalog One",
             role: "reader",
-            extraPermissions: [],
+            extraPermissions: ["download_audio"],
             grantedAt: "2026-03-10T11:00:00.000Z",
-            grantedBy: null,
-            notes: "first grant",
+            grantedBy: {
+              id: "owner-1",
+              name: "Bound Inviter",
+              email: "owner1@example.com",
+            },
+            notes: "bound grant",
           },
         ],
-        catalogNames: ["Catalog Two", "Catalog One"],
-        pendingGrantCount: 2,
-        catalogId: null,
-        catalogLabel: null,
-        role: null,
+        catalogNames: ["Catalog One"],
+        pendingGrantCount: 1,
+        catalogId: "20260101_000000",
+        catalogLabel: "Catalog One",
+        role: "reader",
         invitedBy: {
-          id: "owner-2",
-          name: "Second Owner",
-          email: "owner2@example.com",
+          id: "owner-1",
+          name: "Bound Inviter",
+          email: "owner1@example.com",
         },
         notes: "admission note",
       },
