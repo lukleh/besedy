@@ -28,6 +28,7 @@ each record links to those references.
 | [0011](0011-poster-to-artwork-rename.md) | Accepted | Rename "poster" to "artwork" ("plakát" to "obálka") across schema, storage, API, and CLI |
 | [0012](0012-correction-data-contract.md) | Proposed | Correction spans from decoded VAD chunks and an append-only data contract for training reuse |
 | [0013](0013-jobs-runtime-after-deep-search.md) | Proposed | Retain the remaining Prefect flows while evaluating the cost and recovery obligations of a database queue |
+| [0014](0014-single-archive-event-listening.md) | Accepted | One website archive, preferred-capture event listening, page-owned playback and Downloads-centered offline navigation; staged rollout |
 
 When a decision changes, add a new ADR and mark the old record superseded. Do
 not rewrite old context to make it appear that the new design always existed.
