@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
-import {
-  DELETE,
-  GET,
-  PUT,
-} from "@/app/api/catalogs/[id]/route";
+import { GET, PUT } from "@/app/api/catalogs/[id]/route";
 
 vi.mock("@/lib/auth/permissions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/auth/permissions")>()),
@@ -20,31 +16,11 @@ vi.mock("@/lib/audit/logger", () => ({
   logCatalogLifecycleEvent: vi.fn(),
 }));
 
-vi.mock("@/lib/db", () => {
-  const tx = {
-    workflowGroup: {
-      update: vi.fn(),
-      updateMany: vi.fn(),
-    },
-    userPreferences: {
-      updateMany: vi.fn(),
-    },
-  };
-  return {
-    default: {
-      workflowGroup: {
-        findUnique: vi.fn(),
-        update: vi.fn(),
-        updateMany: vi.fn(),
-      },
-      userPreferences: {
-        updateMany: vi.fn(),
-      },
-      $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
-      __tx: tx,
-    },
-  };
-});
+vi.mock("@/lib/db", () => ({
+  default: {
+    workflowGroup: { findUnique: vi.fn(), update: vi.fn() },
+  },
+}));
 
 const catalogId = "20260201_120000";
 const browserMutationHeaders = {
@@ -99,8 +75,6 @@ const formPayload = {
   metadataCatalogPath: storedCatalog.metadataCatalogPath,
   duplicatesCatalogPath: storedCatalog.duplicatesCatalogPath,
   transcriptsPath: storedCatalog.transcriptsPath,
-  isDefault: storedCatalog.isDefault,
-  isActive: storedCatalog.isActive,
 };
 
 function putCatalog(body: unknown) {
@@ -123,20 +97,6 @@ describe("catalog config route", () => {
     workflowGroup: {
       findUnique: ReturnType<typeof vi.fn>;
       update: ReturnType<typeof vi.fn>;
-      updateMany: ReturnType<typeof vi.fn>;
-    };
-    userPreferences: {
-      updateMany: ReturnType<typeof vi.fn>;
-    };
-    $transaction: ReturnType<typeof vi.fn>;
-    __tx: {
-      workflowGroup: {
-        update: ReturnType<typeof vi.fn>;
-        updateMany: ReturnType<typeof vi.fn>;
-      };
-      userPreferences: {
-        updateMany: ReturnType<typeof vi.fn>;
-      };
     };
   };
 
@@ -154,14 +114,12 @@ describe("catalog config route", () => {
       typeof vi.fn
     >;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
-    prisma.__tx.workflowGroup.update.mockImplementation(
+    prisma.workflowGroup.update.mockImplementation(
       async ({ data }: { data: Record<string, unknown> }) => ({
         ...storedCatalog,
         ...data,
       })
     );
-    prisma.__tx.workflowGroup.updateMany.mockResolvedValue({ count: 1 });
-    prisma.__tx.userPreferences.updateMany.mockResolvedValue({ count: 1 });
   });
 
   it("returns the policy denial response for unauthorized settings access", async () => {
@@ -257,7 +215,7 @@ describe("catalog config route", () => {
 
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({ label: "Renamed" });
-      expect(prisma.__tx.workflowGroup.update).toHaveBeenCalledWith({
+      expect(prisma.workflowGroup.update).toHaveBeenCalledWith({
         where: { id: catalogId },
         data: { label: "Renamed" },
       });
@@ -273,7 +231,6 @@ describe("catalog config route", () => {
           details: { changes: { label: { from: "Old Catalog", to: null } } },
         })
       );
-      expect(prisma.__tx.workflowGroup.updateMany).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -282,8 +239,6 @@ describe("catalog config route", () => {
       ["duplicatesCatalogPath", "/data/b/duplicates.csv"],
       ["transcriptsPath", "/data/b/transcripts"],
       ["transcriptsPath", null],
-      ["isDefault", true],
-      ["isActive", false],
     ])("is refused a change to %s (%j)", async (field, value) => {
       const response = await putCatalog({
         ...formPayload,
@@ -295,7 +250,7 @@ describe("catalog config route", () => {
       await expect(response.json()).resolves.toMatchObject({
         code: "FORBIDDEN",
         error:
-          "System admin access required to change catalog paths, default or active flags",
+          "System admin access required to change catalog paths",
       });
       expect(logAccessDenied).toHaveBeenCalledWith(
         "catalog-admin-1",
@@ -304,46 +259,12 @@ describe("catalog config route", () => {
         expect.objectContaining({ catalogId, fields: [field] })
       );
       // Nothing is written, not even the permitted label change.
-      expect(prisma.$transaction).not.toHaveBeenCalled();
       expect(prisma.workflowGroup.update).not.toHaveBeenCalled();
       expect(logCatalogLifecycleEvent).not.toHaveBeenCalled();
     });
-
-    it("does not unset other defaults when saving the default catalog unchanged", async () => {
-      prisma.workflowGroup.findUnique.mockResolvedValue({
-        ...storedCatalog,
-        isDefault: true,
-      });
-
-      const response = await putCatalog({
-        ...formPayload,
-        isDefault: true,
-        label: "Renamed",
-      });
-
-      expect(response.status).toBe(200);
-      expect(prisma.__tx.workflowGroup.updateMany).not.toHaveBeenCalled();
-      // Unchanged paths in the body are not written back.
-      expect(prisma.__tx.workflowGroup.update).toHaveBeenCalledWith({
-        where: { id: catalogId },
-        data: { label: "Renamed" },
-      });
-    });
-
-    it("cannot reactivate a catalog a system admin deactivated", async () => {
-      prisma.workflowGroup.findUnique.mockResolvedValue({
-        ...storedCatalog,
-        isActive: false,
-      });
-
-      const response = await putCatalog({ isActive: true });
-
-      expect(response.status).toBe(403);
-      expect(prisma.$transaction).not.toHaveBeenCalled();
-    });
   });
 
-  it("lets a system admin change paths and flags", async () => {
+  it("lets a system admin change source paths", async () => {
     requireAuth.mockResolvedValue("admin-4");
     requireCatalogManagementAccess.mockResolvedValue(makeAccess("admin-4", "SUPERADMIN"));
     prisma.workflowGroup.findUnique.mockResolvedValue(storedCatalog);
@@ -353,7 +274,6 @@ describe("catalog config route", () => {
       archivedCatalogPath: "/data/new/archived.csv",
       duplicatesCatalogPath: "/data/new/duplicates.csv",
       transcriptsPath: null,
-      isActive: false,
     });
 
     expect(response.status).toBe(200);
@@ -369,54 +289,28 @@ describe("catalog config route", () => {
             },
             duplicatesCatalogPath: { from: null, to: "/data/new/duplicates.csv" },
             transcriptsPath: { from: "/data/a/transcripts", to: null },
-            isActive: { from: true, to: false },
           },
         },
       })
     );
   });
 
-  it("unsets other default catalogs in the same transaction as the update", async () => {
-    requireAuth.mockResolvedValue("admin-5");
-    requireCatalogManagementAccess.mockResolvedValue(makeAccess("admin-5"));
-    prisma.workflowGroup.findUnique.mockResolvedValue(storedCatalog);
-
-    const response = await putCatalog({ isDefault: true });
-
-    expect(response.status).toBe(200);
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(prisma.__tx.workflowGroup.updateMany).toHaveBeenCalledWith({
-      where: { isDefault: true, id: { not: catalogId } },
-      data: { isDefault: false },
-    });
-    expect(prisma.__tx.workflowGroup.update).toHaveBeenCalledWith({
-      where: { id: catalogId },
-      data: { isDefault: true },
-    });
-    expect(
-      prisma.__tx.workflowGroup.updateMany.mock.invocationCallOrder[0]
-    ).toBeLessThan(prisma.__tx.workflowGroup.update.mock.invocationCallOrder[0]);
-    // Neither write goes around the transaction client.
-    expect(prisma.workflowGroup.updateMany).not.toHaveBeenCalled();
-    expect(prisma.workflowGroup.update).not.toHaveBeenCalled();
-  });
-
-  it("fails the request when the update inside the default transaction fails", async () => {
+  it("does not log a source update whose database write failed", async () => {
     requireAuth.mockResolvedValue("admin-6");
     requireCatalogManagementAccess.mockResolvedValue(makeAccess("admin-6"));
     prisma.workflowGroup.findUnique.mockResolvedValue(storedCatalog);
-    prisma.__tx.workflowGroup.update.mockRejectedValue(new Error("write failed"));
+    prisma.workflowGroup.update.mockRejectedValueOnce(new Error("write failed"));
 
-    const response = await putCatalog({ isDefault: true });
+    const response = await putCatalog({ label: "Renamed" });
 
     expect(response.status).toBe(500);
-    expect(prisma.__tx.workflowGroup.updateMany).toHaveBeenCalledTimes(1);
     expect(logCatalogLifecycleEvent).not.toHaveBeenCalled();
   });
 
   it.each([
     ["an unknown field", { label: "x", description: "not a catalog field" }],
-    ["a wrongly typed flag", { isDefault: "yes" }],
+    ["a retired default selection", { isDefault: true }],
+    ["a retired deactivation flag", { isActive: false }],
     ["an empty required path", { archivedCatalogPath: "" }],
     ["a null required path", { metadataCatalogPath: null }],
     ["an overlong label", { label: "x".repeat(101) }],
@@ -430,90 +324,6 @@ describe("catalog config route", () => {
 
     expect(response.status).toBe(400);
     expect(prisma.workflowGroup.findUnique).not.toHaveBeenCalled();
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-  });
-
-  function deleteCatalog() {
-    return DELETE(
-      new NextRequest(`http://localhost/api/catalogs/${catalogId}`, {
-        method: "DELETE",
-        headers: { Origin: "http://localhost" },
-      }),
-      { params: Promise.resolve({ id: catalogId }) }
-    );
-  }
-
-  it("lets a system admin deactivate a catalog in one transaction", async () => {
-    requireAuth.mockResolvedValue("admin-3");
-    requireCatalogManagementAccess.mockResolvedValue(makeAccess("admin-3"));
-    prisma.workflowGroup.findUnique.mockResolvedValue({
-      ...storedCatalog,
-      label: "Catalog",
-      isDefault: true,
-    });
-
-    const response = await deleteCatalog();
-
-    expect(response.status).toBe(200);
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(prisma.__tx.workflowGroup.update).toHaveBeenCalledWith({
-      where: { id: catalogId },
-      data: { isActive: false, isDefault: false },
-    });
-    expect(prisma.__tx.userPreferences.updateMany).toHaveBeenCalledWith({
-      where: { activeGroupId: catalogId },
-      data: { activeGroupId: null },
-    });
-    // Neither write goes around the transaction client.
-    expect(prisma.workflowGroup.update).not.toHaveBeenCalled();
-    expect(prisma.userPreferences.updateMany).not.toHaveBeenCalled();
-    expect(logCatalogLifecycleEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        actorId: "admin-3",
-        action: "CATALOG_DEACTIVATED",
-        catalogId,
-        details: { label: "Catalog", wasDefault: true },
-      })
-    );
-  });
-
-  it("refuses deactivation to a catalog administrator without system authority", async () => {
-    requireAuth.mockResolvedValue("catalog-admin-2");
-    requireCatalogManagementAccess.mockResolvedValue(
-      makeAccess("catalog-admin-2", "USER")
-    );
-    prisma.workflowGroup.findUnique.mockResolvedValue(storedCatalog);
-
-    const response = await deleteCatalog();
-
-    expect(response.status).toBe(403);
-    await expect(response.json()).resolves.toMatchObject({
-      code: "FORBIDDEN",
-      error: "System admin access required to deactivate a catalog",
-    });
-    expect(logAccessDenied).toHaveBeenCalledWith(
-      "catalog-admin-2",
-      "catalog_settings",
-      catalogId,
-      expect.objectContaining({ catalogId, fields: ["isActive", "isDefault"] })
-    );
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(prisma.workflowGroup.update).not.toHaveBeenCalled();
-    expect(prisma.userPreferences.updateMany).not.toHaveBeenCalled();
-    expect(logCatalogLifecycleEvent).not.toHaveBeenCalled();
-  });
-
-  it("does not log a deactivation whose transaction failed", async () => {
-    requireAuth.mockResolvedValue("admin-8");
-    requireCatalogManagementAccess.mockResolvedValue(makeAccess("admin-8"));
-    prisma.workflowGroup.findUnique.mockResolvedValue(storedCatalog);
-    prisma.__tx.userPreferences.updateMany.mockRejectedValue(new Error("write failed"));
-
-    const response = await deleteCatalog();
-
-    expect(response.status).toBe(500);
-    expect(prisma.__tx.workflowGroup.update).toHaveBeenCalledTimes(1);
-    expect(logCatalogLifecycleEvent).not.toHaveBeenCalled();
   });
 
   it("rejects cross-origin catalog config updates", async () => {

@@ -79,7 +79,7 @@ session row.
 1. Only **ACTIVE + valid session** = authenticated.
 2. **PENDING** and **BLOCKED** users are treated as signed-out.
 3. API semantics are strict: `401` = unauthenticated, `403` = unauthorized.
-4. `/api/catalogs` is strictly authenticated.
+4. `/api/archive` is strictly authenticated and checks access to the bound source.
 
 ### Session Cookie Verification
 
@@ -255,13 +255,15 @@ wildcard; system admins resolve the same way.
 | Download original audio                         |    -     |   -    |     -     |  -   |    -    |       Y       |
 | Bulk transcript export                          |    -     |   -    |     -     |  -   |    Y    |       Y       |
 
-Catalog paths and the default and active flags are not part of catalog
-configuration: `PUT /api/catalogs/:id` refuses a change to any of them, with an
-`ACCESS_DENIED` audit entry, unless the caller is a system admin, the same
-authority `POST /api/catalogs` requires. `DELETE /api/catalogs/:id`, which
-deactivates a catalog and clears both flags, applies the same rule. A path
-decides which files a catalog imports and serves, so a catalog grant that could
-set one could read another catalog. The settings form disables those fields for catalog administrators.
+Source paths need system authority: `PUT /api/catalogs/:id` refuses a path
+change, with an `ACCESS_DENIED` audit entry, unless the caller is a system admin.
+A path decides which files the archive imports and serves, so an ordinary
+catalog grant cannot authorize changing it. The settings form disables those
+fields for catalog administrators. The API rejects the retired default and
+active selection flags; source creation, discovery and deactivation are absent
+from the browser API. The explicit operator registration command requires
+database credentials and creates only the configured source without changing
+an existing row or granting access.
 See [ADR 0005](../adr/0005-catalog-permission-model.md#outside-the-catalog-scope).
 
 Catalog administrators may assign the curated extras `browse_recordings`,
