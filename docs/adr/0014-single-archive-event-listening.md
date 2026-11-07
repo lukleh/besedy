@@ -155,12 +155,15 @@ before merging it. No PR in this rollout authorizes production activation.
 | --- | --- |
 | Decision and rollout | [#478](https://github.com/lukleh/besedy/pull/478) |
 | Independent listening changes | [#479 radio removal](https://github.com/lukleh/besedy/pull/479), [#480 offline navigation](https://github.com/lukleh/besedy/pull/480), [#481 preferred event recording](https://github.com/lukleh/besedy/pull/481) |
-| Archive stack, in order | [#483 binding and preflight](https://github.com/lukleh/besedy/pull/483) → [#484 website](https://github.com/lukleh/besedy/pull/484) → [#485 MCP](https://github.com/lukleh/besedy/pull/485) → [#482 invitation preparation](https://github.com/lukleh/besedy/pull/482) → [#486 membership](https://github.com/lukleh/besedy/pull/486) |
+| Archive stack, in order | [#483 binding and preflight](https://github.com/lukleh/besedy/pull/483) → [#484 website](https://github.com/lukleh/besedy/pull/484) → [#485 MCP](https://github.com/lukleh/besedy/pull/485) → [#482 invitation preparation](https://github.com/lukleh/besedy/pull/482) → [#486 membership](https://github.com/lukleh/besedy/pull/486) → [#487 invitation lifecycle](https://github.com/lukleh/besedy/pull/487) → [#488 API retirement and explicit setup](https://github.com/lukleh/besedy/pull/488) → [#489 required configuration](https://github.com/lukleh/besedy/pull/489) |
 
-The invitation lifecycle cutover and final obsolete-API cleanup follow the
-membership PR. Physical removal of unused columns can wait until the cutover
-has been deployed and its rollback window reviewed. Keeping inert historical
-columns temporarily does not preserve the retired product behavior.
+The final configuration PR removes the prerequisite stage's unconfigured
+runtime. Before activating that release, run the read-only preflight and set
+the same reviewed source in the selected web, jobs and worker environments.
+Physical removal of unused columns can wait until the cutover has been deployed
+and its rollback window reviewed. Keeping inert historical columns temporarily
+does not preserve the retired product behavior. The application cutovers add no
+schema migration or membership-copy step.
 
 ## Migration and verification
 
