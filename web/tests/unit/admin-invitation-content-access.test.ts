@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { createPortalAdmission } from "@/lib/admission/admin-portal-admission-create";
+import { PendingAdmissionUnavailableError } from "@/lib/admission/pending-admission-sync";
 import { patchAdminPendingRecord } from "@/lib/admission/admin-pending-record-route";
 
 const CATALOG_ID = "20260101_000000";
@@ -8,6 +9,7 @@ const EMAIL = "pending@example.com";
 const grantedAt = new Date("2026-01-01T00:00:00Z");
 
 const mocks = vi.hoisted(() => ({
+  requireArchive: vi.fn(),
   requireAuth: vi.fn(),
   getAdminCapability: vi.fn(),
   loadPendingAdmissionState: vi.fn(),
@@ -15,7 +17,10 @@ const mocks = vi.hoisted(() => ({
   syncPendingAdmissionState: vi.fn(),
   revokePendingAdmissionState: vi.fn(),
   logPendingCatalogGrantEvent: vi.fn(),
-  tx: { portalAdmission: { update: vi.fn() } },
+  tx: {
+    portalAdmission: { updateMany: vi.fn() },
+    pendingCatalogGrant: { updateMany: vi.fn() },
+  },
   prisma: {
     workflowGroup: { findUnique: vi.fn() },
     user: { findUnique: vi.fn() },
@@ -24,6 +29,10 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
+vi.mock("@/lib/archive", async (original) => ({
+  ...(await original<typeof import("@/lib/archive")>()),
+  requireArchive: mocks.requireArchive,
+}));
 vi.mock("@/lib/db", () => ({ default: mocks.prisma }));
 vi.mock("@/lib/auth/permissions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/auth/permissions")>()),
@@ -36,8 +45,10 @@ vi.mock("@/lib/admission/admin-pending-record-shared", () => ({
   loadPendingAdmissionState: mocks.loadPendingAdmissionState,
   buildPendingGrantPresentation: mocks.buildPendingGrantPresentation,
 }));
-vi.mock("@/lib/admission/pending-admission-sync", () => ({
-  AdminDeniedAdmissionReopenError: class extends Error {},
+vi.mock("@/lib/admission/pending-admission-sync", async (original) => ({
+  ...(await original<
+    typeof import("@/lib/admission/pending-admission-sync")
+  >()),
   syncPendingAdmissionState: mocks.syncPendingAdmissionState,
   revokePendingAdmissionState: mocks.revokePendingAdmissionState,
 }));
@@ -66,13 +77,21 @@ function grant(catalogId = CATALOG_ID) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.requireArchive.mockResolvedValue({ id: CATALOG_ID, label: "Archive" });
   mocks.requireAuth.mockResolvedValue("admin-1");
   mocks.getAdminCapability.mockResolvedValue({ canAccessAdmin: true });
-  mocks.prisma.workflowGroup.findUnique.mockResolvedValue({ id: CATALOG_ID, label: "Archive", isActive: true });
+  mocks.prisma.workflowGroup.findUnique.mockResolvedValue({
+    id: CATALOG_ID,
+    label: "Archive",
+    isActive: true,
+  });
   mocks.prisma.user.findUnique.mockResolvedValue(null);
   mocks.prisma.portalAdmission.findUnique.mockResolvedValue(null);
-  mocks.prisma.$transaction.mockImplementation(async (callback) => callback(mocks.tx));
-  mocks.tx.portalAdmission.update.mockResolvedValue({ email: EMAIL, notes: "updated" });
+  mocks.prisma.$transaction.mockImplementation(async (callback) =>
+    callback(mocks.tx)
+  );
+  mocks.tx.portalAdmission.updateMany.mockResolvedValue({ count: 1 });
+  mocks.tx.pendingCatalogGrant.updateMany.mockResolvedValue({ count: 1 });
   mocks.loadPendingAdmissionState.mockResolvedValue({
     admission: {
       email: EMAIL,
@@ -84,8 +103,10 @@ beforeEach(() => {
     pendingGrants: [grant()],
   });
   mocks.buildPendingGrantPresentation.mockResolvedValue({
-    catalogNames: ["Archive", "Second archive"],
+    catalogNames: ["Archive"],
     pendingGrantResponses: [],
+    pendingGrantCount: 1,
+    singleCatalogLabel: "Archive",
   });
 });
 
@@ -94,21 +115,21 @@ describe("admin invitation creation", () => {
     { email: EMAIL },
     { email: EMAIL, catalogId: CATALOG_ID },
     { email: EMAIL, role: "reader" },
-  ])("rejects invitations without both a catalog and role: %j", async (body) => {
-    const response = await createPortalAdmission(request(body));
+  ])(
+    "rejects invitations without both a catalog and role: %j",
+    async (body) => {
+      const response = await createPortalAdmission(request(body));
 
-    expect(response.status).toBe(400);
-    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
-    expect(mocks.syncPendingAdmissionState).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(400);
+      expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+      expect(mocks.syncPendingAdmissionState).not.toHaveBeenCalled();
+    }
+  );
 
-  it.each([null, { id: CATALOG_ID, isActive: false }])("requires an active catalog before writing an invitation: %j", async (catalog) => {
-    mocks.prisma.workflowGroup.findUnique.mockResolvedValue(catalog);
-
+  it("rejects a foreign source rather than silently granting bound access", async () => {
     const response = await createPortalAdmission(
-      request({ email: EMAIL, catalogId: CATALOG_ID, role: "reader" })
+      request({ email: EMAIL, catalogId: "20260202_000000", role: "reader" })
     );
-
     expect(response.status).toBe(404);
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
   });
@@ -172,7 +193,10 @@ describe("admin invitation creation", () => {
 
 describe("pending invitation editing", () => {
   it("rejects reassignment to an inactive catalog before changing either record", async () => {
-    mocks.prisma.workflowGroup.findUnique.mockResolvedValue({ id: "20260102_000000", isActive: false });
+    mocks.prisma.workflowGroup.findUnique.mockResolvedValue({
+      id: "20260102_000000",
+      isActive: false,
+    });
 
     const response = await patchAdminPendingRecord(
       EMAIL,
@@ -186,11 +210,15 @@ describe("pending invitation editing", () => {
   });
 
   it("rejects removing the final content grant before changing either record", async () => {
-    const response = await patchAdminPendingRecord(EMAIL, request({ catalogId: null }, "PATCH"));
+    const response = await patchAdminPendingRecord(
+      EMAIL,
+      request({ catalogId: null }, "PATCH")
+    );
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
-      error: "Pending invitations must retain content access. Revoke the invitation instead.",
+      error:
+        "Pending invitations must retain content access. Revoke the invitation instead.",
     });
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
     expect(mocks.syncPendingAdmissionState).not.toHaveBeenCalled();
@@ -198,56 +226,119 @@ describe("pending invitation editing", () => {
   });
 
   it("still updates the assigned role while preserving content access", async () => {
-    const response = await patchAdminPendingRecord(EMAIL, request({ role: "corrector" }, "PATCH"));
+    const response = await patchAdminPendingRecord(
+      EMAIL,
+      request({ role: "corrector" }, "PATCH")
+    );
 
     expect(response.status).toBe(200);
     expect(mocks.syncPendingAdmissionState).toHaveBeenCalledWith(
       expect.objectContaining({ catalogId: CATALOG_ID, role: "corrector" }),
-      { allowAdminDeniedReopen: true },
+      expect.objectContaining({
+        allowAdminDeniedReopen: true,
+        requirePending: true,
+        expectedGrant: expect.objectContaining({
+          role: "reader",
+          status: "PENDING",
+        }),
+      }),
       mocks.tx
     );
     expect(mocks.revokePendingAdmissionState).not.toHaveBeenCalled();
   });
 
-  it("retains notes-only management of historical inactive grants", async () => {
-    mocks.prisma.workflowGroup.findUnique.mockResolvedValue({ id: CATALOG_ID, label: "Old catalog", isActive: false });
-
-    const response = await patchAdminPendingRecord(EMAIL, request({ notes: "operator review" }, "PATCH"));
-
-    expect(response.status).toBe(200);
-    expect(mocks.syncPendingAdmissionState).toHaveBeenCalledWith(
-      expect.objectContaining({ catalogId: CATALOG_ID, role: "reader", notes: "operator review" }),
-      { allowAdminDeniedReopen: true },
-      mocks.tx
+  it("updates bound notes without reopening or rewriting the role", async () => {
+    const response = await patchAdminPendingRecord(
+      EMAIL,
+      request({ notes: "operator review" }, "PATCH")
     );
+    expect(response.status).toBe(200);
+    expect(mocks.syncPendingAdmissionState).not.toHaveBeenCalled();
+    expect(mocks.tx.portalAdmission.updateMany).toHaveBeenCalledWith({
+      where: { email: EMAIL, status: "PENDING" },
+      data: { notes: "operator review" },
+    });
+    expect(mocks.tx.pendingCatalogGrant.updateMany).toHaveBeenCalledWith({
+      where: { email: EMAIL, catalogId: CATALOG_ID, status: "PENDING" },
+      data: { notes: "operator review" },
+    });
   });
 
-  it("retains notes-only management of legacy standalone admissions", async () => {
-    const state = await mocks.loadPendingAdmissionState();
-    mocks.loadPendingAdmissionState.mockResolvedValue({ ...state, pendingGrants: [] });
-
-    const response = await patchAdminPendingRecord(EMAIL, request({ notes: "operator review" }, "PATCH"));
-
-    expect(response.status).toBe(200);
-    expect(mocks.syncPendingAdmissionState).toHaveBeenCalledWith(
-      expect.objectContaining({ catalogId: null, role: null, notes: "operator review" }),
-      { allowAdminDeniedReopen: true },
-      mocks.tx
-    );
-  });
-
-  it("retains notes-only editing of multi-catalog pending state until migration", async () => {
+  it("edits legacy standalone notes without creating implicit access", async () => {
     const state = await mocks.loadPendingAdmissionState();
     mocks.loadPendingAdmissionState.mockResolvedValue({
       ...state,
-      pendingGrants: [grant(), grant("20260102_000000")],
+      pendingGrants: [],
     });
-
-    const response = await patchAdminPendingRecord(EMAIL, request({ notes: "updated" }, "PATCH"));
-
+    const response = await patchAdminPendingRecord(
+      EMAIL,
+      request({ notes: "operator review" }, "PATCH")
+    );
     expect(response.status).toBe(200);
-    expect(mocks.tx.portalAdmission.update).toHaveBeenCalled();
     expect(mocks.syncPendingAdmissionState).not.toHaveBeenCalled();
-    expect(mocks.revokePendingAdmissionState).not.toHaveBeenCalled();
+    expect(mocks.tx.pendingCatalogGrant.updateMany).not.toHaveBeenCalled();
+    expect(mocks.tx.portalAdmission.updateMany).toHaveBeenCalledWith({
+      where: { email: EMAIL, status: "PENDING" },
+      data: { notes: "operator review" },
+    });
+  });
+
+  it("requires explicit role assignment before adding access to an unbacked admission", async () => {
+    const state = await mocks.loadPendingAdmissionState();
+    mocks.loadPendingAdmissionState.mockResolvedValue({
+      ...state,
+      pendingGrants: [],
+    });
+    const response = await patchAdminPendingRecord(
+      EMAIL,
+      request({ extraPermissions: ["download_audio"] }, "PATCH")
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+    const assigned = await patchAdminPendingRecord(
+      EMAIL,
+      request({ role: "reader", extraPermissions: ["download_audio"] }, "PATCH")
+    );
+    expect(assigned.status).toBe(200);
+    expect(mocks.syncPendingAdmissionState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        catalogId: CATALOG_ID,
+        role: "reader",
+        extraPermissions: ["download_audio"],
+      }),
+      {
+        allowAdminDeniedReopen: true,
+        requirePending: true,
+        expectedGrant: null,
+      },
+      mocks.tx
+    );
+  });
+
+  it("rejects a stale role save after revocation instead of reinviting", async () => {
+    mocks.syncPendingAdmissionState.mockRejectedValueOnce(
+      new PendingAdmissionUnavailableError()
+    );
+    const response = await patchAdminPendingRecord(
+      EMAIL,
+      request({ role: "corrector" }, "PATCH")
+    );
+    expect(response.status).toBe(409);
+    expect(mocks.syncPendingAdmissionState).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ requirePending: true }),
+      mocks.tx
+    );
+  });
+
+  it("does not let a stale notes update reopen a revoked/claimed admission", async () => {
+    mocks.tx.portalAdmission.updateMany.mockResolvedValue({ count: 0 });
+    const response = await patchAdminPendingRecord(
+      EMAIL,
+      request({ notes: "late save" }, "PATCH")
+    );
+    expect(response.status).toBe(409);
+    expect(mocks.tx.pendingCatalogGrant.updateMany).not.toHaveBeenCalled();
+    expect(mocks.syncPendingAdmissionState).not.toHaveBeenCalled();
   });
 });
