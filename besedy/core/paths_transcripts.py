@@ -31,10 +31,7 @@ def extract_timestamp_from_loudness_catalog(path: Path) -> str | None:
 
 
 def extract_timestamp_from_normalized_catalog(path: Path) -> str | None:
-    """Extract <ts> from audio_catalog_<ts>_normalized or _loudness_normalized."""
-    result = _extract_timestamp(path, r"audio_catalog_(\d{8}_\d{6})_normalized\.csv$")
-    if result:
-        return result
+    """Extract <ts> from the current loudness-normalized manifest name."""
     return _extract_timestamp(path, r"audio_catalog_(\d{8}_\d{6})_loudness_normalized\.csv$")
 
 
@@ -245,7 +242,12 @@ def iter_transcript_paths(root: Path) -> Iterable[Path]:
         if len(parts) == 1 and parts[0] == "transcript.json":
             yield candidate
             continue
-        if len(parts) >= 4 and parts[0] in allowed:
+        if (
+            len(parts) == 4
+            and parts[0] in allowed
+            and SHA256_HASH_PATTERN.fullmatch(parts[2])
+            and parse_transcript_components(candidate, root)
+        ):
             yield candidate
 
 
@@ -257,9 +259,11 @@ def parse_transcript_components(path: Path, root: Path) -> tuple[str, str, str] 
         return None
 
     parts = relative.parts
-    if len(parts) < 4:
+    if len(parts) != 4 or parts[3] != "transcript.json":
         return None
     workflow, model_component, audio_hash = parts[:3]
+    if not re.search(r"@lang-(?:auto|[a-z]{2,3}(?:-[a-z]{2,3})?)$", model_component):
+        return None
     return workflow, model_component, audio_hash
 
 

@@ -139,7 +139,7 @@ def find_intake_source(incoming_dir: Path) -> Path:
 
 def catalog_hashes(catalog_csv: Path) -> set[str]:
     columns, rows = load_csv(catalog_csv, encoding="utf-8")
-    hash_column = resolve_hash_column(columns, catalog_csv, preferred="Hash")
+    hash_column = resolve_hash_column(columns, catalog_csv)
     return {value.lower() for value in collect_hashes(rows, hash_column=hash_column)}
 
 

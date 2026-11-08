@@ -82,13 +82,13 @@ class TestCatalogEntry:
     def test_basic_creation(self):
         """Test creating a CatalogEntry."""
         entry = CatalogEntry(
-            sha256="abc123",
+            sha256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             filename="test.wav",
             full_path="/path/to/test.wav",
             duration_str="01:30:00",
             duration_seconds=5400.0,
         )
-        assert entry.sha256 == "abc123"
+        assert entry.sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         assert entry.filename == "test.wav"
         assert entry.full_path == "/path/to/test.wav"
         assert entry.duration_str == "01:30:00"
@@ -101,12 +101,12 @@ class TestStagedFile:
     def test_basic_creation(self):
         """Test creating a StagedFile."""
         staged = StagedFile(
-            sha256="abc123",
+            sha256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             path=Path("/path/to/staged.wav"),
             exists=True,
             size_bytes=1024,
         )
-        assert staged.sha256 == "abc123"
+        assert staged.sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         assert staged.path == Path("/path/to/staged.wav")
         assert staged.exists is True
         assert staged.size_bytes == 1024
@@ -129,11 +129,11 @@ class TestTranscriptSet:
     def test_basic_creation(self):
         """Test creating a TranscriptSet."""
         ts = TranscriptSet(
-            sha256="abc123",
-            backends=["canary-nemo/model1", "faster-whisper/model2"],
+            sha256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            backends=["canary-nemo/model1@lang-cs", "faster-whisper/model2@lang-cs"],
             paths=[Path("/path/1/transcript.json"), Path("/path/2/transcript.json")],
         )
-        assert ts.sha256 == "abc123"
+        assert ts.sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         assert len(ts.backends) == 2
         assert len(ts.paths) == 2
 
@@ -144,11 +144,11 @@ class TestDiarizationSet:
     def test_basic_creation(self):
         """Test creating a DiarizationSet."""
         ds = DiarizationSet(
-            sha256="abc123",
+            sha256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             backends=["speaker_diarization/pyannote_model"],
             paths=[Path("/path/speakers.json")],
         )
-        assert ds.sha256 == "abc123"
+        assert ds.sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         assert len(ds.backends) == 1
 
 
@@ -160,17 +160,17 @@ class TestLoadCatalogCsv:
         csv_path = tmp_path / "catalog.csv"
         csv_path.write_text(
             """Hash,Filename,Full Path,Duration
-abc123,test1.wav,/path/test1.wav,01:30:00
-def456,test2.wav,/path/test2.wav,00:45:30
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,test1.wav,/path/test1.wav,01:30:00
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,test2.wav,/path/test2.wav,00:45:30
 """
         )
 
         entries = load_catalog_csv(csv_path)
         assert len(entries) == 2
-        assert entries[0].sha256 == "abc123"
+        assert entries[0].sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         assert entries[0].filename == "test1.wav"
         assert entries[0].duration_seconds == 5400.0
-        assert entries[1].sha256 == "def456"
+        assert entries[1].sha256 == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         assert entries[1].duration_seconds == 2730.0
 
     def test_skip_empty_hash(self, tmp_path):
@@ -178,7 +178,7 @@ def456,test2.wav,/path/test2.wav,00:45:30
         csv_path = tmp_path / "catalog.csv"
         csv_path.write_text(
             """Hash,Filename,Full Path,Duration
-abc123,test1.wav,/path/test1.wav,01:00:00
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,test1.wav,/path/test1.wav,01:00:00
 ,empty.wav,/path/empty.wav,00:30:00
   ,whitespace.wav,/path/whitespace.wav,00:30:00
 """
@@ -186,7 +186,7 @@ abc123,test1.wav,/path/test1.wav,01:00:00
 
         entries = load_catalog_csv(csv_path)
         assert len(entries) == 1
-        assert entries[0].sha256 == "abc123"
+        assert entries[0].sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
     def test_empty_csv(self, tmp_path):
         """Test loading empty CSV (headers only)."""
@@ -201,13 +201,13 @@ abc123,test1.wav,/path/test1.wav,01:00:00
         csv_path = tmp_path / "catalog.csv"
         csv_path.write_text(
             """Hash,Filename
-abc123,test.wav
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,test.wav
 """
         )
 
         entries = load_catalog_csv(csv_path)
         assert len(entries) == 1
-        assert entries[0].sha256 == "abc123"
+        assert entries[0].sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         assert entries[0].full_path == ""
         assert entries[0].duration_seconds == 0.0
 
@@ -218,12 +218,12 @@ class TestCheckStagedFiles:
     def test_existing_files(self, tmp_path):
         """Test checking existing staged files."""
         # Create staged file
-        staged_file = tmp_path / "abc123.wav"
+        staged_file = tmp_path / "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.wav"
         staged_file.write_bytes(b"fake wav content")
 
         entries = [
             CatalogEntry(
-                sha256="abc123",
+                sha256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 filename="test.wav",
                 full_path=str(staged_file),
                 duration_str="01:00:00",
@@ -233,9 +233,9 @@ class TestCheckStagedFiles:
 
         staged_files, missing = check_staged_files(entries)
 
-        assert "abc123" in staged_files
-        assert staged_files["abc123"].exists is True
-        assert staged_files["abc123"].size_bytes > 0
+        assert "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" in staged_files
+        assert staged_files["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"].exists is True
+        assert staged_files["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"].size_bytes > 0
         assert len(missing) == 0
 
     def test_missing_files(self, tmp_path):
@@ -282,11 +282,11 @@ class TestFindOrphanedStagedFiles:
     def test_find_orphans(self, tmp_path):
         """Test finding orphaned staged files."""
         # Create staged files
-        (tmp_path / "abc123.wav").touch()
-        (tmp_path / "def456.wav").touch()
+        (tmp_path / "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.wav").touch()
+        (tmp_path / "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.wav").touch()
         (tmp_path / "orphan789.wav").touch()
 
-        catalog_hashes = {"abc123", "def456"}
+        catalog_hashes = {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
 
         orphaned = find_orphaned_staged_files(tmp_path, catalog_hashes)
 
@@ -295,10 +295,10 @@ class TestFindOrphanedStagedFiles:
 
     def test_no_orphans(self, tmp_path):
         """Test when no orphans exist."""
-        (tmp_path / "abc123.wav").touch()
-        (tmp_path / "def456.wav").touch()
+        (tmp_path / "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.wav").touch()
+        (tmp_path / "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.wav").touch()
 
-        catalog_hashes = {"abc123", "def456"}
+        catalog_hashes = {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
 
         orphaned = find_orphaned_staged_files(tmp_path, catalog_hashes)
 
@@ -306,13 +306,13 @@ class TestFindOrphanedStagedFiles:
 
     def test_none_directory(self):
         """Test with None directory."""
-        orphaned = find_orphaned_staged_files(None, {"abc123"})
+        orphaned = find_orphaned_staged_files(None, {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
         assert orphaned == []
 
     def test_nonexistent_directory(self, tmp_path):
         """Test with nonexistent directory."""
         nonexistent = tmp_path / "nonexistent"
-        orphaned = find_orphaned_staged_files(nonexistent, {"abc123"})
+        orphaned = find_orphaned_staged_files(nonexistent, {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})
         assert orphaned == []
 
 
@@ -322,32 +322,32 @@ class TestDiscoverBackendDirectories:
     def test_discover_backends(self, tmp_path):
         """Test discovering backend directories."""
         # Create backend structure
-        (tmp_path / "canary-nemo" / "model1").mkdir(parents=True)
-        (tmp_path / "faster-whisper" / "model2").mkdir(parents=True)
+        (tmp_path / "canary-nemo" / "model1@lang-cs").mkdir(parents=True)
+        (tmp_path / "faster-whisper" / "model2@lang-cs").mkdir(parents=True)
 
         backends = discover_backend_directories(tmp_path)
 
-        assert "canary-nemo/model1" in backends
-        assert "faster-whisper/model2" in backends
+        assert "canary-nemo/model1@lang-cs" in backends
+        assert "faster-whisper/model2@lang-cs" in backends
 
     def test_skip_diarization_dirs(self, tmp_path):
         """Test that diarization directories are skipped."""
-        (tmp_path / "canary-nemo" / "model1").mkdir(parents=True)
+        (tmp_path / "canary-nemo" / "model1@lang-cs").mkdir(parents=True)
         (tmp_path / "speaker_diarization" / "pyannote").mkdir(parents=True)
 
         backends = discover_backend_directories(tmp_path)
 
-        assert "canary-nemo/model1" in backends
+        assert "canary-nemo/model1@lang-cs" in backends
         assert "speaker_diarization/pyannote" not in backends
 
     def test_skip_hidden_dirs(self, tmp_path):
         """Test that hidden directories are skipped."""
-        (tmp_path / "canary-nemo" / "model1").mkdir(parents=True)
-        (tmp_path / ".hidden" / "model").mkdir(parents=True)
+        (tmp_path / "canary-nemo" / "model1@lang-cs").mkdir(parents=True)
+        (tmp_path / ".hidden" / "model@lang-cs").mkdir(parents=True)
 
         backends = discover_backend_directories(tmp_path)
 
-        assert "canary-nemo/model1" in backends
+        assert "canary-nemo/model1@lang-cs" in backends
         assert ".hidden/model" not in backends
 
     def test_nonexistent_root(self, tmp_path):
@@ -363,19 +363,19 @@ class TestCollectTranscriptsByHash:
     def test_collect_transcripts(self, tmp_path):
         """Test collecting transcripts by hash."""
         # Create transcript structure
-        transcript_dir = tmp_path / "canary-nemo" / "model1" / "abc123"
+        transcript_dir = tmp_path / "canary-nemo" / "model1@lang-cs" / "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         transcript_dir.mkdir(parents=True)
         (transcript_dir / "transcript.json").write_text("{}")
 
-        transcript_dir2 = tmp_path / "faster-whisper" / "model2" / "abc123"
+        transcript_dir2 = tmp_path / "faster-whisper" / "model2@lang-cs" / "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         transcript_dir2.mkdir(parents=True)
         (transcript_dir2 / "transcript.json").write_text("{}")
 
         result = collect_transcripts_by_hash(tmp_path)
 
-        assert "abc123" in result
-        assert len(result["abc123"].backends) == 2
-        assert len(result["abc123"].paths) == 2
+        assert "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" in result
+        assert len(result["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"].backends) == 2
+        assert len(result["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"].paths) == 2
 
     def test_empty_directory(self, tmp_path):
         """Test with empty transcripts directory."""
@@ -389,15 +389,15 @@ class TestCollectDiarizationsByHash:
     def test_collect_diarizations(self, tmp_path):
         """Test collecting diarizations by hash."""
         # Create diarization structure
-        diar_dir = tmp_path / "speaker_diarization" / "pyannote_model" / "abc123"
+        diar_dir = tmp_path / "speaker_diarization" / "pyannote_model" / "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         diar_dir.mkdir(parents=True)
         (diar_dir / "speakers.json").write_text("{}")
 
         result = collect_diarizations_by_hash(tmp_path)
 
-        assert "abc123" in result
-        assert len(result["abc123"].backends) == 1
-        assert "speaker_diarization/pyannote_model" in result["abc123"].backends
+        assert "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" in result
+        assert len(result["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"].backends) == 1
+        assert "speaker_diarization/pyannote_model" in result["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"].backends
 
     def test_no_diarization_dir(self, tmp_path):
         """Test when diarization directory doesn't exist."""
@@ -421,7 +421,7 @@ class TestValidateCatalog:
         # Create catalog CSVs
         staging_dir = tmp_path / "staging"
         staging_dir.mkdir()
-        staged_file = staging_dir / "abc123.wav"
+        staged_file = staging_dir / "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.wav"
         staged_file.write_bytes(b"fake wav content")
 
         catalog_csv = tmp_path / "catalog.csv"
@@ -429,7 +429,7 @@ class TestValidateCatalog:
             catalog_csv,
             [
                 {
-                    "Hash": "abc123",
+                    "Hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     "Filename": "test.wav",
                     "Full Path": str(tmp_path / "original.wav"),
                     "Duration": "01:00:00",
@@ -442,8 +442,8 @@ class TestValidateCatalog:
             normalized_csv,
             [
                 {
-                    "Hash": "abc123",
-                    "Filename": "abc123.wav",
+                    "Hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "Filename": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.wav",
                     "Full Path": str(staged_file),
                     "Duration": "01:00:00",
                 }
@@ -455,7 +455,7 @@ class TestValidateCatalog:
 
         # Create transcripts
         transcripts_dir = tmp_path / "transcripts"
-        transcript_path = transcripts_dir / "canary-nemo" / "model" / "abc123"
+        transcript_path = transcripts_dir / "canary-nemo" / "model@lang-cs" / "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         transcript_path.mkdir(parents=True)
         (transcript_path / "transcript.json").write_text("{}")
 
@@ -463,7 +463,7 @@ class TestValidateCatalog:
             catalog_csv,
             normalized_csv,
             transcripts_dir,
-            expected_backends=["canary-nemo/model"],
+            expected_backends=["canary-nemo/model@lang-cs"],
         )
 
         assert result.catalog_entries == 1
@@ -480,7 +480,7 @@ class TestValidateCatalog:
             catalog_csv,
             [
                 {
-                    "Hash": "abc123",
+                    "Hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     "Filename": "test.wav",
                     "Full Path": str(tmp_path / "original.wav"),
                     "Duration": "01:00:00",
@@ -499,7 +499,7 @@ class TestValidateCatalog:
         assert result.catalog_entries == 1
         assert result.normalized_entries == 0
         assert len(result.missing_normalized_hashes) == 1
-        assert "abc123" in result.missing_normalized_hashes
+        assert "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" in result.missing_normalized_hashes
 
 
 class TestFormatValidationReport:
@@ -531,7 +531,7 @@ class TestFormatValidationReport:
             orphaned_diarization_hashes=[],
             entries_with_all_diarization_backends=10,
             entries_missing_diarization_backends=[],
-            backend_counts={"canary-nemo/model": 10},
+            backend_counts={"canary-nemo/model@lang-cs": 10},
             diarization_backend_counts={"speaker_diarization/pyannote": 10},
         )
 
@@ -559,7 +559,7 @@ class TestFormatValidationReport:
             orphaned_staged_hashes=["orphan1", "orphan2"],
             orphaned_transcript_hashes=["orphan3"],
             entries_with_all_backends=5,
-            entries_missing_backends=[("hash4", ["canary-nemo/model"])],
+            entries_missing_backends=[("hash4", ["canary-nemo/model@lang-cs"])],
             diarization_found=5,
             diarization_missing=5,
             orphaned_diarization=0,
@@ -567,7 +567,7 @@ class TestFormatValidationReport:
             orphaned_diarization_hashes=[],
             entries_with_all_diarization_backends=5,
             entries_missing_diarization_backends=[],
-            backend_counts={"canary-nemo/model": 5},
+            backend_counts={"canary-nemo/model@lang-cs": 5},
             diarization_backend_counts={},
         )
 
@@ -667,7 +667,7 @@ class TestEdgeCases:
         csv_path = tmp_path / "catalog.csv"
         csv_path.write_text(
             """Hash,Filename,Full Path,Duration
-abc123,příliš_žluťoučký.wav,/path/příliš_žluťoučký.wav,01:00:00
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,příliš_žluťoučký.wav,/path/příliš_žluťoučký.wav,01:00:00
 """,
             encoding="utf-8",
         )
@@ -679,25 +679,25 @@ abc123,příliš_žluťoučký.wav,/path/příliš_žluťoučký.wav,01:00:00
     def test_multiple_transcripts_same_hash(self, tmp_path):
         """Test handling multiple backends for same audio hash."""
         # Create multiple backend transcripts
-        for backend in ["canary-nemo/model1", "faster-whisper/model2", "whisperx/model3"]:
+        for backend in ["canary-nemo/model1@lang-cs", "faster-whisper/model2@lang-cs", "whisperx/model3@lang-cs"]:
             parts = backend.split("/")
-            transcript_dir = tmp_path / parts[0] / parts[1] / "abc123"
+            transcript_dir = tmp_path / parts[0] / parts[1] / "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             transcript_dir.mkdir(parents=True)
             (transcript_dir / "transcript.json").write_text("{}")
 
         result = collect_transcripts_by_hash(tmp_path)
 
-        assert "abc123" in result
-        assert len(result["abc123"].backends) == 3
+        assert "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" in result
+        assert len(result["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"].backends) == 3
 
     def test_orphan_detection_ignores_non_wav(self, tmp_path):
         """Test that orphan detection only considers .wav files."""
-        (tmp_path / "abc123.wav").touch()
+        (tmp_path / "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.wav").touch()
         (tmp_path / "orphan.wav").touch()
         (tmp_path / "readme.txt").touch()
         (tmp_path / "data.json").touch()
 
-        catalog_hashes = {"abc123"}
+        catalog_hashes = {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
 
         orphaned = find_orphaned_staged_files(tmp_path, catalog_hashes)
 

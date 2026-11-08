@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, cast
 
 from besedy.lib.backend_ids import TRANSCRIPT_META_BACKENDS
@@ -18,15 +19,35 @@ TRANSCRIPT_META_REQUIRED_FIELDS = (
 def validate_meta(meta: dict[str, Any]) -> list[str]:
     """Validate meta object and return list of issues."""
     issues = []
+    if not isinstance(meta, dict):
+        return ["Top-level 'meta' must be an object"]
 
     for field in TRANSCRIPT_META_REQUIRED_FIELDS:
         if field not in meta:
             issues.append(f"meta.{field} is required but missing")
 
-    if "backend" in meta and meta["backend"] not in TRANSCRIPT_META_BACKENDS:
+    if "backend" in meta and (
+        not isinstance(meta["backend"], str) or meta["backend"] not in TRANSCRIPT_META_BACKENDS
+    ):
         issues.append(f"meta.backend has unexpected value: {meta['backend']}")
+    for field in ("model", "audio_filepath"):
+        if field in meta and not isinstance(meta[field], str):
+            issues.append(f"meta.{field} must be a string")
+    if "duration" in meta and (not _is_number(meta["duration"]) or meta["duration"] < 0):
+        issues.append("meta.duration must be a nonnegative finite number")
+    if "generation_params" in meta and not isinstance(meta["generation_params"], dict):
+        issues.append("meta.generation_params must be an object")
 
     return issues
+
+
+def _is_number(value: object) -> bool:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def validate_segment(seg: dict[str, Any], seg_idx: int, prev_end: float | None) -> list[str]:
@@ -38,28 +59,29 @@ def validate_segment(seg: dict[str, Any], seg_idx: int, prev_end: float | None) 
     for field in required:
         if field not in seg:
             issues.append(f"segments[{seg_idx}].{field} is missing")
-            return issues  # Can't continue without these
+    if issues:
+        return issues
 
     start = seg["start"]
     end = seg["end"]
     confidence = seg["confidence"]
 
     # Type checks
-    if not isinstance(start, (int, float)):
+    if not _is_number(start):
         issues.append(f"segments[{seg_idx}].start must be a number, got {type(start).__name__}")
-    if not isinstance(end, (int, float)):
+    if not _is_number(end):
         issues.append(f"segments[{seg_idx}].end must be a number, got {type(end).__name__}")
     if not isinstance(seg["text"], str):
         issues.append(
             f"segments[{seg_idx}].text must be a string, got {type(seg['text']).__name__}"
         )
-    if confidence is not None and not isinstance(confidence, (int, float)):
+    if confidence is not None and not _is_number(confidence):
         issues.append(
             f"segments[{seg_idx}].confidence must be a number or null, got {type(confidence).__name__}"
         )
 
     # Value checks
-    if isinstance(start, (int, float)) and isinstance(end, (int, float)):
+    if _is_number(start) and _is_number(end):
         if end < start:
             issues.append(f"segments[{seg_idx}]: end ({end}) < start ({start})")
 
@@ -77,7 +99,7 @@ def validate_segment(seg: dict[str, Any], seg_idx: int, prev_end: float | None) 
     # Words validation
     if not isinstance(seg["words"], list):
         issues.append(f"segments[{seg_idx}].words must be a list")
-    else:
+    elif _is_number(start) and _is_number(end):
         issues.extend(validate_words(seg["words"], seg_idx, start, end))
 
     return issues
@@ -91,13 +113,16 @@ def validate_words(
     prev_word_end = None
 
     for word_idx, word in enumerate(words):
+        if not isinstance(word, dict):
+            issues.append(f"segments[{seg_idx}].words[{word_idx}] must be an object")
+            continue
         required = ["start", "end", "word", "confidence"]
         for field in required:
             if field not in word:
                 issues.append(f"segments[{seg_idx}].words[{word_idx}].{field} is missing")
                 continue
 
-        if "start" not in word or "end" not in word:
+        if any(field not in word for field in required):
             continue
 
         w_start = word["start"]
@@ -105,14 +130,18 @@ def validate_words(
         w_conf = word.get("confidence")
 
         # Type checks
-        if not isinstance(w_start, (int, float)):
+        if not _is_number(w_start):
             issues.append(f"segments[{seg_idx}].words[{word_idx}].start must be a number")
-        if not isinstance(w_end, (int, float)):
+        if not _is_number(w_end):
             issues.append(f"segments[{seg_idx}].words[{word_idx}].end must be a number")
         if not isinstance(word["word"], str):
             issues.append(f"segments[{seg_idx}].words[{word_idx}].word must be a string")
+        if w_conf is not None and not _is_number(w_conf):
+            issues.append(
+                f"segments[{seg_idx}].words[{word_idx}].confidence must be a number or null"
+            )
 
-        if isinstance(w_start, (int, float)) and isinstance(w_end, (int, float)):
+        if _is_number(w_start) and _is_number(w_end):
             # Word-level timing checks
             if w_end < w_start:
                 issues.append(
@@ -151,6 +180,8 @@ def validate_words(
 def validate_canonical_schema(data: dict[str, Any]) -> list[str]:
     """Validate entire transcript against canonical schema."""
     issues = []
+    if not isinstance(data, dict):
+        return ["Top-level JSON must be an object"]
 
     # Top-level structure
     if "meta" not in data:
@@ -177,7 +208,7 @@ def validate_canonical_schema(data: dict[str, Any]) -> list[str]:
         seg_issues = validate_segment(seg, idx, prev_end)
         issues.extend(seg_issues)
 
-        if "end" in seg and isinstance(seg["end"], (int, float)):
+        if "end" in seg and _is_number(seg["end"]):
             prev_end = seg["end"]
 
     return issues

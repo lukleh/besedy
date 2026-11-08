@@ -26,7 +26,6 @@ from besedy.commands.catalog.archive import (
     compute_output_path,
     handle_archive,
     load_archived_hashes,
-    migrate_manifest_header,
     nearest_opus_sample_rate,
     update_manifest_rows,
 )
@@ -409,8 +408,8 @@ def _entry(sha256: str, **aac: object) -> CompressedEntry:
     )
 
 
-class TestManifestMigration:
-    """Manifests written before the AAC columns keep working."""
+class TestManifestSchema:
+    """Archive operations require the current manifest schema."""
 
     def test_writes_aac_columns(self, tmp_path):
         path = tmp_path / "archived.csv"
@@ -427,40 +426,23 @@ class TestManifestMigration:
         assert rows[0]["Compressed AAC Bitrate (kbps)"] == "16"
         assert rows[1]["Compressed AAC Path"] == ""
 
-    def test_append_to_an_old_manifest_rewrites_its_header_first(self, tmp_path):
-        """Appending with more columns than the header would shift every value."""
+    def test_append_rejects_old_manifest_without_rewriting(self, tmp_path):
         path = tmp_path / "archived.csv"
         _write_rows(path, OLD_HEADER, [{"Hash": "old", "Compressed Path": "/out/old.webm"}])
+        before = path.read_bytes()
+        with pytest.raises(ValueError, match="unsupported CSV schema"):
+            ArchivedManifestWriter(path, append=True)
+        assert path.read_bytes() == before
 
-        writer = ArchivedManifestWriter(path, append=True)
-        writer.write_entry(_entry("new", aac_path=Path("/out/new.m4a"), aac_size_bytes=5))
-        writer.close()
-
-        header, rows = _read_rows(path)
-        assert header == ArchivedManifestWriter.FIELDNAMES
-        assert rows[0]["Hash"] == "old"
-        assert rows[0]["Compressed Path"] == "/out/old.webm"
-        assert rows[0]["Compressed AAC Path"] == ""
-        assert rows[1]["Hash"] == "new"
-        assert rows[1]["Compressed AAC Path"] == "/out/new.m4a"
-
-    def test_migration_keeps_unknown_columns_and_skips_current_files(self, tmp_path):
+    def test_append_rejects_unknown_columns(self, tmp_path):
         path = tmp_path / "archived.csv"
-        _write_rows(path, OLD_HEADER + ["Note"], [{"Hash": "a", "Note": "keep me"}])
-
-        header = migrate_manifest_header(path)
-        assert header[: len(OLD_HEADER) + 1] == OLD_HEADER + ["Note"]
-        assert _read_rows(path)[1][0]["Note"] == "keep me"
-
-        before = path.stat().st_mtime_ns
-        os.utime(path, ns=(before - 10_000_000, before - 10_000_000))
-        stamped = path.stat().st_mtime_ns
-        migrate_manifest_header(path)
-        assert path.stat().st_mtime_ns == stamped  # already current: not rewritten
+        _write_rows(path, ArchivedManifestWriter.FIELDNAMES + ["Note"], [{"Hash": "a"}])
+        with pytest.raises(ValueError, match="unexpected.*Note"):
+            ArchivedManifestWriter(path, append=True)
 
     def test_update_rows_sets_columns_by_hash(self, tmp_path):
         path = tmp_path / "archived.csv"
-        _write_rows(path, OLD_HEADER, [{"Hash": "a"}, {"Hash": "b", "Format": "opus"}])
+        _write_rows(path, ArchivedManifestWriter.FIELDNAMES, [{"Hash": "a"}, {"Hash": "b", "Format": "opus"}])
 
         changed = update_manifest_rows(path, {"b": {"Compressed AAC Path": "/out/b.m4a"}})
 
@@ -1038,7 +1020,7 @@ class TestBackfillSafety:
 
     def _manifest(self, tmp_path: Path, rows: list[dict[str, str]]) -> Path:
         path = tmp_path / "audio_catalog_20260101_000000_loudness_archived.csv"
-        _write_rows(path, OLD_HEADER, rows)
+        _write_rows(path, ArchivedManifestWriter.FIELDNAMES, rows)
         return path
 
     def _source_catalog(self, manifest: Path, rows: list[CsvAudioRow]) -> Path:
@@ -1181,7 +1163,7 @@ class TestBackfillSafety:
 
     def test_manifest_writes_keep_symlinks_and_permissions(self, tmp_path):
         target = tmp_path / "real_archived.csv"
-        _write_rows(target, OLD_HEADER, [{"Hash": "a"}])
+        _write_rows(target, ArchivedManifestWriter.FIELDNAMES, [{"Hash": "a"}])
         target.chmod(0o664)
         link = tmp_path / "archived.csv"
         link.symlink_to(target)
@@ -1387,7 +1369,7 @@ class TestBackfillSafety:
             copy = path.with_suffix(".m4a")
             copy.write_bytes(b"aac")
             # `catalog remove` drops the row while the copy is encoding.
-            _write_rows(manifest, OLD_HEADER, [])
+            _write_rows(manifest, ArchivedManifestWriter.FIELDNAMES, [])
             return archive_module.AacBackfillResult(
                 row.sha256, {"Compressed AAC Path": str(copy)}, None
             )

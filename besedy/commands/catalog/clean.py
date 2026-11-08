@@ -40,7 +40,7 @@ def _load_catalog_entries(csv_path: Path) -> tuple[list[str], list[dict], list[t
         Tuple of (columns, rows, entries) where entries is [(sha256, full_path), ...].
     """
     columns, rows = load_csv(csv_path, encoding="utf-8")
-    hash_column = resolve_hash_column(columns, csv_path, preferred="Hash")
+    hash_column = resolve_hash_column(columns, csv_path)
 
     entries: list[tuple[str, str]] = []
     for row in rows:
@@ -105,11 +105,8 @@ def _resolve_normalized_csv(
                 ),
             }
         return resolved, None
-    candidates = (
-        generation.derived_csv("_loudness_normalized"),
-        generation.derived_csv("_normalized"),
-    )
-    return next((path for path in candidates if path.is_file()), None), None
+    path = generation.derived_csv("_loudness_normalized")
+    return (path if path.is_file() else None), None
 
 
 def _emit_error(output_format: str, result: dict) -> None:

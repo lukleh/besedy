@@ -15,6 +15,8 @@ from rich.text import Text
 
 from besedy.core.paths import (
     assert_catalog_transcripts_alignment,
+    iter_transcript_paths,
+    parse_transcript_components,
     require_run_id_from_transcripts_root,
     resolve_catalogs_root,
     resolve_transcripts_root,
@@ -197,26 +199,18 @@ def _discover_transcripts(
     workflow_filter: str | None,
     model_filter: str | None,
 ) -> dict[tuple[str, str, str], Path]:
-    """
-    Locate transcript files under the given transcripts root.
-
-    Prefers transcript.json when both transcript.json and transcript_original.json
-    exist for a hash.
-    """
+    """Locate current transcript files under the given transcripts root."""
     records: dict[tuple[str, str, str], Path] = {}
-    # Prefer canonical transcript.json; fall back to transcript_original.json
-    for filename in ("transcript.json", "transcript_original.json"):
-        for path in transcripts_root.glob(f"*/*/*/{filename}"):
-            backend, model, hash_component = path.relative_to(transcripts_root).parts[:3]
-            if workflow_filter and backend != workflow_filter:
-                continue
-            if model_filter and model != model_filter:
-                continue
-            key = (backend, model, hash_component)
-            # Only overwrite fallback entries with canonical transcript.json
-            if key in records and records[key].name == "transcript.json":
-                continue
-            records[key] = path
+    for path in iter_transcript_paths(transcripts_root):
+        components = parse_transcript_components(path, transcripts_root)
+        if components is None:
+            continue
+        backend, model, hash_component = components
+        if workflow_filter and backend != workflow_filter:
+            continue
+        if model_filter and model != model_filter:
+            continue
+        records[(backend, model, hash_component)] = path
     return records
 
 

@@ -377,7 +377,7 @@ class TestTimestampExtraction:
         assert result is None
 
     def test_extract_from_normalized_catalog(self):
-        path = Path("audio_catalog_20251128_120000_normalized.csv")
+        path = Path("audio_catalog_20251128_120000_loudness_normalized.csv")
         result = extract_timestamp_from_normalized_catalog(path)
         assert result == "20251128_120000"
 
@@ -407,7 +407,7 @@ class TestIterTranscriptPaths:
 
     def test_finds_transcript_json(self, tmp_path):
         # Create structure: workflow/model/hash/transcript.json
-        transcript_dir = tmp_path / "faster-whisper" / "large-v3" / "abc123"
+        transcript_dir = tmp_path / "faster-whisper" / "large-v3@lang-cs" / ("a" * 64)
         transcript_dir.mkdir(parents=True)
         transcript_file = transcript_dir / "transcript.json"
         transcript_file.write_text('{"segments": []}')
@@ -434,7 +434,7 @@ class TestParseTranscriptComponents:
     """Tests for parse_transcript_components()."""
 
     def test_extracts_workflow_model_hash(self, tmp_path):
-        transcript_path = tmp_path / "faster-whisper" / "large-v3" / "abc123def" / "transcript.json"
+        transcript_path = tmp_path / "faster-whisper" / "large-v3@lang-cs" / ("a" * 64) / "transcript.json"
         transcript_path.parent.mkdir(parents=True)
         transcript_path.touch()
 
@@ -442,8 +442,8 @@ class TestParseTranscriptComponents:
         assert result is not None
         workflow, model, audio_hash = result
         assert workflow == "faster-whisper"
-        assert model == "large-v3"
-        assert audio_hash == "abc123def"
+        assert model == "large-v3@lang-cs"
+        assert audio_hash == "a" * 64
 
     def test_returns_none_for_shallow_path(self, tmp_path):
         # Path too shallow (fewer than 4 parts)

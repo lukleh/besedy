@@ -74,6 +74,7 @@ from besedy.lib.audio.types import (
     detect_logical_cpus,
     format_size,
 )
+from besedy.lib.catalog.manager import require_csv_columns
 from besedy.lib.data.atomic_io import atomic_path, rewrite_lock
 from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED, CsvAudioRow
 
@@ -236,15 +237,14 @@ class ArchivedManifestWriter:
         Args:
             path: Path to the CSV file.
             append: If True and file exists, append without writing header.
-                A manifest written before the AAC columns existed is first
-                rewritten with the current header, so appended rows line up.
+                Existing files must already use the current manifest schema.
         """
         self.lock = threading.Lock()
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
         with manifest_lock(path):
             if append and path.exists():
-                migrate_manifest_header(path)
+                require_csv_columns(_read_header(path), self.FIELDNAMES, path=path)
             else:
                 with path.open("w", newline="", encoding="utf-8") as handle:
                     csv.DictWriter(
@@ -254,8 +254,8 @@ class ArchivedManifestWriter:
     def write_entry(self, entry: CompressedEntry) -> None:
         """Append a compressed file entry to the manifest."""
         with self.lock, manifest_lock(self.path):
-            # The header can have gained columns since this writer started.
-            fieldnames = _manifest_fieldnames(_read_header(self.path))
+            fieldnames = _read_header(self.path)
+            require_csv_columns(fieldnames, self.FIELDNAMES, path=self.path)
             with self.path.open("a", newline="", encoding="utf-8") as handle:
                 writer = csv.DictWriter(
                     handle, fieldnames=fieldnames, quoting=csv.QUOTE_MINIMAL, restval=""
@@ -355,29 +355,12 @@ def _write_manifest_atomically(
                 writer.writerow({name: row.get(name, "") for name in fieldnames})
 
 
-def _manifest_fieldnames(existing: list[str]) -> list[str]:
-    # Keep any column the file already has, in order, and add missing ones.
-    return existing + [name for name in ArchivedManifestWriter.FIELDNAMES if name not in existing]
-
-
-def migrate_manifest_header(path: Path) -> list[str]:
-    """Give an existing manifest every current column; return its header.
-
-    Rows keep their values, and new columns start empty. The file is only
-    rewritten when a column is missing. The caller holds `manifest_lock`.
-    """
-    existing, rows = _read_manifest(path)
-    fieldnames = _manifest_fieldnames(existing)
-    if fieldnames != existing:
-        _write_manifest_atomically(path, fieldnames, rows)
-    return fieldnames
-
-
 def update_manifest_rows(path: Path, updates: dict[str, dict[str, str | int]]) -> int:
     """Set columns on manifest rows by hash, atomically; return rows changed."""
     with manifest_lock(path):
         existing, rows = _read_manifest(path)
-        fieldnames = _manifest_fieldnames(existing)
+        require_csv_columns(existing, ArchivedManifestWriter.FIELDNAMES, path=path)
+        fieldnames = ArchivedManifestWriter.FIELDNAMES
         changed = 0
         for row in rows:
             values = updates.get((row.get("Hash") or "").strip())
@@ -1067,8 +1050,9 @@ def run_aac_backfill(
 
     try:
         with manifest_lock(archived_csv_path):
-            _, manifest_rows = _read_manifest(archived_csv_path)
-    except (OSError, UnicodeDecodeError, csv.Error) as exc:
+            columns, manifest_rows = _read_manifest(archived_csv_path)
+            require_csv_columns(columns, ArchivedManifestWriter.FIELDNAMES, path=archived_csv_path)
+    except (OSError, ValueError, csv.Error) as exc:
         print(f"Error: cannot read {archived_csv_path}: {exc}", file=sys.stderr)
         return 1
     use_fdk = select_aac_encoder(ffmpeg_binary)
@@ -1140,7 +1124,9 @@ def _run_backfill_jobs(
             result = future.result()
         except Exception as exc:  # one broken job must not end the run
             result = AacBackfillResult(
-                row.sha256, None, ArchiveSkippedEntry(row.sha256, compressed_path, f"exception: {exc}")
+                row.sha256,
+                None,
+                ArchiveSkippedEntry(row.sha256, compressed_path, f"exception: {exc}"),
             )
         if result.values is not None:
             # Record each copy as it finishes: an interrupted run keeps
@@ -1161,7 +1147,9 @@ def _run_backfill_jobs(
             )
         if result.skipped is not None:
             skipped.append(result.skipped)
-            print(f"  [{position}/{len(jobs)}] skipped {result.sha256[:8]}: {result.skipped.reason}")
+            print(
+                f"  [{position}/{len(jobs)}] skipped {result.sha256[:8]}: {result.skipped.reason}"
+            )
 
     if jobs:
         workers = request.parallel or min(max(1, detect_logical_cpus()), len(jobs))
@@ -1343,7 +1331,9 @@ def handle_archive(
 
     # Check encoder availability for M4A and the AAC copy
     write_aac_copy = request.format == "opus" and request.aac_copy
-    use_fdk = select_aac_encoder(ffmpeg_binary) if (request.format == "m4a" or write_aac_copy) else False
+    use_fdk = (
+        select_aac_encoder(ffmpeg_binary) if (request.format == "m4a" or write_aac_copy) else False
+    )
 
     # 7. Filter rows to process (skip already archived unless overwrite)
     if request.overwrite:

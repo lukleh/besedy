@@ -16,6 +16,7 @@ from rich.progress import (
 )
 
 from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.validation.schema import validate_canonical_schema
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -31,66 +32,6 @@ def _summarize_counts(data: dict[str, Any]) -> tuple[int, int]:
 
 def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
-def validate_shared_schema(data: dict[str, Any]) -> list[str]:
-    """Schema checks aligned with Polars loader expectations."""
-
-    issues: list[str] = []
-
-    if not isinstance(data, dict):
-        return ["Top-level JSON must be an object"]
-
-    segments = data.get("segments")
-    if not isinstance(segments, list) or not segments:
-        issues.append("Missing or empty 'segments' list")
-        return issues
-
-    for idx, seg in enumerate(segments):
-        if not isinstance(seg, dict):
-            issues.append(f"Segment {idx} is not an object")
-            continue
-        seg = cast(dict[str, Any], seg)
-
-        for key in ("start", "end", "text"):
-            if key not in seg:
-                issues.append(f"Segment {idx} missing '{key}'")
-
-        if "start" in seg and not _is_number(seg.get("start")):
-            issues.append(f"Segment {idx} 'start' must be a number")
-        if "end" in seg and not _is_number(seg.get("end")):
-            issues.append(f"Segment {idx} 'end' must be a number")
-        if "text" in seg and not isinstance(seg.get("text"), str):
-            issues.append(f"Segment {idx} 'text' must be a string")
-        if "confidence" in seg and not _is_number(seg.get("confidence")):
-            issues.append(f"Segment {idx} 'confidence' must be a number")
-
-        if "words" in seg:
-            words = seg.get("words")
-            if not isinstance(words, list):
-                issues.append(f"Segment {idx} 'words' must be a list")
-                continue
-            for w_idx, word in enumerate(words):
-                if not isinstance(word, dict):
-                    issues.append(f"Segment {idx} word {w_idx} is not an object")
-                    continue
-                word = cast(dict[str, Any], word)
-                for key in ("start", "end", "word"):
-                    if key not in word:
-                        issues.append(f"Segment {idx} word {w_idx} missing '{key}'")
-                if "start" in word and not _is_number(word.get("start")):
-                    issues.append(f"Segment {idx} word {w_idx} 'start' must be a number")
-                if "end" in word and not _is_number(word.get("end")):
-                    issues.append(f"Segment {idx} word {w_idx} 'end' must be a number")
-                if "word" in word and not isinstance(word.get("word"), str):
-                    issues.append(f"Segment {idx} word {w_idx} 'word' must be a string")
-                if "confidence" in word and not _is_number(word.get("confidence")):
-                    issues.append(f"Segment {idx} word {w_idx} 'confidence' must be a number")
-
-    if "meta" in data and not isinstance(data.get("meta"), dict):
-        issues.append("'meta' must be an object when provided")
-
-    return issues
 
 
 def validate_single_file(
@@ -131,7 +72,7 @@ def validate_single_file(
         _record(status="failed", message=str(exc))
         return False
 
-    schema_issues = validate_shared_schema(data)
+    schema_issues = validate_canonical_schema(data)
 
     if schema_issues:
         _emit(f"  ✗ Schema validation failed ({len(schema_issues)} issue(s))")
@@ -158,24 +99,6 @@ def validate_single_file(
     _emit(f"✓ All checks passed for {path.name}")
     _record(status="passed", segments=seg_count, words=word_count, issues=0)
     return True
-
-
-def validate_conversion(
-    converted_path: Path,
-    original_path: Path,
-    backend: str,
-) -> bool:
-    """Validate conversion from backend-specific JSON to canonical format."""
-
-    print(f"Verifying conversion: {converted_path.name}")
-    print(f"  Original: {original_path.name}")
-    print(f"  Backend: {backend}")
-
-    load_json(converted_path)
-    load_json(original_path)
-
-    print(f"Error: Conversion verification not implemented for backend: {backend}")
-    return False
 
 
 def validate_diarization_file(
@@ -600,8 +523,7 @@ def batch_validate(
 
 __all__ = [
     "batch_validate",
-    "validate_conversion",
-    "validate_shared_schema",
+    "validate_canonical_schema",
     "validate_single_file",
     "load_json",
 ]

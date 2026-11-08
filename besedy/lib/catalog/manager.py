@@ -42,8 +42,6 @@ HASH_ALGORITHM_COLUMN = "Hash Algorithm"
 AUDIO_HASH_ALGORITHM_MARKER = "# besedy-audio-hash-algorithm:"
 SOURCE_FILE_SHA256_MARKER = "# besedy-source-file-sha256:"
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
-# Column name preferences when reading existing catalogs
-HASH_COLUMN_PREFERENCES = (DEFAULT_HASH_COLUMN,)
 LOSSLESS_DURATION_EXTENSIONS = {
     "wav",
     "aiff",
@@ -569,6 +567,29 @@ def file_record_to_row(record: FileRecord, columns: Sequence[str]) -> dict[str, 
     return {column: str(base.get(column, "")) for column in columns}
 
 
+def require_csv_columns(columns: Sequence[str], required: Sequence[str], *, path: Path) -> None:
+    """Require exactly the current writer's headers, independent of their order."""
+    missing = sorted(set(required) - set(columns))
+    unexpected = sorted(set(columns) - set(required))
+    if missing or unexpected or len(columns) != len(set(columns)):
+        raise ValueError(
+            f"{path} has an unsupported CSV schema: missing {missing}, unexpected {unexpected}; "
+            "migrate or recreate it before use"
+        )
+
+
+def require_catalog_schema(
+    columns: Sequence[str], rows: Sequence[dict[str, str]], *, path: Path
+) -> None:
+    """Validate a base catalog before appending or merging current records."""
+    require_csv_columns(columns, catalog_fieldnames(), path=path)
+    require_audio_hash_contract(columns, rows, path=path)
+    for index, row in enumerate(rows, start=2):
+        for field in ("Hash", "Full Path", "added_at"):
+            if not (row.get(field) or "").strip():
+                raise ValueError(f"{path} row {index} has no {field!r}; migrate or recreate it")
+
+
 def load_csv(path: Path, *, encoding: str) -> tuple[Sequence[str], list[dict[str, str]]]:
     """Load a CSV file and return its headers and rows.
 
@@ -591,32 +612,11 @@ def load_csv(path: Path, *, encoding: str) -> tuple[Sequence[str], list[dict[str
     return reader.fieldnames, rows
 
 
-def resolve_hash_column(
-    columns: Sequence[str],
-    path: Path,
-    *,
-    preferred: str | None,
-) -> str:
-    if preferred and preferred in columns:
-        return preferred
-
-    lookup = {column.casefold(): column for column in columns}
-    if preferred:
-        key = preferred.casefold()
-        if key in lookup:
-            return lookup[key]
-
-    for candidate in HASH_COLUMN_PREFERENCES:
-        key = candidate.casefold()
-        if key in lookup:
-            return lookup[key]
-
-    candidates = ", ".join(HASH_COLUMN_PREFERENCES)
-    if preferred:
-        raise ValueError(
-            f"{path} is missing required hash column. Tried '{preferred}' and aliases [{candidates}]"
-        )
-    raise ValueError(f"{path} is missing required hash column. Expected one of [{candidates}]")
+def resolve_hash_column(columns: Sequence[str], path: Path) -> str:
+    """Require the current catalog identity column, without aliases."""
+    if DEFAULT_HASH_COLUMN not in columns:
+        raise ValueError(f"{path} is missing required 'Hash' column")
+    return DEFAULT_HASH_COLUMN
 
 
 def adapt_row(
@@ -657,8 +657,7 @@ def require_audio_hash_contract(
     catalogs are unsupported because a hexadecimal digest alone does not prove
     which identity contract produced it.
     """
-    lookup = {column.casefold(): column for column in columns}
-    algorithm_column = lookup.get(HASH_ALGORITHM_COLUMN.casefold())
+    algorithm_column = HASH_ALGORITHM_COLUMN if HASH_ALGORITHM_COLUMN in columns else None
     if algorithm_column is None:
         raise ValueError(
             f"{path} is missing required {HASH_ALGORITHM_COLUMN!r}; "

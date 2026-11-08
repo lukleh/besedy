@@ -27,7 +27,8 @@ from besedy.lib.catalog.manager import (
     get_iso8601_timestamp,
     get_supported_audio_extensions,
     load_csv,
-    require_audio_hash_contract,
+    require_catalog_schema,
+    require_csv_columns,
     resolve_hash_column,
 )
 from besedy.lib.data.atomic_io import atomic_path, rewrite_lock
@@ -136,13 +137,8 @@ def handle_add(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        hash_column = resolve_hash_column(columns, catalog_path, preferred="Hash")
-        require_audio_hash_contract(
-            columns,
-            existing_rows,
-            path=catalog_path,
-            hash_column=hash_column,
-        )
+        hash_column = resolve_hash_column(columns, catalog_path)
+        require_catalog_schema(columns, existing_rows, path=catalog_path)
     except ValueError as exc:
         print(
             f"Error: {exc}. Recreate the catalog with 'catalog create' before catalog add.",
@@ -167,7 +163,8 @@ def handle_add(args: argparse.Namespace) -> int:
     duplicates_csv_path = catalog_path.with_name(catalog_path.stem + "_duplicates.csv")
     if duplicates_csv_path.is_file():
         try:
-            _, dup_rows = load_csv(duplicates_csv_path, encoding=args.encoding)
+            dup_columns, dup_rows = load_csv(duplicates_csv_path, encoding=args.encoding)
+            require_csv_columns(dup_columns, DUPLICATES_CSV_COLUMNS, path=duplicates_csv_path)
             existing_duplicate_rows = dup_rows
             for row in dup_rows:
                 dup_path = (row.get("Duplicate Path", "") or "").strip()
@@ -175,8 +172,9 @@ def handle_add(args: argparse.Namespace) -> int:
                     existing_duplicate_paths.add(dup_path)
             if existing_duplicate_paths:
                 print(f"Loaded {len(existing_duplicate_paths)} existing duplicates from CSV")
-        except Exception:
-            pass  # If we can't load it, we'll just reprocess
+        except (OSError, ValueError, csv.Error) as exc:
+            print(f"Error reading {duplicates_csv_path}: {exc}", file=sys.stderr)
+            return 1
 
     # Auto-detect paths if not provided: use unique Scan Root values from catalog
     if not args.paths:
@@ -298,13 +296,6 @@ def handle_add(args: argparse.Namespace) -> int:
     for record in result.duplicate_records:
         record.added_at = current_timestamp
 
-    # Warn if legacy catalog lacks added_at (new records cannot preserve timestamps)
-    if "added_at" not in columns:
-        print(
-            "Warning: Catalog lacks 'added_at' column. New records' timestamps will be lost.",
-            file=sys.stderr,
-        )
-
     # Append new records to catalog
     if result.new_records and not args.dry_run:
         rows_to_append = [file_record_to_row(record, columns) for record in result.new_records]
@@ -329,8 +320,11 @@ def handle_add(args: argparse.Namespace) -> int:
             ):
                 existing_duplicate_rows = []
                 if duplicates_csv_path.is_file():
-                    _, existing_duplicate_rows = load_csv(
+                    existing_columns, existing_duplicate_rows = load_csv(
                         duplicates_csv_path, encoding=args.encoding
+                    )
+                    require_csv_columns(
+                        existing_columns, DUPLICATES_CSV_COLUMNS, path=duplicates_csv_path
                     )
                 new_dup_count = write_duplicates_report(
                     result.duplicate_records,
@@ -345,19 +339,14 @@ def handle_add(args: argparse.Namespace) -> int:
                     _, new_rows = load_csv(temp_dup_path, encoding=args.encoding)
                     # Combine: existing + new
                     combined_rows = existing_duplicate_rows + new_rows
-                    # Use canonical columns (handles legacy 5-column CSVs)
                     dup_columns = list(DUPLICATES_CSV_COLUMNS)
-                    # Normalize rows: fill missing columns with empty string
-                    normalized_rows = [
-                        {col: row.get(col, "") for col in dup_columns} for row in combined_rows
-                    ]
                     with temp_dup_path.open("w", newline="", encoding="utf-8") as f:
                         writer = csv.DictWriter(
                             f, fieldnames=dup_columns, quoting=csv.QUOTE_MINIMAL
                         )
                         writer.writeheader()
-                        writer.writerows(normalized_rows)
-                    dup_count = len(normalized_rows)
+                        writer.writerows(combined_rows)
+                    dup_count = len(combined_rows)
                 else:
                     dup_count = new_dup_count
         elif existing_duplicate_rows:

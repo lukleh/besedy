@@ -7,6 +7,22 @@ from pathlib import Path
 from typing import Any
 
 
+def canonical_transcript(
+    segments: list[dict[str, Any]], *, backend: str = "faster-whisper"
+) -> dict[str, Any]:
+    """A current transcript fixture, including metadata and explicit absent confidence."""
+    return {
+        "meta": {
+            "backend": backend,
+            "model": "test-model",
+            "audio_filepath": "/audio/test.wav",
+            "duration": max((segment.get("end", 0) for segment in segments), default=0),
+            "generation_params": {},
+        },
+        "segments": segments,
+    }
+
+
 def create_minimal_transcript(
     text: str = "Hello world",
     start: float = 0.0,
@@ -29,10 +45,9 @@ def create_minimal_transcript(
         "end": end,
         "text": text,
     }
-    if confidence is not None:
-        segment["confidence"] = confidence
-
-    return {"segments": [segment]}
+    segment["confidence"] = confidence
+    segment["words"] = []
+    return canonical_transcript([segment])
 
 
 def create_transcript_with_words(
@@ -71,8 +86,8 @@ def create_transcript_with_words(
 
     segment_end = current_time - gap_duration  # Remove last gap
 
-    return {
-        "segments": [
+    return canonical_transcript(
+        [
             {
                 "start": start,
                 "end": round(segment_end, 3),
@@ -81,7 +96,7 @@ def create_transcript_with_words(
                 "words": word_entries,
             }
         ]
-    }
+    )
 
 
 def create_multi_segment_transcript(
@@ -111,11 +126,13 @@ def create_multi_segment_transcript(
                 "start": round(current_time, 3),
                 "end": round(segment_end, 3),
                 "text": text,
+                "confidence": None,
+                "words": [],
             }
         )
         current_time = segment_end + gap_duration
 
-    return {"segments": segments}
+    return canonical_transcript(segments)
 
 
 def create_diarization_json(
