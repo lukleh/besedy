@@ -49,16 +49,8 @@ vi.mock("@/hooks/use-catalog-route-state", () => ({
   },
 }));
 
-vi.mock("@/hooks/use-catalogs", () => ({
-  useCatalogs: () => ({ data: [] }),
-}));
-
-vi.mock("@/hooks/use-active-group", () => ({
-  useActiveGroup: () => ({ activeGroupId: null }),
-}));
-
-vi.mock("@/hooks/use-effective-catalog-id", () => ({
-  useEffectiveCatalogId: () => ({ effectiveCatalogId: mocks.catalogId }),
+vi.mock("@/hooks/use-archive", () => ({
+  useArchive: () => ({ data: mocks.catalogId ? { id: mocks.catalogId, label: null } : undefined }),
 }));
 
 vi.mock("@/hooks/use-catalog-access-summary", () => ({

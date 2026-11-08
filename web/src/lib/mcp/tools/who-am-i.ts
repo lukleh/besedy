@@ -23,8 +23,8 @@ export function registerWhoAmITool(
     {
       title: 'Show current Besedy identity',
       description:
-        'Show the account, OAuth client, scopes, and default catalog for this connection. Use it only to diagnose identity or access.',
-      inputSchema: z.object({}),
+        'Show the account, OAuth client, scopes, and archive access for this connection. Use it only to diagnose identity or access.',
+      inputSchema: z.strictObject({}),
       outputSchema: WhoAmIOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
@@ -49,7 +49,7 @@ export function registerWhoAmITool(
           clientId: identity.clientId,
           clientName: identity.clientName,
           grantedScopes: scopes,
-          defaultCatalogId: profile.defaultCatalogId,
+          archive: profile.archive,
         },
       };
       const accountLabel =
@@ -58,7 +58,7 @@ export function registerWhoAmITool(
         `Connected to Besedy as ${accountLabel} via ${identity.clientName ?? identity.clientId}.`,
         `Account ID: ${identity.userId}`,
         `Client ID: ${identity.clientId}`,
-        `Default catalog: ${profile.defaultCatalogId ?? 'none'}`,
+        `Archive: ${profile.archive?.id ?? 'no access'}`,
         `Scopes: ${scopes.join(', ') || 'none'}`,
       ];
       return toolSuccess(result, lines.join('\n'));

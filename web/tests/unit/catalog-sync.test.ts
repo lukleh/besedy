@@ -108,6 +108,7 @@ describe('catalog-sync', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('BESEDY_ARCHIVE_ID', '20251222_144441');
 
     mockAccess.mockResolvedValue(undefined);
     mockReadFile.mockResolvedValue(emptyCsv);
@@ -127,7 +128,7 @@ describe('catalog-sync', () => {
 
   it('uses tx-scoped advisory lock and skips sources whose bytes are unchanged', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -175,7 +176,7 @@ describe('catalog-sync', () => {
 
   it('recaptures files when another sync commits while hashing', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -221,7 +222,7 @@ describe('catalog-sync', () => {
 
   it('does not mark sources as failed when snapshot retries are exhausted', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -268,7 +269,7 @@ describe('catalog-sync', () => {
 
   it('runs orphan event-recording cleanup after metadata/archived sync success and repairs events that lost their primary', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -361,7 +362,7 @@ describe('catalog-sync', () => {
     const hash = 'a'.repeat(64);
     let broken = false;
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: groupId, metadataCatalogPath: '/data/meta.csv', archivedCatalogPath: '/data/archived.csv', duplicatesCatalogPath: null,
+      id: groupId, isActive: true, metadataCatalogPath: '/data/meta.csv', archivedCatalogPath: '/data/archived.csv', duplicatesCatalogPath: null,
     });
     mockTx.catalogSyncState.findMany.mockImplementation(async () => [...states.values()]);
     mockReadFile.mockImplementation(async (file: string) => file === '/data/meta.csv'
@@ -480,7 +481,7 @@ describe('catalog-sync', () => {
     const withCopy = 'a'.repeat(64);
     const blankCopy = 'b'.repeat(64);
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -540,7 +541,7 @@ describe('catalog-sync', () => {
     // was synced then, so its bytes match what is stored. Only the version
     // prefix tells the new release to read it again.
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -561,7 +562,7 @@ describe('catalog-sync', () => {
 
   it('detects source changes from bytes even when paths and file metadata are unchanged', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -607,7 +608,7 @@ describe('catalog-sync', () => {
 
   function setupBaseChangedWithBaseline(rowCount: number) {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -705,7 +706,7 @@ describe('catalog-sync', () => {
   ])('rejects invalid %s CSV before touching the live projection (%s)', async (kind, content, detail) => {
     setupBaseChangedWithBaseline(100);
     const group = {
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/metadata.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: '/data/duplicates.csv',
@@ -803,7 +804,7 @@ describe('catalog-sync', () => {
   it('does not clear duplicate rows when only the duplicates source changed and is invalid', async () => {
     setupBaseChangedWithBaseline(1);
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: '/data/duplicates.csv',
@@ -838,7 +839,7 @@ describe('catalog-sync', () => {
   it('accepts several duplicate paths for the same recording', async () => {
     setupBaseChangedWithBaseline(0);
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: '/data/duplicates.csv',
@@ -865,7 +866,7 @@ describe('catalog-sync', () => {
   it('syncs Python duplicate output while skipping rows whose original is unknown', async () => {
     setupBaseChangedWithBaseline(0);
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: '/data/duplicates.csv',
@@ -904,7 +905,7 @@ describe('catalog-sync', () => {
   it('clears projected duplicate counts when the changed source only has unknown originals', async () => {
     setupBaseChangedWithBaseline(1);
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: '/data/duplicates.csv',
@@ -939,7 +940,7 @@ describe('catalog-sync', () => {
     const unknown = 'b'.repeat(64);
     const missing = 'c'.repeat(64);
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441',
+      id: '20251222_144441', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,

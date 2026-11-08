@@ -14,7 +14,7 @@ import {
   describeSearchedRecordings,
   registerBesedyTool,
   renderTranscriptSearchResult,
-  resolveToolCatalog,
+  resolveToolArchive,
   runReadTool,
   toolError,
 } from '@/lib/mcp/tools/shared';
@@ -60,14 +60,7 @@ export function registerFindTranscriptMentionsTool(
       title: 'Find exact transcript mentions',
       description: `Search actual wording in the authorized indexed transcript corpus for visible released Besedy events. Use this for names, terminology, quotations, fixed phrases, prefixes, or literal absence checks; use search_transcripts instead for concepts, paraphrases, and related meaning. totalMatches counts matching authorized indexed chunks under the selected filters and match mode before limit or maxPerRecording caps returned passages; it is not a distinct-event count. A zero count establishes only indexed literal-pattern absence, not conceptual absence. ${TRANSCRIPT_VERIFICATION_GUIDANCE} Every match directly includes its authoritative event ID, date, and location plus the recording audio hash that owns the transcript. Only each event's primary recording is searched; the other recordings of an event are parallel captures of the same session, not independent evidence. Set filters.includeSecondaryRecordings to true to search them as well; filters.audioHashes always searches exactly the named recordings. Each match webUrl is a bounded citation. Rank is text-match relevance, not confidence.`,
       inputSchema: z
-        .object({
-          catalogId: z
-            .string()
-            .min(1)
-            .optional()
-            .describe(
-              'Accessible Besedy catalog to search. Omit it to use the effective default catalog.',
-            ),
+        .strictObject({
           query: z
             .string()
             .trim()
@@ -140,7 +133,6 @@ export function registerFindTranscriptMentionsTool(
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
     async ({
-      catalogId,
       query,
       matchMode,
       limit,
@@ -148,11 +140,11 @@ export function registerFindTranscriptMentionsTool(
       maxPerRecording,
       filters,
     }) => {
-      const catalog = resolveToolCatalog(profile, catalogId);
-      if ('error' in catalog) return toolError(catalog.code, catalog.error);
+      const archive = resolveToolArchive(profile);
+      if ('error' in archive) return toolError(archive.code, archive.error);
       return runReadTool(
         () =>
-          findMcpTranscriptMentions(catalog.id, {
+          findMcpTranscriptMentions(archive.id, {
             query,
             matchMode,
             limit,

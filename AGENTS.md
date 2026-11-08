@@ -169,10 +169,12 @@ npm run test:e2e:generate   # Regenerate test fixtures
 
 **Test Fixtures:** Generated automatically in `web/tests/e2e/fixtures/` (gitignored). Requires `ffmpeg`.
 
-**Web API naming note:** `GET/POST /api/catalogs` lists or manages workflow-group
-records themselves. Everything inside one catalog names it in the path, e.g.
-`GET /api/catalogs/:id/recordings` for paginated recording entries; no route picks
-a catalog from `?group=` or a saved preference.
+**Web API naming note:** `GET /api/archive` resolves the configured archive.
+Existing content routes retain its source ID in the path, e.g.
+`GET /api/catalogs/:id/recordings` for paginated recording entries. Catalog
+list/create/discover and source deactivation APIs are retired; initial source
+registration uses `npm run archive:register` (see `docs/web/single-archive.md`).
+No route picks a catalog from `?group=` or a saved preference.
 
 ## CLI Output Conventions (Required)
 

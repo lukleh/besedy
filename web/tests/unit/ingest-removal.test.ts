@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { removeRecordingWebState } from '@/lib/ingest/removal';
 
 const replaceLostPrimaryRecording = vi.hoisted(() => vi.fn());
+const archiveSource = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/catalog-events/primary-succession', () => ({
   replaceLostPrimaryRecording,
 }));
@@ -19,6 +20,7 @@ const tx = vi.hoisted(() => ({
 
 vi.mock('@/lib/db', () => ({
   default: {
+    workflowGroup: { findUnique: archiveSource },
     $transaction: (fn: (client: typeof tx) => Promise<unknown>) => fn(tx),
   },
 }));
@@ -29,6 +31,8 @@ const HASH = 'b'.repeat(64);
 describe('removeRecordingWebState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('BESEDY_ARCHIVE_ID', CATALOG_ID);
+    archiveSource.mockResolvedValue({ id: CATALOG_ID, isActive: true });
     tx.audioMetadata.deleteMany.mockResolvedValue({ count: 1 });
     tx.catalogEntry.count.mockResolvedValue(0);
     tx.recordingPlaybackProgress.deleteMany.mockResolvedValue({ count: 3 });

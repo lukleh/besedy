@@ -7,11 +7,17 @@ import { validateRequestBody } from "@/lib/api/validation";
 
 // Schema for preferences update (all fields optional)
 const PreferencesUpdateSchema = z.object({
-  activeGroupId: z.string().nullable().optional(),
   theme: z.string().optional(),
   catalogColumns: z.array(z.string()).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
-});
+}).strict();
+
+const preferencesSelect = {
+  userId: true,
+  theme: true,
+  catalogColumns: true,
+  settings: true,
+} as const;
 
 export const dynamic = "force-dynamic";
 
@@ -23,27 +29,12 @@ export async function GET() {
   try {
     const userId = await requireAuth();
 
-    let prefs = await prisma.userPreferences.findUnique({
+    const prefs = await prisma.userPreferences.upsert({
       where: { userId },
-      include: {
-        activeGroup: true,
-      },
+      create: { userId },
+      update: {},
+      select: preferencesSelect,
     });
-
-    // Create default preferences if not exists
-    if (!prefs) {
-      prefs = await prisma.userPreferences.create({
-        data: {
-          userId,
-          theme: "system",
-          catalogColumns: [],
-          settings: {},
-        },
-        include: {
-          activeGroup: true,
-        },
-      });
-    }
 
     return NextResponse.json(prefs);
   } catch (error) {
@@ -61,18 +52,14 @@ export async function PATCH(request: NextRequest) {
 
     const bodyResult = await validateRequestBody(request, PreferencesUpdateSchema);
     if (!bodyResult.success) return bodyResult.response;
-    const { activeGroupId, theme, catalogColumns, settings } = bodyResult.data;
+    const { theme, catalogColumns, settings } = bodyResult.data;
 
     const updateData: {
-      activeGroupId?: string | null;
       theme?: string;
       catalogColumns?: string[];
       settings?: object;
     } = {};
 
-    if (activeGroupId !== undefined) {
-      updateData.activeGroupId = activeGroupId;
-    }
     if (theme !== undefined) {
       updateData.theme = theme;
     }
@@ -93,9 +80,7 @@ export async function PATCH(request: NextRequest) {
         catalogColumns: updateData.catalogColumns ?? [],
         settings: updateData.settings ?? {},
       },
-      include: {
-        activeGroup: true,
-      },
+      select: preferencesSelect,
     });
 
     return NextResponse.json(prefs);

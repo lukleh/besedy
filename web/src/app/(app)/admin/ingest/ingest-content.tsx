@@ -19,13 +19,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  ResponsiveSelect,
-  ResponsiveSelectContent,
-  ResponsiveSelectItem,
-  ResponsiveSelectTrigger,
-  ResponsiveSelectValue,
-} from "@/components/ui/responsive-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -36,7 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { useCatalogs } from "@/hooks/use-catalogs";
+import { useArchive } from "@/hooks/use-archive";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import { cn, formatBytes } from "@/lib/utils";
 import {
@@ -74,18 +67,12 @@ export default function IngestContent() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [chosenCatalogId, setChosenCatalogId] = useState<string | null>(null);
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [removeTarget, setRemoveTarget] = useState<RecordingIntakeDto | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
-  const { data: catalogs, isLoading: catalogsLoading } = useCatalogs();
-
-  const catalogId = useMemo(() => {
-    if (chosenCatalogId) return chosenCatalogId;
-    if (!catalogs?.length) return "";
-    return (catalogs.find((catalog) => catalog.isDefault) ?? catalogs[0]).id;
-  }, [chosenCatalogId, catalogs]);
+  const { data: archive, isLoading: archiveLoading, error: archiveError } = useArchive();
+  const catalogId = archive?.id ?? "";
 
   const intakesQuery = useQuery({
     queryKey: INTAKES_QUERY_KEY,
@@ -284,7 +271,6 @@ export default function IngestContent() {
   // The last poll failed, or is waiting for the browser to come back online;
   // the list shown is the last one that loaded.
   const connectionLost = intakesQuery.isRefetchError || intakesQuery.isPaused;
-  const selectedCatalog = catalogs?.find((catalog) => catalog.id === catalogId);
 
   return (
     <div className="space-y-6" data-testid="admin-ingest-page">
@@ -302,32 +288,12 @@ export default function IngestContent() {
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>{t("upload.catalog")}</Label>
-              {catalogsLoading ? (
+              {archiveLoading ? (
                 <Skeleton className="h-10 w-full" />
               ) : (
-                <ResponsiveSelect
-                  value={catalogId}
-                  onValueChange={setChosenCatalogId}
-                  disabled={uploadMutation.isPending || !catalogs?.length}
-                >
-                  <ResponsiveSelectTrigger className="w-full" aria-label={t("upload.catalog")}>
-                    <ResponsiveSelectValue
-                      placeholder={t("upload.selectCatalog")}
-                      displayValue={
-                        selectedCatalog
-                          ? selectedCatalog.label || selectedCatalog.id
-                          : undefined
-                      }
-                    />
-                  </ResponsiveSelectTrigger>
-                  <ResponsiveSelectContent title={t("upload.catalog")}>
-                    {(catalogs ?? []).map((catalog) => (
-                      <ResponsiveSelectItem key={catalog.id} value={catalog.id}>
-                        {catalog.label || catalog.id}
-                      </ResponsiveSelectItem>
-                    ))}
-                  </ResponsiveSelectContent>
-                </ResponsiveSelect>
+                <p className="py-2 text-sm" data-testid="ingest-archive">
+                  {archive?.label || archive?.id || archiveError?.message || tCommon("error")}
+                </p>
               )}
             </div>
             <div

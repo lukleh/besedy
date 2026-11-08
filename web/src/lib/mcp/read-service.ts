@@ -945,7 +945,6 @@ export async function listMcpBookmarks(
         transcriptRequest:
           hasTranscript.get(row.audioHash) === true
             ? {
-                catalogId,
                 audioHash: row.audioHash,
                 mode: 'page' as const,
                 startSec: roundSeconds(
@@ -1081,7 +1080,6 @@ export async function getMcpTranscript(
     input.mode === 'full' || nextOffset === null
       ? null
       : {
-          catalogId,
           audioHash,
           mode: 'page' as const,
           ...(input.startSec === undefined ? {} : { startSec: input.startSec }),
@@ -1311,7 +1309,6 @@ async function serializeMcpSearchResults(
         hasTranscript.get(result.audioHash) === true &&
         transcriptEndSec > transcriptStartSec
           ? {
-              catalogId,
               audioHash: result.audioHash,
               mode: 'page' as const,
               startSec: transcriptStartSec,

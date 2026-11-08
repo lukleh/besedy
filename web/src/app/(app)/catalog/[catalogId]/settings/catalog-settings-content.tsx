@@ -179,8 +179,6 @@ export default function CatalogSettingsContent({
       metadataCatalogPath: catalogConfig.metadataCatalogPath ?? "",
       duplicatesCatalogPath: catalogConfig.duplicatesCatalogPath ?? "",
       transcriptsPath: catalogConfig.transcriptsPath ?? "",
-      isDefault: catalogConfig.isDefault,
-      isActive: catalogConfig.isActive,
     });
   }, [catalogConfig, isEditingConfig]);
 
@@ -191,8 +189,6 @@ export default function CatalogSettingsContent({
       metadataCatalogPath?: string;
       duplicatesCatalogPath?: string | null;
       transcriptsPath?: string | null;
-      isDefault?: boolean;
-      isActive?: boolean;
     }) => {
       return fetchJson(`/api/catalogs/${catalogId}`, {
         method: "PUT",
@@ -208,7 +204,7 @@ export default function CatalogSettingsContent({
         queryKey: ["catalog-config", catalogId],
       });
       queryClient.invalidateQueries({ queryKey: ["catalogs"] });
-      queryClient.invalidateQueries({ queryKey: ["preferences"] });
+      queryClient.invalidateQueries({ queryKey: ["archive"] });
       // Invalidate admin users list since it displays catalog names
       queryClient.invalidateQueries({
         queryKey: ["admin-users"],
@@ -411,8 +407,6 @@ export default function CatalogSettingsContent({
       metadataCatalogPath: catalogConfig.metadataCatalogPath ?? "",
       duplicatesCatalogPath: catalogConfig.duplicatesCatalogPath ?? "",
       transcriptsPath: catalogConfig.transcriptsPath ?? "",
-      isDefault: catalogConfig.isDefault,
-      isActive: catalogConfig.isActive,
     });
     setIsEditingConfig(true);
   };
@@ -425,8 +419,6 @@ export default function CatalogSettingsContent({
         metadataCatalogPath: catalogConfig.metadataCatalogPath ?? "",
         duplicatesCatalogPath: catalogConfig.duplicatesCatalogPath ?? "",
         transcriptsPath: catalogConfig.transcriptsPath ?? "",
-        isDefault: catalogConfig.isDefault,
-        isActive: catalogConfig.isActive,
       });
     }
     setIsEditingConfig(false);
@@ -452,7 +444,7 @@ export default function CatalogSettingsContent({
       return trimmed === "" ? null : trimmed;
     };
 
-    // The server refuses path and flag changes from catalog administrators,
+    // The server refuses source-path changes from catalog administrators,
     // so they send only what they may change.
     if (!canEditPathsAndFlags) {
       updateCatalogConfig.mutate({ label: normalizeOptional(configDraft.label) });
@@ -467,8 +459,6 @@ export default function CatalogSettingsContent({
         configDraft.duplicatesCatalogPath
       ),
       transcriptsPath: normalizeOptional(configDraft.transcriptsPath),
-      isDefault: configDraft.isDefault,
-      isActive: configDraft.isActive,
     });
   };
 

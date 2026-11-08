@@ -1,5 +1,6 @@
 import type { CatalogRole, PrismaClient } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
+import { requireArchive } from "@/lib/archive";
 
 type AdmissionReadClient = Pick<
   PrismaClient,
@@ -45,6 +46,7 @@ export async function listPendingAdminAdmissions(
   search?: string,
   db: AdmissionReadClient = prisma
 ): Promise<PendingAdminAdmissionItem[]> {
+  const archive = await requireArchive();
   const where = {
     status: "PENDING" as const,
     ...(search
@@ -75,6 +77,7 @@ export async function listPendingAdminAdmissions(
       ? await db.pendingCatalogGrant.findMany({
           where: {
             status: "PENDING",
+            catalogId: archive.id,
             email: { in: emails },
           },
           select: {
@@ -86,34 +89,21 @@ export async function listPendingAdminAdmissions(
             grantedAt: true,
             grantedById: true,
           },
-          orderBy: [{ grantedAt: "desc" }, { catalogId: "asc" }],
         })
       : [];
 
-  // Admin pending-state stays admission-centric for now. When multiple grants
-  // exist for one email, we summarize them alongside the single
-  // portal-admission row instead of pretending one arbitrary grant is the
-  // whole pending state.
-  const pendingGrantsByEmail = new Map<
-    string,
-    Array<(typeof pendingGrants)[number]>
-  >();
-  for (const pendingGrant of pendingGrants) {
-    const grantsForEmail = pendingGrantsByEmail.get(pendingGrant.email) ?? [];
-    grantsForEmail.push(pendingGrant);
-    pendingGrantsByEmail.set(pendingGrant.email, grantsForEmail);
-  }
+  // The composite email/source key leaves at most one live bound grant.
+  // Other source rows remain available to historical audit readers.
+  const pendingGrantByEmail = new Map(
+    pendingGrants.map((grant) => [grant.email, grant])
+  );
 
   const catalogIds = uniqueNonNullStrings(
-    Array.from(pendingGrantsByEmail.values()).flatMap((grants) =>
-      grants.map((grant) => grant.catalogId)
-    )
+    pendingGrants.map((grant) => grant.catalogId)
   );
   const actorIds = uniqueNonNullStrings([
     ...admissions.map((admission) => admission.admittedById),
-    ...Array.from(pendingGrantsByEmail.values()).flatMap((grants) =>
-      grants.map((grant) => grant.grantedById)
-    ),
+    ...pendingGrants.map((grant) => grant.grantedById),
   ]);
 
   const [catalogs, actors] = await Promise.all([
@@ -146,12 +136,11 @@ export async function listPendingAdminAdmissions(
   const catalogById = new Map(catalogs.map((catalog) => [catalog.id, catalog]));
 
   return admissions.map((admission) => {
-    const pendingGrantsForEmail =
-      pendingGrantsByEmail.get(admission.email) ?? [];
-    const newestPendingGrant = pendingGrantsForEmail[0] ?? null;
+    const singleCatalogGrant = pendingGrantByEmail.get(admission.email) ?? null;
+    const pendingGrantsForEmail = singleCatalogGrant
+      ? [singleCatalogGrant]
+      : [];
     const pendingGrantCount = pendingGrantsForEmail.length;
-    const singleCatalogGrant =
-      pendingGrantCount === 1 ? newestPendingGrant : null;
     const pendingGrants = pendingGrantsForEmail.map((grant) => {
       const catalog = catalogById.get(grant.catalogId);
       return {
@@ -171,8 +160,8 @@ export async function listPendingAdminAdmissions(
     if (admission.admittedById) {
       invitedBy = actorById.get(admission.admittedById) ?? null;
     }
-    if (!invitedBy && newestPendingGrant?.grantedById) {
-      invitedBy = actorById.get(newestPendingGrant.grantedById) ?? null;
+    if (!invitedBy && singleCatalogGrant?.grantedById) {
+      invitedBy = actorById.get(singleCatalogGrant.grantedById) ?? null;
     }
     const catalog = singleCatalogGrant
       ? catalogById.get(singleCatalogGrant.catalogId)
@@ -188,9 +177,9 @@ export async function listPendingAdminAdmissions(
       pendingGrantCount,
       catalogId: singleCatalogGrant?.catalogId ?? null,
       catalogLabel: catalog?.label || singleCatalogGrant?.catalogId || null,
-      role: pendingGrantCount === 1 ? (pendingGrants[0]?.role ?? null) : null,
+      role: singleCatalogGrant?.role ?? null,
       invitedBy,
-      notes: admission.notes ?? newestPendingGrant?.notes ?? null,
+      notes: admission.notes ?? singleCatalogGrant?.notes ?? null,
     };
   });
 }

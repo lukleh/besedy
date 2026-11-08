@@ -7,11 +7,10 @@ import { LogIn, LogOut, Shield, Wrench, RefreshCw, Settings } from "lucide-react
 import { useServiceWorker } from "@/contexts/service-worker-context";
 import { useSession } from "@/contexts/session-context";
 import { useAdminStatus } from "@/hooks/use-admin-status";
-import { useActiveGroup } from "@/hooks/use-active-group";
+import { useArchive } from "@/hooks/use-archive";
 import { useCatalogAccessSummary } from "@/hooks/use-catalog-access-summary";
 import { useCatalogRouteState } from "@/hooks/use-catalog-route-state";
 import { useReturnHref } from "@/hooks/use-return-href";
-import { useEffectiveCatalogId } from "@/hooks/use-effective-catalog-id";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -72,12 +71,8 @@ export function UserMenu() {
   // Don't show anything on auth pages
   const isAuthPage = route.isAuthPage;
 
-  // Get active group from URL or preferences
-  const preferences = useActiveGroup({ enabled: !isAuthPage });
-  const { effectiveCatalogId } = useEffectiveCatalogId({
-    routeGroupId: route.routeGroupId,
-    activeGroupId: preferences.activeGroupId,
-  });
+  const { data: archive } = useArchive({ enabled: !isAuthPage && !!session?.user });
+  const effectiveCatalogId = archive?.id ?? null;
 
   // Fetch catalog access to determine if user can manage settings
   const { data: catalogAccess } = useCatalogAccessSummary(effectiveCatalogId, {

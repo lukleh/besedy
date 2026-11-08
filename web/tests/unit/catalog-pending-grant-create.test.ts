@@ -5,6 +5,14 @@ import { grantForRole } from "@/lib/policy/catalog-permissions";
 
 const CATALOG_ID = "20260101_000000";
 
+vi.mock("@/lib/archive", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/archive")>()),
+  requireArchive: vi.fn().mockResolvedValue({
+    id: "20260101_000000",
+    label: "Catalog One",
+  }),
+}));
+
 vi.mock("@/lib/auth/permissions", () => ({
   requireAuth: vi.fn(),
 }));
@@ -18,8 +26,10 @@ vi.mock("@/lib/audit/logger", () => ({
   logPendingCatalogGrantEvent: vi.fn(),
 }));
 
-vi.mock("@/lib/admission/pending-admission-sync", () => ({
-  AdminDeniedAdmissionReopenError: class AdminDeniedAdmissionReopenError extends Error {},
+vi.mock("@/lib/admission/pending-admission-sync", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/lib/admission/pending-admission-sync")
+  >()),
   syncPendingAdmissionState: vi.fn(),
 }));
 
@@ -83,9 +93,61 @@ describe("catalog pending grant create", () => {
     prisma.workflowGroup.findUnique.mockResolvedValue({
       id: CATALOG_ID,
       label: "Catalog",
+      isActive: true,
     });
     prisma.user.findUnique.mockResolvedValue(null);
     prisma.portalAdmission.findUnique.mockResolvedValue(null);
+  });
+
+  it("rejects invitations to a foreign source without reading or changing its grants", async () => {
+    const foreignCatalogId = "20260102_000000";
+    const response = await createPendingCatalogGrant(
+      new NextRequest(
+        `http://localhost/api/catalogs/${foreignCatalogId}/pending-catalog-grants`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            email: "pending@example.com",
+            role: "reader",
+          }),
+        }
+      ),
+      foreignCatalogId
+    );
+
+    expect(response.status).toBe(404);
+    expect(resolveCatalogManagementActor).not.toHaveBeenCalled();
+    expect(prisma.workflowGroup.findUnique).not.toHaveBeenCalled();
+    expect(prisma.pendingCatalogGrant.findUnique).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(syncPendingAdmissionState).not.toHaveBeenCalled();
+  });
+
+  it("refuses a new invitation to an inactive catalog before writing admission or access", async () => {
+    prisma.workflowGroup.findUnique.mockResolvedValue({
+      id: CATALOG_ID,
+      label: "Old catalog",
+      isActive: false,
+    });
+
+    const response = await createPendingCatalogGrant(
+      new NextRequest(
+        `http://localhost/api/catalogs/${CATALOG_ID}/pending-catalog-grants`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            email: "pending@example.com",
+            role: "reader",
+          }),
+        }
+      ),
+      CATALOG_ID
+    );
+
+    expect(response.status).toBe(404);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(syncPendingAdmissionState).not.toHaveBeenCalled();
   });
 
   // An invitation to an address that already has an account grants directly, so

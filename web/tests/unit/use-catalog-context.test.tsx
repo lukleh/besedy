@@ -1,155 +1,53 @@
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
-import { useActiveGroup } from "@/hooks/use-active-group";
-import { useCatalogs } from "@/hooks/use-catalogs";
-import { useUpdateActiveGroup } from "@/hooks/use-update-active-group";
+import { useArchive } from "@/hooks/use-archive";
+import { ApiError } from "@/lib/api/fetch-json";
 
-vi.mock("@/hooks/use-active-group", () => ({
-  useActiveGroup: vi.fn(),
-}));
-
-vi.mock("@/hooks/use-catalogs", () => ({
-  useCatalogs: vi.fn(),
-}));
-
-vi.mock("@/hooks/use-update-active-group", () => ({
-  useUpdateActiveGroup: vi.fn(),
-}));
+vi.mock("@/hooks/use-archive", () => ({ useArchive: vi.fn() }));
 
 describe("useCatalogContext", () => {
-  const useActiveGroupMock = vi.mocked(useActiveGroup);
-  const useCatalogsMock = vi.mocked(useCatalogs);
-  const useUpdateActiveGroupMock = vi.mocked(useUpdateActiveGroup);
-  const mutateMock = vi.fn();
-
+  const archive = vi.mocked(useArchive);
   beforeEach(() => {
     vi.clearAllMocks();
-    useActiveGroupMock.mockReturnValue({
-      activeGroupId: null,
-      activeGroup: null,
+    archive.mockReturnValue({
+      data: { id: "bound", label: "Besedy" },
+      error: null,
       isLoading: false,
-      isSuccess: true,
-    } as ReturnType<typeof useActiveGroup>);
-    useUpdateActiveGroupMock.mockReturnValue({
-      mutate: mutateMock,
-      isPending: false,
-    } as unknown as ReturnType<typeof useUpdateActiveGroup>);
+    } as ReturnType<typeof useArchive>);
   });
 
-  it("keeps server-validated pages responsive while background validation runs", () => {
-    useCatalogsMock.mockReturnValue({
-      data: undefined,
-      isLoading: true,
-    } as ReturnType<typeof useCatalogs>);
-
-    const { result } = renderHook(() =>
-      useCatalogContext("catalog-1", { skipCatalogValidation: true })
-    );
-
-    expect(useCatalogsMock).toHaveBeenCalledWith({ enabled: true });
-    expect(result.current.catalogValidationLoading).toBe(false);
-    expect(result.current.catalogNotFound).toBe(false);
-    expect(mutateMock).toHaveBeenCalledWith("catalog-1");
-  });
-
-  it("marks a skipped-validation catalog as missing after background revalidation", () => {
-    useCatalogsMock
-      .mockReturnValueOnce({
-        data: undefined,
-        isLoading: true,
-      } as ReturnType<typeof useCatalogs>)
-      .mockReturnValueOnce({
-        data: [{ id: "catalog-2", label: "Other" }],
-        isLoading: false,
-      } as ReturnType<typeof useCatalogs>);
-
-    const { result, rerender } = renderHook(() =>
-      useCatalogContext("catalog-1", { skipCatalogValidation: true })
-    );
-
-    expect(result.current.catalogNotFound).toBe(false);
-
-    rerender();
-
-    expect(result.current.catalogValidationLoading).toBe(false);
+  it("rejects a URL for another source without substituting the archive", () => {
+    const { result } = renderHook(() => useCatalogContext("other"));
+    expect(result.current.catalogId).toBe("other");
     expect(result.current.catalogNotFound).toBe(true);
   });
 
-  it("does not retry a failed sync on the next render", () => {
-    useCatalogsMock.mockReturnValue({
-      data: [{ id: "catalog-1", label: "One" }],
-      isLoading: false,
-    } as ReturnType<typeof useCatalogs>);
-    const mutation = { mutate: mutateMock, isPending: false };
-    useUpdateActiveGroupMock.mockImplementation(
-      () => mutation as unknown as ReturnType<typeof useUpdateActiveGroup>
-    );
+  it("uses the configured archive label for its matching source URL", () => {
+    const { result } = renderHook(() => useCatalogContext("bound"));
+    expect(result.current.archive).toEqual({ id: "bound", label: "Besedy" });
+    expect(result.current.catalogNotFound).toBe(false);
+  });
 
-    const { rerender } = renderHook(() =>
-      useCatalogContext("catalog-1", { skipCatalogValidation: true })
-    );
-    expect(mutateMock).toHaveBeenCalledTimes(1);
+  it("keeps server-validated pages responsive during background validation", () => {
+    archive.mockReturnValue({ data: undefined, isLoading: true, error: null } as ReturnType<typeof useArchive>);
+    const { result } = renderHook(() => useCatalogContext("bound", { skipCatalogValidation: true }));
+    expect(result.current.catalogValidationLoading).toBe(false);
+    expect(result.current.catalogNotFound).toBe(false);
+  });
 
-    // The save starts, then fails; the active group is still not catalog-1.
-    mutation.isPending = true;
+  it("blocks an unvalidated page while the archive is loading", () => {
+    archive.mockReturnValue({ data: undefined, isLoading: true, error: null } as ReturnType<typeof useArchive>);
+    const { result } = renderHook(() => useCatalogContext("bound"));
+    expect(result.current.catalogValidationLoading).toBe(true);
+  });
+
+  it("handles revoked access without treating a network outage as revocation", () => {
+    archive.mockReturnValue({ data: undefined, isLoading: false, error: new ApiError("Denied", 403) } as unknown as ReturnType<typeof useArchive>);
+    const { result, rerender } = renderHook(() => useCatalogContext("bound"));
+    expect(result.current.catalogNotFound).toBe(true);
+    archive.mockReturnValue({ data: undefined, isLoading: false, error: new TypeError("Offline") } as ReturnType<typeof useArchive>);
     rerender();
-    mutation.isPending = false;
-    rerender();
-
-    expect(mutateMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("syncs again when the route moves to another catalog", () => {
-    useCatalogsMock.mockReturnValue({
-      data: [
-        { id: "catalog-1", label: "One" },
-        { id: "catalog-2", label: "Two" },
-      ],
-      isLoading: false,
-    } as ReturnType<typeof useCatalogs>);
-
-    const { rerender } = renderHook(
-      ({ catalogId }) => useCatalogContext(catalogId, { skipCatalogValidation: true }),
-      { initialProps: { catalogId: "catalog-1" } }
-    );
-    rerender({ catalogId: "catalog-2" });
-
-    expect(mutateMock.mock.calls).toEqual([["catalog-1"], ["catalog-2"]]);
-  });
-
-  it("does not sync while the saved preferences could not be loaded", () => {
-    useActiveGroupMock.mockReturnValue({
-      activeGroupId: null,
-      activeGroup: null,
-      isLoading: false,
-      isSuccess: false,
-    } as ReturnType<typeof useActiveGroup>);
-    useCatalogsMock.mockReturnValue({
-      data: [{ id: "catalog-1", label: "One" }],
-      isLoading: false,
-    } as ReturnType<typeof useCatalogs>);
-
-    renderHook(() => useCatalogContext("catalog-1", { skipCatalogValidation: true }));
-
-    expect(mutateMock).not.toHaveBeenCalled();
-  });
-
-  it("keeps the route catalog while the saved preference points elsewhere", () => {
-    useActiveGroupMock.mockReturnValue({
-      activeGroupId: "saved-catalog",
-      activeGroup: null,
-      isLoading: false,
-      isSuccess: true,
-    } as ReturnType<typeof useActiveGroup>);
-    useCatalogsMock.mockReturnValue({
-      data: [{ id: "route-catalog", label: "Route" }],
-      isLoading: false,
-    } as ReturnType<typeof useCatalogs>);
-
-    const { result } = renderHook(() => useCatalogContext("route-catalog"));
-
-    expect(result.current.catalogId).toBe("route-catalog");
-    expect(mutateMock).toHaveBeenCalledWith("route-catalog");
+    expect(result.current.catalogNotFound).toBe(false);
   });
 });

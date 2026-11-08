@@ -20,9 +20,9 @@ vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
 }));
 
-vi.mock("@/hooks/use-catalogs", () => ({
-  useCatalogs: () => ({
-    data: [{ id: "catalog-1", label: "Main catalog" }],
+vi.mock("@/hooks/use-archive", () => ({
+  useArchive: () => ({
+    data: { id: "catalog-1", label: "Main catalog" },
   }),
 }));
 
