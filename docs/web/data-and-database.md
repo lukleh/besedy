@@ -424,7 +424,7 @@ pointer file in [Data model](../data-model.md#publication-waits-for-the-index).
 
 | Variable             | Purpose                                      |
 | -------------------- | -------------------------------------------- |
-| `BESEDY_BASE_DIR`    | Root directory scanned for catalog discovery |
+| `BESEDY_BASE_DIR`    | Additional allowed data root for web path validation |
 | `TEXT_DATA_DIR`      | Catalogs and transcripts                     |
 | `AUDIO_DIR`          | Streamable (compressed) audio                |
 | `ORIGINAL_AUDIO_DIR` | Downloadable original audio                  |
