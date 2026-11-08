@@ -58,6 +58,8 @@ fi
 
 # The project, files and profiles come from this wrapper and the env file only.
 unset COMPOSE_FILE COMPOSE_ENV_FILES COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_PATH_SEPARATOR
+# Archive selection belongs to this mode's env file, never an inherited shell value.
+unset BESEDY_ARCHIVE_ID
 
 env_file="$("$script_dir/resolve_jobs_env_file.sh" "$mode")"
 cd "$repo_root"

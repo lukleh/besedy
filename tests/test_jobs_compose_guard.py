@@ -318,6 +318,37 @@ def _real_compose_available() -> bool:
 
 @pytest.mark.skipif(not _real_compose_available(), reason="docker compose is not installed")
 @pytest.mark.parametrize("mode", ["development", "test", "production"])
+@pytest.mark.parametrize("archive_id", ["20251225_120000", "", None], ids=["selected", "blank", "missing"])
+def test_wrapper_archive_binding_comes_only_from_the_selected_env_file(
+    tmp_path: Path, mode: str, archive_id: str | None
+) -> None:
+    env_file = tmp_path / "jobs.env"
+    env_file.write_text(
+        f"BESEDY_ARCHIVE_ID={archive_id}\n" if archive_id is not None else "",
+        encoding="utf-8",
+    )
+    env = _clean_env()
+    env[f"BESEDY_JOBS_ENV_{SUFFIX[mode].upper()}"] = str(env_file)
+    env["BESEDY_ARCHIVE_ID"] = "20260101_120000"
+
+    result = subprocess.run(
+        ["bash", str(WRAPPER), mode, "config", "--format", "json"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    config = json.loads(result.stdout)
+    assert config["services"]["jobs-api"]["environment"]["BESEDY_ARCHIVE_ID"] == (archive_id or "")
+    validation = validate(config, mode)
+    assert validation.returncode == 0, validation.stderr
+
+
+@pytest.mark.skipif(not _real_compose_available(), reason="docker compose is not installed")
+@pytest.mark.parametrize("mode", ["development", "test", "production"])
 def test_the_checked_in_compose_files_render_a_project_the_validator_accepts(
     tmp_path: Path, mode: str
 ) -> None:
