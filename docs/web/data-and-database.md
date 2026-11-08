@@ -211,18 +211,19 @@ parameter:
 1. **Archived** (compressed, the default) -- primary playback source
 2. **Original** -- uncompressed source for download
 
-The retired `listening` source (and its `variant` parameter) is still accepted
-from old clients and served as archived.
+Only `source`, `format`, `download` and `local` query parameters are accepted,
+and each may occur once. The retired `listening` source, `variant` and `group`
+parameters, unknown parameters and duplicate parameters return `400`.
+`download` accepts `true` or `false`; the local player may add `local=1`, which
+does not change the served bytes.
 
 There is no per-recording source preference any more. Older rows may still carry
 `user_preferences.settings.audioSources`; nothing reads or writes it.
 
 Independently of the source, `format` picks the file: `webm` (default), the Opus
 archive every recording has, or `aac`, its AAC-in-MP4 copy (`compressed_aac_path`,
-#291) for browsers that cannot stream WebM. The route resolves the source first
-(a variant without a row for the recording falls back to archived) and then takes
-that source's AAC copy; when it has none the response is `404` rather than the
-WebM, and `format=aac` with `source=original` is a `400`. `/audio/sources` lists
+#291) for browsers that cannot stream WebM. An unavailable AAC copy returns
+`404`, and `format=aac` with `source=original` returns `400`. `/audio/sources` lists
 the `formats` each source can be served in, so clients only ask for copies that
 exist.
 
