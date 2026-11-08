@@ -24,12 +24,12 @@ from .models import (
     build_correction_index_flow_run_tags,
     build_ingest_flow_run_name,
     build_ingest_flow_run_tags,
-    get_configured_archive_id,
     job_kind_from_tags,
     job_kind_tag,
     normalize_flow_run,
     normalize_flow_run_history,
     prefect_state_names_for_job_status,
+    require_archive_id,
     sanitize_tag_value,
     validate_deployment_catalog_id,
 )
@@ -58,7 +58,7 @@ class PrefectJobsApiService:
         correction_index_deployment_name: str | None = None,
         prefect_ui_url: str | None = None,
     ) -> None:
-        get_configured_archive_id()
+        require_archive_id()
         self._client = client or RuntimePrefectJobsClient()
         self._ingest_deployment_name = ingest_deployment_name or os.getenv(
             "PREFECT_INGEST_FULL_DEPLOYMENT_NAME",
@@ -149,19 +149,16 @@ class PrefectJobsApiService:
         kind = _parse_job_kind(_first_param(params, "kind")) or JobKind.INGEST
         status = _parse_job_status(_first_param(params, "status"))
         catalog_id = _first_param(params, "catalogId")
-        archive_id = get_configured_archive_id()
-        if archive_id is not None and catalog_id:
-            catalog_id = validate_deployment_catalog_id(catalog_id)
-        catalog_id = archive_id or catalog_id
+        archive_id = require_archive_id()
+        if catalog_id:
+            validate_deployment_catalog_id(catalog_id)
         requested_by_id = _first_param(params, "requestedById")
         limit_raw = _first_param(params, "limit")
         limit = int(limit_raw) if limit_raw is not None else 50
         if limit <= 0:
             raise ValueError("limit must be positive.")
 
-        tags = [job_kind_tag(kind)]
-        if catalog_id:
-            tags.append(f"catalog:{sanitize_tag_value(catalog_id, fallback='catalog')}")
+        tags = [job_kind_tag(kind), f"catalog:{archive_id}"]
         if requested_by_id:
             tags.append(f"requested-by:{sanitize_tag_value(requested_by_id)}")
 
@@ -176,15 +173,13 @@ class PrefectJobsApiService:
             )
             if job_kind_from_tags(getattr(flow_run, "tags", None)) == kind
         ]
-        if archive_id is not None:
-            jobs = [job for job in jobs if job.get("catalog_id") == archive_id]
-        return {"jobs": jobs}
+        return {"jobs": [job for job in jobs if job.get("catalog_id") == archive_id]}
 
     def get_job(self, *, job_id: str) -> dict[str, Any]:
+        archive_id = require_archive_id()
         flow_run = _not_found_as_404(lambda: self._client.read_flow_run(flow_run_id=job_id))
         job = normalize_flow_run(flow_run)
-        archive_id = get_configured_archive_id()
-        if archive_id is not None and job.get("catalog_id") != archive_id:
+        if job.get("catalog_id") != archive_id:
             raise FileNotFoundError("Job not found.")
         return job
 

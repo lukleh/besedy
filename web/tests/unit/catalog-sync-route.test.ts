@@ -32,8 +32,9 @@ const request = (query = `groupId=${groupId}`) =>
 describe('catalog sync operator routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('BESEDY_ARCHIVE_ID', groupId);
     mocks.requireAdmin.mockResolvedValue({ userId: 'admin-1' });
-    mocks.group.mockResolvedValue({ id: groupId });
+    mocks.group.mockResolvedValue({ id: groupId, isActive: true });
     mocks.states.mockResolvedValue([]);
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -74,9 +75,9 @@ describe('catalog sync operator routes', () => {
     },
   );
 
-  it('returns 404 for a missing catalog without reading its status', async () => {
+  it('returns 503 when the configured source is missing without reading projection status', async () => {
     mocks.group.mockResolvedValue(null);
-    expect((await GET(request())).status).toBe(404);
+    expect((await GET(request())).status).toBe(503);
     expect(mocks.states).not.toHaveBeenCalled();
   });
 

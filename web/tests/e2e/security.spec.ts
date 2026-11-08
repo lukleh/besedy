@@ -206,11 +206,11 @@ test.describe("Unauthenticated API Access @security", () => {
     expect(body.error).toMatch(/authentication required/i);
   });
 
-  test("Unauthenticated request to catalog list API returns 401", async ({
+  test("Unauthenticated request to archive API returns 401", async ({
     request,
   }) => {
     // Direct API call without any session/cookies
-    const response = await request.get(`/api/catalogs`);
+    const response = await request.get(`/api/archive`);
 
     expect(response.status()).toBe(401);
   });

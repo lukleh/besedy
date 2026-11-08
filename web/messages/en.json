@@ -941,16 +941,15 @@
         "description": "Add a new user to the system. They can sign in with this email address using Google OAuth.",
         "emailLabel": "Email address",
         "emailPlaceholder": "user@example.com",
-        "assignAccess": "Optional: Assign catalog access",
+        "assignAccess": "Assign content access",
         "catalog": "Catalog",
-        "noCatalog": "No catalog (add later)",
+        "selectCatalog": "Select catalog",
         "role": "Role",
         "selectRole": "Select role"
       },
       "toast": {
         "userAdded": "User added",
-        "userAddedWithAccess": "{email} has been added with {level} access to {catalog}.",
-        "userAddedSimple": "{email} has been added and can now sign in."
+        "userAddedWithAccess": "{email} has been added with {level} access to {catalog}."
       }
     },
     "toasts": {

@@ -1,4 +1,7 @@
+import { requireArchiveId } from '@/lib/archive-config';
+
 export async function registerNodeInstrumentation(): Promise<void> {
+  requireArchiveId();
   if (process.env.NODE_ENV === 'development') {
     return;
   }
