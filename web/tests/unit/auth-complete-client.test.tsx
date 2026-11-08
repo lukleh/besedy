@@ -67,7 +67,6 @@ describe("AuthCompleteClient", () => {
         callbackUrl="/settings"
         error={null}
         errorDescription={null}
-        state={null}
       />
     );
 
@@ -88,9 +87,8 @@ describe("AuthCompleteClient", () => {
     render(
       <AuthCompleteClient
         callbackUrl="/catalog"
-        error="OAuthCallbackError"
+        error="state_mismatch"
         errorDescription={null}
-        state={null}
       />
     );
 
@@ -127,9 +125,8 @@ describe("AuthCompleteClient", () => {
     render(
       <AuthCompleteClient
         callbackUrl="/catalog"
-        error="OAuthCallbackError"
+        error="state_mismatch"
         errorDescription={null}
-        state={null}
       />
     );
 
@@ -163,7 +160,6 @@ describe("AuthCompleteClient", () => {
         callbackUrl="/settings"
         error={null}
         errorDescription={null}
-        state={null}
       />
     );
 
@@ -179,7 +175,7 @@ describe("AuthCompleteClient", () => {
     expect(mocks.replaceMock).not.toHaveBeenCalled();
   });
 
-  it("does not surface opaque state tokens as user-facing errors", () => {
+  it("does not display an error when the callback has none", () => {
     vi.mocked(getAuthCompletionStatus).mockResolvedValue(false);
 
     render(
@@ -187,11 +183,27 @@ describe("AuthCompleteClient", () => {
         callbackUrl="/catalog"
         error={null}
         errorDescription={null}
-        state="opaque-oauth-state-token"
       />
     );
 
-    expect(screen.queryByText("opaque-oauth-state-token")).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["access_denied", null, "Sign in was cancelled. Please try again."],
+    ["account_not_linked", null, "This email is already associated with another account."],
+    [null, "Provider diagnostic", "Provider diagnostic"],
+  ])("displays callback error %s with description %s", (error, description, message) => {
+    vi.mocked(getAuthCompletionStatus).mockResolvedValue(false);
+
+    render(
+      <AuthCompleteClient
+        callbackUrl="/catalog"
+        error={error}
+        errorDescription={description}
+      />
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(message);
   });
 });

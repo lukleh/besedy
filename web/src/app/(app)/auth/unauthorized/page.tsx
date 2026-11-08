@@ -15,18 +15,17 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { openSupportEmail } from "@/lib/support-email";
+import { getAllowlistRejectionParam } from "@/lib/auth/oauth-routing";
 
 function UnauthorizedContent() {
   const t = useTranslations("auth");
   const searchParams = useSearchParams();
 
-  // Extract email only from allowlist rejection format: "not_authorized:email@example.com"
-  // This guards against displaying bogus emails from other error types like
-  // "OAuthCallbackError: invalid_state" which would otherwise show "invalid_state"
-  const errorMessage = searchParams.get("error") || searchParams.get("error_description") || "";
-  const attemptedEmail = errorMessage.startsWith("not_authorized:")
-    ? errorMessage.slice("not_authorized:".length)
-    : null;
+  const allowlistRejection = getAllowlistRejectionParam(
+    searchParams.get("error"),
+    searchParams.get("error_description")
+  );
+  const attemptedEmail = allowlistRejection?.slice("not_authorized:".length);
 
   return (
     <Card className="w-full max-w-md">

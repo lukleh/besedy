@@ -22,7 +22,6 @@ export default async function AuthCompletePage({ searchParams }: AuthCompletePag
   const error = getFirstSearchParamValue(resolvedSearchParams?.error) ?? null;
   const errorDescription =
     getFirstSearchParamValue(resolvedSearchParams?.error_description) ?? null;
-  const state = getFirstSearchParamValue(resolvedSearchParams?.state) ?? null;
   const callbackUrl = sanitizePostAuthCallbackPath(
     getFirstSearchParamValue(resolvedSearchParams?.callbackUrl)
   );
@@ -46,7 +45,6 @@ export default async function AuthCompletePage({ searchParams }: AuthCompletePag
         callbackUrl={callbackUrl}
         error={error}
         errorDescription={errorDescription}
-        state={state}
       />
     </div>
   );
