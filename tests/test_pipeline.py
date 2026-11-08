@@ -569,7 +569,7 @@ class TestPipelineRagIndexing:
     def test_should_run_rag_colbert_index_honors_skip_flag(self) -> None:
         assert should_run_rag_colbert_index(_pipeline_args(skip_rag_colbert_index=True)) is False
 
-    def testresolve_pipeline_rag_backend_key_can_auto_discover_backend_without_db(
+    def test_resolve_pipeline_rag_backend_key_can_auto_discover_backend_without_db(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
