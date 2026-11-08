@@ -8,7 +8,7 @@ Keep argument parsing in `besedy/cli/` and `besedy/commands/`; use
 
 | Task | Module | Key entry points |
 |------|--------|------------------|
-| Load transcript JSON (strict UTF-8) | `data/encoding.py` | `load_json_with_fallback()` |
+| Load transcript JSON (strict UTF-8) | `data/encoding.py` | `load_json_utf8()` |
 | Find transcript files for a hash | `data/lookup.py` | `load_transcript_json()`, `find_transcripts_for_hash()` |
 | Validate canonical transcript schema | `validation/schema.py` | `validate_canonical_schema()` |
 | Run shared transcript or diarization validation | `validation/core.py` | `validate_single_file()`, `validate_diarization_file()` |
@@ -31,7 +31,7 @@ Keep argument parsing in `besedy/cli/` and `besedy/commands/`; use
 Use fully qualified imports from `besedy.lib`, not the old `lib.*` shortcut.
 
 ```python
-from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.data.encoding import load_json_utf8
 from besedy.lib.data.lookup import find_transcripts_for_hash
 from besedy.lib.validation.schema import validate_canonical_schema
 from besedy.lib.workflow.common import CsvAudioRow, iter_audio_csv_rows
@@ -68,7 +68,7 @@ if issues:
 from besedy.lib.workflow.common import iter_audio_csv_rows
 
 for row in iter_audio_csv_rows(csv_path, require_duration=True):
-    print(row.sha256, row.full_path)
+    print(row.audio_hash, row.full_path)
 ```
 
 ## Related References

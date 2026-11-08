@@ -57,14 +57,14 @@ def _patch_catalog_check(
 
     catalog_entries = [
         CatalogEntry(
-            sha256=hash_a,
+            audio_hash=hash_a,
             filename="a.wav",
             full_path=str(tmp_path / "a.wav"),
             duration_str="00:01:00",
             duration_seconds=60.0,
         ),
         CatalogEntry(
-            sha256=hash_b,
+            audio_hash=hash_b,
             filename="b.wav",
             full_path=str(tmp_path / "b.wav"),
             duration_str="00:01:00",

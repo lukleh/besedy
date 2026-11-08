@@ -42,7 +42,7 @@ def loudness_csv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def _staging(*, skipped: list[SkippedEntry]):  # type: ignore[no-untyped-def]
     def stage_audio_files(_rows, _staging_dir, *, manifest_writer, **_kwargs):  # type: ignore[no-untyped-def]
         manifest_writer.write_entry(
-            SimpleNamespace(sha256=HASH_A, staged=Path("/staged/a.wav")), size_bytes=1
+            SimpleNamespace(audio_hash=HASH_A, staged=Path("/staged/a.wav")), size_bytes=1
         )
         return [], skipped
 
@@ -82,7 +82,7 @@ def _stub_transcribe(
     prepared: list[object],
     launch_failures: list[tuple[str, int]],
 ) -> None:
-    rows = [CsvAudioRow(sha256=HASH_A, full_path=str(tmp_path / "a.wav"))]
+    rows = [CsvAudioRow(audio_hash=HASH_A, full_path=str(tmp_path / "a.wav"))]
     monkeypatch.setattr(
         transcribe_module, "resolve_and_load_catalog", lambda *_args: (tmp_path / "c.csv", rows)
     )
@@ -140,7 +140,7 @@ def _stub_diarize(
     prepared: list[object],
     launch_failures: list[tuple[str, int]],
 ) -> None:
-    rows = [CsvAudioRow(sha256=HASH_A, full_path=str(tmp_path / "a.wav"))]
+    rows = [CsvAudioRow(audio_hash=HASH_A, full_path=str(tmp_path / "a.wav"))]
     monkeypatch.setattr(
         diarize_module, "resolve_and_load_catalog", lambda *_args: (tmp_path / "c.csv", rows)
     )

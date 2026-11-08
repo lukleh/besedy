@@ -98,14 +98,14 @@ class TestCsvAudioRow:
     """Tests for CsvAudioRow dataclass."""
 
     def test_basic_creation(self):
-        row = CsvAudioRow(sha256="abc123", full_path="/path/to/audio.wav")
-        assert row.sha256 == "abc123"
+        row = CsvAudioRow(audio_hash="abc123", full_path="/path/to/audio.wav")
+        assert row.audio_hash == "abc123"
         assert row.full_path == "/path/to/audio.wav"
         assert row.duration_seconds is None
 
     def test_with_duration(self):
         row = CsvAudioRow(
-            sha256="abc123",
+            audio_hash="abc123",
             full_path="/path/to/audio.wav",
             duration_seconds=90.5,
         )
@@ -113,7 +113,7 @@ class TestCsvAudioRow:
 
     def test_with_loudness_params(self):
         row = CsvAudioRow(
-            sha256="abc123",
+            audio_hash="abc123",
             full_path="/path/to/audio.wav",
             integrated_loudness_lufs="-16.0",
             true_peak_db="-1.5",
@@ -122,9 +122,9 @@ class TestCsvAudioRow:
         assert row.true_peak_db == "-1.5"
 
     def test_is_frozen(self):
-        row = CsvAudioRow(sha256="abc", full_path="/test")
+        row = CsvAudioRow(audio_hash="abc", full_path="/test")
         with pytest.raises(AttributeError):
-            row.sha256 = "changed"
+            row.audio_hash = "changed"
 
 
 class TestIterAudioCsvRowsScanRoot:

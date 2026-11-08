@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.data.encoding import load_json_utf8
 from besedy.lib.validation.schema import validate_canonical_schema
 from besedy.lib.workflow.paths import get_transcript_backend_paths
 
@@ -13,7 +13,7 @@ from besedy.lib.workflow.paths import get_transcript_backend_paths
 def load_json(path: Path) -> dict | None:
     """Load a UTF-8 JSON file, returning None if it is missing or unreadable."""
     try:
-        return load_json_with_fallback(path)
+        return load_json_utf8(path)
     except (ValueError, FileNotFoundError):
         return None
 

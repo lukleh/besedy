@@ -328,11 +328,3 @@ def resolve_transcripts_parent() -> Path:
     transcripts_dir = text_root / "transcripts"
     transcripts_dir.mkdir(parents=True, exist_ok=True)
     return transcripts_dir
-
-
-def resolve_transcripts_parquet_parent() -> Path:
-    """Resolve the parent directory for parquet timestamped directories."""
-    text_root = resolve_text_data_root()
-    parquet_dir = text_root / "transcripts_parquet"
-    parquet_dir.mkdir(parents=True, exist_ok=True)
-    return parquet_dir

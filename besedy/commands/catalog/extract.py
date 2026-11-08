@@ -24,7 +24,7 @@ from besedy.core.paths import (
 from besedy.lib.analysis.stats import extract_transcript_text
 from besedy.lib.analysis.subtitles import render_srt, render_vtt
 from besedy.lib.analysis.timeline import Segment, extract_segments
-from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.data.encoding import load_json_utf8
 from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 
 
@@ -260,7 +260,7 @@ def _export_transcripts_with_progress(
                 continue
 
             try:
-                data = load_json_with_fallback(path)
+                data = load_json_utf8(path)
                 segments = extract_segments(data, source=f"{backend}/{model}")
                 text = extract_transcript_text(data)
                 txt_text = _render_txt_sidecar(segments, fallback_text=text)

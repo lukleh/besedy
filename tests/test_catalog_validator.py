@@ -64,13 +64,13 @@ class TestCatalogEntry:
     def test_basic_creation(self):
         """Test creating a CatalogEntry."""
         entry = CatalogEntry(
-            sha256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            audio_hash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             filename="test.wav",
             full_path="/path/to/test.wav",
             duration_str="01:30:00",
             duration_seconds=5400.0,
         )
-        assert entry.sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        assert entry.audio_hash == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         assert entry.filename == "test.wav"
         assert entry.full_path == "/path/to/test.wav"
         assert entry.duration_str == "01:30:00"
@@ -83,12 +83,12 @@ class TestStagedFile:
     def test_basic_creation(self):
         """Test creating a StagedFile."""
         staged = StagedFile(
-            sha256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            audio_hash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             path=Path("/path/to/staged.wav"),
             exists=True,
             size_bytes=1024,
         )
-        assert staged.sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        assert staged.audio_hash == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         assert staged.path == Path("/path/to/staged.wav")
         assert staged.exists is True
         assert staged.size_bytes == 1024
@@ -96,7 +96,7 @@ class TestStagedFile:
     def test_missing_file(self):
         """Test StagedFile for missing file."""
         staged = StagedFile(
-            sha256="missing123",
+            audio_hash="missing123",
             path=Path("/path/to/missing.wav"),
             exists=False,
             size_bytes=None,
@@ -111,11 +111,11 @@ class TestTranscriptSet:
     def test_basic_creation(self):
         """Test creating a TranscriptSet."""
         ts = TranscriptSet(
-            sha256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            audio_hash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             backends=["canary-nemo/model1@lang-cs", "faster-whisper/model2@lang-cs"],
             paths=[Path("/path/1/transcript.json"), Path("/path/2/transcript.json")],
         )
-        assert ts.sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        assert ts.audio_hash == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         assert len(ts.backends) == 2
         assert len(ts.paths) == 2
 
@@ -126,11 +126,11 @@ class TestDiarizationSet:
     def test_basic_creation(self):
         """Test creating a DiarizationSet."""
         ds = DiarizationSet(
-            sha256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            audio_hash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             backends=["speaker_diarization/pyannote_model"],
             paths=[Path("/path/speakers.json")],
         )
-        assert ds.sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        assert ds.audio_hash == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         assert len(ds.backends) == 1
 
 
@@ -149,10 +149,10 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,test2.wav,/path
 
         entries = load_catalog_csv(csv_path)
         assert len(entries) == 2
-        assert entries[0].sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        assert entries[0].audio_hash == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         assert entries[0].filename == "test1.wav"
         assert entries[0].duration_seconds == 5400.0
-        assert entries[1].sha256 == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        assert entries[1].audio_hash == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         assert entries[1].duration_seconds == 2730.0
 
     def test_skip_empty_hash(self, tmp_path):
@@ -168,7 +168,7 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,test1.wav,/path
 
         entries = load_catalog_csv(csv_path)
         assert len(entries) == 1
-        assert entries[0].sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        assert entries[0].audio_hash == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
     def test_empty_csv(self, tmp_path):
         """Test loading empty CSV (headers only)."""
@@ -206,7 +206,7 @@ class TestCheckStagedFiles:
 
         entries = [
             CatalogEntry(
-                sha256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                audio_hash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 filename="test.wav",
                 full_path=str(staged_file),
                 duration_str="01:00:00",
@@ -225,7 +225,7 @@ class TestCheckStagedFiles:
         """Test checking missing staged files."""
         entries = [
             CatalogEntry(
-                sha256="missing123",
+                audio_hash="missing123",
                 filename="test.wav",
                 full_path=str(tmp_path / "nonexistent.wav"),
                 duration_str="01:00:00",
@@ -244,7 +244,7 @@ class TestCheckStagedFiles:
         """Test handling entries with empty path."""
         entries = [
             CatalogEntry(
-                sha256="empty123",
+                audio_hash="empty123",
                 filename="test.wav",
                 full_path="",
                 duration_str="01:00:00",

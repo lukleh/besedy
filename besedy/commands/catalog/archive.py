@@ -63,6 +63,7 @@ from besedy.core.symlinks import (
     create_or_update_symlink,
     validate_symlink_can_be_created,
 )
+from besedy.core.system import detect_logical_cpus
 from besedy.lib.audio.decode import decode_to_temp_wav
 from besedy.lib.audio.join import probe_audio_file
 from besedy.lib.audio.probe import measure_audio_duration_seconds
@@ -71,7 +72,6 @@ from besedy.lib.audio.types import (
     DECLIP_THRESHOLD_DBTP,
     DURATION_TOLERANCE_MIN_SECONDS,
     DURATION_TOLERANCE_PERCENTAGE,
-    detect_logical_cpus,
     format_size,
 )
 from besedy.lib.catalog.manager import require_csv_columns
@@ -121,7 +121,7 @@ AAC_COPY_PATH_COLUMN = "Compressed AAC Path"
 class CompressedEntry:
     """Successfully compressed audio file."""
 
-    sha256: str
+    audio_hash: str
     source: Path
     compressed: Path
     format: str  # "opus" or "m4a"
@@ -140,7 +140,7 @@ class CompressedEntry:
 class ArchiveSkippedEntry:
     """Audio file that was skipped during archival."""
 
-    sha256: str
+    audio_hash: str
     source: Path
     reason: str
 
@@ -311,7 +311,7 @@ def _read_header(path: Path) -> list[str]:
 def manifest_row(entry: CompressedEntry) -> dict[str, str | int]:
     """The manifest columns for one archived file."""
     return {
-        "Hash": entry.sha256,
+        "Hash": entry.audio_hash,
         "Original Path": str(entry.source),
         "Compressed Path": str(entry.compressed),
         "Format": entry.format,
@@ -560,18 +560,18 @@ def compress_audio_file(
     independent, rather than one transaction.
     """
     source = Path(row.full_path)
-    sha256 = row.sha256
+    audio_hash = row.audio_hash
     if not source.exists():
-        return CompressionResult(None, ArchiveSkippedEntry(sha256, source, "source file not found"))
+        return CompressionResult(None, ArchiveSkippedEntry(audio_hash, source, "source file not found"))
     if (output_path.exists() or output_path.is_symlink()) and not force:
-        return CompressionResult(None, ArchiveSkippedEntry(sha256, source, "output already exists"))
+        return CompressionResult(None, ArchiveSkippedEntry(audio_hash, source, "output already exists"))
 
     source_size = source.stat().st_size
     prepared, error = prepare_source(
         row, source, ffmpeg_binary=ffmpeg_binary, ffprobe_binary=ffprobe_binary
     )
     if prepared is None:
-        return CompressionResult(None, ArchiveSkippedEntry(sha256, source, error or ""))
+        return CompressionResult(None, ArchiveSkippedEntry(audio_hash, source, error or ""))
 
     aac_size: int | None = None
     aac_duration: float | None = None
@@ -650,13 +650,13 @@ def compress_audio_file(
                     except (OSError, RuntimeError, ValueError):
                         aac_size = aac_duration = None
     except (OSError, RuntimeError, ValueError) as exc:
-        return CompressionResult(None, ArchiveSkippedEntry(sha256, source, str(exc)))
+        return CompressionResult(None, ArchiveSkippedEntry(audio_hash, source, str(exc)))
     finally:
         prepared.temp_wav.unlink(missing_ok=True)
 
     return CompressionResult(
         compressed=CompressedEntry(
-            sha256=sha256,
+            audio_hash=audio_hash,
             source=source,
             compressed=output_path,
             format=format,
@@ -683,7 +683,7 @@ def compress_audio_file(
 class AacBackfillResult:
     """Outcome of adding the AAC copy to one already archived row."""
 
-    sha256: str
+    audio_hash: str
     values: dict[str, str | int] | None
     skipped: ArchiveSkippedEntry | None
 
@@ -703,17 +703,17 @@ def backfill_aac_copy(
     archive, at the copy's fixed VBR mode (``AAC_COPY_VBR_MODE``).
     """
     source = Path(row.full_path)
-    sha256 = row.sha256
+    audio_hash = row.audio_hash
     if not source.exists():
         return AacBackfillResult(
-            sha256, None, ArchiveSkippedEntry(sha256, source, "source file not found")
+            audio_hash, None, ArchiveSkippedEntry(audio_hash, source, "source file not found")
         )
     aac_path = compressed_path.with_suffix(AAC_COPY_EXTENSION)
     prepared, error = prepare_source(
         row, source, ffmpeg_binary=ffmpeg_binary, ffprobe_binary=ffprobe_binary
     )
     if prepared is None:
-        return AacBackfillResult(sha256, None, ArchiveSkippedEntry(sha256, source, error or ""))
+        return AacBackfillResult(audio_hash, None, ArchiveSkippedEntry(audio_hash, source, error or ""))
     try:
         decoded_duration = measure_audio_duration_seconds(
             prepared.temp_wav, ffprobe_binary=ffprobe_binary
@@ -743,12 +743,12 @@ def backfill_aac_copy(
             )
     except (OSError, RuntimeError, ValueError) as exc:
         return AacBackfillResult(
-            sha256, None, ArchiveSkippedEntry(sha256, source, f"aac copy {exc}")
+            audio_hash, None, ArchiveSkippedEntry(audio_hash, source, f"aac copy {exc}")
         )
     finally:
         prepared.temp_wav.unlink(missing_ok=True)
     return AacBackfillResult(
-        sha256, aac_manifest_values(aac_path, size, _measured_kbps(size, duration)), None
+        audio_hash, aac_manifest_values(aac_path, size, _measured_kbps(size, duration)), None
     )
 
 
@@ -791,10 +791,6 @@ def load_archived_hashes(csv_path: Path) -> set[str]:
         raise ValueError(f"Cannot read archived CSV {csv_path}: {exc}") from exc
 
     return hashes
-
-
-# Keep old name for backward compatibility
-load_archived_sha256s = load_archived_hashes
 
 
 def infer_output_dir_from_archived_csv(csv_path: Path) -> tuple[Path | None, str | None]:
@@ -849,7 +845,7 @@ def compute_output_path(
     scan_root: str | None,
     output_dir: Path,
     extension: str,
-    sha256: str,
+    audio_hash: str,
 ) -> Path:
     """Compute output path relative to the file's own Scan Root with hash suffix.
 
@@ -862,7 +858,7 @@ def compute_output_path(
         scan_root: The row's ``Scan Root`` value (may be empty or None).
         output_dir: Directory where compressed files will be stored.
         extension: File extension for the output file (e.g., ".webm").
-        sha256: Content hash of the source file (first 8 chars used in filename).
+        audio_hash: Content hash of the source file (first 8 chars used in filename).
 
     Returns:
         Output path preserving directory structure relative to scan_root,
@@ -872,7 +868,7 @@ def compute_output_path(
         source_path: /mnt/data/Besedy/folder/file.mp3
         scan_root:   /mnt/data/Besedy
         output_dir:  /mnt/data/Besedy-archive
-        sha256:      2cb6f452b62cb491...
+        audio_hash:      2cb6f452b62cb491...
         → output:    /mnt/data/Besedy-archive/folder/file_2cb6f452.webm
     """
     source_abs = source_path.resolve()
@@ -883,7 +879,7 @@ def compute_output_path(
             relative = source_abs.relative_to(root)
     output_base = output_dir / relative
     # Add 8-char hash suffix to prevent collisions from same-name files
-    new_name = f"{output_base.stem}_{sha256[:8]}{extension}"
+    new_name = f"{output_base.stem}_{audio_hash[:8]}{extension}"
     return output_base.parent / new_name
 
 
@@ -1067,37 +1063,37 @@ def _select_backfill_jobs(
     rows: list[CsvAudioRow],
     manifest_rows: list[dict[str, str]],
 ) -> tuple[list[tuple[CsvAudioRow, Path]], list[ArchiveSkippedEntry]]:
-    source_hashes = {row.sha256 for row in rows}
-    rows_by_hash = {row.sha256: row for row in rows[: request.limit]}
+    source_hashes = {row.audio_hash for row in rows}
+    rows_by_hash = {row.audio_hash: row for row in rows[: request.limit]}
     jobs: list[tuple[CsvAudioRow, Path]] = []
     skipped: list[ArchiveSkippedEntry] = []
     queued: set[str] = set()
     for manifest_row in manifest_rows:
-        sha256 = (manifest_row.get("Hash") or "").strip()
+        audio_hash = (manifest_row.get("Hash") or "").strip()
         compressed = (manifest_row.get("Compressed Path") or "").strip()
         # Only Opus archives (.webm) get a copy; never replace an .m4a archive.
-        if not sha256 or not compressed or Path(compressed).suffix != ".webm":
+        if not audio_hash or not compressed or Path(compressed).suffix != ".webm":
             continue
         if (manifest_row.get("Format") or "opus") != "opus":
             continue
         # A resumed --overwrite run can list a hash twice; encoding it twice
         # at once would have two ffmpeg processes write the same file.
-        if sha256 in queued:
+        if audio_hash in queued:
             continue
         existing_copy = (manifest_row.get(AAC_COPY_PATH_COLUMN) or "").strip()
         if existing_copy and Path(existing_copy).is_file() and not request.overwrite:
             continue
-        row = rows_by_hash.get(sha256)
+        row = rows_by_hash.get(audio_hash)
         # Membership uses the full catalog, so --limit excludes known rows
         # without hiding archive rows whose source catalog entry is missing.
-        if row is None and sha256 in source_hashes:
+        if row is None and audio_hash in source_hashes:
             continue
         compressed_path = Path(compressed)
         if row is None or not compressed_path.is_file():
             reason = "not in source catalog" if row is None else "archive file not found"
-            skipped.append(ArchiveSkippedEntry(sha256, compressed_path, reason))
+            skipped.append(ArchiveSkippedEntry(audio_hash, compressed_path, reason))
             continue
-        queued.add(sha256)
+        queued.add(audio_hash)
         jobs.append((row, compressed_path))
     return jobs, skipped
 
@@ -1113,7 +1109,7 @@ def _run_backfill_jobs(
 ) -> int:
     print(f"\nAdding AAC copies to {len(jobs)} archived files in {archived_csv_path.name}")
     for skip in skipped:
-        print(f"  skipped {skip.sha256[:8]}: {skip.reason} ({skip.source})")
+        print(f"  skipped {skip.audio_hash[:8]}: {skip.reason} ({skip.source})")
 
     added = 0
 
@@ -1124,15 +1120,15 @@ def _run_backfill_jobs(
             result = future.result()
         except Exception as exc:  # one broken job must not end the run
             result = AacBackfillResult(
-                row.sha256,
+                row.audio_hash,
                 None,
-                ArchiveSkippedEntry(row.sha256, compressed_path, f"exception: {exc}"),
+                ArchiveSkippedEntry(row.audio_hash, compressed_path, f"exception: {exc}"),
             )
         if result.values is not None:
             # Record each copy as it finishes: an interrupted run keeps
             # every copy it made.
             with catalog_ingest_lock(archived_csv_path):
-                changed = update_manifest_rows(archived_csv_path, {result.sha256: result.values})
+                changed = update_manifest_rows(archived_csv_path, {result.audio_hash: result.values})
             if changed:
                 added += 1
                 print(f"  [{position}/{len(jobs)}] {result.values[AAC_COPY_PATH_COLUMN]}")
@@ -1141,14 +1137,14 @@ def _run_backfill_jobs(
             # `catalog remove`); do not leave its copy behind.
             Path(str(result.values[AAC_COPY_PATH_COLUMN])).unlink(missing_ok=True)
             result = AacBackfillResult(
-                row.sha256,
+                row.audio_hash,
                 None,
-                ArchiveSkippedEntry(row.sha256, compressed_path, "no longer in the manifest"),
+                ArchiveSkippedEntry(row.audio_hash, compressed_path, "no longer in the manifest"),
             )
         if result.skipped is not None:
             skipped.append(result.skipped)
             print(
-                f"  [{position}/{len(jobs)}] skipped {result.sha256[:8]}: {result.skipped.reason}"
+                f"  [{position}/{len(jobs)}] skipped {result.audio_hash[:8]}: {result.skipped.reason}"
             )
 
     if jobs:
@@ -1227,7 +1223,7 @@ def handle_archive(
 
     # 4. Load existing state if resuming
     try:
-        already_archived = load_archived_sha256s(archived_csv_path)
+        already_archived = load_archived_hashes(archived_csv_path)
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -1339,7 +1335,7 @@ def handle_archive(
     if request.overwrite:
         rows_to_process = rows
     else:
-        rows_to_process = [r for r in rows if r.sha256 not in already_archived]
+        rows_to_process = [r for r in rows if r.audio_hash not in already_archived]
 
     if not rows_to_process:
         print("\nAll files already archived. Nothing to do.")
@@ -1417,7 +1413,7 @@ def handle_archive(
                 for row in rows_to_process:
                     source = Path(row.full_path)
                     output_path = compute_output_path(
-                        source, row.scan_root, output_dir, extension, row.sha256
+                        source, row.scan_root, output_dir, extension, row.audio_hash
                     )
 
                     future = executor.submit(
@@ -1447,7 +1443,7 @@ def handle_archive(
                         result = CompressionResult(
                             compressed=None,
                             skipped=ArchiveSkippedEntry(
-                                row.sha256, Path(row.full_path), f"exception: {exc}"
+                                row.audio_hash, Path(row.full_path), f"exception: {exc}"
                             ),
                         )
 
@@ -1456,7 +1452,7 @@ def handle_archive(
                         compressed.append(entry)
                         manifest_writer.write_entry(entry)
                         if result.warning:
-                            aac_warnings.append(entry.sha256)
+                            aac_warnings.append(entry.audio_hash)
                             retry = (
                                 "--backfill-aac --overwrite" if entry.aac_path else "--backfill-aac"
                             )

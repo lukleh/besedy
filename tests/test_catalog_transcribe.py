@@ -28,7 +28,7 @@ def test_unavailable_whisperx_runtime_fails_transcription(
     output_root = tmp_path / "transcripts"
     audio_hash = "a" * 64
     audio = tmp_path / "staged.wav"
-    row = CsvAudioRow(sha256=audio_hash, full_path=str(audio))
+    row = CsvAudioRow(audio_hash=audio_hash, full_path=str(audio))
     if workflow_id == "canary-nemo-beam":
         # NeMo already finished; WhisperX alone must produce transcript.json.
         output = transcribe_module.path_builder(config).workflow_dir(output_root) / audio_hash
@@ -218,7 +218,7 @@ def test_handle_transcribe_reports_already_complete_rows(
     transcript.mkdir(parents=True)
     (transcript / "transcript.json").write_text("{}", encoding="utf-8")
 
-    row = CsvAudioRow(sha256=audio_hash, full_path=str(tmp_path / "source.wav"))
+    row = CsvAudioRow(audio_hash=audio_hash, full_path=str(tmp_path / "source.wav"))
     summaries: list[dict[str, int]] = []
 
     def fail_validation(_rows) -> None:

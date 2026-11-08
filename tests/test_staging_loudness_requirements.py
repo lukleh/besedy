@@ -37,7 +37,7 @@ def _catalog(tmp_path: Path, rows: list[CsvAudioRow]) -> Path:
         for row in rows:
             writer.writerow(
                 {
-                    "Hash": row.sha256,
+                    "Hash": row.audio_hash,
                     "Full Path": row.full_path,
                     "Duration": "00:00:01",
                     **{name: getattr(row, name) for name in MEASUREMENTS},
@@ -96,7 +96,7 @@ def test_missing_measurement_skips_before_source_preparation(
 
     assert prepared == []
     assert len(skipped) == 1
-    assert skipped[0].sha256 == HASH
+    assert skipped[0].audio_hash == HASH
     assert skipped[0].source == source
     assert field in skipped[0].reason
     assert "catalog loudness" in skipped[0].reason
@@ -121,18 +121,18 @@ def test_complete_measurements_accept_zero_strings_and_silent_loudness(
         queued.append(actual)
         create_tone_wav(staged)
         return ConversionResult(
-            PreparedEntry(actual.sha256, original, staged, "convert", duration, True), None, (), ()
+            PreparedEntry(actual.audio_hash, original, staged, "convert", duration, True), None, (), ()
         )
 
     monkeypatch.setattr(normalize, "run_stage_conversion", convert)
 
-    incomplete = replace(row, sha256="b" * 64, true_peak_db=None)
+    incomplete = replace(row, audio_hash="b" * 64, true_peak_db=None)
     prepared, skipped = stage_rows([incomplete, row] if with_incomplete_row else [row])
 
     assert queued == [row]
     assert len(prepared) == 1
-    assert [entry.sha256 for entry in skipped] == (
-        [incomplete.sha256] if with_incomplete_row else []
+    assert [entry.audio_hash for entry in skipped] == (
+        [incomplete.audio_hash] if with_incomplete_row else []
     )
 
 
@@ -231,7 +231,7 @@ def test_empty_and_all_missing_catalogs_report_their_actual_outcome(
     if rows:
         assert "Skipped rows: 2" in output
         for row in rows:
-            assert row.sha256 in output
+            assert row.audio_hash in output
         for field in MEASUREMENTS:
             assert field in output
         assert "catalog loudness --overwrite" in output

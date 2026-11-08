@@ -721,7 +721,7 @@ def test_targeted_sync_reads_only_its_transcript(
     _write_transcript(paths[-1], [{"start": 0.0, "end": 1.0, "text": "unrelated edit"}])
     if change_target:
         _write_transcript(paths[0], [{"start": 0.0, "end": 1.0, "text": "requested edit"}])
-    original_load = rag_chunk_corpus.load_json_with_fallback
+    original_load = rag_chunk_corpus.load_json_utf8
     reads: list[Path] = []
 
     def load(path):
@@ -729,7 +729,7 @@ def test_targeted_sync_reads_only_its_transcript(
         assert path == paths[0], "unrelated transcript was parsed during targeted refresh"
         return original_load(path)
 
-    monkeypatch.setattr(rag_chunk_corpus, "load_json_with_fallback", load)
+    monkeypatch.setattr(rag_chunk_corpus, "load_json_utf8", load)
 
     result = sync_colbert_index(**kwargs, target_audio_hash=hashes[0])
 

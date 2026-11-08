@@ -57,14 +57,14 @@ validation failures.
 
 ### Strict JSON Loading
 
-Always use `load_json_with_fallback()` from `besedy.lib.data.encoding`, never
+Always use `load_json_utf8()` from `besedy.lib.data.encoding`, never
 bare `json.load()` or `json.loads(path.read_text())`. The loader reads strict
 UTF-8 and raises `ValueError` naming the file for both undecodable bytes and
 malformed JSON. It does not repair other encodings; the name is historical.
 
 Anti-pattern: `data = json.loads(path.read_text(encoding="utf-8"))`
 
-Do instead: `data = load_json_with_fallback(path)`
+Do instead: `data = load_json_utf8(path)`
 
 ### Required vs Optional
 
@@ -223,7 +223,7 @@ member, viewer, listener, noaccess, pending, blocked.
 
 ### Encoding: Never Use Bare json.load
 
-Always `load_json_with_fallback(path)`. Bare `json.loads(path.read_text())`
+Always `load_json_utf8(path)`. Bare `json.loads(path.read_text())`
 raises `UnicodeDecodeError` or `json.JSONDecodeError` without naming the file;
 the loader raises one `ValueError` that does.
 

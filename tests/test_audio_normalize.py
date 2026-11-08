@@ -126,14 +126,14 @@ class TestPreparedEntry:
         staged = tmp_path / "staged.wav"
 
         entry = PreparedEntry(
-            sha256=SAMPLE_AUDIO_HASH,
+            audio_hash=SAMPLE_AUDIO_HASH,
             source=source,
             staged=staged,
             action="convert",
             duration_seconds=90.5,
         )
 
-        assert entry.sha256 == SAMPLE_AUDIO_HASH
+        assert entry.audio_hash == SAMPLE_AUDIO_HASH
         assert entry.source == source
         assert entry.staged == staged
         assert entry.action == "convert"
@@ -146,7 +146,7 @@ class TestPreparedEntry:
         staged = tmp_path / "staged.wav"
 
         entry = PreparedEntry(
-            sha256="abc123",
+            audio_hash="abc123",
             source=source,
             staged=staged,
             action="convert",
@@ -159,7 +159,7 @@ class TestPreparedEntry:
     def test_is_frozen(self, tmp_path):
         """Test that PreparedEntry is immutable."""
         entry = PreparedEntry(
-            sha256="abc",
+            audio_hash="abc",
             source=tmp_path / "s.wav",
             staged=tmp_path / "t.wav",
             action="symlink",
@@ -167,7 +167,7 @@ class TestPreparedEntry:
         )
 
         with pytest.raises(AttributeError):
-            entry.sha256 = "changed"
+            entry.audio_hash = "changed"
 
     def test_action_types(self, tmp_path):
         """Test different action types."""
@@ -176,7 +176,7 @@ class TestPreparedEntry:
 
         for action in ["symlink", "convert", "existing"]:
             entry = PreparedEntry(
-                sha256="hash",
+                audio_hash="hash",
                 source=source,
                 staged=staged,
                 action=action,
@@ -193,19 +193,19 @@ class TestSkippedEntry:
         source = tmp_path / "missing.wav"
 
         entry = SkippedEntry(
-            sha256="def789",
+            audio_hash="def789",
             source=source,
             reason="file not found",
         )
 
-        assert entry.sha256 == "def789"
+        assert entry.audio_hash == "def789"
         assert entry.source == source
         assert entry.reason == "file not found"
 
     def test_is_frozen(self, tmp_path):
         """Test that SkippedEntry is immutable."""
         entry = SkippedEntry(
-            sha256="abc",
+            audio_hash="abc",
             source=tmp_path / "s.wav",
             reason="test",
         )
@@ -225,7 +225,7 @@ class TestSkippedEntry:
         ]
 
         for reason in reasons:
-            entry = SkippedEntry(sha256="hash", source=source, reason=reason)
+            entry = SkippedEntry(audio_hash="hash", source=source, reason=reason)
             assert entry.reason == reason
 
 
@@ -257,7 +257,7 @@ class TestConversionResult:
     def test_successful_result(self, tmp_path):
         """Test creating a successful conversion result."""
         entry = PreparedEntry(
-            sha256="abc",
+            audio_hash="abc",
             source=tmp_path / "s.wav",
             staged=tmp_path / "t.wav",
             action="convert",
@@ -280,7 +280,7 @@ class TestConversionResult:
     def test_skipped_result(self, tmp_path):
         """Test creating a skipped conversion result."""
         skipped = SkippedEntry(
-            sha256="def",
+            audio_hash="def",
             source=tmp_path / "missing.wav",
             reason="file not found",
         )
@@ -381,7 +381,7 @@ class TestManifestWriter:
         staged.touch()
 
         entry = PreparedEntry(
-            sha256=SAMPLE_AUDIO_HASH,
+            audio_hash=SAMPLE_AUDIO_HASH,
             source=tmp_path / "source.wav",
             staged=staged,
             action="convert",
@@ -413,7 +413,7 @@ class TestManifestWriter:
             staged.touch()
 
             entry = PreparedEntry(
-                sha256=f"hash{i}",
+                audio_hash=f"hash{i}",
                 source=tmp_path / f"source_{i}.wav",
                 staged=staged,
                 action="convert",
@@ -444,7 +444,7 @@ class TestManifestWriter:
             staged.touch()
 
             entry = PreparedEntry(
-                sha256=f"hash{idx}",
+                audio_hash=f"hash{idx}",
                 source=tmp_path / f"source_{idx}.wav",
                 staged=staged,
                 action="convert",
@@ -508,11 +508,11 @@ class TestStageAudioFilesReuseExisting:
         from besedy.lib.audio.normalize import stage_audio_files
         from besedy.lib.workflow.common import CsvAudioRow
 
-        sha256 = "a" * 64
+        audio_hash = "a" * 64
         missing_source = tmp_path / "missing.mp3"
         staging_dir = tmp_path / "staging"
         staging_dir.mkdir()
-        staged_path = staging_dir / f"{sha256}.wav"
+        staged_path = staging_dir / f"{audio_hash}.wav"
         staged_path.write_bytes(b"RIFFtest")
 
         manifest_path = tmp_path / "manifest.csv"
@@ -521,7 +521,7 @@ class TestStageAudioFilesReuseExisting:
         prepared, skipped = stage_audio_files(
             rows=[
                 CsvAudioRow(
-                    sha256=sha256,
+                    audio_hash=audio_hash,
                     full_path=str(missing_source),
                     duration_seconds=1.0,
                 )
@@ -547,7 +547,7 @@ class TestStageAudioFilesReuseExisting:
             rows = list(csv.DictReader(handle))
 
         assert len(rows) == 1
-        assert rows[0]["Hash"] == sha256
+        assert rows[0]["Hash"] == audio_hash
         assert rows[0]["Full Path"] == str(staged_path)
 
 
@@ -566,7 +566,7 @@ class TestStageAudioFilesIntegration:
 
         measurements = analyze_audio_file(wav_with_tone)
         row = CsvAudioRow(
-            sha256="a" * 64,
+            audio_hash="a" * 64,
             full_path=str(wav_with_tone),
             duration_seconds=1.0,
             integrated_loudness_lufs=measurements.integrated_loudness_lufs,

@@ -289,7 +289,7 @@ def handle_transcribe(
                 file=sys.stderr,
             )
             return 1
-        rows = [row for row in rows if row.sha256.strip().lower() == target_hash]
+        rows = [row for row in rows if row.audio_hash.strip().lower() == target_hash]
         if not rows:
             print(
                 f"Error: hash {target_hash} not found in {csv_path.name}.",
@@ -369,7 +369,7 @@ def handle_transcribe(
     already_complete = 0
 
     for row in rows:
-        hash_component = hash_component_from_sha(row.sha256)
+        hash_component = hash_component_from_sha(row.audio_hash)
         row_needs_any_work = False
 
         for cfg in selected_configs:
@@ -423,11 +423,11 @@ def handle_transcribe(
     selected_sha256s: set[str] = set()
     for cfg in selected_configs:
         for row, hash_component in candidates_by_config[cfg]:
-            selected_sha256s.add(row.sha256)
+            selected_sha256s.add(row.audio_hash)
         for row, hash_component in align_candidates_by_config[cfg]:
-            selected_sha256s.add(row.sha256)
+            selected_sha256s.add(row.audio_hash)
 
-    filtered_rows: list[CsvAudioRow] = [row for row in rows if row.sha256 in selected_sha256s]
+    filtered_rows: list[CsvAudioRow] = [row for row in rows if row.audio_hash in selected_sha256s]
 
     if not filtered_rows:
         print("No audio files require transcription.")

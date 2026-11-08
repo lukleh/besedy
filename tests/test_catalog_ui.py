@@ -12,7 +12,7 @@ def make_prepared_entry() -> PreparedEntry:
     """Create a minimal prepared entry for workflow summary tests."""
 
     return PreparedEntry(
-        sha256="a" * 64,
+        audio_hash="a" * 64,
         source=Path("/tmp/source.wav"),
         staged=Path("/tmp/staged.wav"),
         action="existing",
@@ -25,7 +25,7 @@ def make_skipped_entry(char: str, reason: str = "file not found") -> SkippedEntr
     """Create a skipped entry whose sha256 is ``char`` repeated."""
 
     return SkippedEntry(
-        sha256=char * 64,
+        audio_hash=char * 64,
         source=Path(f"/tmp/{char}.wav"),
         reason=reason,
     )
