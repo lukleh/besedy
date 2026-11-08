@@ -60,6 +60,7 @@ vi.mock('@/lib/ingest/removal', () => ({
 
 vi.mock('@/lib/db', () => ({
   default: {
+    workflowGroup: { findUnique: vi.fn() },
     recordingIntake: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -149,6 +150,7 @@ describe('admin ingest removal', () => {
   let syncCatalogGroup: ReturnType<typeof vi.fn>;
   let logContentEvent: ReturnType<typeof vi.fn>;
   let prisma: {
+    workflowGroup: { findUnique: ReturnType<typeof vi.fn> };
     recordingIntake: {
       findMany: ReturnType<typeof vi.fn>;
       findUnique: ReturnType<typeof vi.fn>;
@@ -161,6 +163,7 @@ describe('admin ingest removal', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     process.env = { ...originalEnv, BESEDY_JOB_SERVICE_SECRET: 'job-secret' };
+    vi.stubEnv('BESEDY_ARCHIVE_ID', CATALOG_ID);
     mocks.uploadsDir = await fs.mkdtemp(
       path.join(os.tmpdir(), 'besedy-remove-'),
     );
@@ -182,6 +185,7 @@ describe('admin ingest removal', () => {
     logContentEvent = (await import('@/lib/audit/logger'))
       .logContentEvent as ReturnType<typeof vi.fn>;
     prisma = (await import('@/lib/db')).default as unknown as typeof prisma;
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: CATALOG_ID, isActive: true });
     prisma.recordingIntake.updateMany.mockResolvedValue({ count: 1 });
     removeRecordingWebState.mockResolvedValue({
       detachedEventId: 7,

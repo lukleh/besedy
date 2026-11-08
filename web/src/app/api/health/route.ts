@@ -1,5 +1,5 @@
 import prisma from '@/lib/db';
-import { getConfiguredArchive } from '@/lib/archive';
+import { requireArchive } from '@/lib/archive';
 import {
   getCatalogStartupSyncConfig,
   getCatalogStartupSyncState,
@@ -16,7 +16,7 @@ export async function GET() {
   try {
     // Verify database connectivity with a simple query
     await prisma.$queryRaw`SELECT 1`;
-    await getConfiguredArchive();
+    await requireArchive();
 
     const catalogProjection = getCatalogStartupSyncState();
     const { requiredForReadiness } = getCatalogStartupSyncConfig();

@@ -80,11 +80,11 @@ def validate_catalog_id(value: object) -> str:
     return rendered
 
 
-def get_configured_archive_id() -> str | None:
-    """The optional deployment binding during the single-archive transition."""
+def require_archive_id() -> str:
+    """Require the deployment's explicit archive before any job work."""
     raw = os.getenv("BESEDY_ARCHIVE_ID", "").strip()
     if not raw:
-        return None
+        raise ValueError("BESEDY_ARCHIVE_ID is required for deployment jobs.")
     if not _CATALOG_ID_RE.fullmatch(raw):
         raise ValueError("BESEDY_ARCHIVE_ID must look like YYYYMMDD_HHMMSS.")
     return raw
@@ -92,8 +92,7 @@ def get_configured_archive_id() -> str | None:
 
 def validate_deployment_catalog_id(value: object) -> str:
     catalog_id = validate_catalog_id(value)
-    archive_id = get_configured_archive_id()
-    if archive_id is not None and catalog_id != archive_id:
+    if catalog_id != require_archive_id():
         raise ValueError("Catalog does not match this deployment's BESEDY_ARCHIVE_ID.")
     return catalog_id
 
