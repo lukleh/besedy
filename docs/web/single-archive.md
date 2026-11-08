@@ -37,8 +37,9 @@ unknown IDs are not rewritten onto the archive. Display settings still use
 `/api/preferences`, whose API no longer accepts an active-catalog selection.
 The old catalog list/create/discover and source deactivation APIs are removed.
 Source settings retain label and path updates with their existing permission
-checks; `isDefault` and `isActive` are no longer accepted update fields. Their
-stored values and source foreign keys remain available for historical records.
+checks; `isActive` is not an accepted update field. The obsolete default-source
+flag and per-user active-source preference have been removed from storage.
+Source foreign keys remain available for historical records.
 
 ## Registering a source on a new database
 
