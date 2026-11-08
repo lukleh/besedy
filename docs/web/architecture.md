@@ -273,7 +273,6 @@ call it. Endpoints not listed above:
 | GET | `/api/catalogs/:id/features` | Event and recording capabilities for the caller in this catalog |
 | GET | `/api/catalogs/:id/status` | `lastModifiedAt` and entry count for change detection |
 | GET | `/api/catalogs/:id/users` | User search for the access-grant dialog |
-| GET | `/api/catalogs/:id/random-event` | Event shown in the radio banner |
 | GET | `/api/catalogs/:id/transcript-export` | Download the catalog's visible transcripts (`zip` or `txt`) |
 | GET/PUT | `/api/catalogs/:id/recordings/:hash/progress` | Playback progress |
 | PATCH | `/api/catalogs/:id/recordings/:hash/ready` | Manual publication toggle (`publish_recording`) |

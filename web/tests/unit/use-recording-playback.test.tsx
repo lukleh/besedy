@@ -5,12 +5,6 @@ import { useRecordingPlayback } from "@/app/(app)/catalog/[catalogId]/recording/
 
 const mocks = vi.hoisted(() => ({
   searchParams: new URLSearchParams(),
-  radio: {
-    currentTrack: null as { hash: string } | null,
-    handOffPlayback: vi.fn(() => ({ time: 0, wasPlaying: false })),
-    isActive: false,
-    stopRadio: vi.fn(),
-  },
   setRecordingPlaying: vi.fn(),
   session: { userId: null as string | null },
   downloadRecord: null as { userId: string | null } | null,
@@ -23,13 +17,8 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => mocks.searchParams,
 }));
 
-vi.mock("@/contexts/radio-mode-context", () => ({
-  useRadioMode: () => mocks.radio,
-}));
-
 vi.mock("@/contexts/audio-playback-context", () => ({
   useAudioPlayback: () => ({
-    isAudioPlaying: false,
     setRecordingPlaying: mocks.setRecordingPlaying,
   }),
 }));
@@ -73,12 +62,6 @@ describe("useRecordingPlayback", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-01T10:00:00Z"));
     mocks.searchParams = new URLSearchParams();
-    mocks.radio = {
-      currentTrack: null,
-      handOffPlayback: vi.fn(() => ({ time: 0, wasPlaying: false })),
-      isActive: false,
-      stopRadio: vi.fn(),
-    };
     mocks.session.userId = null;
     mocks.flushPendingPlaybackProgress.mockResolvedValue({
       attempted: 0,
@@ -178,48 +161,14 @@ describe("useRecordingPlayback", () => {
     expect(result.current.seekRequest?.time).toBe(42);
   });
 
-  it("hands off radio playback when arriving from the radio on the same recording", async () => {
-    mocks.searchParams = new URLSearchParams({ fromRadio: "true" });
-    mocks.radio = {
-      currentTrack: { hash: HASH },
-      handOffPlayback: vi.fn(() => ({ time: 42, wasPlaying: true })),
-      isActive: true,
-      stopRadio: vi.fn(),
-    };
+  it("clears the shared playback state when the event page closes", () => {
+    const { result, unmount } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH));
 
-    // StrictMode double-invokes the effect (setup -> cleanup -> setup), the
-    // condition under which the old deferred-microtask handoff silently dropped
-    // the seek. The handoff must still apply the position exactly once.
-    const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH), {
-      wrapper: StrictMode,
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
+    act(() => result.current.handlePlayingChange(true));
+    expect(mocks.setRecordingPlaying).toHaveBeenLastCalledWith(true);
 
-    expect(mocks.radio.handOffPlayback).toHaveBeenCalledTimes(1);
-    expect(mocks.radio.stopRadio).not.toHaveBeenCalled();
-    // Playback continues at the handed-off position, auto-playing since the
-    // radio was playing.
-    expect(result.current.seekRequest?.time).toBe(42);
-    expect(result.current.autoPlayOnSeek).toBe(true);
-  });
-
-  it("stops the radio (no handoff) when opened without the fromRadio flag", async () => {
-    mocks.radio = {
-      currentTrack: { hash: HASH },
-      handOffPlayback: vi.fn(() => ({ time: 42, wasPlaying: true })),
-      isActive: true,
-      stopRadio: vi.fn(),
-    };
-
-    renderHook(() => useRecordingPlayback(CATALOG_ID, HASH), { wrapper: StrictMode });
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(mocks.radio.stopRadio).toHaveBeenCalledTimes(1);
-    expect(mocks.radio.handOffPlayback).not.toHaveBeenCalled();
+    unmount();
+    expect(mocks.setRecordingPlaying).toHaveBeenLastCalledWith(false);
   });
 
   it("restores a bounded seek from the URL", () => {
@@ -246,8 +195,8 @@ describe("useRecordingPlayback", () => {
   });
 
   it("restores a saved position synchronously under React Strict Mode", async () => {
-    // Twin of the handoff seek: the same StrictMode setup -> cleanup -> setup
-    // would drop a deferred-microtask restore, so it must be synchronous.
+    // StrictMode's setup -> cleanup -> setup would drop a deferred-microtask
+    // restore, so restoring the saved position must be synchronous.
     localStorage.setItem(STORAGE_KEY, "47");
 
     const { result } = renderHook(() => useRecordingPlayback(CATALOG_ID, HASH), {
@@ -671,33 +620,6 @@ describe("useRecordingPlayback", () => {
     mocks.session.userId = "user-2";
     rerender();
     expect(result.current.setCurrentTime).toBe(first);
-  });
-
-  it("does not run server restoration after a radio handoff", async () => {
-    mocks.searchParams = new URLSearchParams({ fromRadio: "true" });
-    const handOffPlayback = vi.fn(() => ({ time: 42, wasPlaying: false }));
-    mocks.radio = {
-      currentTrack: { hash: HASH },
-      handOffPlayback,
-      isActive: true,
-      stopRadio: vi.fn(),
-    };
-
-    const { rerender } = renderHook(() =>
-      useRecordingPlayback(CATALOG_ID, HASH)
-    );
-    mocks.radio = {
-      currentTrack: null,
-      handOffPlayback,
-      isActive: false,
-      stopRadio: vi.fn(),
-    };
-    rerender();
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("keeps actual-end completion durable without a later unfinished save", async () => {

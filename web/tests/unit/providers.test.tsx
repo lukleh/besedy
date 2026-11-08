@@ -16,16 +16,8 @@ vi.mock("@/contexts/text-size-context", () => ({
   TextSizeProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/contexts/radio-mode-context", () => ({
-  RadioModeProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
-
 vi.mock("@/contexts/audio-playback-context", () => ({
   AudioPlaybackProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
-
-vi.mock("@/components/radio/radio-sleep-timer-target", () => ({
-  RadioSleepTimerTarget: () => null,
 }));
 
 vi.mock("@/contexts/service-worker-context", () => ({

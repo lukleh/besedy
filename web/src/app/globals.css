@@ -169,22 +169,6 @@
   padding-right: env(safe-area-inset-right);
 }
 
-/* Radio mode pulse animation */
-@keyframes pulse-radio {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.7;
-    transform: scale(1.1);
-  }
-}
-
-.animate-pulse-radio {
-  animation: pulse-radio 1.5s ease-in-out infinite;
-}
-
 /* View transitions animate only named content, such as the event slide
  * below; the rest of the page switches at once. Normal blending keeps the
  * default additive mix of two full-opacity snapshots from lightening it. */

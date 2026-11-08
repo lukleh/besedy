@@ -1,15 +1,14 @@
 /**
  * Sleep timer countdown.
  *
- * The countdown only runs while audio plays: pausing, buffering and the gap
- * between radio tracks do not use it up. Elapsed time is measured between
+ * The countdown only runs while audio plays: pausing, buffering and moving
+ * between players do not use it up. Elapsed time is measured between
  * calls, so a throttled background tab still counts every second it played;
  * a late tick catches up instead of losing time.
  *
  * It runs out once, on a tick while audio plays, and then switches itself
  * off; only a new `start` sets it again. Reaching zero as playback stops
- * leaves it at zero, so whatever plays next — radio's next track, a network
- * recovery — runs it out on the next tick.
+ * leaves it at zero, so resumed playback runs it out on the next tick.
  */
 
 export const SLEEP_TIMER_MINUTES = [15, 30, 45, 60] as const;

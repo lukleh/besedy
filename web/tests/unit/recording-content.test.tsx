@@ -139,7 +139,6 @@ describe("RecordingContent transcript toggle", () => {
     });
     useOnlineStatusMock.mockReturnValue({ isOnline: true });
     useRecordingPlaybackMock.mockReturnValue({
-      autoPlayOnSeek: false,
       clock: createPlaybackClock(),
       handleAudioEnded: vi.fn(),
       handleDurationChange: vi.fn(),

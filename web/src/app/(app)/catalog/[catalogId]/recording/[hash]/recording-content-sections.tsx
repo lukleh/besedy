@@ -62,7 +62,6 @@ interface RecordingAudioSectionProps {
   beforeAudioPlayer?: ReactNode;
   afterAudioPlayer?: ReactNode;
   audioUrl: string;
-  autoPlayOnSeek: boolean;
   /** Shown under the player's own controls. */
   bookmarksPanel?: ReactNode;
   bookmarkMarkers?: readonly number[];
@@ -243,7 +242,6 @@ export function RecordingAudioSection({
   beforeAudioPlayer,
   afterAudioPlayer,
   audioUrl,
-  autoPlayOnSeek,
   bookmarksPanel,
   bookmarkMarkers,
   onBookmark,
@@ -283,7 +281,6 @@ export function RecordingAudioSection({
         seekTo={seekRequest?.time}
         seekKey={seekRequest?.key}
         playbackEnd={seekRequest?.end}
-        autoPlayOnSeek={autoPlayOnSeek}
         markers={bookmarkMarkers}
         onBookmark={onBookmark}
         mediaMetadata={{

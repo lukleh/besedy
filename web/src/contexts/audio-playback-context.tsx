@@ -4,18 +4,12 @@ import {
   createContext,
   useContext,
   useState,
-  useCallback,
   type ReactNode,
 } from "react";
-import { useRadioMode } from "@/contexts/radio-mode-context";
 import { useReloadBlocker } from "@/contexts/reload-safety-context";
 
 /**
- * Global audio playback tracking context.
- *
- * Aggregates audio playback state from multiple sources:
- * - Radio mode (RadioModeContext.isPlaying)
- * - Recording detail page (local player)
+ * Tracks the recording page's playback state.
  *
  * Used by service worker update logic to delay auto-apply
  * when audio is playing, preventing interruption.
@@ -23,11 +17,7 @@ import { useReloadBlocker } from "@/contexts/reload-safety-context";
 
 interface AudioPlaybackContextValue {
   /**
-   * True if any audio source is currently playing
-   */
-  isAudioPlaying: boolean;
-  /**
-   * True while the recording page's own player is playing (radio excluded)
+   * True while the recording page's player is playing
    */
   isRecordingPlaying: boolean;
   /**
@@ -39,15 +29,8 @@ interface AudioPlaybackContextValue {
 const AudioPlaybackContext = createContext<AudioPlaybackContextValue | undefined>(undefined);
 
 export function AudioPlaybackProvider({ children }: { children: ReactNode }) {
-  const { isPlaying: isRadioPlaying } = useRadioMode();
-  const [isRecordingPlaying, setIsRecordingPlaying] = useState(false);
+  const [isRecordingPlaying, setRecordingPlaying] = useState(false);
 
-  const setRecordingPlaying = useCallback((playing: boolean) => {
-    setIsRecordingPlaying(playing);
-  }, []);
-
-  // Combined state: any source playing means audio is playing
-  const isAudioPlaying = isRadioPlaying || isRecordingPlaying;
   useReloadBlocker(
     {
       id: "audio-playback",
@@ -55,11 +38,11 @@ export function AudioPlaybackProvider({ children }: { children: ReactNode }) {
       blocksAutomatic: true,
       blocksManual: false,
     },
-    isAudioPlaying
+    isRecordingPlaying
   );
 
   return (
-    <AudioPlaybackContext.Provider value={{ isAudioPlaying, isRecordingPlaying, setRecordingPlaying }}>
+    <AudioPlaybackContext.Provider value={{ isRecordingPlaying, setRecordingPlaying }}>
       {children}
     </AudioPlaybackContext.Provider>
   );

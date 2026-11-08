@@ -437,7 +437,7 @@ export function useAudioRecovery({
   // the recovery seek; until then the retry state holds where the listener was.
   const relativeSeekBase = useCallback((audio: HTMLAudioElement) => {
     // Without metadata the element reports 0 wherever the listener is: a
-    // queued seek (saved position, ?seek=, handoff, transport switch) is the
+    // queued seek (saved position, ?seek=, external seek, transport switch) is the
     // position.
     if (audio.readyState < 1 && pendingSeekRef.current) {
       return pendingSeekRef.current.time;

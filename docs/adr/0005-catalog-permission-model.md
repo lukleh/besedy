@@ -293,7 +293,7 @@ than taken, which is what makes the role name worth reading.
 | Permission          | Covers                                                                                                |
 | ------------------- | ----------------------------------------------------------------------------------------------------- |
 | `browse_recordings` | The recordings list as a surface. Today this is an accident of the tab switcher; it becomes a choice. |
-| `stream_audio`      | Playback, including radio mode and offline caching.                                                   |
+| `stream_audio`      | Playback, including offline caching.                                                                  |
 
 ### Transcripts
 

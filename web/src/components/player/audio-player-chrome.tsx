@@ -195,7 +195,7 @@ export function AudioPlayerChrome({
           </div>
 
           <div className="absolute right-0 hidden items-center justify-end gap-2 sm:flex">
-            {sleepTimerEnabled && <SleepTimerButton variant="player" />}
+            {sleepTimerEnabled && <SleepTimerButton />}
             <Button
               variant="ghost"
               size="icon"
@@ -264,7 +264,7 @@ export function AudioPlayerChrome({
                 <Volume2 className="size-6" />
               )}
             </Button>
-            {sleepTimerEnabled && <SleepTimerButton variant="player" />}
+            {sleepTimerEnabled && <SleepTimerButton />}
           </div>
         </div>
       </div>

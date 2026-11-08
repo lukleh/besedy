@@ -19,8 +19,7 @@ import { createSleepCountdown } from "@/lib/sleep-timer/countdown";
  * Off until the listener sets it. It counts down while any registered player
  * plays, then asks every player to fade out and pause, and switches itself
  * off. It lives in memory only, so a reload or a closed tab cancels it;
- * moving between pages does not, which lets it follow radio across the app
- * and into the event page that radio hands playback to.
+ * moving between pages preserves the remaining time for the next player.
  */
 
 const TICK_MS = 1_000;

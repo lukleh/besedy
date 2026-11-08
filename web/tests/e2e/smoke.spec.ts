@@ -174,26 +174,4 @@ test.describe("Smoke Tests @smoke", () => {
     await expect(page.getByText(/correction has not started/i)).toBeVisible({ timeout: 15000 });
     await expect(page.locator("[data-segment-index]")).toHaveCount(0);
   });
-
-  test("user can start radio mode", async ({ page }) => {
-    await loginAs(page, "viewer");
-    await page.goto(URLS.catalog);
-    await waitForPageReady(page);
-
-    // Start radio via header button
-    const startButton = page.locator("header").getByRole("button", { name: /start radio/i });
-    await expect(startButton).toBeVisible({ timeout: 10000 });
-    await startButton.click();
-
-    // Radio controls should appear (indicates playback started)
-    const skipButton = page.getByRole("button", { name: /skip to next/i });
-    await expect(skipButton).toBeVisible({ timeout: 15000 });
-
-    // Stop radio
-    const stopButton = page.locator("header").getByRole("button", { name: /stop radio/i });
-    await stopButton.click({ force: true });
-
-    // Start button should return
-    await expect(startButton).toBeVisible({ timeout: 5000 });
-  });
 });
