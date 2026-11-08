@@ -7,7 +7,7 @@ import { useTranslations } from "next-intl";
 import { useToast } from "@/hooks/use-toast";
 import { isAccessDeniedError } from "@/lib/query/auth-sensitive";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
-import { useFilterOptions, type CatalogFilters, type FilterOptionsResponse } from "@/hooks/use-filter-options";
+import { useFilterOptions, type FilterOptionsResponse } from "@/hooks/use-filter-options";
 import { useRecorders, useLocations, useAlbums } from "@/hooks/use-metadata-enums";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { useColumnResize, type ColumnKey as ResizeColumnKey } from "@/hooks/use-column-resize";
@@ -29,21 +29,6 @@ import {
   type RagSearchResult,
 } from "./use-rag-search";
 import { useUrlFilterSync } from "./use-url-filter-sync";
-
-const DEFAULT_COLUMN_VISIBILITY: Record<ColumnKey, boolean> = {
-  title: true,
-  date: true,
-  part: true,
-  recorder: true,
-  location: true,
-  duration: false,
-  artist: false,
-  album: false,
-  status: true,
-  verified: false,
-  duplicates: false,
-  offline: true,
-};
 
 function resolveCatalogName(
   archive: { label?: string | null; id?: string | null } | null | undefined,
@@ -268,15 +253,10 @@ export function useCatalogListController({
     catalogValidationLoading,
   } = useCatalogContext(catalogId);
 
-  const [columnVisibilityState, setColumnVisibilityState] = useState<Record<ColumnKey, boolean>>(
-    () => DEFAULT_COLUMN_VISIBILITY
-  );
-
   const filters = useCatalogFilters({
     catalogId,
     activeCatalogId,
     isHydrated,
-    columnVisibility: columnVisibilityState,
   });
 
   const {
@@ -307,49 +287,11 @@ export function useCatalogListController({
     canManageAccess,
   });
 
-  const visibleColumnKeys = useMemo(
-    () => columnVisibility.visibleColumnKeys,
-    [columnVisibility.visibleColumnKeys]
-  );
-
-  useEffect(() => {
-    setColumnVisibilityState(columnVisibility.columnVisibility);
-  }, [columnVisibility.columnVisibility]);
-
-  const currentFilters: CatalogFilters = useMemo(
-    () => ({
-      status: filters.statusFilter,
-      duration: filters.durationFilter,
-      verified: filters.verifiedFilter,
-      recorder: filters.recorderFilter,
-      location: filters.locationFilter,
-      part: filters.partFilter,
-      dateYear: filters.dateYear,
-      dateMonth: filters.dateMonth,
-      dateDay: filters.dateDay,
-      artist: filters.artistFilter,
-      album: filters.albumFilter,
-      duplicates: filters.duplicatesFilter,
-    }),
-    [
-      filters.statusFilter,
-      filters.durationFilter,
-      filters.verifiedFilter,
-      filters.recorderFilter,
-      filters.locationFilter,
-      filters.partFilter,
-      filters.dateYear,
-      filters.dateMonth,
-      filters.dateDay,
-      filters.artistFilter,
-      filters.albumFilter,
-      filters.duplicatesFilter,
-    ]
-  );
+  const visibleColumnKeys = columnVisibility.visibleColumnKeys;
 
   const { data: filterOptions, error: filterOptionsError } = useFilterOptions({
     groupId: activeCatalogId ?? undefined,
-    filters: currentFilters,
+    filters: filters.values,
     enabled: !catalogNotFound && !catalogValidationLoading,
   });
 
@@ -393,22 +335,8 @@ export function useCatalogListController({
 
   const { data, isLoading, isFetching, error, dataUpdatedAt } = useCatalogData({
     activeCatalogId,
-    statusFilter: filters.statusFilter,
-    durationFilter: filters.durationFilter,
-    verifiedFilter: filters.verifiedFilter,
-    recorderFilter: filters.recorderFilter,
-    locationFilter: filters.locationFilter,
-    partFilter: filters.partFilter,
-    dateYear: filters.dateYear,
-    dateMonth: filters.dateMonth,
-    dateDay: filters.dateDay,
-    artistFilter: filters.artistFilter,
-    albumFilter: filters.albumFilter,
-    duplicatesFilter: filters.duplicatesFilter,
-    sortKey: filters.sortKey,
-    sortDir: filters.sortDir,
+    filters: filters.values,
     page: filters.page,
-    visibleColumnKeys,
     enabled:
       !catalogNotFound &&
       !catalogValidationLoading &&
@@ -418,20 +346,7 @@ export function useCatalogListController({
 
   const loadMore = useLoadMore({
     activeCatalogId,
-    statusFilter: filters.statusFilter,
-    durationFilter: filters.durationFilter,
-    verifiedFilter: filters.verifiedFilter,
-    recorderFilter: filters.recorderFilter,
-    locationFilter: filters.locationFilter,
-    partFilter: filters.partFilter,
-    dateYear: filters.dateYear,
-    dateMonth: filters.dateMonth,
-    dateDay: filters.dateDay,
-    artistFilter: filters.artistFilter,
-    albumFilter: filters.albumFilter,
-    duplicatesFilter: filters.duplicatesFilter,
-    sortKey: filters.sortKey,
-    sortDir: filters.sortDir,
+    filters: filters.values,
     currentPage: filters.page,
     currentEntries: data?.entries ?? [],
     pagination: data?.pagination,
@@ -506,7 +421,7 @@ export function useCatalogListController({
       filters.resetPageIfInvalid(data.pagination.totalPages);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.pagination?.totalPages, filters.resetPageIfInvalid]);
+  }, [data?.pagination?.totalPages, filters.page, filters.resetPageIfInvalid]);
 
   const { markAsSynced } = useCatalogStatus(activeCatalogId ?? null);
 
