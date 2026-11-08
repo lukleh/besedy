@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { assertArchiveCatalogId } from "@/lib/archive";
 import { z } from "zod";
 import { authorizeJobServiceRequest } from "@/lib/security/job-service-auth";
 import { HashSchema, TimestampIdSchema } from "@/lib/validation/schemas";
@@ -50,6 +51,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Invalid query", issues: query.error.issues }, { status: 400 });
     }
 
+    await assertArchiveCatalogId(query.data.catalogId);
     return NextResponse.json(
       await buildTrainingExport(
         query.data.catalogId,

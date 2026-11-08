@@ -5,7 +5,7 @@ import {
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
   renderMcpListContent,
-  resolveToolCatalog,
+  resolveToolArchive,
   runReadTool,
   toolError,
 } from '@/lib/mcp/tools/shared';
@@ -43,11 +43,11 @@ export function registerListLocationsTool(
       outputSchema: ListLocationsOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
-    async ({ catalogId, query, cursor, limit }) => {
-      const catalog = resolveToolCatalog(profile, catalogId);
-      if ('error' in catalog) return toolError(catalog.code, catalog.error);
+    async ({ query, cursor, limit }) => {
+      const archive = resolveToolArchive(profile);
+      if ('error' in archive) return toolError(archive.code, archive.error);
       return runReadTool(
-        () => listMcpLocations(catalog.id, { query, cursor, limit }),
+        () => listMcpLocations(archive.id, { query, cursor, limit }),
         (result) => `Listed ${result.locations.length} event location(s).`,
         renderLocationListContent,
       );

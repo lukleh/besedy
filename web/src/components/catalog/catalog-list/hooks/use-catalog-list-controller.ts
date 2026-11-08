@@ -46,10 +46,10 @@ const DEFAULT_COLUMN_VISIBILITY: Record<ColumnKey, boolean> = {
 };
 
 function resolveCatalogName(
-  activeGroup: { label?: string | null; id?: string | null } | null | undefined,
+  archive: { label?: string | null; id?: string | null } | null | undefined,
   catalogId: string | undefined
 ) {
-  return activeGroup?.label || activeGroup?.id || catalogId;
+  return archive?.label || archive?.id || catalogId;
 }
 
 function getFilterOptionLists(filterOptions: FilterOptionsResponse | undefined) {
@@ -262,8 +262,8 @@ export function useCatalogListController({
 
   const {
     catalogId: activeCatalogId,
-    activeGroup,
-    isLoading: loadingPreferences,
+    archive,
+    isLoading: loadingArchive,
     catalogNotFound,
     catalogValidationLoading,
   } = useCatalogContext(catalogId);
@@ -640,9 +640,9 @@ export function useCatalogListController({
     [filters, setDateMonth, setDateDay]
   );
 
-  const catalogName = resolveCatalogName(activeGroup, catalogId);
+  const catalogName = resolveCatalogName(archive, catalogId);
 
-  if (catalogValidationLoading || loadingPreferences || isLoading) {
+  if (catalogValidationLoading || loadingArchive || isLoading) {
     return {
       status: "loading",
       catalogName,

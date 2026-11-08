@@ -68,7 +68,7 @@ vi.mock('@/lib/catalog-sync', () => ({
 
 vi.mock('@/lib/db', () => ({
   default: {
-    workflowGroup: { findFirst: vi.fn() },
+    workflowGroup: { findFirst: vi.fn(), findUnique: vi.fn() },
     recordingIntake: {
       create: vi.fn(),
       findMany: vi.fn(),
@@ -152,7 +152,7 @@ describe('admin ingest routes', () => {
   let logContentEvent: ReturnType<typeof vi.fn>;
   let syncCatalogGroup: ReturnType<typeof vi.fn>;
   let prisma: {
-    workflowGroup: { findFirst: ReturnType<typeof vi.fn> };
+    workflowGroup: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
     recordingIntake: {
       create: ReturnType<typeof vi.fn>;
       findMany: ReturnType<typeof vi.fn>;
@@ -166,6 +166,7 @@ describe('admin ingest routes', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.stubEnv('BESEDY_ARCHIVE_ID', CATALOG_ID);
     mocks.uploadsDir = await fs.mkdtemp(
       path.join(os.tmpdir(), 'besedy-ingest-'),
     );
@@ -182,6 +183,7 @@ describe('admin ingest routes', () => {
     syncCatalogGroup = (await import('@/lib/catalog-sync'))
       .syncCatalogGroup as ReturnType<typeof vi.fn>;
     prisma = (await import('@/lib/db')).default as unknown as typeof prisma;
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: CATALOG_ID, isActive: true });
 
     requireAuth.mockResolvedValue('admin-1');
     getAdminCapability.mockResolvedValue({ canAccessAdmin: true });
@@ -763,4 +765,38 @@ describe('admin ingest routes', () => {
     });
     await expect(fs.stat(dir)).rejects.toThrow();
   });
+
+  it('refuses uploads into a foreign source before creating a row or directory', async () => {
+    vi.stubEnv('BESEDY_ARCHIVE_ID', '20251225_120000');
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: '20251225_120000', label: 'Archive', isActive: true });
+    const response = await createUpload(jsonRequest('/api/admin/ingest/uploads', {
+      catalogId: CATALOG_ID, filename: 'talk.mp3', sizeBytes: 10,
+    }));
+    expect(response.status).toBe(404);
+    expect(prisma.recordingIntake.create).not.toHaveBeenCalled();
+    expect(await fs.readdir(mocks.uploadsDir)).toEqual([]);
+  });
+
+  it('refuses chunking, finalizing and deleting an existing foreign intake', async () => {
+    vi.stubEnv('BESEDY_ARCHIVE_ID', '20251225_120000');
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: '20251225_120000', label: 'Archive', isActive: true });
+    prisma.recordingIntake.findUnique.mockResolvedValue(baseRow());
+    const responses = [
+      await putChunk(mutationRequest(`/api/admin/ingest/uploads/${INTAKE_ID}/chunks/0`, { method: 'PUT', body: 'abc' }), {
+        params: Promise.resolve({ intakeId: INTAKE_ID, index: '0' }),
+      }),
+      await finalizeUpload(jsonRequest(`/api/admin/ingest/uploads/${INTAKE_ID}/finalize`, {}), {
+        params: Promise.resolve({ intakeId: INTAKE_ID }),
+      }),
+      await abortUpload(mutationRequest(`/api/admin/ingest/uploads/${INTAKE_ID}`, { method: 'DELETE' }), {
+        params: Promise.resolve({ intakeId: INTAKE_ID }),
+      }),
+    ];
+    expect(responses.map((response) => response.status)).toEqual([404, 404, 404]);
+    expect(prisma.recordingIntake.updateMany).not.toHaveBeenCalled();
+    expect(prisma.recordingIntake.delete).not.toHaveBeenCalled();
+    expect(fetchJobsApi).not.toHaveBeenCalled();
+    expect(await fs.readdir(mocks.uploadsDir)).toEqual([]);
+  });
+
 });

@@ -102,6 +102,19 @@ Access tiers: Public (`/api/auth/*`, `/api/health`, `/api/csp-report`) -- Authen
 
 Per-catalog authorization no longer uses an ordered access-level scale. An actor holds a `CatalogRole` (`listener`, `reader`, `corrector`, `host`, `curator`, `catalog_admin`) plus additive `extraPermissions`; every gate below asks whether a specific permission (e.g. `browse_recordings`, `edit_metadata`, `manage_access`) is present rather than whether a level is high enough. See [ADR 0005](../adr/0005-catalog-permission-model.md) for the full permission catalogue and role table, and `web/src/lib/policy/*.ts` for the gates themselves.
 
+### Website archive selection
+
+The website uses the deployment's explicit `BESEDY_ARCHIVE_ID`. An authenticated
+`GET /api/archive` returns only its ID and label after the existing content-access
+check. The header, user menu and catalog-page validation use that response;
+opening a page never reads or saves an active-catalog preference. `/catalog`
+opens this archive directly, and PWA resume ignores saved URLs for other sources.
+`/admin/catalogs` opens the archive's existing source-settings page. Website
+catalog discovery, creation, default selection and activation controls are gone.
+Source IDs remain in recording/event URLs and stored data. Display preferences
+remain available; the retired active-catalog database column awaits schema
+cleanup after MCP and membership migration.
+
 ### Catalog Endpoints
 
 | Method | Endpoint | Access | Description |
@@ -215,14 +228,16 @@ A span's state is derived in one SQL query, `spanStatesSql` in `web/src/lib/corr
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/catalogs` | Auth | List accessible catalogs |
-| POST | `/api/catalogs` | Admin | Create catalog |
-| GET/PUT/DELETE | `/api/catalogs/:id` | `manage_catalog_config`; changing paths or the default and active flags, and DELETE (deactivate), need system admin | Manage catalog |
-| GET | `/api/catalogs/discover` | Admin | Discover catalogs on disk |
+| GET | `/api/archive` | Auth and archive access | Resolve the configured archive |
+| GET/PUT | `/api/catalogs/:id` | `manage_catalog_config`; changing source paths needs system admin | Read or update the bound source settings |
 | GET/POST | `/api/catalogs/:id/access` | `manage_access` | List/grant access |
 | PUT/DELETE | `/api/catalogs/:id/access/:userId` | `manage_access` | Update/revoke access |
 | GET/POST | `/api/catalogs/:id/pending-catalog-grants` | `manage_access` | List or create pending grants |
 | PUT/DELETE | `/api/catalogs/:id/pending-catalog-grants/:email` | `manage_access` | Manage pending grant |
+
+Catalog list/create/discover and source deactivation APIs are retired. Initial
+source registration is an explicit operator command; see
+[archive bootstrap](single-archive.md#registering-a-source-on-a-new-database).
 
 - POST pending-catalog-grants: if the email belongs to an existing user, access is granted directly.
 - `manage_access` is carried by `host` and `catalog_admin` only (not `curator`). Two permissions are protected: `manage_access` and `see_unreleased`. A holder of `manage_access` may grant, update, restore, or revoke only a role that carries neither protected permission -- today `listener`, `reader`, or `corrector` -- and the same protected-permission test applies to the role being replaced; revocation ignores extras on the existing grant, so a `host` can still cut off a `reader` carrying an administrator-assigned extra. Only `catalog_admin` (or a system admin/superadmin) may grant a role carrying a protected permission (`host`, `curator`) or assign extra permissions, and nobody may change their own access. See `canGrantCatalogGrant` / `mayPassOnGrant` in `web/src/lib/policy/catalog.ts` and the "Granting rule" section of [ADR 0005](../adr/0005-catalog-permission-model.md) for the full rule.
@@ -264,7 +279,8 @@ See [recording-ingest.md](recording-ingest.md) for the end-to-end flow.
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
 | * | `/api/auth/*` | Public | Better Auth (session, signin, callback) |
-| GET/PATCH | `/api/preferences` | Auth | Get/update preferences |
+| GET | `/api/archive` | Auth + archive access | Configured archive ID and label |
+| GET/PATCH | `/api/preferences` | Auth | Get/update display preferences; no active-catalog selection |
 | GET | `/api/me/permissions` | Auth | Current user's permission flags |
 | GET | `/api/health` | Public | Health check |
 | GET | `/api/version` | Public | Build version and commit info |

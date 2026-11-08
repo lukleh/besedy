@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -77,6 +78,23 @@ def validate_catalog_id(value: object) -> str:
     if not _CATALOG_ID_RE.fullmatch(rendered):
         raise ValueError("catalog_id must look like YYYYMMDD_HHMMSS.")
     return rendered
+
+
+def require_archive_id() -> str:
+    """Require the deployment's explicit archive before any job work."""
+    raw = os.getenv("BESEDY_ARCHIVE_ID", "").strip()
+    if not raw:
+        raise ValueError("BESEDY_ARCHIVE_ID is required for deployment jobs.")
+    if not _CATALOG_ID_RE.fullmatch(raw):
+        raise ValueError("BESEDY_ARCHIVE_ID must look like YYYYMMDD_HHMMSS.")
+    return raw
+
+
+def validate_deployment_catalog_id(value: object) -> str:
+    catalog_id = validate_catalog_id(value)
+    if catalog_id != require_archive_id():
+        raise ValueError("Catalog does not match this deployment's BESEDY_ARCHIVE_ID.")
+    return catalog_id
 
 
 def validate_intake_id(value: object) -> str:
@@ -156,7 +174,7 @@ class IngestSubmitRequest:
 
     def to_flow_parameters(self, *, catalog_id: str) -> JsonDict:
         return {
-            "catalog_id": validate_catalog_id(catalog_id),
+            "catalog_id": validate_deployment_catalog_id(catalog_id),
             "intake_id": self.intake_id,
             "original_filename": self.original_filename,
             "requested_by_id": self.requested_by_id,
@@ -184,7 +202,7 @@ class IngestRemovalRequest:
 
     def to_flow_parameters(self, *, catalog_id: str) -> JsonDict:
         return {
-            "catalog_id": validate_catalog_id(catalog_id),
+            "catalog_id": validate_deployment_catalog_id(catalog_id),
             "intake_id": self.intake_id,
             "audio_hash": self.audio_hash,
             "requested_by_id": self.requested_by_id,
@@ -237,7 +255,7 @@ class CorrectionIndexSyncRequest:
 
     def to_flow_parameters(self, *, catalog_id: str) -> JsonDict:
         return {
-            "catalog_id": validate_catalog_id(catalog_id),
+            "catalog_id": validate_deployment_catalog_id(catalog_id),
             "audio_hash": self.audio_hash,
             "operation": self.operation,
             "operation_token": self.operation_token,

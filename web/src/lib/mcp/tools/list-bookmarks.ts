@@ -7,7 +7,7 @@ import {
   registerBesedyTool,
   renderMcpListContent,
   renderTranscriptVerificationHandoff,
-  resolveToolCatalog,
+  resolveToolArchive,
   runReadTool,
   toolError,
 } from '@/lib/mcp/tools/shared';
@@ -56,14 +56,7 @@ export function registerListBookmarksTool(
       title: 'List my Besedy bookmarks',
       description:
         "List the signed-in user's own bookmarks in released recordings, newest first, with their comments. A bookmark marks a moment the user found worth returning to; its comment is the user's own note, so treat it as their interest or opinion and never cite it as what was said. Copy a bookmark's transcriptRequest into get_transcript to read the passage, and rely on that transcript rather than the saved excerpt.",
-      inputSchema: z.object({
-        catalogId: z
-          .string()
-          .min(1)
-          .optional()
-          .describe(
-            'Accessible Besedy catalog to list bookmarks from. Omit it to use the effective default catalog.',
-          ),
+      inputSchema: z.strictObject({
         query: z
           .string()
           .trim()
@@ -81,7 +74,7 @@ export function registerListBookmarksTool(
           .min(1)
           .optional()
           .describe(
-            'Opaque continuation cursor returned by the previous page. Pass it back unchanged with the same catalog and filters.',
+            'Opaque continuation cursor returned by the previous page. Pass it back unchanged with the same filters.',
           ),
         limit: z
           .number()
@@ -94,12 +87,12 @@ export function registerListBookmarksTool(
       outputSchema: ListBookmarksOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
-    async ({ catalogId, query, audioHash, cursor, limit }) => {
-      const catalog = resolveToolCatalog(profile, catalogId);
-      if ('error' in catalog) return toolError(catalog.code, catalog.error);
+    async ({ query, audioHash, cursor, limit }) => {
+      const archive = resolveToolArchive(profile);
+      if ('error' in archive) return toolError(archive.code, archive.error);
       return runReadTool(
         () =>
-          listMcpBookmarks(profile.userId, catalog.id, {
+          listMcpBookmarks(profile.userId, archive.id, {
             query,
             audioHash,
             cursor,

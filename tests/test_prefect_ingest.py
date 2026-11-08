@@ -44,6 +44,11 @@ KNOWN_HASH = "a" * 64
 NEW_HASH = "b" * 64
 
 
+@pytest.fixture(autouse=True)
+def bound_archive(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BESEDY_ARCHIVE_ID", CATALOG_ID)
+
+
 class FakePrefectClient:
     def __init__(self) -> None:
         now = datetime.now(UTC)

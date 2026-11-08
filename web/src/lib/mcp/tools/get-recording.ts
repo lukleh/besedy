@@ -5,7 +5,7 @@ import {
   formatMcpDate,
   READ_ONLY_TOOL_ANNOTATIONS,
   registerBesedyTool,
-  resolveToolCatalog,
+  resolveToolArchive,
   runReadTool,
   toolError,
 } from '@/lib/mcp/tools/shared';
@@ -54,14 +54,7 @@ export function registerGetRecordingTool(
       title: 'Get Besedy recording metadata',
       description:
         'Get recording-specific metadata for a published, ready recording linked to a released event. Search results already provide event context.',
-      inputSchema: z.object({
-        catalogId: z
-          .string()
-          .min(1)
-          .optional()
-          .describe(
-            'Accessible Besedy catalog containing the recording. Omit it to use the effective default catalog.',
-          ),
+      inputSchema: z.strictObject({
         audioHash: HashSchema.transform((value) =>
           value.toLowerCase(),
         ).describe(
@@ -71,11 +64,11 @@ export function registerGetRecordingTool(
       outputSchema: GetRecordingOutputSchema,
       annotations: READ_ONLY_TOOL_ANNOTATIONS,
     },
-    async ({ catalogId, audioHash }) => {
-      const catalog = resolveToolCatalog(profile, catalogId);
-      if ('error' in catalog) return toolError(catalog.code, catalog.error);
+    async ({ audioHash }) => {
+      const archive = resolveToolArchive(profile);
+      if ('error' in archive) return toolError(archive.code, archive.error);
       return runReadTool(
-        () => getMcpRecording(catalog.id, audioHash),
+        () => getMcpRecording(archive.id, audioHash),
         () => `Returned recording ${audioHash}.`,
         renderRecordingContent,
       );

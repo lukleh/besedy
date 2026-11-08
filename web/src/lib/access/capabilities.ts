@@ -1,12 +1,11 @@
 import { UserStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
-import {
-  listUserCatalogAccessEntries,
-} from "@/lib/access/catalog-access-queries";
+import { ArchiveScopeError } from "@/lib/archive";
 import {
   hasSystemAdminAuthority,
   resolveCatalogActorContext,
   resolvePortalActorContext,
+  type CatalogActorContext,
 } from "@/lib/policy/actor";
 import {
   canBatchEditCatalogMetadata,
@@ -62,11 +61,6 @@ export interface AdminCapability extends PortalCapability {
   isSuperadmin: boolean;
   isAdmin: boolean;
   canAccessAdmin: boolean;
-}
-
-export interface CatalogDiscoveryCapability extends PortalCapability {
-  accessibleCatalogIds: string[];
-  canDiscoverCatalogs: boolean;
 }
 
 export interface CatalogCapability extends PortalCapability {
@@ -205,37 +199,21 @@ export async function getAdminCapability(userId?: string): Promise<AdminCapabili
   };
 }
 
-export async function getCatalogDiscoveryCapability(userId?: string): Promise<CatalogDiscoveryCapability> {
-  const actor = await resolvePortalActorContext(userId);
-  const portal: PortalCapability = {
-    userId: actor.userId,
-    isAuthenticated: actor.isAuthenticated,
-    userStatus: actor.userStatus,
-    canEnterPortal: actor.canEnterPortal,
-  };
-  if (!actor.userId || !actor.canEnterPortal) {
-    return {
-      ...portal,
-      accessibleCatalogIds: [],
-      canDiscoverCatalogs: false,
-    };
-  }
-
-  const accessibleCatalogIds = (await listUserCatalogAccessEntries(actor)).map((entry) => entry.catalogId);
-
-  return {
-    ...portal,
-    accessibleCatalogIds,
-    canDiscoverCatalogs: accessibleCatalogIds.length > 0,
-  };
-}
-
 export async function getCatalogCapability(
   catalogId: string,
   userId?: string,
   options: CatalogCapabilityOptions = {}
 ): Promise<CatalogCapability> {
-  const actor = await resolveCatalogActorContext(catalogId, userId, options);
+  let actor: CatalogActorContext;
+  try {
+    actor = await resolveCatalogActorContext(catalogId, userId, options);
+  } catch (error) {
+    if (!(error instanceof ArchiveScopeError)) throw error;
+    // Page callers use catalogExists to choose their existing 404 path.
+    // Management actors keep throwing so admin normalization cannot elevate
+    // a foreign source into an editable catalog.
+    return buildCatalogCapability(await getPortalCapability(userId), catalogId, false, null, false);
+  }
   const portal: PortalCapability = {
     userId: actor.userId,
     isAuthenticated: actor.isAuthenticated,

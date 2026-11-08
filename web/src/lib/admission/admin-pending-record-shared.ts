@@ -1,10 +1,12 @@
 import prisma from "@/lib/db";
+import { requireArchive } from "@/lib/archive";
 
 // Shared lookup and serialization helpers for the admin pending-record routes.
 // Keep route-specific authorization, mutations, and audit decisions in
 // admin-pending-record-route.ts.
 
 export async function loadPendingAdmissionState(canonicalEmail: string) {
+  const archive = await requireArchive();
   const [admission, pendingGrants] = await Promise.all([
     prisma.portalAdmission.findFirst({
       where: {
@@ -22,6 +24,7 @@ export async function loadPendingAdmissionState(canonicalEmail: string) {
     prisma.pendingCatalogGrant.findMany({
       where: {
         email: canonicalEmail,
+        catalogId: archive.id,
         status: "PENDING",
       },
       select: {
@@ -32,7 +35,6 @@ export async function loadPendingAdmissionState(canonicalEmail: string) {
         grantedById: true,
         grantedAt: true,
       },
-      orderBy: [{ grantedAt: "desc" }, { catalogId: "asc" }],
     }),
   ]);
 
@@ -60,9 +62,7 @@ export async function buildPendingGrantPresentation(
   actorId?: string | null
 ) {
   const pendingGrantCount = pendingGrants.length;
-  const newestPendingGrant = pendingGrants[0] ?? null;
-  const singleCatalogGrant =
-    pendingGrantCount === 1 ? newestPendingGrant : null;
+  const singleCatalogGrant = pendingGrants[0] ?? null;
   const catalogIds = Array.from(
     new Set(pendingGrants.map((grant) => grant.catalogId))
   );

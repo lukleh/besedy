@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
+import { requireArchive } from "@/lib/archive";
 import { canonicalizeEmail } from "@/lib/email";
 
 type AdmissionResetClient = Pick<
@@ -38,11 +39,19 @@ export class PortalAdmissionUserStillExistsError extends Error {
   }
 }
 
+export class PortalAdmissionMissingContentAccessError extends Error {
+  constructor(email: string) {
+    super(`Portal admission for ${email} has no saved active content access`);
+    this.name = "PortalAdmissionMissingContentAccessError";
+  }
+}
+
 export async function resetClaimedPortalAdmission(
   email: string,
   actorId: string,
   db: AdmissionResetClient = prisma
 ): Promise<PortalAdmissionResetResult> {
+  const archive = await requireArchive();
   const canonicalEmail = canonicalizeEmail(email);
 
   return db.$transaction(async (tx) => {
@@ -75,23 +84,18 @@ export async function resetClaimedPortalAdmission(
       throw new PortalAdmissionUserStillExistsError(canonicalEmail);
     }
 
-    const consumedGrants = await tx.pendingCatalogGrant.findMany({
+    const consumedGrant = await tx.pendingCatalogGrant.findUnique({
       where: {
-        email: canonicalEmail,
+        email_catalogId: { email: canonicalEmail, catalogId: archive.id },
         status: "CONSUMED",
       },
-      select: {
-        catalogId: true,
-        role: true,
-        grantedById: true,
-        grantedAt: true,
-        notes: true,
-      },
-      orderBy: [{ grantedAt: "asc" }, { catalogId: "asc" }],
+      select: { catalogId: true, role: true },
     });
+    if (!consumedGrant)
+      throw new PortalAdmissionMissingContentAccessError(canonicalEmail);
 
-    await tx.portalAdmission.update({
-      where: { email: canonicalEmail },
+    const reopened = await tx.portalAdmission.updateMany({
+      where: { email: canonicalEmail, status: "CLAIMED" },
       data: {
         status: "PENDING",
         claimedById: null,
@@ -102,30 +106,30 @@ export async function resetClaimedPortalAdmission(
       },
     });
 
-    if (consumedGrants.length > 0) {
-      await tx.pendingCatalogGrant.updateMany({
-        where: {
-          email: canonicalEmail,
-          status: "CONSUMED",
-        },
-        data: {
-          status: "PENDING",
-          consumedById: null,
-          consumedAt: null,
-          revokedById: null,
-          revokedAt: null,
-        },
-      });
-    }
+    if (reopened.count !== 1)
+      throw new PortalAdmissionNotClaimedError(canonicalEmail);
+    const grantReopened = await tx.pendingCatalogGrant.updateMany({
+      where: {
+        email: canonicalEmail,
+        catalogId: archive.id,
+        status: "CONSUMED",
+      },
+      data: {
+        status: "PENDING",
+        consumedById: null,
+        consumedAt: null,
+        revokedById: null,
+        revokedAt: null,
+      },
+    });
 
+    if (grantReopened.count !== 1)
+      throw new PortalAdmissionMissingContentAccessError(canonicalEmail);
     return {
       portalAdmissionId: admission.id,
       email: canonicalEmail,
-      pendingGrantCount: consumedGrants.length,
-      reopenedGrants: consumedGrants.map((grant) => ({
-        catalogId: grant.catalogId,
-        role: grant.role,
-      })),
+      pendingGrantCount: 1,
+      reopenedGrants: [consumedGrant],
     };
   });
 }

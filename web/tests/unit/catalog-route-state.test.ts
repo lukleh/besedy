@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { buildCatalogRouteState } from "@/hooks/use-catalog-route-state";
-import { resolveEffectiveCatalogId } from "@/hooks/use-effective-catalog-id";
 
 const LABELS = {
   back: "Back",
@@ -171,24 +170,4 @@ describe("catalog route state helpers", () => {
     }
   );
 
-  it("treats invalid route group ids as null when a valid id list is provided", () => {
-    const result = resolveEffectiveCatalogId({
-      routeGroupId: "missing-group",
-      activeGroupId: "preferred-group",
-      validGroupIds: ["preferred-group", "other-group"],
-    });
-
-    expect(result.routeGroupInvalid).toBe(true);
-    expect(result.effectiveCatalogId).toBeNull();
-  });
-
-  it("prefers the route group id when no validation list is provided", () => {
-    const result = resolveEffectiveCatalogId({
-      routeGroupId: "route-group",
-      activeGroupId: "preferred-group",
-    });
-
-    expect(result.routeGroupInvalid).toBe(false);
-    expect(result.effectiveCatalogId).toBe("route-group");
-  });
 });

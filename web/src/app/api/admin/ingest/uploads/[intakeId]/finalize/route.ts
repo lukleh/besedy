@@ -1,3 +1,4 @@
+import { assertArchiveCatalogId } from '@/lib/archive';
 import { NextRequest, NextResponse } from 'next/server';
 import { createReadStream, createWriteStream } from 'fs';
 import fs from 'fs/promises';
@@ -120,6 +121,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       include: INTAKE_INCLUDE,
     });
     if (!intake) return notFound('intake');
+    await assertArchiveCatalogId(intake.workflowGroupId);
     if (intake.status !== 'UPLOADING') {
       return conflict('Upload has already been submitted');
     }

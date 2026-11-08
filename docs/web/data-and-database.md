@@ -1,5 +1,8 @@
 # Web Data Model and Database
 
+For the staged deployment binding and read-only migration inventory, see
+[single-archive configuration](single-archive.md).
+
 > **Last Updated:** 2026-04-04
 
 How the web app models and serves catalog data (PostgreSQL + CSVs), database migration safety, and key environment configuration. For core pipeline data contracts (transcript schemas, storage layout), see [../data-model.md](../data-model.md).
@@ -19,9 +22,15 @@ Each workflow group (catalog) is identified by a timestamp ID like `20251201_143
 
 Optional artifacts: `audio_catalog_<id>_duplicates.csv` (duplicates), `transcripts_<id>/` (ASR output). CSV files are ingest input only -- API endpoints never parse them directly.
 
-### Discovery
+### Source registration
 
-The discovery endpoint (`/api/catalogs/discover`) scans `BESEDY_BASE_DIR` for files matching `audio_catalog_<id>.csv` that also have a matching archived catalog (`audio_catalog_<id>_loudness_archived.csv`). It returns only **unregistered** groups -- those not yet tracked in the `workflow_group` table.
+The website uses the explicitly configured archive. For a new database, register
+that source with `npm run archive:register`, supplying its paths as seen by the
+web container. The command creates only the `BESEDY_ARCHIVE_ID` row and refuses
+an existing ID; it does not discover sources, change grants or synchronize CSVs.
+See [archive bootstrap](single-archive.md#registering-a-source-on-a-new-database).
+The browser catalog-list, creation, discovery and deactivation endpoints have
+been retired. Existing source records and their historical references remain.
 
 ### Sync Rules
 
@@ -415,7 +424,7 @@ pointer file in [Data model](../data-model.md#publication-waits-for-the-index).
 
 | Variable             | Purpose                                      |
 | -------------------- | -------------------------------------------- |
-| `BESEDY_BASE_DIR`    | Root directory scanned for catalog discovery |
+| `BESEDY_BASE_DIR`    | Additional allowed data root for web path validation |
 | `TEXT_DATA_DIR`      | Catalogs and transcripts                     |
 | `AUDIO_DIR`          | Streamable (compressed) audio                |
 | `ORIGINAL_AUDIO_DIR` | Downloadable original audio                  |

@@ -72,6 +72,7 @@ const CATALOG_ID = [
   String(now.getMinutes()).padStart(2, "0"),
   String(now.getSeconds()).padStart(2, "0"),
 ].join("");
+process.env.BESEDY_ARCHIVE_ID = CATALOG_ID;
 const AUDIO_HASH = createHash("sha256").update(randomUUID()).digest("hex");
 const BACKEND_WORKFLOW = "faster-whisper";
 const BACKEND_MODEL = "large-v3@silero_vad_v6@lang-cs";

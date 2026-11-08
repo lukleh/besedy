@@ -326,24 +326,14 @@ export const UserListQuerySchema = z.object({
 
 /**
  * Add user to the allowlist (admin creates pending admission state, not a user row)
- * Optionally assign catalog access at the same time
+ * Every new invitation includes content access.
  */
-export const AddUserSchema = z
-  .object({
-    email: EmailSchema,
-    catalogId: TimestampIdSchema.optional(),
-    role: CatalogRoleSchema.optional(),
-    extraPermissions: ExtraPermissionsSchema.optional(),
-  })
-  .refine(
-    (data) => {
-      if (data.catalogId && !data.role) return false;
-      if (data.role && !data.catalogId) return false;
-      if (data.extraPermissions?.length && !data.catalogId) return false;
-      return true;
-    },
-    { message: "Both catalogId and role must be provided together" }
-  );
+export const AddUserSchema = z.object({
+  email: EmailSchema,
+  catalogId: TimestampIdSchema,
+  role: CatalogRoleSchema,
+  extraPermissions: ExtraPermissionsSchema.optional().default([]),
+});
 
 // =============================================================================
 // Catalog Management
@@ -363,30 +353,8 @@ export const UpdateCatalogSchema = z
     metadataCatalogPath: z.string().min(1).max(500).optional(),
     duplicatesCatalogPath: z.string().max(500).nullable().optional(),
     transcriptsPath: z.string().max(500).nullable().optional(),
-    isDefault: z.boolean().optional(),
-    isActive: z.boolean().optional(),
   })
   .strict();
-
-/**
- * Create catalog from discovered group
- */
-export const CreateCatalogSchema = z.object({
-  groupId: TimestampIdSchema,
-  label: z.string().max(100).optional(),
-});
-
-/**
- * Create full catalog (admin/superadmin)
- */
-export const CreateFullCatalogSchema = z.object({
-  id: TimestampIdSchema,
-  label: z.string().max(100).optional(),
-  archivedCatalogPath: z.string().min(1).max(500),
-  metadataCatalogPath: z.string().min(1).max(500),
-  transcriptsPath: z.string().max(500).optional(),
-  isDefault: z.boolean().optional(),
-});
 
 // =============================================================================
 // Recording Metadata
@@ -423,19 +391,6 @@ export const CreateEnumSchema = z.object({
 export const UpdateEnumSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional(),
-});
-
-// =============================================================================
-// User Preferences
-// =============================================================================
-
-/**
- * Update preferences
- */
-export const UpdatePreferencesSchema = z.object({
-  activeGroupId: CuidSchema.optional().nullable(),
-  preferredBackend: TranscriptBackendSchema.optional().nullable(),
-  theme: z.enum(["light", "dark", "system"]).optional(),
 });
 
 // =============================================================================

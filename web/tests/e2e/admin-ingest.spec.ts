@@ -10,6 +10,7 @@
 import { test, expect } from "./helpers/base-test";
 import { loginAs } from "./helpers/auth";
 import { waitForPageReady } from "./helpers/navigation";
+import { TEST_CATALOG_ID } from "./helpers/fixtures";
 
 test.describe("Admin Ingest @smoke", () => {
   test("admin can open the ingest page from the admin area", async ({ page }) => {
@@ -98,7 +99,7 @@ test.describe("Admin Ingest @smoke", () => {
     expect(Array.isArray(payload.intakes)).toBe(true);
 
     const badExtension = await page.request.post("/api/admin/ingest/uploads", {
-      data: { catalogId: "20260101_000000", filename: "notes.txt", sizeBytes: 10 },
+      data: { catalogId: TEST_CATALOG_ID, filename: "notes.txt", sizeBytes: 10 },
     });
     expect(badExtension.status()).toBe(400);
   });

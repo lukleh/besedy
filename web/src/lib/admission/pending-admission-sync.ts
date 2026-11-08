@@ -1,9 +1,11 @@
 import type {
   CatalogRole,
+  PendingCatalogGrant,
   PortalAdmissionRevocationReason,
   PrismaClient,
 } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
+import { ArchiveScopeError, requireArchive } from "@/lib/archive";
 import { canonicalizeEmail } from "@/lib/email";
 import { grantFieldsForRole } from "@/lib/policy/catalog-permissions";
 
@@ -22,23 +24,21 @@ export interface PendingAdmissionStateInput {
   notes: string | null;
 }
 
+type ExpectedPendingGrant = Pick<
+  PendingCatalogGrant,
+  "role" | "extraPermissions" | "status"
+>;
+
 interface SyncPendingAdmissionStateOptions {
   allowAdminDeniedReopen?: boolean;
+  requirePending?: boolean;
+  expectedGrant?: ExpectedPendingGrant | null;
 }
 
 interface RevokePendingAdmissionStateOptions {
   actorId: string;
   reason: PortalAdmissionRevocationReason;
-  revokeAllPendingGrantsForEmail?: boolean;
-}
-
-function hasPendingGrant(
-  input: PendingAdmissionStateInput
-): input is PendingAdmissionStateInput & {
-  catalogId: string;
-  role: CatalogRole;
-} {
-  return input.catalogId !== null && input.role !== null;
+  expectedGrant?: ExpectedPendingGrant;
 }
 
 export class AdminDeniedAdmissionReopenError extends Error {
@@ -48,40 +48,30 @@ export class AdminDeniedAdmissionReopenError extends Error {
   }
 }
 
+export class PendingAdmissionUnavailableError extends Error {
+  constructor() {
+    super("Pending invitation changed. Reload before editing or revoking it.");
+    this.name = "PendingAdmissionUnavailableError";
+  }
+}
+
+// Call inside the caller's transaction so admission and grant change together.
 export async function syncPendingAdmissionState(
   input: PendingAdmissionStateInput,
   options: SyncPendingAdmissionStateOptions = {},
   db: PendingAdmissionSyncClient = prisma
 ) {
+  const archive = await requireArchive();
+  if (input.catalogId !== archive.id) throw new ArchiveScopeError();
+  if (!input.role) throw new PendingAdmissionUnavailableError();
   const email = canonicalizeEmail(input.email);
-  const grantBacked = hasPendingGrant(input);
   const existingAdmission = await db.portalAdmission.findUnique({
     where: { email },
-    select: {
-      source: true,
-      status: true,
-      revocationReason: true,
-      admittedById: true,
-      admittedAt: true,
-      notes: true,
-    },
+    select: { status: true, revocationReason: true },
   });
-  const preserveStandaloneAdmissionMetadata =
-    grantBacked && existingAdmission?.source === "STANDALONE";
-  const admissionSource =
-    grantBacked && existingAdmission?.source !== "STANDALONE"
-      ? "PENDING_GRANT"
-      : "STANDALONE";
-  const admittedById = preserveStandaloneAdmissionMetadata
-    ? (existingAdmission?.admittedById ?? null)
-    : input.createdById;
-  const admittedAt = preserveStandaloneAdmissionMetadata
-    ? (existingAdmission?.admittedAt ?? input.createdAt)
-    : input.createdAt;
-  const admissionNotes = preserveStandaloneAdmissionMetadata
-    ? (existingAdmission?.notes ?? null)
-    : input.notes;
-
+  if (options.requirePending && existingAdmission?.status !== "PENDING") {
+    throw new PendingAdmissionUnavailableError();
+  }
   if (
     existingAdmission?.status === "REVOKED" &&
     existingAdmission.revocationReason === "ADMIN_DENIED" &&
@@ -90,60 +80,87 @@ export async function syncPendingAdmissionState(
     throw new AdminDeniedAdmissionReopenError(input.email);
   }
 
-  await db.portalAdmission.upsert({
-    where: { email },
-    create: {
-      email,
-      source: admissionSource,
-      status: "PENDING",
-      revocationReason: null,
-      admittedById,
-      admittedAt,
-      notes: admissionNotes,
-    },
-    update: {
-      source: admissionSource,
-      status: "PENDING",
-      revocationReason: null,
-      admittedById,
-      admittedAt,
-      revokedById: null,
-      revokedAt: null,
-      notes: admissionNotes,
-    },
-  });
-
-  if (grantBacked) {
-    await db.pendingCatalogGrant.upsert({
+  if (existingAdmission) {
+    const updated = await db.portalAdmission.updateMany({
       where: {
-        email_catalogId: {
-          email,
-          catalogId: input.catalogId,
-        },
-      },
-      create: {
         email,
-        catalogId: input.catalogId,
-        ...grantFieldsForRole(input.role, input.extraPermissions),
-        status: "PENDING",
-        grantedById: input.createdById,
-        grantedAt: input.createdAt,
-        notes: input.notes,
+        status: options.requirePending
+          ? "PENDING"
+          : { in: ["PENDING", "REVOKED"] },
+        ...(!options.allowAdminDeniedReopen
+          ? {
+              OR: [
+                { revocationReason: null },
+                { revocationReason: { not: "ADMIN_DENIED" as const } },
+              ],
+            }
+          : {}),
       },
-      update: {
-        ...grantFieldsForRole(input.role, input.extraPermissions),
+      // Preserve original admission identity, source and attribution.
+      data: {
         status: "PENDING",
-        grantedById: input.createdById,
-        grantedAt: input.createdAt,
-        consumedById: null,
-        consumedAt: null,
+        revocationReason: null,
         revokedById: null,
         revokedAt: null,
         notes: input.notes,
       },
     });
+    if (updated.count !== 1) throw new PendingAdmissionUnavailableError();
+  } else {
+    await db.portalAdmission.create({
+      data: {
+        email,
+        source: "PENDING_GRANT",
+        status: "PENDING",
+        admittedById: input.createdById,
+        admittedAt: input.createdAt,
+        notes: input.notes,
+      },
+    });
+  }
 
-    return;
+  const grantData = {
+    ...grantFieldsForRole(input.role, input.extraPermissions),
+    status: "PENDING" as const,
+    grantedById: input.createdById,
+    grantedAt: input.createdAt,
+    notes: input.notes,
+  };
+  if (options.expectedGrant) {
+    const updated = await db.pendingCatalogGrant.updateMany({
+      where: {
+        email,
+        catalogId: archive.id,
+        status: options.expectedGrant.status,
+        role: options.expectedGrant.role,
+        extraPermissions: { equals: options.expectedGrant.extraPermissions },
+      },
+      data: {
+        ...grantData,
+        consumedById: null,
+        consumedAt: null,
+        revokedById: null,
+        revokedAt: null,
+      },
+    });
+    if (updated.count !== 1) throw new PendingAdmissionUnavailableError();
+  } else if (options.expectedGrant === null) {
+    // A concurrent grant must not bypass the role/extras authorization precheck.
+    await db.pendingCatalogGrant.create({
+      data: { email, catalogId: archive.id, ...grantData },
+    });
+  } else {
+    await db.pendingCatalogGrant.upsert({
+      where: { email_catalogId: { email, catalogId: archive.id } },
+      create: { email, catalogId: archive.id, ...grantData },
+      update: {
+        ...grantData,
+        consumedById: null,
+        consumedAt: null,
+        revokedById: null,
+        revokedAt: null,
+      },
+    });
   }
 }
 
@@ -152,71 +169,60 @@ export async function revokePendingAdmissionState(
   options: RevokePendingAdmissionStateOptions,
   db: PendingAdmissionSyncClient = prisma
 ) {
+  const archive = await requireArchive();
+  if (input.catalogId !== null && input.catalogId !== archive.id)
+    throw new ArchiveScopeError();
   const email = canonicalizeEmail(input.email);
   const now = new Date();
-  const existingAdmission = await db.portalAdmission.findUnique({
-    where: { email },
-    select: {
-      source: true,
+  const revoked = await db.portalAdmission.updateMany({
+    where: { email, status: "PENDING" },
+    data: {
+      status: "REVOKED",
+      revocationReason: options.reason,
+      revokedById: options.actorId,
+      revokedAt: now,
     },
   });
-
-  if (hasPendingGrant(input)) {
-    await db.pendingCatalogGrant.updateMany({
-      where: options.revokeAllPendingGrantsForEmail
-        ? {
-            email,
-            status: "PENDING",
-          }
-        : {
-            email,
-            catalogId: input.catalogId,
-            status: "PENDING",
-          },
-      data: {
-        status: "REVOKED",
-        revokedById: options.actorId,
-        revokedAt: now,
-      },
-    });
-  }
-
-  const remainingPendingGrants = hasPendingGrant(input)
-    ? await db.pendingCatalogGrant.count({
-        where: {
-          email,
-          status: "PENDING",
-        },
-      })
-    : 0;
-
-  if (remainingPendingGrants === 0) {
-    if (
-      options.reason === "LAST_SPONSOR_REMOVED" &&
-      existingAdmission?.source === "STANDALONE"
-    ) {
-      return;
-    }
-
-    await db.portalAdmission.upsert({
+  if (revoked.count === 0) {
+    const admission = await db.portalAdmission.findUnique({
       where: { email },
-      create: {
-        email,
-        source: hasPendingGrant(input) ? "PENDING_GRANT" : "STANDALONE",
-        status: "REVOKED",
-        revocationReason: options.reason,
-        admittedById: input.createdById,
-        admittedAt: input.createdAt,
-        revokedById: options.actorId,
-        revokedAt: now,
-        notes: input.notes,
-      },
-      update: {
-        status: "REVOKED",
-        revocationReason: options.reason,
-        revokedById: options.actorId,
-        revokedAt: now,
-      },
+      select: { status: true },
     });
+    if (admission?.status === "CLAIMED")
+      throw new PendingAdmissionUnavailableError();
+    if (!admission) {
+      await db.portalAdmission.create({
+        data: {
+          email,
+          source: "PENDING_GRANT",
+          status: "REVOKED",
+          revocationReason: options.reason,
+          admittedById: input.createdById,
+          admittedAt: input.createdAt,
+          revokedById: options.actorId,
+          revokedAt: now,
+          notes: input.notes,
+        },
+      });
+    }
+    // An existing ADMIN_DENIED tombstone must survive a lower-privilege revoke.
   }
+  const grantRevoked = await db.pendingCatalogGrant.updateMany({
+    where: {
+      email,
+      catalogId: archive.id,
+      status: "PENDING",
+      ...(options.expectedGrant
+        ? {
+            role: options.expectedGrant.role,
+            extraPermissions: {
+              equals: options.expectedGrant.extraPermissions,
+            },
+          }
+        : {}),
+    },
+    data: { status: "REVOKED", revokedById: options.actorId, revokedAt: now },
+  });
+  if (options.expectedGrant && grantRevoked.count !== 1)
+    throw new PendingAdmissionUnavailableError();
 }

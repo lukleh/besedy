@@ -51,7 +51,11 @@ from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 from besedy.lib.workflow.paths import missing_pipeline_transcripts
 
 from ..json_types import JsonDict
-from ..models import validate_catalog_id, validate_intake_id, validate_original_filename
+from ..models import (
+    validate_deployment_catalog_id,
+    validate_intake_id,
+    validate_original_filename,
+)
 
 INCOMING_DIRNAME = "incoming"
 ACCEPTED_DIRNAME = "accepted"
@@ -97,7 +101,7 @@ def resolve_ingest_paths(
     uploads_root: Path | None = None,
     catalogs_root: Path | None = None,
 ) -> IngestPaths:
-    catalog_id = validate_catalog_id(catalog_id)
+    catalog_id = validate_deployment_catalog_id(catalog_id)
     intake_id = validate_intake_id(intake_id)
     uploads = (uploads_root or resolve_uploads_root()).expanduser()
     catalogs = (catalogs_root or resolve_catalogs_root()).expanduser()
