@@ -1,5 +1,6 @@
 import prisma from "@/lib/db";
 import { getAdminCapability, getCatalogCapability } from "@/lib/access/capabilities";
+import { ArchiveScopeError, assertArchiveCatalogId } from "@/lib/archive";
 
 // Use Prisma's inference for the return type
 type WorkflowGroup = NonNullable<
@@ -9,11 +10,17 @@ type WorkflowGroup = NonNullable<
 /**
  * Load the active catalog a route names in its path (`/api/catalogs/:id/...`).
  *
- * Returns null when the catalog does not exist or is inactive. It does not check
- * access: callers answer "not found" for null and check access themselves, so a
- * catalog the user cannot open gets a proper "access denied".
+ * Returns null for foreign, missing or inactive catalogs. Callers answer
+ * "not found" for null and check access themselves, so a catalog within the
+ * archive scope that the user cannot open gets a proper "access denied".
  */
 export async function findActiveCatalog(catalogId: string): Promise<WorkflowGroup | null> {
+  try {
+    await assertArchiveCatalogId(catalogId);
+  } catch (error) {
+    if (error instanceof ArchiveScopeError) return null;
+    throw error;
+  }
   return prisma.workflowGroup.findFirst({
     where: { id: catalogId, isActive: true },
   });
@@ -27,8 +34,8 @@ export interface ResolvedGroupAccess {
 /**
  * Load the catalog a route names and evaluate whether the user can access it.
  *
- * Admins have implicit access to every catalog; everyone else needs a catalog
- * grant.
+ * Within the deployment's archive scope, admins have implicit access; everyone
+ * else needs a catalog grant.
  */
 export async function resolveCatalogWithAccess(
   catalogId: string,
