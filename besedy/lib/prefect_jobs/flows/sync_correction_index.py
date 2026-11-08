@@ -45,28 +45,6 @@ class CorrectionIndexFlowError(IngestFlowError):
     """A sync that ran but left the index in a state the web app must not accept."""
 
 
-def parse_trailing_json(output: str) -> JsonDict:
-    """Return the last JSON object printed by a ``--json`` CLI run.
-
-    The command streams progress from the ColBERT worker before its result, so
-    the JSON is found by trying each line that opens an object, last first.
-    """
-    lines = output.splitlines()
-    for index in range(len(lines) - 1, -1, -1):
-        if lines[index].strip() != "{":
-            continue
-        candidate = "\n".join(lines[index:])
-        try:
-            parsed = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    raise CorrectionIndexFlowError(
-        "The index sync printed no JSON result.", error_code="index_result_missing"
-    )
-
-
 def resolve_catalog_transcripts_root(catalog_id: str) -> Path:
     """The catalog's own transcript generation on the host.
 
@@ -100,8 +78,8 @@ def sync_recording(catalog_id: str, audio_hash: str, backend: str | None) -> Jso
     ]
     if backend:
         args[3:3] = ["--backend", backend]
-    output = run_catalog_cli(args, stage=SYNC_STAGE, capture_output=True)
-    result = parse_trailing_json(output or "")
+    result = run_catalog_cli(args, stage=SYNC_STAGE, expect_result=True)
+    assert result is not None
     timings = {
         key: result[key] for key in ("elapsed_seconds", "phase_timings_seconds") if key in result
     }

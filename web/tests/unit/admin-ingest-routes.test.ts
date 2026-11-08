@@ -8,7 +8,6 @@ import { POST as createUpload } from '@/app/api/admin/ingest/uploads/route';
 import { DELETE as abortUpload } from '@/app/api/admin/ingest/uploads/[intakeId]/route';
 import { PUT as putChunk } from '@/app/api/admin/ingest/uploads/[intakeId]/chunks/[index]/route';
 import { POST as finalizeUpload } from '@/app/api/admin/ingest/uploads/[intakeId]/finalize/route';
-import { parseUndeliveredOutcome } from '@/lib/ingest/server';
 
 const mocks = vi.hoisted(() => ({
   uploadsDir: '',
@@ -643,12 +642,12 @@ describe('admin ingest routes', () => {
       status: 'SUCCEEDED',
       audioHash: 'b'.repeat(64),
     });
-    const outcome = JSON.stringify({
+    const outcome = {
       status: 'SUCCEEDED',
       audioHash: 'B'.repeat(64),
       errorCode: null,
       errorMessage: null,
-    });
+    };
     fetchJobsApi.mockResolvedValue({
       id: JOB_ID,
       kind: 'INGEST',
@@ -656,7 +655,16 @@ describe('admin ingest routes', () => {
       requested_by_id: 'admin-1',
       catalog_id: CATALOG_ID,
       payload: {},
-      error_message: `Flow run encountered an exception: Completion report failed: web down. completion_report_failed:${outcome}`,
+      error_message: 'Completion report failed: web down.',
+      result: {
+        protocol: 'besedy-job',
+        version: 1,
+        kind: 'result',
+        catalogId: CATALOG_ID,
+        intakeId: INTAKE_ID,
+        attempt: 1,
+        payload: outcome,
+      },
       prefectStateName: 'Failed',
     });
 
@@ -676,6 +684,56 @@ describe('admin ingest routes', () => {
     );
     expect(syncCatalogGroup).toHaveBeenCalledWith(CATALOG_ID);
   });
+
+  it.each([
+    { catalogId: 'other-archive', intakeId: INTAKE_ID },
+    { catalogId: CATALOG_ID, intakeId: 'other-intake' },
+  ])(
+    'rejects a result from a different catalog or intake: %s',
+    async (scope) => {
+      const running = baseRow({ status: 'RUNNING', jobId: JOB_ID });
+      prisma.recordingIntake.findMany.mockResolvedValue([running]);
+      prisma.recordingIntake.updateMany.mockResolvedValue({ count: 1 });
+      prisma.recordingIntake.findUnique.mockResolvedValue({
+        ...running,
+        status: 'FAILED',
+      });
+      fetchJobsApi.mockResolvedValue({
+        id: JOB_ID,
+        kind: 'INGEST',
+        status: 'FAILED',
+        requested_by_id: 'admin-1',
+        catalog_id: CATALOG_ID,
+        payload: {},
+        error_message: 'Completion report failed',
+        result: {
+          protocol: 'besedy-job',
+          version: 1,
+          kind: 'result',
+          attempt: 1,
+          ...scope,
+          payload: {
+            status: 'SUCCEEDED',
+            audioHash: 'b'.repeat(64),
+            errorCode: null,
+            errorMessage: null,
+          },
+        },
+      });
+
+      await listIntakes(new NextRequest('http://localhost/api/admin/ingest'));
+
+      expect(prisma.recordingIntake.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'FAILED',
+            errorCode: 'worker_failed',
+          }),
+        }),
+      );
+      expect(syncCatalogGroup).not.toHaveBeenCalled();
+    },
+  );
 
   it('flags a completed run whose callback never arrived and re-syncs', async () => {
     const queued = baseRow({
@@ -714,27 +772,6 @@ describe('admin ingest routes', () => {
       }),
     );
     expect(syncCatalogGroup).toHaveBeenCalledWith(CATALOG_ID);
-  });
-
-  it('parses undelivered outcomes only when the marker and JSON are present', () => {
-    expect(parseUndeliveredOutcome(null)).toBeNull();
-    expect(parseUndeliveredOutcome('plain failure')).toBeNull();
-    expect(
-      parseUndeliveredOutcome('completion_report_failed:not json'),
-    ).toBeNull();
-    expect(
-      parseUndeliveredOutcome(
-        'x completion_report_failed:{"status":"REJECTED","audioHash":"A","errorCode":"duplicate"}',
-      ),
-    ).toEqual({
-      status: 'REJECTED',
-      audioHash: 'a',
-      errorCode: 'duplicate',
-      errorMessage: null,
-    });
-    expect(
-      parseUndeliveredOutcome('completion_report_failed:{"status":"WHAT"}'),
-    ).toBeNull();
   });
 
   it('aborts only uploads that were not submitted', async () => {

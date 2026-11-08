@@ -1,0 +1,36 @@
+[
+  {
+    "protocol": "besedy-job",
+    "version": 1,
+    "kind": "progress",
+    "payload": { "label": "transcribe (faster-whisper)", "step": 4, "total": 9 }
+  },
+  {
+    "protocol": "besedy-job",
+    "version": 1,
+    "kind": "result",
+    "catalogId": "20260201_120000",
+    "intakeId": "cmf9abcdefghijklmnopqrstu",
+    "attempt": 1,
+    "payload": {
+      "status": "SUCCEEDED",
+      "audioHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "errorCode": null,
+      "errorMessage": null
+    }
+  },
+  {
+    "protocol": "besedy-job",
+    "version": 1,
+    "kind": "result",
+    "catalogId": "20260201_120000",
+    "intakeId": "cmf9abcdefghijklmnopqrstu",
+    "attempt": 2,
+    "payload": {
+      "status": "REMOVED",
+      "audioHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "errorCode": "derived_refresh_failed",
+      "errorMessage": "Refresh failed after removal: {diagnostic}"
+    }
+  }
+]
