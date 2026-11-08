@@ -6,7 +6,7 @@ import {
 } from "@/lib/correction/resolve";
 import { readJsonFile, readTextFile } from "@/lib/correction/storage";
 import { computeProgress } from "@/lib/correction/workspace-service";
-import type { CanonicalTranscript } from "@/lib/correction/source";
+import { canonicalTranscriptLanguage, canonicalTranscriptSchema } from "@/lib/transcript-schema";
 
 type PublicationSource = Extract<TranscriptSource, { kind: "publication" }>;
 
@@ -23,28 +23,23 @@ export async function loadPublishedTranscript(
   audioHash: string,
   source: PublicationSource
 ): Promise<ASRTranscript | null> {
-  const data = await readJsonFile<CanonicalTranscript>(
+  const raw = await readJsonFile<unknown>(
     publicationArtifactPath(catalogId, source, "json")
   );
-  if (!data) return null;
-
-  const meta = (data.meta ?? {}) as Record<string, unknown>;
+  const parsed = canonicalTranscriptSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const data = parsed.data;
 
   return {
     backend: CORRECTED_TRANSCRIPT_BACKEND,
     hash: audioHash,
-    model: typeof meta.model === "string" ? meta.model : undefined,
-    language:
-      typeof meta.language === "string"
-        ? meta.language
-        : typeof data.language === "string"
-          ? data.language
-          : undefined,
-    duration: typeof meta.duration === "number" ? meta.duration : undefined,
-    segments: (data.segments ?? []).map((segment) => ({
-      start: Number(segment.start ?? 0),
-      end: Number(segment.end ?? 0),
-      text: String(segment.text ?? ""),
+    model: data.meta.model,
+    language: canonicalTranscriptLanguage(data),
+    duration: data.meta.duration,
+    segments: data.segments.map((segment) => ({
+      start: segment.start,
+      end: segment.end,
+      text: segment.text,
       words: [],
     })),
   };

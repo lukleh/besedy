@@ -20,13 +20,13 @@ describe('admin transcript backend discovery', () => {
   it('scans only the bound source and retains undiscovered global model priorities', async () => {
     vi.stubEnv('BESEDY_ARCHIVE_ID', '20251225_120000');
     vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({ id: '20251225_120000', label: 'Archive', isActive: true } as never);
-    vi.mocked(discoverTranscriptBackends).mockResolvedValue(['current/model']);
+    vi.mocked(discoverTranscriptBackends).mockResolvedValue(['current/model@lang-cs']);
     const response = await GET();
     expect(response.status).toBe(200);
     expect(prisma.workflowGroup.findMany).not.toHaveBeenCalled();
     expect(discoverTranscriptBackends).toHaveBeenCalledWith(['/transcripts/20251225_120000']);
     expect(await response.json()).toEqual({ items: [
-      { backend: 'current/model', priority: null, discovered: true },
+      { backend: 'current/model@lang-cs', priority: null, discovered: true },
       { backend: 'stored/model', priority: 1, discovered: false },
     ] });
   });

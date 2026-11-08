@@ -45,7 +45,7 @@ vi.mock("@/lib/correction/reader-transcript", () => ({
 }));
 
 const VALID_HASH = "a".repeat(64);
-const MACHINE_BACKEND = "faster-whisper/large-v3@silero_vad_v6";
+const MACHINE_BACKEND = "faster-whisper/large-v3@silero_vad_v6@lang-cs";
 const CORRECTED = "corrected/published";
 
 const PROGRESS = {

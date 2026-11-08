@@ -5,20 +5,9 @@ import { listTranscriptBackendPriorities } from "@/lib/transcript-priority";
 import { selectDefaultTranscriptBackend } from "@/lib/transcript-default";
 import { validatePath } from "@/lib/security/path-validation";
 import { CorrectionError } from "@/lib/correction/errors";
-
-/** One segment of a canonical machine transcript, as stored on disk. */
-export interface CanonicalSegment {
-  start?: number;
-  end?: number;
-  text?: string;
-  [key: string]: unknown;
-}
-
-export interface CanonicalTranscript {
-  meta?: Record<string, unknown>;
-  segments?: CanonicalSegment[];
-  [key: string]: unknown;
-}
+import { canonicalTranscriptSchema, type CanonicalTranscript } from "@/lib/transcript-schema";
+import { RESERVED_TRANSCRIPT_WORKFLOW_DIR } from "@/lib/correction/backend-key";
+import { parseTranscriptBackendKey } from "@/lib/transcript-backend-key";
 
 export interface MachineSource {
   backend: string;
@@ -47,11 +36,11 @@ export async function resolveConfiguredDefaultBackend(
 }
 
 function parseBackendKey(backend: string): { workflow: string; model: string } {
-  const [workflow, model, ...rest] = backend.split("/");
-  if (!workflow || !model || rest.length > 0) {
+  const parsed = parseTranscriptBackendKey(backend);
+  if (!parsed || parsed.workflow === RESERVED_TRANSCRIPT_WORKFLOW_DIR) {
     throw new CorrectionError("SOURCE_MISSING", `Invalid backend key: ${backend}`);
   }
-  return { workflow, model };
+  return parsed;
 }
 
 /** Read the complete canonical transcript, keeping the bytes for the freeze. */
@@ -89,15 +78,15 @@ export async function readMachineSource(
 
   let data: CanonicalTranscript;
   try {
-    data = JSON.parse(content) as CanonicalTranscript;
+    data = canonicalTranscriptSchema.parse(JSON.parse(content));
   } catch {
     throw new CorrectionError(
       "SOURCE_MISSING",
-      `Machine transcript for backend ${backend} is not valid JSON`
+      `Machine transcript for backend ${backend} is not a valid canonical transcript`
     );
   }
 
-  if (!Array.isArray(data.segments) || data.segments.length === 0) {
+  if (data.segments.length === 0) {
     throw new CorrectionError(
       "SOURCE_MISSING",
       `Machine transcript for backend ${backend} has no segments`

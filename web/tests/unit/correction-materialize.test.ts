@@ -3,6 +3,7 @@ import {
   CORRECTION_PROVENANCE_SCHEMA_VERSION,
   materializeCorrectedTranscript,
 } from "@/lib/correction/materialize";
+import { canonicalTranscriptSchema } from "@/lib/transcript-schema";
 
 const PROVENANCE = {
   schema_version: CORRECTION_PROVENANCE_SCHEMA_VERSION,
@@ -13,7 +14,7 @@ const PROVENANCE = {
   required_approvals: 2,
 };
 
-const SOURCE = {
+const SOURCE = canonicalTranscriptSchema.parse({
   meta: {
     backend: "faster-whisper",
     model: "large-v3",
@@ -26,10 +27,10 @@ const SOURCE = {
     language: "cs",
   },
   segments: [
-    { start: 0, end: 1, text: "machine words", words: [{ word: "machine" }], confidence: 0.4 },
+    { start: 0, end: 1, text: "machine words", words: [{ word: "machine", start: 0, end: 1, confidence: 0.4 }], confidence: 0.4 },
   ],
   vad_segments: [{ start: 0, end: 1 }],
-};
+});
 
 describe("materializing a published transcript", () => {
   const result = materializeCorrectedTranscript({

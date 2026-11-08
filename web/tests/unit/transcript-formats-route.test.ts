@@ -77,7 +77,7 @@ describe("transcript formats route", () => {
       });
 
       const request = new NextRequest(
-        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/formats?backend=faster-whisper/large-v3@silero_vad_v6`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/formats?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs`
       );
       const response = await getFormats(request, {
         params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
@@ -99,7 +99,7 @@ describe("transcript formats route", () => {
       findActiveCatalog.mockResolvedValue({ id: "20251225_120000", isActive: true });
 
       const request = new NextRequest(
-        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/formats?backend=faster-whisper/large-v3@silero_vad_v6`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/formats?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs`
       );
       const response = await getFormats(request, {
         params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
@@ -123,7 +123,7 @@ describe("transcript formats route", () => {
       findActiveCatalog.mockResolvedValue({ id: "20251225_120000", isActive: true });
 
       const request = new NextRequest(
-        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/formats?backend=faster-whisper/large-v3@silero_vad_v6`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/formats?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs`
       );
       const response = await getFormats(request, {
         params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
@@ -153,7 +153,7 @@ describe("transcript formats route", () => {
       });
 
       const request = new NextRequest(
-        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/formats?backend=faster-whisper/large-v3@silero_vad_v6`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/formats?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs`
       );
       const response = await getFormats(request, {
         params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
@@ -189,7 +189,7 @@ describe("transcript formats route", () => {
       getAvailableFormats.mockResolvedValue(null);
 
       const request = new NextRequest(
-        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/formats?backend=faster-whisper/large-v3@silero_vad_v6`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/formats?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs`
       );
       const response = await getFormats(request, {
         params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
@@ -223,7 +223,7 @@ describe("transcript formats route under the reading gate", () => {
   });
 
   const GROUP = "20251225_120000";
-  const MACHINE = "faster-whisper/large-v3@silero_vad_v6";
+  const MACHINE = "faster-whisper/large-v3@silero_vad_v6@lang-cs";
 
   async function arrange(capability: Record<string, boolean>) {
     const { requireAuth } = await import("@/lib/auth/permissions");
@@ -250,6 +250,14 @@ describe("transcript formats route under the reading gate", () => {
       { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) }
     );
   }
+
+  it("rejects an unsuffixed machine backend", async () => {
+    await arrange({ canSeeTranscriptVariants: true });
+    const response = await run("faster-whisper/large-v3@silero_vad_v6");
+    expect(response.status).toBe(400);
+    const { getAvailableFormats } = await import("@/lib/transcript");
+    expect(getAvailableFormats).not.toHaveBeenCalled();
+  });
 
   it("lists a machine variant of a recording in correction scope as inspectable but not downloadable", async () => {
     await arrange({ canSeeTranscriptVariants: true });

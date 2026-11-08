@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { canonicalizeEmail } from "../email";
+import { parseTranscriptBackendKey } from "@/lib/transcript-backend-key";
 import {
   CATALOG_ROLES,
   GRANTABLE_EXTRA_PERMISSIONS,
@@ -159,22 +160,10 @@ export type MutableUserStatus = z.infer<typeof MutableUserStatusSchema>;
  */
 export const TranscriptBackendSchema = z
   .string()
-  .min(3)
-  .refine((value) => {
-    const parts = value.split("/");
-    if (parts.length !== 2) return false;
-    const [workflow, model] = parts;
-    if (!workflow || !model) return false;
-    if (
-      workflow === "." ||
-      workflow === ".." ||
-      model === "." ||
-      model === ".."
-    )
-      return false;
-    if (workflow.includes("\\") || model.includes("\\")) return false;
-    return true;
-  }, "Invalid transcript backend key");
+  .refine(
+    (value) => parseTranscriptBackendKey(value) !== null,
+    "Invalid transcript backend key"
+  );
 export type TranscriptBackend = z.infer<typeof TranscriptBackendSchema>;
 
 /**

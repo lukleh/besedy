@@ -8,6 +8,7 @@ import {
   TEST_TRANSCRIPTS_SUBDIR,
 } from "../../prisma/test-data";
 import { generateAllTranscripts } from "../e2e/scripts/generate-transcripts";
+import { parseTranscriptBackendKey } from "@/lib/transcript-backend-key";
 
 let fixturesDir: string;
 
@@ -29,6 +30,7 @@ async function expectGeneratedTree(): Promise<void> {
     expect(backends).toContain("faster-whisper");
     for (const backend of backends.filter((name) => name !== "speaker_diarization")) {
       const [component] = await fs.readdir(path.join(catalogDir, backend));
+      expect(parseTranscriptBackendKey(`${backend}/${component}`)).not.toBeNull();
       const raw = await fs.readFile(path.join(catalogDir, backend, component, file.hash, "transcript.json"), "utf-8");
       expect(Object.keys(JSON.parse(raw)).length).toBeGreaterThan(0);
     }

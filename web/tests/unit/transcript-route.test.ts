@@ -123,7 +123,7 @@ describe("transcript route", () => {
       resolveTranscriptsPath.mockResolvedValue("/transcripts");
       getAvailableTranscripts.mockResolvedValue({
         hash: VALID_HASH,
-        backends: ["faster-whisper/large-v3@silero_vad_v6", "whisperx/large-v3@pyannote_v3"],
+        backends: ["faster-whisper/large-v3@silero_vad_v6@lang-cs", "whisperx/large-v3@pyannote_v3@lang-cs"],
       });
 
       const response = await getTranscript(
@@ -133,7 +133,7 @@ describe("transcript route", () => {
 
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({
-        backends: ["faster-whisper/large-v3@silero_vad_v6"],
+        backends: ["faster-whisper/large-v3@silero_vad_v6@lang-cs"],
       });
     });
 
@@ -148,7 +148,7 @@ describe("transcript route", () => {
       resolveTranscriptsPath.mockResolvedValue("/transcripts");
       getAvailableTranscripts.mockResolvedValue({
         hash: VALID_HASH,
-        backends: ["faster-whisper/large-v3@silero_vad_v6", "whisperx/large-v3@pyannote_v3"],
+        backends: ["faster-whisper/large-v3@silero_vad_v6@lang-cs", "whisperx/large-v3@pyannote_v3@lang-cs"],
       });
 
       const response = await getTranscript(
@@ -158,7 +158,7 @@ describe("transcript route", () => {
 
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({
-        backends: ["faster-whisper/large-v3@silero_vad_v6", "whisperx/large-v3@pyannote_v3"],
+        backends: ["faster-whisper/large-v3@silero_vad_v6@lang-cs", "whisperx/large-v3@pyannote_v3@lang-cs"],
       });
     });
 
@@ -167,7 +167,7 @@ describe("transcript route", () => {
     // the transcript a corrector will be asked to start from.
     it("serves the configured search backend as the default, listed first", async () => {
       const previous = process.env.RAG_BACKEND_KEY;
-      process.env.RAG_BACKEND_KEY = "whisperx/large-v3@pyannote_v3";
+      process.env.RAG_BACKEND_KEY = "whisperx/large-v3@pyannote_v3@lang-cs";
       try {
         requireAuth.mockResolvedValue("user-1");
         findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
@@ -179,7 +179,7 @@ describe("transcript route", () => {
         resolveTranscriptsPath.mockResolvedValue("/transcripts");
         getAvailableTranscripts.mockResolvedValue({
           hash: VALID_HASH,
-          backends: ["faster-whisper/large-v3@silero_vad_v6", "whisperx/large-v3@pyannote_v3"],
+          backends: ["faster-whisper/large-v3@silero_vad_v6@lang-cs", "whisperx/large-v3@pyannote_v3@lang-cs"],
         });
 
         const admin = await getTranscript(
@@ -187,7 +187,7 @@ describe("transcript route", () => {
           { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) }
         );
         await expect(admin.json()).resolves.toMatchObject({
-          backends: ["whisperx/large-v3@pyannote_v3", "faster-whisper/large-v3@silero_vad_v6"],
+          backends: ["whisperx/large-v3@pyannote_v3@lang-cs", "faster-whisper/large-v3@silero_vad_v6@lang-cs"],
         });
 
         getRecordingCapability.mockResolvedValue({
@@ -200,7 +200,7 @@ describe("transcript route", () => {
           { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) }
         );
         await expect(reader.json()).resolves.toMatchObject({
-          backends: ["whisperx/large-v3@pyannote_v3"],
+          backends: ["whisperx/large-v3@pyannote_v3@lang-cs"],
         });
       } finally {
         if (previous === undefined) delete process.env.RAG_BACKEND_KEY;
@@ -219,12 +219,12 @@ describe("transcript route", () => {
       resolveTranscriptsPath.mockResolvedValue("/transcripts");
       getAvailableTranscripts.mockResolvedValue({
         hash: VALID_HASH,
-        backends: ["faster-whisper/large-v3@silero_vad_v6", "whisperx/large-v3@pyannote_v3"],
+        backends: ["faster-whisper/large-v3@silero_vad_v6@lang-cs", "whisperx/large-v3@pyannote_v3@lang-cs"],
       });
 
       const response = await getTranscript(
         new NextRequest(
-          `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript?backend=whisperx/large-v3@pyannote_v3`
+          `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript?backend=whisperx/large-v3@pyannote_v3@lang-cs`
         ),
         { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) }
       );
@@ -245,7 +245,7 @@ describe("transcript route", () => {
       resolveTranscriptsPath.mockResolvedValue("/transcripts");
       getAvailableTranscripts.mockResolvedValue({
         hash: VALID_HASH,
-        backends: ["faster-whisper/large-v3@silero_vad_v6"],
+        backends: ["faster-whisper/large-v3@silero_vad_v6@lang-cs"],
       });
       loadTranscript.mockResolvedValue({
         segments: [{ start: 0, end: 1, text: "Hello", speaker: "SPEAKER_00" }],
@@ -254,7 +254,7 @@ describe("transcript route", () => {
 
       const response = await getTranscript(
         new NextRequest(
-          `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript?backend=faster-whisper/large-v3@silero_vad_v6`
+          `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs`
         ),
         { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) }
       );
@@ -290,7 +290,7 @@ describe("transcript route", () => {
       resolveTranscriptsPath.mockResolvedValue("/transcripts");
       getAvailableTranscripts.mockResolvedValue({
         hash: VALID_HASH,
-        backends: ["faster-whisper/large-v3@silero_vad_v6"],
+        backends: ["faster-whisper/large-v3@silero_vad_v6@lang-cs"],
       });
       loadTranscript.mockResolvedValue({
         segments: [{ start: 0, end: 1, text: "Hello" }],
@@ -298,7 +298,7 @@ describe("transcript route", () => {
       });
 
       const request = new NextRequest(
-        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript?backend=faster-whisper/large-v3@silero_vad_v6`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs`
       );
       const response = await getTranscript(request, { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) });
 
@@ -321,7 +321,7 @@ describe("transcript route", () => {
       expect(body.error).toMatch(/Invalid hash/);
     });
 
-    it("rejects invalid backend parameter", async () => {
+    it.each(["invalid-backend", "faster-whisper/large-v3@silero_vad_v6"])("rejects invalid backend parameter %s", async (backend) => {
       requireAuth.mockResolvedValue("user-1");
       findActiveCatalog.mockResolvedValue({ id: "20251225_120000" });
       getRecordingCapability.mockResolvedValue({
@@ -330,7 +330,7 @@ describe("transcript route", () => {
       });
 
       const request = new NextRequest(
-        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript?backend=invalid-backend`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript?backend=${encodeURIComponent(backend)}`
       );
       const response = await getTranscript(request, { params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }) });
 
