@@ -1,9 +1,53 @@
 import { randomUUID } from "node:crypto";
+import { NextRequest } from "next/server";
 import { test, expect, beforeAll, afterAll, describe, vi } from "vitest";
 
+const authHarness = vi.hoisted(() => ({
+  options: null as unknown,
+  actorId: "",
+}));
+
 vi.unmock("@/lib/db");
+// Capture the configured hooks without starting OAuth providers. Database,
+// admission transitions, route authorization, and portal policy stay real.
+vi.mock("better-auth", () => ({
+  betterAuth: (options: unknown) => {
+    authHarness.options = options;
+    return { handler: {} };
+  },
+}));
+vi.mock("better-auth/adapters/prisma", () => ({ prismaAdapter: () => ({}) }));
+vi.mock("better-auth/next-js", () => ({ nextCookies: () => ({}) }));
+vi.mock("better-auth/plugins", () => ({
+  genericOAuth: () => ({}),
+  jwt: () => ({}),
+}));
+vi.mock("@better-auth/mcp", () => ({ mcp: () => ({}) }));
+vi.mock("@better-auth/cimd", () => ({ cimd: () => ({}) }));
+vi.mock("@/lib/config", () => ({ getSuperadminEmail: () => null }));
+vi.mock("@/lib/auth/provider-config", () => ({
+  getGoogleOAuthConfig: () => null,
+}));
+vi.mock("@/lib/auth/session", () => ({
+  getSession: async () => ({ user: { id: authHarness.actorId } }),
+  getCurrentUserId: async () => authHarness.actorId,
+}));
+vi.mock("@/lib/audit/logger", () => ({
+  logLogin: async () => {},
+  logPortalAdmissionEvent: async () => {},
+  logPendingCatalogGrantEvent: async () => {},
+  logCatalogAccessEvent: async () => {},
+  logUserEvent: async () => {},
+  logUserLifecycleEvent: async () => {},
+  logAccessDenied: async () => {},
+}));
 import type { PrismaClient } from "../../src/generated/prisma/client";
 import { TEST_CATALOG_ID } from "../../prisma/test-data";
+
+type UserCreateHooks = {
+  before: (user: { email: string }) => Promise<unknown>;
+  after: (user: { id: string; email?: string | null }) => Promise<unknown>;
+};
 
 // Opt-in PostgreSQL verification, separate from mocked unit tests and browser projects.
 // Run against the fresh disposable E2E stack with an explicit test database URL.
@@ -11,6 +55,10 @@ let db: PrismaClient;
 let claims: typeof import("../../src/lib/admission/auth-claim");
 let lifecycle: typeof import("../../src/lib/admission/pending-admission-sync");
 let reset: typeof import("../../src/lib/admission/admin-reset");
+let userCreateHooks: UserCreateHooks;
+let adminPatch: typeof import("../../src/app/api/admin/users/[id]/route").PATCH;
+let inviteByEmail: typeof import("../../src/app/api/catalogs/[id]/pending-catalog-grants/route").POST;
+let policy: typeof import("../../src/lib/policy/actor");
 const foreignSourceId = "20991107_000001";
 const emails: string[] = [];
 const userIds: string[] = [];
@@ -35,6 +83,23 @@ async function seed(status: "PENDING" | "BLOCKED" = "PENDING") {
   return user;
 }
 
+async function createSignupUser(email: string) {
+  const data = { email, name: "Invitation signup" };
+  await userCreateHooks.before(data);
+  const user = await db.user.create({ data });
+  userIds.push(user.id);
+  return user;
+}
+
+async function beginSignup() {
+  const email = `signup-${randomUUID()}@example.com`;
+  emails.push(email);
+  await db.$transaction((tx) =>
+    lifecycle.syncPendingAdmissionState(invitation(email), {}, tx)
+  );
+  return createSignupUser(email);
+}
+
 describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
   "PostgreSQL invitation transactions",
   () => {
@@ -47,11 +112,33 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
       }
       process.env.DATABASE_URL = connection;
       process.env.BESEDY_ARCHIVE_ID = TEST_CATALOG_ID;
+      process.env.APP_ENV = "test";
+      process.env.AUTH_URL = "http://localhost:3002";
       db = (await import("../../src/lib/db")).default;
       claims = await import("../../src/lib/admission/auth-claim");
       lifecycle =
         await import("../../src/lib/admission/pending-admission-sync");
       reset = await import("../../src/lib/admission/admin-reset");
+      ({ PATCH: adminPatch } = await import(
+        "../../src/app/api/admin/users/[id]/route"
+      ));
+      ({ POST: inviteByEmail } = await import(
+        "../../src/app/api/catalogs/[id]/pending-catalog-grants/route"
+      ));
+      policy = await import("../../src/lib/policy/actor");
+      await import("../../src/lib/auth/index");
+      userCreateHooks = (
+        authHarness.options as {
+          databaseHooks: { user: { create: UserCreateHooks } };
+        }
+      ).databaseHooks.user.create;
+      const adminEmail = `claim-admin-${randomUUID()}@example.com`;
+      emails.push(adminEmail);
+      const admin = await db.user.create({
+        data: { email: adminEmail, status: "ACTIVE", isAdmin: true },
+      });
+      authHarness.actorId = admin.id;
+      userIds.push(admin.id);
       await db.workflowGroup.create({
         data: {
           id: foreignSourceId,
@@ -188,6 +275,143 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
         1
       );
     });
+
+    test.each(["BLOCKED", "ACTIVE"] as const)(
+      "first-signup claim miss preserves an admin's %s decision and email identity",
+      async (status) => {
+        const user = await beginSignup();
+        const response = await adminPatch(
+          new NextRequest(`http://localhost:3002/api/admin/users/${user.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status }),
+          }),
+          { params: Promise.resolve({ id: user.id }) }
+        );
+        expect(response.status).toBe(200);
+        const updatedUser = await db.user.findUniqueOrThrow({
+          where: { id: user.id },
+        });
+        expect(updatedUser.status).toBe(status);
+        const admission = await db.portalAdmission.findUniqueOrThrow({
+          where: { email: user.email! },
+        });
+        const pendingGrant = await db.pendingCatalogGrant.findUniqueOrThrow({
+          where: {
+            email_catalogId: { email: user.email!, catalogId: TEST_CATALOG_ID },
+          },
+        });
+
+        await expect(userCreateHooks.after(user)).rejects.toMatchObject({
+          status: "FORBIDDEN",
+        });
+
+        expect(await db.user.findUnique({ where: { id: user.id } })).toEqual(
+          updatedUser
+        );
+        expect(
+          await db.portalAdmission.findUnique({ where: { id: admission.id } })
+        ).toEqual(admission);
+        expect(
+          await db.pendingCatalogGrant.findUnique({
+            where: { id: pendingGrant.id },
+          })
+        ).toEqual(pendingGrant);
+        expect(await db.catalogAccess.count({ where: { userId: user.id } })).toBe(
+          0
+        );
+        expect(await claims.findPendingPortalAdmission(user.email!)).not.toBeNull();
+        await expect(createSignupUser(user.email!)).rejects.toMatchObject({
+          code: "P2002",
+        });
+      }
+    );
+
+    test.each([
+      { role: "listener", extras: ["browse_recordings"], revoked: false },
+      { role: "catalog_admin", extras: ["bulk_export_transcripts"], revoked: false },
+      { role: "reader", extras: ["download_transcripts"], revoked: true },
+    ])(
+      "claim preserves independently granted $role access (revoked: $revoked)",
+      async ({ role, extras, revoked }) => {
+        const user = await beginSignup();
+        const response = await inviteByEmail(
+          new NextRequest(
+            `http://localhost:3002/api/catalogs/${TEST_CATALOG_ID}/pending-catalog-grants`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                email: user.email,
+                role,
+                extraPermissions: extras,
+                message: "Granted independently during signup",
+              }),
+            }
+          ),
+          { params: Promise.resolve({ id: TEST_CATALOG_ID }) }
+        );
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({
+          userStatus: "PENDING",
+          isNewUser: false,
+        });
+        const where = {
+          userId_catalogId: { userId: user.id, catalogId: TEST_CATALOG_ID },
+        };
+        if (revoked) {
+          await db.catalogAccess.update({
+            where,
+            data: {
+              status: "REVOKED",
+              revokedById: authHarness.actorId,
+              revokedAt: new Date("2026-02-01T00:00:00Z"),
+              notes: "Revoked independently during signup",
+            },
+          });
+        }
+        const existingAccess = await db.catalogAccess.findUniqueOrThrow({ where });
+        expect(existingAccess).toMatchObject({
+          role,
+          extraPermissions: extras,
+          status: revoked ? "REVOKED" : "ACTIVE",
+          grantedById: authHarness.actorId,
+          notes: revoked
+            ? "Revoked independently during signup"
+            : "Granted independently during signup",
+        });
+
+        await expect(userCreateHooks.after(user)).resolves.toBeUndefined();
+
+        expect(await db.catalogAccess.findUnique({ where })).toEqual(existingAccess);
+        expect(await db.catalogAccess.count({ where: { userId: user.id } })).toBe(1);
+        expect(await db.user.findUnique({ where: { id: user.id } })).toMatchObject({
+          status: "ACTIVE",
+          activatedAt: expect.any(Date),
+          invitedById: user.invitedById,
+          invitedAt: user.invitedAt,
+        });
+        expect(
+          await db.portalAdmission.findUnique({ where: { email: user.email! } })
+        ).toMatchObject({ status: "CLAIMED", claimedById: user.id });
+        expect(
+          await db.pendingCatalogGrant.findUnique({
+            where: {
+              email_catalogId: { email: user.email!, catalogId: TEST_CATALOG_ID },
+            },
+          })
+        ).toMatchObject({
+          status: "CONSUMED",
+          consumedById: user.id,
+          role: "reader",
+          extraPermissions: ["download_audio"],
+        });
+        expect(await policy.resolvePortalActorContext(user.id)).toMatchObject({
+          userStatus: "ACTIVE",
+          canEnterPortal: !revoked,
+        });
+      }
+    );
 
     test("revocation commits before a competing claim without granting access", async () => {
       const user = await seed();

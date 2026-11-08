@@ -117,8 +117,11 @@ export async function consumePortalAdmissionForUser(
         throw new AdmissionClaimUnavailableError();
       }
 
-      await tx.catalogAccess.create({
-        data: { userId: user.id, ...grant },
+      // A concurrent administrator grant is authoritative, including a
+      // revocation. Claiming an invitation must not overwrite that row.
+      await tx.catalogAccess.createMany({
+        data: [{ userId: user.id, ...grant }],
+        skipDuplicates: true,
       });
       return {
         portalAdmissionId: admission.id,

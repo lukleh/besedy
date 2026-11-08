@@ -286,9 +286,11 @@ export const auth = betterAuth({
 
           if (!claim) {
             // Claim failed after pre-check (e.g. concurrent consume/revoke).
-            // Remove the just-created user to avoid leaving an authenticated
-            // account without a valid pending-admission claim.
-            await prisma.user.delete({ where: { id: user.id } }).catch((err) =>
+            // Remove only the provisional account. An administrator may have
+            // blocked or activated it while the claim was in progress.
+            await prisma.user.deleteMany({
+              where: { id: user.id, status: "PENDING" },
+            }).catch((err) =>
               console.error("[auth] Failed to roll back user after admission claim miss:", err)
             );
 

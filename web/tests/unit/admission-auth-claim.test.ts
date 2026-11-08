@@ -40,7 +40,7 @@ function database() {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     user: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-    catalogAccess: { create: vi.fn() },
+    catalogAccess: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
   };
   const transaction = vi.fn(async (callback: (value: typeof tx) => unknown) =>
     callback(tx)
@@ -107,7 +107,7 @@ describe("bound invitation signup", () => {
     tx.portalAdmission.updateMany.mockResolvedValue({ count: 0 });
     expect(await consumePortalAdmissionForUser(user, db as never)).toBeNull();
     expect(tx.pendingCatalogGrant.findUnique).not.toHaveBeenCalled();
-    expect(tx.catalogAccess.create).not.toHaveBeenCalled();
+    expect(tx.catalogAccess.createMany).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -156,8 +156,9 @@ describe("bound invitation signup", () => {
           data: expect.objectContaining({ status: "ACTIVE" }),
         })
       );
-      expect(tx.catalogAccess.create).toHaveBeenCalledWith({
-        data: { userId: user.id, ...grant },
+      expect(tx.catalogAccess.createMany).toHaveBeenCalledWith({
+        data: [{ userId: user.id, ...grant }],
+        skipDuplicates: true,
       });
       expect(
         tx.portalAdmission.updateMany.mock.invocationCallOrder[0]
@@ -190,16 +191,24 @@ describe("bound invitation signup", () => {
     });
     expect(await consumePortalAdmissionForUser(user, db as never)).toBeNull();
     expect(rolledBack).toBe(true);
-    expect(tx.catalogAccess.create).not.toHaveBeenCalled();
+    expect(tx.catalogAccess.createMany).not.toHaveBeenCalled();
   });
 
-  it("does not swallow a conflicting existing access row or database failure", async () => {
+  it("completes the claim when the bound access row already exists", async () => {
     const { tx, db } = database();
-    tx.catalogAccess.create.mockRejectedValue(
-      new Error("existing revoked access")
+    tx.catalogAccess.createMany.mockResolvedValue({ count: 0 });
+    expect(await consumePortalAdmissionForUser(user, db as never)).toMatchObject({
+      portalAdmissionId: admission.id,
+    });
+  });
+
+  it("does not swallow an unexpected database failure", async () => {
+    const { tx, db } = database();
+    tx.catalogAccess.createMany.mockRejectedValue(
+      new Error("database unavailable")
     );
     await expect(
       consumePortalAdmissionForUser(user, db as never)
-    ).rejects.toThrow("existing revoked access");
+    ).rejects.toThrow("database unavailable");
   });
 });

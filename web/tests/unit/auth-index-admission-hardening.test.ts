@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     user: {
       findUnique: vi.fn(),
-      delete: vi.fn(),
+      deleteMany: vi.fn(),
       update: vi.fn(),
     },
     auditLog: {
@@ -177,7 +177,7 @@ describe("auth admission hardening", () => {
       email: "invited@example.com",
       isSuperadmin: false,
     });
-    mocks.prisma.user.delete.mockResolvedValue({ id: "user-1" });
+    mocks.prisma.user.deleteMany.mockResolvedValue({ count: 1 });
     mocks.logLogin.mockResolvedValue(undefined);
     mocks.logPortalAdmissionEvent.mockResolvedValue(undefined);
 
@@ -292,8 +292,8 @@ describe("auth admission hardening", () => {
       where: { id: "user-1" },
       select: { email: true, isSuperadmin: true },
     });
-    expect(mocks.prisma.user.delete).toHaveBeenCalledWith({
-      where: { id: "user-1" },
+    expect(mocks.prisma.user.deleteMany).toHaveBeenCalledWith({
+      where: { id: "user-1", status: "PENDING" },
     });
   });
 
@@ -312,6 +312,6 @@ describe("auth admission hardening", () => {
     ).resolves.toBeUndefined();
 
     expect(mocks.consumePortalAdmissionForUser).not.toHaveBeenCalled();
-    expect(mocks.prisma.user.delete).not.toHaveBeenCalled();
+    expect(mocks.prisma.user.deleteMany).not.toHaveBeenCalled();
   });
 });
