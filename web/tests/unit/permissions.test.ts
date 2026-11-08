@@ -14,11 +14,18 @@ vi.mock("@/lib/db", () => ({
       findFirst: vi.fn(),
     },
     workflowGroup: {
+      findUnique: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
     },
   },
 }));
+
+beforeEach(async () => {
+  vi.stubEnv("BESEDY_ARCHIVE_ID", "20251225_120000");
+  const prisma = (await import("@/lib/db")).default;
+  vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({ id: "20251225_120000", isActive: true } as never);
+});
 
 describe("AuthError", () => {
   it("should create error with default status code 403", () => {

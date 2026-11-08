@@ -30,6 +30,11 @@ AUDIO_HASH = "a" * 64
 PUBLICATION_ID = str(uuid4())
 
 
+@pytest.fixture(autouse=True)
+def bound_archive(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BESEDY_ARCHIVE_ID", CATALOG_ID)
+
+
 # --- request ----------------------------------------------------------------
 
 
