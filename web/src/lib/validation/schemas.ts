@@ -353,30 +353,8 @@ export const UpdateCatalogSchema = z
     metadataCatalogPath: z.string().min(1).max(500).optional(),
     duplicatesCatalogPath: z.string().max(500).nullable().optional(),
     transcriptsPath: z.string().max(500).nullable().optional(),
-    isDefault: z.boolean().optional(),
-    isActive: z.boolean().optional(),
   })
   .strict();
-
-/**
- * Create catalog from discovered group
- */
-export const CreateCatalogSchema = z.object({
-  groupId: TimestampIdSchema,
-  label: z.string().max(100).optional(),
-});
-
-/**
- * Create full catalog (admin/superadmin)
- */
-export const CreateFullCatalogSchema = z.object({
-  id: TimestampIdSchema,
-  label: z.string().max(100).optional(),
-  archivedCatalogPath: z.string().min(1).max(500),
-  metadataCatalogPath: z.string().min(1).max(500),
-  transcriptsPath: z.string().max(500).optional(),
-  isDefault: z.boolean().optional(),
-});
 
 // =============================================================================
 // Recording Metadata
@@ -413,19 +391,6 @@ export const CreateEnumSchema = z.object({
 export const UpdateEnumSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional(),
-});
-
-// =============================================================================
-// User Preferences
-// =============================================================================
-
-/**
- * Update preferences
- */
-export const UpdatePreferencesSchema = z.object({
-  activeGroupId: CuidSchema.optional().nullable(),
-  preferredBackend: TranscriptBackendSchema.optional().nullable(),
-  theme: z.enum(["light", "dark", "system"]).optional(),
 });
 
 // =============================================================================

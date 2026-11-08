@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import {
-  forbidden,
   badRequest,
   notFound,
   handlePrismaError,
@@ -17,21 +16,18 @@ import {
   loadPendingAdmissionState,
 } from "@/lib/admission/admin-pending-record-shared";
 import {
-  AdminDeniedAdmissionReopenError,
+  PendingAdmissionUnavailableError,
   revokePendingAdmissionState,
   syncPendingAdmissionState,
 } from "@/lib/admission/pending-admission-sync";
 import { canonicalizeEmail } from "@/lib/email";
 import { z } from "zod";
 import { requireAdminCapability } from "@/lib/access/require-admin";
+import { requireArchive } from "@/lib/archive";
 import {
   CatalogRoleSchema,
   GrantableExtraPermissionSchema,
 } from "@/lib/validation/schemas";
-
-// Owns the admin item-route contract for pending portal admissions.
-// Shared lookup and response-shaping helpers live next door so this file stays
-// focused on request validation, state transitions, and audit logging.
 
 const UpdatePortalAdmissionSchema = z.object({
   role: CatalogRoleSchema.optional(),
@@ -43,44 +39,32 @@ const UpdatePortalAdmissionSchema = z.object({
 export async function getAdminPendingRecord(id: string) {
   try {
     await requireAdminCapability({ message: "Unauthorized" });
-
     const canonicalEmail = canonicalizeEmail(id);
     const { admission, pendingGrants } =
       await loadPendingAdmissionState(canonicalEmail);
-
-    if (!admission || admission.status !== "PENDING") {
-      return notFound("portal admission");
-    }
-
-    const newestPendingGrant = pendingGrants[0] ?? null;
-    const actorId =
-      admission.admittedById ?? newestPendingGrant?.grantedById ?? null;
-    const {
-      actor,
-      catalogNames,
-      pendingGrantCount,
-      pendingGrantResponses,
-      singleCatalogGrant,
-      singleCatalogLabel,
-    } = await buildPendingGrantPresentation(pendingGrants, actorId);
-
+    if (!admission) return notFound("portal admission");
+    const grant = pendingGrants[0] ?? null;
+    const presentation = await buildPendingGrantPresentation(
+      pendingGrants,
+      admission.admittedById ?? grant?.grantedById
+    );
     return NextResponse.json({
       id: canonicalEmail,
       email: admission.email,
       status: "PENDING",
       pendingResource: "portal_admission" as const,
-      pendingGrants: pendingGrantResponses,
-      pendingGrantCount,
-      catalogNames,
-      catalogId: singleCatalogGrant?.catalogId ?? null,
-      catalogLabel: singleCatalogLabel,
-      role: singleCatalogGrant?.role ?? null,
-      extraPermissions: singleCatalogGrant?.extraPermissions ?? [],
+      pendingGrants: presentation.pendingGrantResponses,
+      pendingGrantCount: presentation.pendingGrantCount,
+      catalogNames: presentation.catalogNames,
+      catalogId: grant?.catalogId ?? null,
+      catalogLabel: presentation.singleCatalogLabel,
+      role: grant?.role ?? null,
+      extraPermissions: grant?.extraPermissions ?? [],
       invitedAt: admission.admittedAt.toISOString(),
       consumedAt: null,
-      invitedBy: actor,
+      invitedBy: presentation.actor,
       consumedBy: null,
-      notes: admission.notes ?? newestPendingGrant?.notes ?? null,
+      notes: admission.notes ?? grant?.notes ?? null,
     });
   } catch (error) {
     return handlePrismaError(error, "portal admission", "fetch");
@@ -92,82 +76,63 @@ export async function deleteAdminPendingRecord(id: string) {
     const { userId } = await requireAdminCapability({
       message: "Admin access required to revoke portal admissions",
     });
-
     const canonicalEmail = canonicalizeEmail(id);
     const { admission, pendingGrants } =
       await loadPendingAdmissionState(canonicalEmail);
-
-    if (!admission || admission.status !== "PENDING") {
-      return notFound("portal admission");
-    }
-
-    const newestPendingGrant = pendingGrants[0] ?? null;
-    const pendingGrantCount = pendingGrants.length;
-    const pendingAdmissionInput = {
-      email: canonicalEmail,
-      catalogId: newestPendingGrant?.catalogId ?? null,
-      role: newestPendingGrant?.role ?? null,
-      extraPermissions: newestPendingGrant?.extraPermissions ?? [],
-      createdById:
-        admission.admittedById ?? newestPendingGrant?.grantedById ?? null,
-      createdAt:
-        admission.admittedAt ?? newestPendingGrant?.grantedAt ?? new Date(),
-      notes: admission.notes ?? newestPendingGrant?.notes ?? null,
-    };
-
+    if (!admission) return notFound("portal admission");
+    const grant = pendingGrants[0] ?? null;
     await prisma.$transaction(async (tx) => {
       await revokePendingAdmissionState(
-        pendingAdmissionInput,
+        {
+          email: canonicalEmail,
+          catalogId: grant?.catalogId ?? null,
+          role: grant?.role ?? null,
+          extraPermissions: grant?.extraPermissions ?? [],
+          createdById: admission.admittedById,
+          createdAt: admission.admittedAt,
+          notes: admission.notes,
+        },
         {
           actorId: userId,
           reason: "ADMIN_DENIED",
-          revokeAllPendingGrantsForEmail: true,
+          ...(grant
+            ? { expectedGrant: { ...grant, status: "PENDING" as const } }
+            : {}),
         },
         tx
       );
     });
-
     await logPortalAdmissionEvent({
       actorId: userId,
       action: "PORTAL_ADMISSION_REVOKED",
       resourceId: canonicalEmail,
       email: canonicalEmail,
-      catalogId:
-        pendingGrantCount === 1
-          ? (newestPendingGrant?.catalogId ?? null)
-          : null,
+      catalogId: grant?.catalogId ?? null,
       details: {
         email: canonicalEmail,
-        catalogId:
-          pendingGrantCount === 1
-            ? (newestPendingGrant?.catalogId ?? null)
-            : null,
-        role:
-          pendingGrantCount === 1 ? (newestPendingGrant?.role ?? null) : null,
-        extraPermissions:
-          pendingGrantCount === 1
-            ? (newestPendingGrant?.extraPermissions ?? [])
-            : [],
-        pendingGrantCount,
+        catalogId: grant?.catalogId ?? null,
+        role: grant?.role ?? null,
+        extraPermissions: grant?.extraPermissions ?? [],
+        pendingGrantCount: pendingGrants.length,
         revocationReason: "ADMIN_DENIED",
-        revokedGrants: pendingGrants.map((grant) => ({
-          catalogId: grant.catalogId,
-          role: grant.role,
-          extraPermissions: grant.extraPermissions,
-        })),
+        revokedGrants: pendingGrants.map(
+          ({ catalogId, role, extraPermissions }) => ({
+            catalogId,
+            role,
+            extraPermissions,
+          })
+        ),
       },
     });
-
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof PendingAdmissionUnavailableError)
+      return conflict(error.message);
     return handlePrismaError(error, "portal admission", "delete");
   }
 }
 
-/**
- * PATCH /api/admin/portal-admissions/[email] - Update pending portal admission
- * Allows editing role, extras, catalog, and notes before admission is claimed.
- */
+/** Update the bound invitation, or edit legacy unbacked admission notes. */
 export async function patchAdminPendingRecord(
   id: string,
   request: NextRequest
@@ -176,195 +141,112 @@ export async function patchAdminPendingRecord(
     const { userId } = await requireAdminCapability({
       message: "Admin access required to update portal admissions",
     });
-
     const bodyResult = await validateRequestBody(
       request,
       UpdatePortalAdmissionSchema
     );
     if (!bodyResult.success) return bodyResult.response;
     const { role, extraPermissions, catalogId, notes } = bodyResult.data;
+    const archive = await requireArchive();
+    if (catalogId && catalogId !== archive.id) return notFound("catalog");
 
     const canonicalEmail = canonicalizeEmail(id);
     const { admission, pendingGrants } =
       await loadPendingAdmissionState(canonicalEmail);
-
-    if (!admission || admission.status !== "PENDING") {
-      return notFound("portal admission");
-    }
-
-    const newestPendingGrant = pendingGrants[0] ?? null;
-    const pendingGrantCount = pendingGrants.length;
-    const multiGrantAdmissionEdit = pendingGrantCount > 1;
-    const notesOnlyAdmissionEdit =
-      multiGrantAdmissionEdit &&
-      role === undefined &&
-      extraPermissions === undefined &&
-      catalogId === undefined;
-
-    if (multiGrantAdmissionEdit && !notesOnlyAdmissionEdit) {
-      return conflict(
-        "Cannot edit multiple pending catalog grants from the admin admission view. Use catalog settings for grant-specific edits."
-      );
-    }
-
-    if (catalogId && catalogId !== newestPendingGrant?.catalogId) {
-      const catalog = await prisma.workflowGroup.findUnique({
-        where: { id: catalogId },
-        select: { isActive: true },
-      });
-      if (!catalog?.isActive) {
-        return notFound("catalog");
-      }
-    }
-
-    const previousCatalogId = multiGrantAdmissionEdit
-      ? null
-      : (newestPendingGrant?.catalogId ?? null);
-    const previousRole = multiGrantAdmissionEdit
-      ? null
-      : (newestPendingGrant?.role ?? null);
-    const previousExtraPermissions = multiGrantAdmissionEdit
-      ? []
-      : (newestPendingGrant?.extraPermissions ?? []);
-    const previousNotes = admission.notes ?? newestPendingGrant?.notes ?? null;
-    const previousCreatedById =
-      admission.admittedById ?? newestPendingGrant?.grantedById ?? null;
-    const previousCreatedAt =
-      admission.admittedAt ?? newestPendingGrant?.grantedAt ?? new Date();
-    const previousPendingGrantInput = newestPendingGrant
-      ? {
-          email: canonicalEmail,
-          catalogId: newestPendingGrant.catalogId,
-          role: newestPendingGrant.role,
-          extraPermissions: newestPendingGrant.extraPermissions,
-          createdById: newestPendingGrant.grantedById,
-          createdAt: newestPendingGrant.grantedAt,
-          notes: newestPendingGrant.notes ?? null,
-        }
-      : null;
-
-    const nextCatalogId = multiGrantAdmissionEdit
-      ? null
-      : catalogId !== undefined
-        ? catalogId
-        : previousCatalogId;
-    const nextRole = multiGrantAdmissionEdit
-      ? previousRole
-      : role !== undefined
-        ? role
-        : previousRole;
-    const nextExtraPermissions = multiGrantAdmissionEdit
-      ? previousExtraPermissions
-      : extraPermissions !== undefined
-        ? extraPermissions
-        : previousExtraPermissions;
-    const normalizedCatalogId =
-      nextCatalogId && nextRole ? nextCatalogId : null;
-    const normalizedRole = nextCatalogId && nextRole ? nextRole : null;
-    const normalizedExtraPermissions = normalizedRole
-      ? nextExtraPermissions
-      : [];
-    if (!multiGrantAdmissionEdit && previousPendingGrantInput && !normalizedCatalogId) {
+    if (!admission) return notFound("portal admission");
+    const grant = pendingGrants[0] ?? null;
+    if (catalogId === null) {
       return badRequest(
         "Pending invitations must retain content access. Revoke the invitation instead."
       );
     }
-    const normalizedNotes = notes !== undefined ? notes : previousNotes;
-    const shouldRevokePreviousGrant =
-      !multiGrantAdmissionEdit &&
-      previousPendingGrantInput !== null &&
-      previousPendingGrantInput.catalogId !== normalizedCatalogId;
+    const changesGrant =
+      role !== undefined ||
+      extraPermissions !== undefined ||
+      catalogId !== undefined;
+    // A legacy sign-in-only admission is not promoted by notes or extras edits.
+    if (!grant && changesGrant && !role) {
+      return badRequest("A role is required to assign archive access.");
+    }
+    const nextRole = role ?? grant?.role ?? null;
+    const nextExtras = extraPermissions ?? grant?.extraPermissions ?? [];
+    const previousNotes = admission.notes ?? grant?.notes ?? null;
+    const nextNotes = notes !== undefined ? notes : previousNotes;
 
-    const updateResult = await prisma.$transaction(async (tx) => {
-      if (multiGrantAdmissionEdit) {
-        const updatedAdmission = await tx.portalAdmission.update({
-          where: { email: canonicalEmail },
-          data: {
-            notes: normalizedNotes,
-          },
-          select: {
-            email: true,
-            notes: true,
-          },
-        });
+    // Legacy admissions can retain a revoked/consumed row hidden from the
+    // pending read model. Explicit role assignment must update that row with
+    // the same conditional guard as a pending grant, rather than insert again.
+    const expectedGrant = grant
+      ? { ...grant, status: "PENDING" as const }
+      : role
+        ? await prisma.pendingCatalogGrant.findUnique({
+            where: {
+              email_catalogId: { email: canonicalEmail, catalogId: archive.id },
+            },
+            select: { role: true, extraPermissions: true, status: true },
+          })
+        : null;
+    if (!grant && expectedGrant?.status === "PENDING") {
+      throw new PendingAdmissionUnavailableError();
+    }
 
-        return {
-          id: canonicalEmail,
-          email: updatedAdmission.email,
-          catalogId: null,
-          role: null,
-          extraPermissions: [],
-          notes: updatedAdmission.notes,
-        };
-      }
-
-      const pendingAdmissionInput = {
-        email: canonicalEmail,
-        catalogId: normalizedCatalogId,
-        role: normalizedRole,
-        extraPermissions: normalizedExtraPermissions,
-        createdById: previousCreatedById,
-        createdAt: previousCreatedAt,
-        notes: normalizedNotes,
-      };
-
-      await syncPendingAdmissionState(
-        pendingAdmissionInput,
-        {
-          allowAdminDeniedReopen: true,
-        },
-        tx
-      );
-
-      if (shouldRevokePreviousGrant && previousPendingGrantInput) {
-        await revokePendingAdmissionState(
-          previousPendingGrantInput,
+    await prisma.$transaction(async (tx) => {
+      if (changesGrant && nextRole) {
+        await syncPendingAdmissionState(
           {
-            actorId: userId,
-            reason: "LAST_SPONSOR_REMOVED",
+            email: canonicalEmail,
+            catalogId: archive.id,
+            role: nextRole,
+            extraPermissions: nextExtras,
+            createdById: grant?.grantedById ?? userId,
+            createdAt: grant?.grantedAt ?? new Date(),
+            notes: nextNotes,
+          },
+          {
+            allowAdminDeniedReopen: true,
+            requirePending: true,
+            expectedGrant,
           },
           tx
         );
+      } else {
+        // Keep this conditional: a stale notes save must not reopen a claimed/revoked admission.
+        const updated = await tx.portalAdmission.updateMany({
+          where: { email: canonicalEmail, status: "PENDING" },
+          data: { notes: nextNotes },
+        });
+        if (updated.count !== 1) throw new PendingAdmissionUnavailableError();
+        if (grant) {
+          await tx.pendingCatalogGrant.updateMany({
+            where: {
+              email: canonicalEmail,
+              catalogId: archive.id,
+              status: "PENDING",
+            },
+            data: { notes: nextNotes },
+          });
+        }
       }
-
-      return {
-        id: canonicalEmail,
-        email: canonicalEmail,
-        catalogId: normalizedCatalogId,
-        role: normalizedRole,
-        extraPermissions: normalizedExtraPermissions,
-        notes: normalizedNotes,
-      };
     });
 
-    const {
-      catalogNames: responseCatalogNames,
-      pendingGrantResponses: responsePendingGrants,
-    } = multiGrantAdmissionEdit
-      ? await buildPendingGrantPresentation(pendingGrants)
-      : { catalogNames: [], pendingGrantResponses: [] };
-    const grantSpecificUpdate =
-      !multiGrantAdmissionEdit && !!(normalizedCatalogId && normalizedRole);
-
-    if (grantSpecificUpdate && normalizedCatalogId) {
+    if (changesGrant && nextRole) {
       await logPendingCatalogGrantEvent({
         actorId: userId,
         action: "PENDING_CATALOG_GRANT_UPDATED",
-        resourceId: `${canonicalEmail}:${normalizedCatalogId}`,
+        resourceId: `${canonicalEmail}:${archive.id}`,
         email: canonicalEmail,
-        catalogId: normalizedCatalogId,
-        role: normalizedRole,
+        catalogId: archive.id,
+        role: nextRole,
         details: {
           email: canonicalEmail,
-          previousCatalogId,
-          newCatalogId: normalizedCatalogId,
-          previousRole,
-          previousExtraPermissions,
-          pendingGrantCount,
-          newRole: normalizedRole,
-          newExtraPermissions: normalizedExtraPermissions,
+          previousCatalogId: grant?.catalogId ?? null,
+          newCatalogId: archive.id,
+          previousRole: grant?.role ?? null,
+          newRole: nextRole,
+          previousExtraPermissions: grant?.extraPermissions ?? [],
+          newExtraPermissions: nextExtras,
           previousNotes,
-          newNotes: normalizedNotes,
+          newNotes: nextNotes,
         },
       });
     } else {
@@ -373,75 +255,33 @@ export async function patchAdminPendingRecord(
         action: "PORTAL_ADMISSION_UPDATED",
         resourceId: canonicalEmail,
         email: canonicalEmail,
-        details: {
-          email: canonicalEmail,
-          previousCatalogId,
-          previousRole,
-          previousExtraPermissions,
-          pendingGrantCount,
-          previousNotes,
-          newNotes: normalizedNotes,
-        },
+        catalogId: grant?.catalogId ?? null,
+        details: { email: canonicalEmail, previousNotes, newNotes: nextNotes },
       });
     }
 
-    const catalog = updateResult.catalogId
-      ? await prisma.workflowGroup.findUnique({
-          where: { id: updateResult.catalogId },
-          select: { id: true, label: true },
-        })
-      : null;
-
+    // Use the same bound read model for GET and PATCH responses.
+    const updated = await loadPendingAdmissionState(canonicalEmail);
+    const presentation = await buildPendingGrantPresentation(
+      updated.pendingGrants
+    );
+    const updatedGrant = updated.pendingGrants[0] ?? null;
     return NextResponse.json({
       id: canonicalEmail,
-      email: updateResult.email,
+      email: canonicalEmail,
       pendingResource: "portal_admission" as const,
-      pendingGrants: multiGrantAdmissionEdit
-        ? responsePendingGrants
-        : normalizedCatalogId && normalizedRole
-          ? [
-              {
-                catalogId: normalizedCatalogId,
-                catalogLabel: catalog?.label || normalizedCatalogId,
-                role: normalizedRole,
-                extraPermissions: normalizedExtraPermissions,
-                grantedAt: previousCreatedAt.toISOString(),
-                grantedBy: previousCreatedById
-                  ? ((await prisma.user.findUnique({
-                      where: { id: previousCreatedById },
-                      select: { id: true, name: true, email: true },
-                    })) ?? null)
-                  : null,
-                notes: normalizedNotes,
-              },
-            ]
-          : [],
-      pendingGrantCount: multiGrantAdmissionEdit
-        ? pendingGrantCount
-        : normalizedCatalogId && normalizedRole
-          ? 1
-          : 0,
-      catalogNames: multiGrantAdmissionEdit
-        ? responseCatalogNames
-        : normalizedCatalogId
-          ? [catalog?.label || normalizedCatalogId]
-          : [],
-      catalogId: multiGrantAdmissionEdit ? null : updateResult.catalogId,
-      catalogLabel: multiGrantAdmissionEdit
-        ? null
-        : catalog?.label || updateResult.catalogId,
-      role: multiGrantAdmissionEdit ? null : updateResult.role,
-      extraPermissions: multiGrantAdmissionEdit
-        ? []
-        : updateResult.extraPermissions,
-      notes: updateResult.notes,
+      pendingGrants: presentation.pendingGrantResponses,
+      pendingGrantCount: presentation.pendingGrantCount,
+      catalogNames: presentation.catalogNames,
+      catalogId: updatedGrant?.catalogId ?? null,
+      catalogLabel: presentation.singleCatalogLabel,
+      role: updatedGrant?.role ?? null,
+      extraPermissions: updatedGrant?.extraPermissions ?? [],
+      notes: nextNotes,
     });
   } catch (error) {
-    if (error instanceof AdminDeniedAdmissionReopenError) {
-      return forbidden(
-        "Only administrators can reopen admin-denied admissions"
-      );
-    }
+    if (error instanceof PendingAdmissionUnavailableError)
+      return conflict(error.message);
     return handlePrismaError(error, "portal admission", "update");
   }
 }

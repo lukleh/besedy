@@ -43,8 +43,10 @@ describe("internal ingest progress route", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     process.env = { ...originalEnv, BESEDY_JOB_SERVICE_SECRET: "job-secret" };
+    vi.stubEnv('BESEDY_ARCHIVE_ID', '20260201_120000');
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
-    prisma.recordingIntake.findUnique.mockResolvedValue({ id: INTAKE_ID });
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: '20260201_120000', isActive: true });
+    prisma.recordingIntake.findUnique.mockResolvedValue({ id: INTAKE_ID, workflowGroupId: '20260201_120000' });
     prisma.recordingIntake.updateMany.mockResolvedValue({ count: 1 });
   });
 
@@ -64,7 +66,7 @@ describe("internal ingest progress route", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, applied: true });
-    const active = { id: INTAKE_ID, status: { in: ["QUEUED", "RUNNING", "REMOVING"] } };
+    const active = { id: INTAKE_ID, workflowGroupId: "20260201_120000", status: { in: ["QUEUED", "RUNNING", "REMOVING"] } };
     const [start, step] = prisma.recordingIntake.updateMany.mock.calls.map((call) => call[0]);
     expect(start.where).toEqual({ ...active, startedAt: null });
     expect(start.data).toEqual({ startedAt: expect.any(Date) });
