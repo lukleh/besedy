@@ -311,10 +311,7 @@ def resolve_transcripts_root(root: Path | str | None = None) -> Path:
             return inner_symlink.resolve()
         return candidate
 
-    text_root = resolve_text_data_root()
-    transcripts_dir = text_root / "transcripts"
-    transcripts_dir.mkdir(parents=True, exist_ok=True)
-
+    transcripts_dir = resolve_transcripts_parent()
     inner_symlink = transcripts_dir / "transcripts"
     if inner_symlink.is_symlink():
         return inner_symlink.resolve()
@@ -325,7 +322,15 @@ def resolve_transcripts_root(root: Path | str | None = None) -> Path:
 def resolve_transcripts_parent() -> Path:
     """Resolve the parent directory for transcript timestamped directories."""
     text_root = resolve_text_data_root()
-    transcripts_dir = text_root / "transcripts"
+    try:
+        from besedy.config.settings import config
+
+        subdir = config.paths.transcripts_dir or "transcripts"
+    except FileNotFoundError:
+        subdir = "transcripts"
+    # Match the web's path.join(text_root, subdir), including its lexical
+    # normalization and treating a leading separator as part of that join.
+    transcripts_dir = Path(os.path.normpath(str(text_root) + "/" + subdir))
     transcripts_dir.mkdir(parents=True, exist_ok=True)
     return transcripts_dir
 

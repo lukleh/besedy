@@ -1,5 +1,10 @@
 {
   "parent": "transcripts",
+  "customParents": [
+    { "configured": "custom-transcripts", "relative": "custom-transcripts" },
+    { "configured": "custom/transcripts", "relative": "custom/transcripts" },
+    { "configured": "/legacy-web-parent", "relative": "legacy-web-parent" }
+  ],
   "generations": [
     { "catalogId": "20251225_120000", "directory": "transcripts_20251225_120000" },
     { "catalogId": "20261108_230000", "directory": "transcripts_20261108_230000" }

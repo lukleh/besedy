@@ -4,11 +4,11 @@ import { TimestampIdSchema } from "./validation/schemas";
 
 /**
  * Get transcripts base directory from config.
- * Returns: <text_data_dir>/transcripts/
+ * Returns: <text_data_dir>/<transcripts_dir>/ (default: transcripts).
  */
 export function getTranscriptsBaseDir(): string {
   const config = getBesedyConfig();
-  return path.join(config.paths.text_data_dir, "transcripts");
+  return path.join(config.paths.text_data_dir, config.paths.transcripts_dir || "transcripts");
 }
 
 /**

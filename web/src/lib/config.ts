@@ -6,6 +6,7 @@ import { getBesedyConfigSearchPaths } from "@/lib/runtime-paths";
 
 interface BesedyPathsConfig {
   text_data_dir: string;
+  transcripts_dir?: string;
   audio_artifacts_dir?: string;
   artwork_dir?: string;
   sources_dir?: string;

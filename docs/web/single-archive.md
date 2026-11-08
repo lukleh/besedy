@@ -147,15 +147,23 @@ match the web binding before activation.
 ## Transcript generation paths
 
 Transcript paths are derived, not stored overrides. The pipeline, host worker
-and web reader use `<text_data_dir>/transcripts/transcripts_<source-id>` in their
-own mount namespace. Settings show that effective directory read-only;
+and web reader use `<text_data_dir>/<transcripts_dir>/transcripts_<source-id>` in
+their own mount namespace. `[paths].transcripts_dir` is the shared TOML parent,
+defaulting to `transcripts` when omitted or empty. Keep the same relative parent
+in host and container configuration; their text-data roots may differ by mount.
+Settings show that effective directory read-only;
 `transcriptsPath` is rejected in source updates and registration. The old
 `workflow_group.transcripts_path` value remains historical data and is unused;
-no database migration or artifact move is required. The retired TOML
-`paths.transcripts_dir` key no longer controls directories.
+no database migration is required. Existing custom TOML parents remain active.
+Before deployment, verify that the configured parent contains the intended
+generation: older Python code always used the default parent even when the web
+reader used a custom one. If both trees contain material, review their contents
+explicitly before aligning configuration; this change never moves or merges them.
 
 Python uses `catalog_transcripts_dirname()` for generation names; the web
 resolver implements the same ID contract. Both suites check
-`contracts/catalog-transcript-paths.json`, including invalid IDs. Neither follows
-the latest-generation symlink. CSV source bindings remain explicit because they
+`contracts/catalog-transcript-paths.json`, including custom parents and invalid
+IDs. Catalog-bound paths never follow the latest-generation symlink; the general
+CLI's current-generation resolver retains its existing latest-symlink behavior.
+CSV source bindings remain explicit because they
 are input files, and changing them retains the existing system-admin checks.

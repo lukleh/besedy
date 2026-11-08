@@ -58,11 +58,14 @@ class PathsConfig:
             text_data_dir. Defaults to <text_data_dir>/corrections. It is
             deliberately outside the transcripts tree, which ADR 0002 keeps
             immutable.
+        transcripts_dir: Parent directory for transcript generations, relative
+            to text_data_dir. Defaults to "transcripts".
         speaker_clusters_dir: Directory name for speaker clustering results from
             cross-file speaker matching.
     """
 
     speaker_clusters_dir: str
+    transcripts_dir: str = "transcripts"
     audio_artifacts_dir: str = ""
     joined_audio_dir: str = "joined_audio"
     original_audio_dir: str = ""
@@ -340,12 +343,8 @@ def _load_config() -> Config:
     web_settings = dict(data.get("web", {}))
     web_settings.pop("deep_search_default_instructions", None)
 
-    # Transcript generations use the pipeline's fixed directory convention.
-    paths_settings = dict(data["paths"])
-    paths_settings.pop("transcripts_dir", None)
-
     return Config(
-        paths=PathsConfig(**paths_settings),
+        paths=PathsConfig(**data["paths"]),
         audio=AudioConfig(**data["audio"]),
         transcription_workflows=transcription_workflows,
         vad=VadConfig(**data["vad"]),
