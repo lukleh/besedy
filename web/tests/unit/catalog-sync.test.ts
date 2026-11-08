@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import Papa from 'papaparse';
+import { CATALOG_CSV_VALIDATION } from '@/lib/catalog-sync/csv-contract';
 
 // Python's duplicates writer is checked against this same fixture.
 const duplicatesWithUnknownOriginalCsv = readFileSync(
@@ -86,8 +87,18 @@ vi.mock('@/lib/db', () => ({
   prisma: mockPrisma,
 }));
 
+type CsvKind = keyof typeof CATALOG_CSV_VALIDATION;
+const CURRENT_CSV_HEADERS = [...new Set(Object.values(CATALOG_CSV_VALIDATION).flatMap((rules) => [...rules.requiredHeaders]))];
+
+function currentCsv(kind: CsvKind, rows: Array<Record<string, string>>, omit: string[] = []): string {
+  return Papa.unparse({
+    fields: CATALOG_CSV_VALIDATION[kind].requiredHeaders.filter((column) => !omit.includes(column)),
+    data: rows,
+  });
+}
+
 describe('catalog-sync', () => {
-  const emptyCsv = 'Hash,Full Path,Original Path,Compressed Path\n';
+  const emptyCsv = CURRENT_CSV_HEADERS.join(',') + '\n';
   const emptyCsvFingerprint = buildSourceFingerprint(emptyCsv);
 
   function csvRows(rows: Array<Record<string, string>>): string {
@@ -97,7 +108,7 @@ describe('catalog-sync', () => {
       'Compressed Path': '/data/audio.webm',
     };
     return Papa.unparse({
-      fields: [...new Set(['Hash', ...Object.keys(defaults), ...rows.flatMap(Object.keys)])],
+      fields: [...new Set([...CURRENT_CSV_HEADERS, ...rows.flatMap(Object.keys)])],
       data: rows.map((row) => ({ ...defaults, ...row })),
     });
   }
@@ -366,8 +377,8 @@ describe('catalog-sync', () => {
     });
     mockTx.catalogSyncState.findMany.mockImplementation(async () => [...states.values()]);
     mockReadFile.mockImplementation(async (file: string) => file === '/data/meta.csv'
-      ? `Hash,Full Path\n${hash},${broken ? '' : '/source.wav'}\n`
-      : `Hash,Original Path,Compressed Path\n${hash},/source.wav,/audio.webm\n`);
+      ? currentCsv('metadata', [{ Hash: hash, 'Full Path': broken ? '' : '/source.wav' }])
+      : currentCsv('archived', [{ Hash: hash, 'Original Path': '/source.wav', 'Compressed Path': '/audio.webm' }]));
     mockTx.catalogSyncState.upsert.mockImplementation(async ({ create, update }: { create: State; update: Partial<State> }) => {
       const next = { ...states.get(create.sourceKey), ...create, ...update };
       states.set(create.sourceKey, next);
@@ -687,21 +698,21 @@ describe('catalog-sync', () => {
     ['metadata', 'Hash,Hash,Full Path\n', 'duplicate column names'],
     ['metadata', 'Hash, hash ,Full Path\n', 'duplicate column names'],
     ['metadata', 'Hash,,Full Path\n', 'blank column name'],
-    ['metadata', 'Full Path\n/source.wav', 'missing required columns: Hash'],
-    ['metadata', 'Hash\n' + 'a'.repeat(64), 'missing required columns: Full Path'],
-    ['metadata', 'Hash,Full Path\n,/source.wav', '64-character hexadecimal Hash'],
-    ['metadata', 'Hash,Full Path\nnot-a-hash,/source.wav', '64-character hexadecimal Hash'],
-    ['metadata', 'Hash,Full Path\n' + 'g'.repeat(64) + ',/source.wav', '64-character hexadecimal Hash'],
-    ['metadata', 'Hash,Full Path\n' + 'a'.repeat(64) + ',  ', 'blank Full Path'],
-    ['archived', 'Hash,Original Path\n', 'missing required columns: Compressed Path'],
-    ['archived', 'Hash,Original Path,Compressed Path\n' + 'a'.repeat(64) + ',,/audio.webm', 'blank Original Path'],
-    ['archived', 'Hash,Original Path,Compressed Path\n' + 'a'.repeat(64) + ',/source.wav,', 'blank Compressed Path'],
-    ['duplicates', 'Hash,Original Path\n', 'missing required columns: Duplicate Path'],
-    ['duplicates', 'Hash,Duplicate Path\n' + 'a'.repeat(64) + ',/duplicate.wav', 'missing required columns: Original Path'],
-    ['duplicates', 'Hash,Original Path,Duplicate Path\n,/source.wav,/duplicate.wav', '64-character hexadecimal Hash'],
-    ['duplicates', 'Hash,Original Path,Duplicate Path\n' + 'a'.repeat(64) + ',/source.wav,', 'blank Duplicate Path'],
-    ['duplicates', 'Hash,Original Path,Duplicate Path\nnot-a-hash,,/duplicate.wav', '64-character hexadecimal Hash'],
-    ['duplicates', 'Hash,Original Path,Duplicate Path\n' + 'a'.repeat(64) + ',,', 'blank Duplicate Path'],
+    ['metadata', currentCsv('metadata', [{ 'Full Path': '/source.wav' }], ['Hash']), 'missing required columns: Hash'],
+    ['metadata', currentCsv('metadata', [{ Hash: 'a'.repeat(64) }], ['Full Path']), 'missing required columns: Full Path'],
+    ['metadata', currentCsv('metadata', [{ Hash: '', 'Full Path': '/source.wav' }]), '64-character hexadecimal Hash'],
+    ['metadata', currentCsv('metadata', [{ Hash: 'not-a-hash', 'Full Path': '/source.wav' }]), '64-character hexadecimal Hash'],
+    ['metadata', currentCsv('metadata', [{ Hash: 'g'.repeat(64), 'Full Path': '/source.wav' }]), '64-character hexadecimal Hash'],
+    ['metadata', currentCsv('metadata', [{ Hash: 'a'.repeat(64), 'Full Path': '  ' }]), 'blank Full Path'],
+    ['archived', currentCsv('archived', [], ['Compressed Path']), 'missing required columns: Compressed Path'],
+    ['archived', currentCsv('archived', [{ Hash: 'a'.repeat(64), 'Original Path': '', 'Compressed Path': '/audio.webm' }]), 'blank Original Path'],
+    ['archived', currentCsv('archived', [{ Hash: 'a'.repeat(64), 'Original Path': '/source.wav', 'Compressed Path': '' }]), 'blank Compressed Path'],
+    ['duplicates', currentCsv('duplicates', [], ['Duplicate Path']), 'missing required columns: Duplicate Path'],
+    ['duplicates', currentCsv('duplicates', [{ Hash: 'a'.repeat(64), 'Duplicate Path': '/duplicate.wav' }], ['Original Path']), 'missing required columns: Original Path'],
+    ['duplicates', currentCsv('duplicates', [{ Hash: '', 'Original Path': '/source.wav', 'Duplicate Path': '/duplicate.wav' }]), '64-character hexadecimal Hash'],
+    ['duplicates', currentCsv('duplicates', [{ Hash: 'a'.repeat(64), 'Original Path': '/source.wav', 'Duplicate Path': '' }]), 'blank Duplicate Path'],
+    ['duplicates', currentCsv('duplicates', [{ Hash: 'not-a-hash', 'Original Path': '', 'Duplicate Path': '/duplicate.wav' }]), '64-character hexadecimal Hash'],
+    ['duplicates', currentCsv('duplicates', [{ Hash: 'a'.repeat(64), 'Original Path': '', 'Duplicate Path': '' }]), 'blank Duplicate Path'],
     ['metadata', '', 'missing required columns'],
   ])('rejects invalid %s CSV before touching the live projection (%s)', async (kind, content, detail) => {
     setupBaseChangedWithBaseline(100);
@@ -716,7 +727,7 @@ describe('catalog-sync', () => {
       file === `/data/${kind}.csv`
         ? content
         : file === group.duplicatesCatalogPath
-          ? 'Hash,Original Path,Duplicate Path\n'
+          ? currentCsv('duplicates', [])
           : emptyCsv,
     );
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -755,13 +766,13 @@ describe('catalog-sync', () => {
     expect(result.rowCounts).toEqual({ metadata: 0, archived: 0 });
   });
 
-  it('accepts normalized headers, quoted paths and missing optional columns', async () => {
+  it('accepts normalized current headers, quoted paths and blank optional cells', async () => {
     setupBaseChangedWithBaseline(0);
     const hash = 'a'.repeat(64);
     mockReadFile.mockImplementation(async (file: string) =>
       file === '/data/meta.csv'
-        ? `\ufeff Hash , FULL PATH \n${hash.toUpperCase()},"/source, recording.wav"\n`
-        : `Hash,Original Path,Compressed Path\n${hash},"/source, recording.wav",/audio.webm\n`,
+        ? currentCsv('metadata', [{ Hash: hash.toUpperCase(), 'Full Path': '/source, recording.wav' }]).replace('Hash,Hash Algorithm', '\ufeff Hash ,Hash Algorithm').replace('Full Path', ' FULL PATH ')
+        : currentCsv('archived', [{ Hash: hash, 'Original Path': '/source, recording.wav', 'Compressed Path': '/audio.webm' }]),
     );
     const warnLog = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
@@ -816,7 +827,7 @@ describe('catalog-sync', () => {
     ]);
     mockReadFile.mockImplementation(async (file: string) =>
       file === '/data/duplicates.csv'
-        ? `Hash,Original Path,Duplicate Path\n${'a'.repeat(64)},/source.wav,\n`
+        ? currentCsv('duplicates', [{ Hash: 'a'.repeat(64), 'Original Path': '/source.wav', 'Duplicate Path': '' }])
         : emptyCsv,
     );
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
@@ -917,7 +928,7 @@ describe('catalog-sync', () => {
     ]);
     mockReadFile.mockImplementation(async (file: string) =>
       file === '/data/duplicates.csv'
-        ? `Hash,Original Path,Duplicate Path\n${'a'.repeat(64)},  ,/duplicate.wav\n`
+        ? currentCsv('duplicates', [{ Hash: 'a'.repeat(64), 'Original Path': '  ', 'Duplicate Path': '/duplicate.wav' }])
         : emptyCsv,
     );
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
