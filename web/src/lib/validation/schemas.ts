@@ -220,20 +220,12 @@ export type AudioFormat = z.infer<typeof AudioFormatSchema>;
 /**
  * Audio route query parameters
  */
-export const AudioQuerySchema = z.object({
-  group: z.string().optional(),
-  // The retired "listening" source (and its `variant` param) can still come
-  // from an installed PWA or a cached page; serve those requests as archived.
-  source: z
-    .enum([...AudioSourceSchema.options, "listening"])
-    .optional()
-    .default("archived")
-    .transform((source): AudioSource => (source === "listening" ? "archived" : source)),
+export const AudioQuerySchema = z.strictObject({
+  source: AudioSourceSchema.optional().default("archived"),
   format: AudioFormatSchema.optional().default("webm"),
-  download: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((v) => v === "true"),
+  download: z.enum(["true", "false"]).optional().transform((v) => v === "true"),
+  // Added by the current local player; it never changes the server's bytes.
+  local: z.literal("1").optional(),
 });
 
 // =============================================================================

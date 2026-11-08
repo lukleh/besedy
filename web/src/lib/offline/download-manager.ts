@@ -41,6 +41,7 @@ import {
   AUDIO_CHUNK_SIZE,
   audioCacheMetaBytes,
   deleteAudioCacheEntries,
+  discardUnsupportedAudioCache,
   getAudioCacheKey,
   getAudioChunkKey,
   readAudioCacheMeta,
@@ -384,6 +385,7 @@ export async function downloadAudioChunks(options: {
     const chunkSizes = previous.chunkSizes.slice(0, prefix);
     const candidate: AudioCacheMeta = {
       ...previous,
+      schemaVersion: 1,
       generation: crypto.randomUUID(),
       chunkCount: prefix,
       chunkSizes,
@@ -413,6 +415,7 @@ export async function downloadAudioChunks(options: {
     const first = await fetchRangeChunk(url, 0, AUDIO_CHUNK_SIZE - 1, signal);
     bytesLoaded = first.bytes.byteLength;
     meta = {
+      schemaVersion: 1,
       generation: crypto.randomUUID(),
       totalSize: first.totalSize,
       chunkCount: 1,
@@ -874,28 +877,6 @@ class DownloadManager {
     void this.processQueue();
   }
 
-  /**
-   * Download a complete package again in place, keeping its event, transcript
-   * and artwork. The job builds the URL as a new download would, so on WebKit
-   * a WebM package from before the AAC copy existed (#291) becomes the copy;
-   * the old chunks are deleted when the job starts, because the cache key
-   * changes with the format.
-   */
-  async redownload(key: string): Promise<void> {
-    const record = this.records.get(key);
-    if (!record || record.status !== 'complete') return;
-    await this.write({
-      ...record,
-      status: 'queued',
-      error: null,
-      progress: 0,
-      bytesLoaded: 0,
-      resumeOnReconnect: false,
-      completedAt: null,
-    });
-    void this.processQueue();
-  }
-
   async remove(key: string): Promise<void> {
     const record = this.records.get(key);
     if (!record) return;
@@ -1015,7 +996,11 @@ class DownloadManager {
           return;
         }
         let audioVerified = false;
+        let audioDiscarded = false;
         try {
+          if (!bundleReadFailed && audioCache && persisted.audioCacheKey) {
+            audioDiscarded = await discardUnsupportedAudioCache(audioCache, persisted.audioCacheKey);
+          }
           audioVerified =
             !bundleReadFailed &&
             audioCache !== null &&
@@ -1032,6 +1017,12 @@ class DownloadManager {
           status: 'error',
           error: INCOMPLETE_PACKAGE_ERROR,
           progress: 0,
+          ...(audioDiscarded ? {
+            bytesLoaded: 0,
+            totalBytes: 0,
+            audioUrl: null,
+            audioCacheKey: null,
+          } : {}),
           resumeOnReconnect: false,
           completedAt: null,
         });

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -9,9 +9,7 @@ import {
 import type { DownloadRecord } from "@/lib/offline/downloads-db";
 
 const HASH = "a".repeat(64);
-const redownload = vi.fn();
 const mocks = vi.hoisted(() => ({ locale: "en", records: null as DownloadRecord[] | null }));
-const upgrade = vi.fn(() => false);
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
@@ -21,7 +19,6 @@ vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a>,
 }));
 vi.mock("@/hooks/use-install-prompt", () => ({ useInstallPrompt: () => ({ isInstalled: true }) }));
-vi.mock("@/hooks/use-aac-upgrade-available", () => ({ useAacUpgradeAvailable: () => upgrade() }));
 const record: DownloadRecord = {
   key: `cat:${HASH}`,
   catalogId: "cat",
@@ -56,13 +53,11 @@ vi.mock("@/hooks/use-downloads", () => ({
 }));
 vi.mock("@/lib/offline/download-manager", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/offline/download-manager")>()),
-  downloadManager: { redownload: (key: string) => redownload(key), remove: vi.fn(), pause: vi.fn(), resume: vi.fn() },
+  downloadManager: { remove: vi.fn(), pause: vi.fn(), resume: vi.fn() },
 }));
 
 describe("DownloadsContent", () => {
   beforeEach(() => {
-    redownload.mockReset();
-    upgrade.mockReturnValue(false);
     mocks.locale = "en";
     mocks.records = null;
     const store = new Map<string, string>();
@@ -95,21 +90,7 @@ describe("DownloadsContent", () => {
     expect(screen.getByLabelText("listened")).toBeInTheDocument();
   });
 
-  it("offers a new download for a WebM package that has an AAC copy", () => {
-    upgrade.mockReturnValue(true);
-    render(<DownloadsContent />);
 
-    expect(screen.getByTestId("format-upgrade-notice")).toHaveTextContent("formatUpgrade");
-    fireEvent.click(screen.getByRole("button", { name: /redownload/ }));
-    expect(redownload).toHaveBeenCalledWith(`cat:${HASH}`);
-  });
-
-  it("shows neither the notice nor the button otherwise", () => {
-    render(<DownloadsContent />);
-
-    expect(screen.queryByTestId("format-upgrade-notice")).toBeNull();
-    expect(screen.queryByRole("button", { name: /redownload/ })).toBeNull();
-  });
 });
 
 function eventRecord(

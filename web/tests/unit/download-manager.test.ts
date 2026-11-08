@@ -65,6 +65,8 @@ async function seedCompleteAudioCache(
     }),
   );
   await writeAudioCacheMeta(cache, baseKey, {
+    schemaVersion: 1,
+    generation: 'test-generation',
     totalSize: size,
     chunkCount: 1,
     chunkSizes: [size],
@@ -326,6 +328,7 @@ describe('download manager', () => {
     // prototype getter is visible again for the next test.
     Reflect.deleteProperty(navigator, 'userAgent');
     Reflect.deleteProperty(navigator, 'onLine');
+    Reflect.deleteProperty(navigator, 'locks');
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -740,6 +743,8 @@ describe('download manager', () => {
       );
     }
     await writeAudioCacheMeta(cache, cacheKey, {
+      schemaVersion: 1,
+      generation: 'test-generation',
       totalSize: AUDIO_SIZE,
       chunkCount: 3,
       chunkSizes: [CHUNK, CHUNK, AUDIO_SIZE - 2 * CHUNK],
@@ -779,6 +784,8 @@ describe('download manager', () => {
       new Response(server.audio.slice(2 * CHUNK)),
     );
     await writeAudioCacheMeta(cache, cacheKey, {
+      schemaVersion: 1,
+      generation: 'test-generation',
       totalSize: AUDIO_SIZE,
       chunkCount: 3,
       chunkSizes: [CHUNK, CHUNK, AUDIO_SIZE - 2 * CHUNK],
@@ -814,6 +821,8 @@ describe('download manager', () => {
     }
     // Sizes total 8 bytes against a 5-byte total, yet claim completion.
     await writeAudioCacheMeta(cache, cacheKey, {
+      schemaVersion: 1,
+      generation: 'test-generation',
       totalSize: 5,
       chunkCount: 2,
       chunkSizes: [4, 4],
@@ -1034,50 +1043,39 @@ describe('download manager', () => {
       }
     });
 
-    it('downloads a WebM package again as the AAC copy, keeping its bundle', async () => {
-      // Downloaded before the copy existed.
+    it.each([false, true])('invalidates a pre-contract package and retries with the current browser format (missing generation: %s)', async (missingGeneration) => {
+      const locks = new MemoryLocks();
+      Object.defineProperty(navigator, 'locks', { configurable: true, value: {
+        request: (name: string, options: unknown, work?: (lock: unknown) => Promise<unknown>) =>
+          locks.request(name, typeof options === 'function'
+            ? options as () => Promise<unknown> : () => work!({ name })),
+      } });
       const before = createFakeServer({ archivedFormats: ['webm'] });
       vi.stubGlobal('fetch', before.fetchMock);
       const { downloadManager } = await loadManager();
       await downloadManager.hydrate();
       downloadManager.setUserId('user-1');
       await downloadManager.enqueueRecording({ catalogId: CATALOG, hash: HASH });
-      await waitFor(
-        () => downloadManager.getSnapshot().records[0]?.status === 'complete',
-      );
-      const webm = downloadManager.getSnapshot().records[0];
-      expect(webm.audioUrl).toBe(`/api/catalogs/${CATALOG}/recordings/${HASH}/audio`);
-
+      await waitFor(() => downloadManager.getSnapshot().records[0]?.status === 'complete');
+      const old = downloadManager.getSnapshot().records[0];
+      const cache = await cacheStorage.open(OFFLINE_CACHE_NAMES.audio);
+      const oldMeta = await (await cache.match(getAudioMetaKey(old.audioCacheKey!)))!.json();
+      expect(oldMeta.generation).toEqual(expect.any(String));
+      delete oldMeta.schemaVersion;
+      if (missingGeneration) delete oldMeta.generation;
+      await cache.put(getAudioMetaKey(old.audioCacheKey!), new Response(JSON.stringify(oldMeta)));
       const after = createFakeServer({ archivedFormats: ['webm', 'aac'] });
       vi.stubGlobal('fetch', after.fetchMock);
-      await downloadManager.redownload(webm.key);
-      await waitFor(() => {
-        const record = downloadManager.getSnapshot().records[0];
-        return record?.status === 'complete' && record.audioUrl !== webm.audioUrl;
-      });
-
-      const aac = downloadManager.getSnapshot().records[0];
-      const aacUrl = `/api/catalogs/${CATALOG}/recordings/${HASH}/audio?format=aac`;
-      expect(aac.key).toBe(webm.key);
-      expect(aac.audioUrl).toBe(aacUrl);
-      expect(new Set(after.audioRequests)).toEqual(new Set(['?format=aac']));
-      const audioCache = await cacheStorage.open(OFFLINE_CACHE_NAMES.audio);
-      // The WebM package is gone; the copy replaced it under its own key.
-      expect(await audioCache.match(getAudioMetaKey(webm.audioCacheKey!))).toBeUndefined();
-      expect(
-        await (await audioCache.match(getAudioMetaKey(aac.audioCacheKey!)))!.json(),
-      ).toMatchObject({ contentType: 'audio/mp4', complete: true });
-      const { getDownloadBundle } = await import('@/lib/offline/downloads-db');
-      expect((await getDownloadBundle(aac.key))?.transcriptBackend).toBe('whisperx/large');
+      vi.resetModules();
+      const reloaded = (await loadManager()).downloadManager;
+      await reloaded.hydrate();
+      expect(reloaded.getSnapshot().records[0]).toMatchObject({ status: 'error', error: 'incomplete-package', audioUrl: null, audioCacheKey: null });
+      reloaded.setUserId('user-1');
+      await reloaded.resume(old.key);
+      await waitFor(() => reloaded.getSnapshot().records[0]?.status === 'complete');
+      expect(reloaded.getSnapshot().records[0].audioUrl).toBe(`/api/catalogs/${CATALOG}/recordings/${HASH}/audio?format=aac`);
     });
 
-    it('ignores a redownload of a package that is not complete', async () => {
-      vi.stubGlobal('fetch', createFakeServer().fetchMock);
-      const { downloadManager } = await loadManager();
-      await downloadManager.hydrate();
-      await downloadManager.redownload('missing:key');
-      expect(downloadManager.getSnapshot().records).toEqual([]);
-    });
   });
 
   it('does not resurrect a download that another tab removed while hydration verified it', async () => {

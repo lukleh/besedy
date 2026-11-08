@@ -218,7 +218,7 @@ describe("auth client", () => {
     expect(del).toHaveBeenCalledWith("besedy-data-v1");
     expect(del).toHaveBeenCalledWith("besedy-shell-v1");
     expect(del).toHaveBeenCalledWith("besedy-offline-shell-v1");
-    expect(del).not.toHaveBeenCalledWith("besedy-static-v1");
+    expect(del).toHaveBeenCalledWith("besedy-static-v1");
     expect(del).not.toHaveBeenCalledWith("besedy-offline-static-v1");
     expect(del).not.toHaveBeenCalledWith("unrelated-cache");
     expect(postMessage).toHaveBeenCalledWith({ type: "signout" });

@@ -4,10 +4,7 @@ import { use, useCallback, useEffect, useMemo, useState, type ReactNode } from "
 import { useQuery } from "@tanstack/react-query";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
 import { useHydratedBoolean } from "@/hooks/use-hydrated-state";
-import { useAacUpgradeAvailable } from "@/hooks/use-aac-upgrade-available";
-import { useDownloadRecord } from "@/hooks/use-downloads";
 import { useLocalAudioSrc } from "@/hooks/use-local-package";
-import { FormatUpgradeNotice } from "@/components/offline/format-upgrade-notice";
 import { browserPrefersAacAudio } from "@/lib/audio-format";
 import {
   buildAudioDownloadUrl,
@@ -149,12 +146,6 @@ export default function RecordingContent({
   // A complete local package plays in preference to the network; the page
   // never learns how it is stored.
   const localAudioSrc = useLocalAudioSrc(catalogId, hash, selectedAudioUrl, availableSources.length > 0);
-  // A WebM download from before the AAC copy, playing on WebKit, stops early;
-  // offer the copy here as well as on the Downloads page.
-  const downloadRecord = useDownloadRecord(catalogId, hash);
-  const formatUpgrade =
-    useAacUpgradeAvailable(downloadRecord, availableSources) && localAudioSrc !== null;
-
   // Fetch single catalog entry with permissions
   const { data, cachedData, isLoading, isValidatingAccess, error, isError } = useRecordingEntry({
     catalogId,
@@ -238,16 +229,7 @@ export default function RecordingContent({
         hideDefaultRecorder={hideDefaultRecorder}
       />
       <RecordingAudioSection
-        beforeAudioPlayer={
-          formatUpgrade && downloadRecord ? (
-            <>
-              {beforeAudioPlayer}
-              <FormatUpgradeNotice downloadKey={downloadRecord.key} />
-            </>
-          ) : (
-            beforeAudioPlayer
-          )
-        }
+        beforeAudioPlayer={beforeAudioPlayer}
         afterAudioPlayer={afterAudioPlayer}
         audioUrl={audioUrl}
         bookmarkMarkers={bookmarkMarkers}
