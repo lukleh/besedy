@@ -1,14 +1,14 @@
 import path from "path";
 import { getBesedyConfig } from "./config";
+import { TimestampIdSchema } from "./validation/schemas";
 
 /**
  * Get transcripts base directory from config.
- * Returns: <text_data_dir>/<transcripts_dir>/
+ * Returns: <text_data_dir>/transcripts/
  */
 export function getTranscriptsBaseDir(): string {
   const config = getBesedyConfig();
-  const transcriptsDir = config.paths.transcripts_dir || "transcripts";
-  return path.join(config.paths.text_data_dir, transcriptsDir);
+  return path.join(config.paths.text_data_dir, "transcripts");
 }
 
 /**
@@ -16,5 +16,6 @@ export function getTranscriptsBaseDir(): string {
  * Returns: <transcripts_base_dir>/transcripts_<groupId>/
  */
 export function resolveTranscriptsPath(groupId: string): string {
-  return path.join(getTranscriptsBaseDir(), `transcripts_${groupId}`);
+  const catalogId = TimestampIdSchema.parse(groupId);
+  return path.join(getTranscriptsBaseDir(), `transcripts_${catalogId}`);
 }

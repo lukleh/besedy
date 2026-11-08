@@ -25,6 +25,7 @@ from besedy.commands.catalog.transcribe import TranscribeRequest, handle_transcr
 from besedy.core.paths import (
     PYANNOTE_DIARIZATION_MODEL_NAME,
     PYANNOTE_DIARIZATION_WORKFLOW_LABEL,
+    catalog_transcripts_dirname,
     extract_timestamp_from_catalog,
     resolve_audio_artifacts_root,
     resolve_catalogs_root,
@@ -306,7 +307,7 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
 
     # Use the transcripts parent container so we don't double-append the run id
     # when the "transcripts" symlink already points at a timestamped directory.
-    transcripts_run_root = resolve_transcripts_parent() / f"transcripts_{timestamp}"
+    transcripts_run_root = resolve_transcripts_parent() / catalog_transcripts_dirname(timestamp)
 
     # Calculate total steps dynamically (each workflow is a separate step)
     total_steps = 3  # loudness, stage-audio, archive

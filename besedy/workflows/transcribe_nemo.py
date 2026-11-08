@@ -208,7 +208,7 @@ def parse_arguments() -> argparse.Namespace:
         default=None,
         help=(
             "Base directory for per-file transcripts; defaults to "
-            f"{config.paths.transcripts_dir}/{workflow_label}."
+            f"transcripts/{workflow_label}."
         ),
     )
     parser.add_argument(

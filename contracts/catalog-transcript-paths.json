@@ -1,0 +1,8 @@
+{
+  "parent": "transcripts",
+  "generations": [
+    { "catalogId": "20251225_120000", "directory": "transcripts_20251225_120000" },
+    { "catalogId": "20261108_230000", "directory": "transcripts_20261108_230000" }
+  ],
+  "invalidCatalogIds": ["", "latest", "../20251225_120000", "20251225_120000/other", "20251225_120000_extra"]
+}

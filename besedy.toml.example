@@ -47,9 +47,8 @@ sources_dir = "/path/to/sources"
 # accepted files to <catalog>/accepted/ (which becomes their catalog path).
 # Absolute path, or relative to audio_artifacts_dir. Required for web ingest.
 uploads_dir = ""
-# Output directory name for transcript JSON files
-# (organized by workflow/output-component/full-audio-hash/)
-transcripts_dir = "transcripts"
+# Transcript generations always live in text_data_dir/transcripts/transcripts_<catalog-id>.
+# Each generation contains workflow/output-component/full-audio-hash/transcript.json.
 # Directory for human transcript correction workspaces and their published
 # artifacts. Absolute, or relative to text_data_dir. Leave empty for
 # <text_data_dir>/corrections. It is deliberately outside the transcripts tree,

@@ -17,7 +17,6 @@ corrections_dir = "/data/corrections"
 # Audio artifacts mounted at /data/audio
 audio_artifacts_dir = "/data/audio"
 # Subdirectories (relative to text_data_dir)
-transcripts_dir = "transcripts"
 speaker_clusters_dir = "speaker_clusters"
 
 [web]

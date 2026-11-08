@@ -36,7 +36,7 @@ catalog picker. Source IDs remain in existing URLs and download snapshots;
 unknown IDs are not rewritten onto the archive. Display settings still use
 `/api/preferences`, whose API no longer accepts an active-catalog selection.
 The old catalog list/create/discover and source deactivation APIs are removed.
-Source settings retain label and path updates with their existing permission
+Source settings retain label and CSV path updates with their existing permission
 checks; `isDefault` and `isActive` are no longer accepted update fields. Their
 stored values and source foreign keys remain available for historical records.
 
@@ -53,12 +53,10 @@ cd web
 BESEDY_ARCHIVE_ID=YYYYMMDD_HHMMSS npm run archive:register -- \
   --archived-catalog-path /data/text/catalogs/audio_catalog_YYYYMMDD_HHMMSS_loudness_archived.csv \
   --metadata-catalog-path /data/text/catalogs/audio_catalog_YYYYMMDD_HHMMSS.csv \
-  --transcripts-path /data/text/transcripts/transcripts_YYYYMMDD_HHMMSS \
   --label Archive
 ```
 
-Optional flags are `--label`, `--transcripts-path` and
-`--duplicates-catalog-path`. The required metadata and archived paths use the
+Optional flags are `--label` and `--duplicates-catalog-path`. The required metadata and archived paths use the
 same field validation as source settings. The source ID comes exclusively from
 `BESEDY_ARCHIVE_ID`. Registration performs a create, so an existing ID fails
 without rewriting its paths, state, grants or authored data. Use the settings
@@ -145,3 +143,19 @@ Only the deployment's web/job entry points are bound here. The host jobs API
 and worker validate the configured ID and request match; database existence and
 active state are validated by the web application, so their environment must
 match the web binding before activation.
+
+## Transcript generation paths
+
+Transcript paths are derived, not stored overrides. The pipeline, host worker
+and web reader use `<text_data_dir>/transcripts/transcripts_<source-id>` in their
+own mount namespace. Settings show that effective directory read-only;
+`transcriptsPath` is rejected in source updates and registration. The old
+`workflow_group.transcripts_path` value remains historical data and is unused;
+no database migration or artifact move is required. The retired TOML
+`paths.transcripts_dir` key no longer controls directories.
+
+Python uses `catalog_transcripts_dirname()` for generation names; the web
+resolver implements the same ID contract. Both suites check
+`contracts/catalog-transcript-paths.json`, including invalid IDs. Neither follows
+the latest-generation symlink. CSV source bindings remain explicit because they
+are input files, and changing them retains the existing system-admin checks.
