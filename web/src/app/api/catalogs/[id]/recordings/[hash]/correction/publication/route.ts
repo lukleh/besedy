@@ -30,8 +30,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({
       workspaceId: workspace.id,
-      readerPublicationId: workspace.readerPublicationId,
-      searchPublicationId: workspace.searchPublicationId,
+      publicationId: workspace.publicationId,
+      canUnpublish: workspace.canUnpublish,
+      unpublishPending: workspace.unpublishPending,
       lockedByPublicationId: workspace.lockedByPublicationId,
       eligibility: await getPublicationEligibility(workspace.id),
       publications: await listPublications(workspace.id),
@@ -65,7 +66,6 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       payload: {
         publicationId: result.publicationId,
         status: result.status,
-        reusedSnapshot: result.reused,
       },
     });
 
@@ -78,10 +78,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 }
 
 /**
- * DELETE - take the transcript off the reading surfaces.
- *
- * Search and agents keep the last corrected snapshot: an ordinary unpublish is
- * an editorial statement about reading, not a retraction of the words.
+ * DELETE - retract the corrected snapshot from reading and search/MCP.
+ * Search returns to machine text asynchronously; repeating DELETE retries an
+ * unfinished index sync without creating a different unpublish generation.
  */
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
@@ -90,7 +89,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     const { id: catalogId, hash } = paramsResult.data;
 
     const { userId } = await requireCorrectionAccess(catalogId, hash, "publish");
-    const result = await unpublishTranscript({ catalogId, audioHash: hash });
+    const result = await unpublishTranscript({ catalogId, audioHash: hash, userId });
 
     await logAuditEvent({
       userId,
@@ -98,6 +97,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       resource: "transcript_correction",
       resourceId: hash,
       catalogId,
+      payload: { pendingIndexSync: result.pendingIndexSync },
     });
 
     return NextResponse.json(result);

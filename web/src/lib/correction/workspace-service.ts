@@ -53,8 +53,9 @@ export interface WorkspaceSummary {
   spanCount: number;
   spanDurationSeconds: number;
   status: "ACTIVE" | "ARCHIVED";
-  readerPublicationId: string | null;
-  searchPublicationId: string | null;
+  publicationId: string | null;
+  canUnpublish: boolean;
+  unpublishPending: boolean;
   lockedByPublicationId: string | null;
   startedById: string | null;
   createdAt: Date;
@@ -105,6 +106,7 @@ function toSummary(workspace: {
   status: "ACTIVE" | "ARCHIVED";
   readerPublicationId: string | null;
   searchPublicationId: string | null;
+  searchWithdrawalId: string | null;
   startedById: string | null;
   createdAt: Date;
   publications?: { id: string }[];
@@ -118,8 +120,9 @@ function toSummary(workspace: {
     spanCount: workspace.spanCount,
     spanDurationSeconds: workspace.spanDurationSeconds,
     status: workspace.status,
-    readerPublicationId: workspace.readerPublicationId,
-    searchPublicationId: workspace.searchPublicationId,
+    publicationId: workspace.readerPublicationId,
+    canUnpublish: !!(workspace.readerPublicationId || workspace.searchPublicationId || workspace.searchWithdrawalId),
+    unpublishPending: !!workspace.searchWithdrawalId,
     lockedByPublicationId: workspace.publications?.[0]?.id ?? null,
     startedById: workspace.startedById,
     createdAt: workspace.createdAt,
@@ -577,7 +580,7 @@ export async function archiveWorkspace(input: ArchiveWorkspaceInput): Promise<Wo
     if (workspace.readerPublicationId || workspace.searchPublicationId) {
       throw new CorrectionError(
         "PUBLICATION_ACTIVE",
-        "This workspace still backs a published transcript; unpublish it and withdraw it from search first"
+        "This workspace still backs a published transcript; unpublish it first"
       );
     }
 

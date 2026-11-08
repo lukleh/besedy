@@ -70,8 +70,10 @@ export function CorrectionWorkspace({
     // and takes minutes. While a publication is in flight the page polls, so
     // the curator sees it finish, or fail, without reloading.
     refetchInterval: (query) => {
-      const active = query.state.data?.activePublication;
-      return active && !active.error && active.status !== "PENDING" ? 5_000 : false;
+      const state = query.state.data;
+      const active = state?.activePublication;
+      return state?.workspace?.unpublishPending || (active && !active.error && active.status !== "PENDING")
+        ? 5_000 : false;
     },
   });
 
@@ -149,7 +151,8 @@ export function CorrectionWorkspace({
   const unpublish = useMutation({
     mutationFn: async () =>
       fetchJson(buildCorrectionPublicationUrl(catalogId, hash), { method: "DELETE" }),
-    onSuccess: refreshState,
+    // The durable intent may be saved even when submitting the search job fails.
+    onSettled: refreshState,
     onError: (error) =>
       toast({
         description: error instanceof Error ? error.message : String(error),
@@ -231,7 +234,7 @@ export function CorrectionWorkspace({
                   })}
                 </Badge>
               )}
-              {state.workspace.readerPublicationId && (
+              {state.workspace.publicationId && (
                 <Badge>{t("published")}</Badge>
               )}
             </div>
@@ -271,6 +274,7 @@ export function CorrectionWorkspace({
                       className="gap-2"
                       disabled={
                         !state.publication.eligible ||
+                        (state.workspace.canUnpublish && !state.workspace.publicationId) ||
                         publish.isPending ||
                         state.activePublication !== null
                       }
@@ -281,12 +285,12 @@ export function CorrectionWorkspace({
                       ) : (
                         <Send className="h-4 w-4" />
                       )}
-                      {state.workspace.readerPublicationId
+                      {state.workspace.publicationId
                         ? t("republish")
                         : t("publish")}
                     </Button>
                   )}
-                  {state.workspace.readerPublicationId && (
+                  {state.workspace.canUnpublish && (
                     <Button
                       variant="outline"
                       className="gap-2"
@@ -298,7 +302,7 @@ export function CorrectionWorkspace({
                       onClick={() => unpublish.mutate()}
                     >
                       <Undo2 className="h-4 w-4" />
-                      {t("unpublish")}
+                      {state.workspace.unpublishPending ? t("retryUnpublish") : t("unpublish")}
                     </Button>
                   )}
                 </div>
@@ -308,9 +312,14 @@ export function CorrectionWorkspace({
                       ? t("publishEligible")
                       : t("publishBlocked")}
                   </p>
-                  {state.workspace.readerPublicationId && (
+                  {state.workspace.canUnpublish && (
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {t("unpublishedKeepsSearch")}
+                      {t("unpublishDescription")}
+                    </p>
+                  )}
+                  {state.workspace.unpublishPending && (
+                    <p className="mt-1 text-xs text-muted-foreground" data-testid="unpublish-pending">
+                      {t("unpublishPending")}
                     </p>
                   )}
                   {state.activePublication &&
