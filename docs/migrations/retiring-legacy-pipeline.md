@@ -3,6 +3,12 @@
 Routine commands read the current contracts only. Existing catalogs must use
 the base catalog writer's columns, including `Hash Algorithm` and `added_at`.
 Duplicate and archive manifests must have their current writer's columns.
+Joined manifests must use the writer's exact 31-column header, full lowercase
+source and output audio hashes, and explicit positive `Source Order` and
+`Source Count` values. Blank descriptive metadata and source bitrate remain
+valid. The join command refuses incompatible existing manifests before
+creating joined audio or moving originals, and a failed output hash never
+produces a manifest row.
 CSV durations use `HH:MM:SS`, normalized manifests end in
 `_loudness_normalized.csv`, and transcript paths use a full audio hash and an
 explicit `@lang-<code>` or `@lang-auto` component. Transcript JSON must satisfy
@@ -24,6 +30,13 @@ For an old `MM:SS` catalog duration, prefix the zero-hour component and pad all
 components (for example `1:30` becomes `00:01:30`). Re-measure source audio when
 the old value is fractional, invalid or ambiguous. These are explicit file
 edits before rollout; routine readers do not convert them.
+
+For an old joined manifest with missing hashes or ordering, recover those
+values only from the recorded source/output audio and verified join provenance.
+Do not substitute paths, filenames, or row positions for missing identities.
+If that provenance cannot be recovered, preserve the file separately with
+the explicit retirement procedure below before creating a new manifest.
+No automatic converter guesses how historical joined rows correspond.
 
 Incomplete loudness rows are automatically measured again. This rebuilds a
 derived cache under the current contract; it does not retain an alternate

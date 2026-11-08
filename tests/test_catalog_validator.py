@@ -16,6 +16,8 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import pytest
+
 from besedy.lib.catalog.validator import (
     CatalogEntry,
     DiarizationSet,
@@ -29,9 +31,9 @@ from besedy.lib.catalog.validator import (
     find_orphaned_staged_files,
     format_validation_report,
     load_catalog_csv,
-    parse_duration,
     validate_catalog,
 )
+from besedy.lib.workflow.common import parse_duration_to_seconds
 
 
 class TestParseDuration:
@@ -39,41 +41,21 @@ class TestParseDuration:
 
     def test_hh_mm_ss_format(self):
         """Test HH:MM:SS format parsing."""
-        assert parse_duration("01:30:45") == 5445.0  # 1*3600 + 30*60 + 45
-        assert parse_duration("00:00:00") == 0.0
-        assert parse_duration("10:00:00") == 36000.0
+        assert parse_duration_to_seconds("01:30:45") == 5445.0  # 1*3600 + 30*60 + 45
+        assert parse_duration_to_seconds("10:00:00") == 36000.0
 
-    def test_mm_ss_format(self):
-        """Test MM:SS format parsing."""
-        assert parse_duration("05:30") == 330.0  # 5*60 + 30
-        assert parse_duration("00:45") == 45.0
-        assert parse_duration("90:00") == 5400.0  # 90 minutes
-
-    def test_seconds_only(self):
-        """Test seconds-only format."""
-        assert parse_duration("45") == 45.0
-        assert parse_duration("120") == 120.0
-        assert parse_duration("0") == 0.0
-
-    def test_decimal_seconds(self):
-        """Test decimal seconds."""
-        assert parse_duration("45.5") == 45.5
-        assert parse_duration("00:01:30.5") == 90.5
-
-    def test_empty_string(self):
-        """Test empty string returns 0."""
-        assert parse_duration("") == 0.0
-        assert parse_duration("   ") == 0.0
-
-    def test_invalid_format(self):
-        """Test invalid format returns 0."""
-        assert parse_duration("invalid") == 0.0
-        assert parse_duration("abc:def") == 0.0
-        assert parse_duration("1:2:3:4") == 0.0  # Too many parts
+    @pytest.mark.parametrize("value", [
+        "05:30", "00:45", "90:00", "45", "120", "0", "45.5",
+        "00:01:30.5", "", "   ", "invalid", "abc:def", "1:2:3:4",
+        "00:00:00", "00:60:00",
+    ])
+    def test_rejects_noncurrent_duration(self, value):
+        with pytest.raises(ValueError):
+            parse_duration_to_seconds(value)
 
     def test_strips_whitespace(self):
         """Test whitespace is stripped."""
-        assert parse_duration("  01:30:00  ") == 5400.0
+        assert parse_duration_to_seconds("  01:30:00  ") == 5400.0
 
 
 class TestCatalogEntry:
@@ -196,20 +178,21 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,test1.wav,/path
         entries = load_catalog_csv(csv_path)
         assert len(entries) == 0
 
-    def test_missing_fields_handled(self, tmp_path):
-        """Test that missing fields are handled gracefully."""
+    def test_missing_duration_is_rejected(self, tmp_path):
+        csv_path = tmp_path / "catalog.csv"
+        csv_path.write_text("Hash,Filename\n" + "a" * 64 + ",test.wav\n")
+        with pytest.raises(ValueError, match="empty duration"):
+            load_catalog_csv(csv_path)
+
+    @pytest.mark.parametrize("duration", ["05:30", "330", "00:01:30.5", "invalid"])
+    def test_catalog_rejects_noncurrent_duration(self, tmp_path, duration):
         csv_path = tmp_path / "catalog.csv"
         csv_path.write_text(
-            """Hash,Filename
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,test.wav
-"""
+            "Hash,Filename,Full Path,Duration\n"
+            + "a" * 64 + f",test.wav,/source/test.wav,{duration}\n"
         )
-
-        entries = load_catalog_csv(csv_path)
-        assert len(entries) == 1
-        assert entries[0].sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        assert entries[0].full_path == ""
-        assert entries[0].duration_seconds == 0.0
+        with pytest.raises(ValueError, match="duration must be HH:MM:SS"):
+            load_catalog_csv(csv_path)
 
 
 class TestCheckStagedFiles:
@@ -654,13 +637,13 @@ class TestEdgeCases:
 
     def test_duration_with_leading_zeros(self):
         """Test duration parsing with leading zeros."""
-        assert parse_duration("00:05:09") == 309.0  # 5 min 9 sec
-        assert parse_duration("09:00:00") == 32400.0  # 9 hours
+        assert parse_duration_to_seconds("00:05:09") == 309.0  # 5 min 9 sec
+        assert parse_duration_to_seconds("09:00:00") == 32400.0  # 9 hours
 
     def test_very_long_duration(self):
         """Test parsing very long durations."""
         # 99 hours, 59 min, 59 sec
-        assert parse_duration("99:59:59") == 359999.0
+        assert parse_duration_to_seconds("99:59:59") == 359999.0
 
     def test_catalog_with_unicode(self, tmp_path):
         """Test catalog loading with Unicode filenames."""

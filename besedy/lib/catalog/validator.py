@@ -11,6 +11,7 @@ from besedy.core.paths import (
     iter_transcript_paths,
     parse_transcript_components,
 )
+from besedy.lib.workflow.common import parse_duration_to_seconds
 
 
 @dataclass
@@ -87,30 +88,6 @@ class ValidationResult:
     ]  # coverage counts per diarization backend (catalog hashes)
 
 
-def parse_duration(duration_str: str) -> float:
-    """Parse duration string from CSV (formats: HH:MM:SS, MM:SS, or seconds).
-
-    Returns duration in seconds.
-    """
-    duration_str = duration_str.strip()
-    if not duration_str:
-        return 0.0
-
-    parts = duration_str.split(":")
-
-    try:
-        if len(parts) == 3:  # HH:MM:SS
-            hours, minutes, seconds = parts
-            return float(hours) * 3600 + float(minutes) * 60 + float(seconds)
-        elif len(parts) == 2:  # MM:SS
-            minutes, seconds = parts
-            return float(minutes) * 60 + float(seconds)
-        else:  # Assume seconds
-            return float(duration_str)
-    except (ValueError, TypeError):
-        return 0.0
-
-
 def load_catalog_csv(csv_path: Path) -> list[CatalogEntry]:
     """Load and parse the audio catalog CSV."""
     entries = []
@@ -123,7 +100,7 @@ def load_catalog_csv(csv_path: Path) -> list[CatalogEntry]:
                 continue
 
             duration_str = row.get("Duration", "").strip()
-            duration_seconds = parse_duration(duration_str)
+            duration_seconds = parse_duration_to_seconds(duration_str)
 
             entry = CatalogEntry(
                 sha256=sha256,
