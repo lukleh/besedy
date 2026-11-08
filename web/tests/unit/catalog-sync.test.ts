@@ -14,7 +14,7 @@ const duplicatesWithUnknownOriginalCsv = readFileSync(
 // Must equal SOURCE_FINGERPRINT_VERSION (asserted below). A static import of
 // source-snapshot would run before the mock functions below are initialized,
 // because it loads fs/promises and this file's vi.mock factories are hoisted.
-const FINGERPRINT_VERSION = 'v5';
+const FINGERPRINT_VERSION = 'v6';
 
 function buildSourceFingerprint(
   content: string,
@@ -93,7 +93,7 @@ const CURRENT_CSV_HEADERS = [...new Set(Object.values(CATALOG_CSV_VALIDATION).fl
 function currentCsv(kind: CsvKind, rows: Array<Record<string, string>>, omit: string[] = []): string {
   return Papa.unparse({
     fields: CATALOG_CSV_VALIDATION[kind].requiredHeaders.filter((column) => !omit.includes(column)),
-    data: rows,
+    data: rows.map((row) => ({ 'Hash Algorithm': 'pcm-s16le-16000hz-mono-sha256-v1', ...row })),
   });
 }
 
@@ -103,6 +103,7 @@ describe('catalog-sync', () => {
 
   function csvRows(rows: Array<Record<string, string>>): string {
     const defaults = {
+      'Hash Algorithm': 'pcm-s16le-16000hz-mono-sha256-v1',
       'Full Path': '/data/original.wav',
       'Original Path': '/data/original.wav',
       'Compressed Path': '/data/audio.webm',
@@ -558,8 +559,8 @@ describe('catalog-sync', () => {
       duplicatesCatalogPath: null,
     });
     mockTx.catalogSyncState.findMany.mockResolvedValue([
-      { sourceKey: 'metadata', filePath: '/data/meta.csv', fingerprint: buildSourceFingerprint(emptyCsv, 'v3') },
-      { sourceKey: 'archived', filePath: '/data/archived.csv', fingerprint: buildSourceFingerprint(emptyCsv, 'v3') },
+      { sourceKey: 'metadata', filePath: '/data/meta.csv', fingerprint: buildSourceFingerprint(emptyCsv, 'v5') },
+      { sourceKey: 'archived', filePath: '/data/archived.csv', fingerprint: buildSourceFingerprint(emptyCsv, 'v5') },
       { sourceKey: 'duplicates', filePath: '', fingerprint: '<missing>' },
     ]);
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
@@ -780,7 +781,6 @@ describe('catalog-sync', () => {
       const result = await syncCatalogGroup('20251222_144441');
 
       expect(result.status).toBe('success');
-      expect(result.unrecognizedHashAlgorithmRows).toBe(1);
       expect(mockTx.catalogEntry.createMany).toHaveBeenCalledWith({
         data: [expect.objectContaining({
           audioHash: hash,
@@ -946,49 +946,22 @@ describe('catalog-sync', () => {
     });
   });
 
-  it('syncs rows with a missing or unknown hash algorithm and reports how many', async () => {
-    const known = 'a'.repeat(64);
-    const unknown = 'b'.repeat(64);
-    const missing = 'c'.repeat(64);
-    mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441', isActive: true,
-      metadataCatalogPath: '/data/meta.csv',
-      archivedCatalogPath: '/data/archived.csv',
-      duplicatesCatalogPath: null,
-      variants: [],
+  it.each(['', 'sha256-of-file'])('rejects metadata with an unsupported hash algorithm: %s', async (algorithm) => {
+    setupBaseChangedWithBaseline(0);
+    readCsvRows({
+      '/data/meta.csv': [{ Hash: 'a'.repeat(64), 'Hash Algorithm': algorithm }],
+      '/data/archived.csv': [{ Hash: 'a'.repeat(64) }],
     });
-    mockTx.catalogSyncState.findMany.mockResolvedValue([
-      { sourceKey: 'metadata', filePath: '/data/meta.csv', fingerprint: 'old' },
-      { sourceKey: 'archived', filePath: '/data/archived.csv', fingerprint: 'old' },
-      { sourceKey: 'duplicates', filePath: '', fingerprint: '<missing>' },
-    ]);
-    const rowsByFile: Record<string, Array<Record<string, string>>> = {
-      '/data/meta.csv': [
-        { Hash: known, 'Hash Algorithm': 'pcm-s16le-16000hz-mono-sha256-v1' },
-        { Hash: unknown, 'Hash Algorithm': 'sha256-of-file' },
-        { Hash: missing },
-      ],
-      '/data/archived.csv': [known, unknown, missing].map((hash) => ({
-        Hash: hash,
-        'Compressed Path': `/data/audio/${hash.slice(0, 8)}.webm`,
-      })),
-    };
-    readCsvRows(rowsByFile);
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const { syncCatalogGroup } = await import('@/lib/catalog-sync');
       const result = await syncCatalogGroup('20251222_144441');
-
-      expect(result.status).toBe('success');
-      expect(result.unrecognizedHashAlgorithmRows).toBe(2);
-      // Nothing is dropped.
-      expect(mockTx.catalogEntry.createMany.mock.calls[0][0].data).toHaveLength(3);
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('2 metadata rows have a missing or unknown Hash Algorithm'),
-      );
+      expect(result).toMatchObject({ status: 'error', error: expect.stringContaining('must use Hash Algorithm pcm-s16le-16000hz-mono-sha256-v1') });
+      expect(mockTx.catalogEntry.deleteMany).not.toHaveBeenCalled();
+      expect(mockTx.catalogEntry.createMany).not.toHaveBeenCalled();
     } finally {
-      warnSpy.mockRestore();
+      errorLog.mockRestore();
     }
   });
+
 });

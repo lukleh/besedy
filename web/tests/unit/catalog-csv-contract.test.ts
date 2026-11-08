@@ -7,7 +7,6 @@ vi.mock("@/lib/db", () => ({ default: {} }));
 
 import {
   AUDIO_HASH_ALGORITHM,
-  countUnrecognizedHashAlgorithms,
   toArchivedPayload,
   toDuplicatePayload,
   toMetadataPayload,
@@ -70,25 +69,5 @@ describe("catalog CSV contract", () => {
   it("reads exactly the duplicates columns of the contract", () => {
     const row = rowOf(contract.duplicates);
     expect(columnsRead(toDuplicatePayload(row))).toEqual([...contract.duplicates].sort());
-  });
-});
-
-describe("countUnrecognizedHashAlgorithms", () => {
-  const hash = "a".repeat(64);
-
-  it("counts rows whose algorithm is missing or not the contract's", () => {
-    const rows: Row[] = [
-      { Hash: hash, "Hash Algorithm": AUDIO_HASH_ALGORITHM },
-      { Hash: hash, "Hash Algorithm": ` ${AUDIO_HASH_ALGORITHM} ` },
-      { Hash: hash, "Hash Algorithm": "sha256-of-file" },
-      { Hash: hash, "Hash Algorithm": "" },
-      { Hash: hash },
-    ];
-    expect(countUnrecognizedHashAlgorithms(rows)).toBe(3);
-  });
-
-  it("ignores rows without a hash", () => {
-    expect(countUnrecognizedHashAlgorithms([{ Hash: "", "Hash Algorithm": "other" }])).toBe(0);
-    expect(countUnrecognizedHashAlgorithms([])).toBe(0);
   });
 });
