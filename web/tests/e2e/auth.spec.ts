@@ -7,7 +7,7 @@
 
 import { test, expect } from "./helpers/base-test";
 import { loginAs, logout, devLogin } from "./helpers/auth";
-import { URLS } from "./helpers/fixtures";
+import { TEST_CATALOG_ID, URLS } from "./helpers/fixtures";
 import { waitForPageReady } from "./helpers/navigation";
 
 test.describe("Authentication", () => {
@@ -63,19 +63,19 @@ test.describe("Session Bootstrap (API Testing)", () => {
     await devLogin(page, "admin");
 
     // Session cookies are automatically set - verify by calling protected API
-    const response = await page.request.get("/api/catalogs");
+    const response = await page.request.get("/api/archive");
     expect(response.ok()).toBe(true);
 
     const data = await response.json();
-    expect(Array.isArray(data)).toBe(true);
+    expect(data).toMatchObject({ id: TEST_CATALOG_ID });
   });
 
   test("devLogin works for different user roles", async ({ page }) => {
     // Test with viewer role
     await devLogin(page, "viewer");
 
-    // Can access catalogs API
-    const response = await page.request.get("/api/catalogs");
+    // Can access the configured archive API
+    const response = await page.request.get("/api/archive");
     expect(response.ok()).toBe(true);
   });
 
@@ -93,13 +93,13 @@ test.describe("Session Bootstrap (API Testing)", () => {
 
   test("pending user session is treated as signed-out on API", async ({ page }) => {
     await devLogin(page, "pending");
-    const response = await page.request.get("/api/catalogs");
+    const response = await page.request.get("/api/archive");
     expect(response.status()).toBe(401);
   });
 
   test("blocked user session is treated as signed-out on API", async ({ page }) => {
     await devLogin(page, "blocked");
-    const response = await page.request.get("/api/catalogs");
+    const response = await page.request.get("/api/archive");
     expect(response.status()).toBe(401);
   });
 });

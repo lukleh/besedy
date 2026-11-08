@@ -1,6 +1,6 @@
 import type { UserStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/db";
-import { assertArchiveCatalogId, getConfiguredArchive } from "@/lib/archive";
+import { assertArchiveCatalogId, requireArchive } from "@/lib/archive";
 import type { CatalogGrant } from "@/lib/policy/catalog-permissions";
 
 export type SystemRole = "USER" | "ADMIN" | "SUPERADMIN";
@@ -30,9 +30,9 @@ export function hasSystemCatalogAuthority(
 /**
  * A system admin who may currently use the portal.
  *
- * The one rule behind the admin capability and behind the catalog settings a
- * catalog grant does not cover (paths, the default and active flags, and
- * deactivation), so the routes and the pages that offer them cannot drift.
+ * The one rule behind the admin capability and behind the catalog paths a
+ * catalog grant does not cover, so the routes and the pages that offer them
+ * cannot drift.
  */
 export function hasSystemAdminAuthority(
   actor: Pick<PortalActorContext, "canEnterPortal" | "systemRole">
@@ -88,14 +88,14 @@ export async function resolvePortalActorContext(
     };
   }
 
-  const archive = await getConfiguredArchive();
+  const archive = await requireArchive();
   const systemRole: SystemRole = user.isSuperadmin
     ? "SUPERADMIN"
     : user.isAdmin
       ? "ADMIN"
       : "USER";
   let canEnterPortal = true;
-  if (archive && systemRole === "USER") {
+  if (systemRole === "USER") {
     const access = await prisma.catalogAccess.findUnique({
       where: {
         userId_catalogId: { userId: resolvedUserId, catalogId: archive.id },

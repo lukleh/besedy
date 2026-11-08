@@ -54,7 +54,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useAdminStatus } from "@/hooks/use-admin-status";
-import { useCatalogs } from "@/hooks/use-catalogs";
+import { useArchive } from "@/hooks/use-archive";
 import { CatalogRole, UserStatus } from "@/generated/prisma/enums";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import { CATALOG_ROLES } from "@/lib/policy/catalog-permissions";
@@ -121,7 +121,6 @@ export default function UserDetailContent() {
   const [blockConfirm, setBlockConfirm] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [adminRoleForm, setAdminRoleForm] = useState(false);
-  const [newCatalogId, setNewCatalogId] = useState<string>("");
   const [newCatalogRole, setNewCatalogRole] = useState<CatalogRole>("listener");
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState("");
@@ -145,8 +144,11 @@ export default function UserDetailContent() {
     },
   });
 
-  // Fetch catalogs for adding access
-  const { data: catalogs } = useCatalogs();
+  const archiveQuery = useArchive();
+  const archive =
+    !archiveQuery.isLoading && !archiveQuery.isError
+      ? archiveQuery.data
+      : undefined;
 
   // Update user status
   const updateStatus = useMutation({
@@ -268,7 +270,6 @@ export default function UserDetailContent() {
         queryKey: ["admin-user-detail", userId],
       });
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
-      setNewCatalogId("");
       setNewCatalogRole("listener");
       toast({
         title: t("toasts.accessGranted"),
@@ -419,9 +420,10 @@ export default function UserDetailContent() {
   }
 
   const StatusIcon = statusConfig[user.status].icon;
-  const availableCatalogs = catalogs?.filter(
-    (c) => !user.catalogAccess.some((access) => access.catalogId === c.id)
-  );
+  const archiveAccess = archive
+    ? user.catalogAccess.filter((access) => access.catalogId === archive.id)
+    : [];
+  const canAddArchiveAccess = archive && archiveAccess.length === 0;
 
   return (
     <div className="space-y-6">
@@ -655,13 +657,13 @@ export default function UserDetailContent() {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Current access list */}
-          {user.catalogAccess.length === 0 ? (
+          {archiveAccess.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">
               {t("userDetail.noAccessYet")}
             </p>
           ) : (
             <div className="border rounded-md divide-y">
-              {user.catalogAccess.map((access) => (
+              {archiveAccess.map((access) => (
                 <div
                   key={access.catalogId}
                   className="flex items-center justify-between p-3"
@@ -713,7 +715,7 @@ export default function UserDetailContent() {
           )}
 
           {/* Add new access */}
-          {availableCatalogs && availableCatalogs.length > 0 && (
+          {canAddArchiveAccess && (
             <>
               <Separator />
               <div>
@@ -721,38 +723,9 @@ export default function UserDetailContent() {
                   {t("userDetail.addCatalogAccess")}
                 </h4>
                 <div className="flex gap-2">
-                  <ResponsiveSelect
-                    value={newCatalogId}
-                    onValueChange={setNewCatalogId}
-                  >
-                    <ResponsiveSelectTrigger
-                      className="flex-1"
-                      aria-label={t("userDetail.selectCatalog")}
-                    >
-                      <ResponsiveSelectValue
-                        placeholder={t("userDetail.selectCatalog")}
-                        displayValue={
-                          newCatalogId
-                            ? availableCatalogs?.find(
-                                (c) => c.id === newCatalogId
-                              )?.label || newCatalogId
-                            : undefined
-                        }
-                      />
-                    </ResponsiveSelectTrigger>
-                    <ResponsiveSelectContent
-                      title={t("userDetail.selectCatalog")}
-                    >
-                      {availableCatalogs.map((catalog) => (
-                        <ResponsiveSelectItem
-                          key={catalog.id}
-                          value={catalog.id}
-                        >
-                          {catalog.label || catalog.id}
-                        </ResponsiveSelectItem>
-                      ))}
-                    </ResponsiveSelectContent>
-                  </ResponsiveSelect>
+                  <div className="flex-1 self-center text-sm font-medium">
+                    {archive.label || archive.id}
+                  </div>
                   <ResponsiveSelect
                     value={newCatalogRole}
                     onValueChange={(value) =>
@@ -776,15 +749,16 @@ export default function UserDetailContent() {
                     </ResponsiveSelectContent>
                   </ResponsiveSelect>
                   <Button
+                    aria-label={t("userDetail.addCatalogAccess")}
                     onClick={() => {
-                      if (newCatalogId) {
+                      if (archive) {
                         addCatalogAccess.mutate({
-                          catalogId: newCatalogId,
+                          catalogId: archive.id,
                           role: newCatalogRole,
                         });
                       }
                     }}
-                    disabled={!newCatalogId || addCatalogAccess.isPending}
+                    disabled={!archive || addCatalogAccess.isPending}
                   >
                     {addCatalogAccess.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />

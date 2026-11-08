@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ArchiveConfigurationError, ArchiveScopeError, assertArchiveCatalogId,
-  getConfiguredArchive, getConfiguredArchiveId, requireArchive, requireArchiveId,
+  assertConfiguredArchiveId, requireArchive, requireArchiveId,
 } from '@/lib/archive';
 import { handlePrismaError } from '@/lib/api/errors';
 import prisma from '@/lib/db';
@@ -17,18 +17,18 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('archive deployment binding', () => {
-  it('retains only the transitional unset path and never auto-selects a source', async () => {
-    expect(getConfiguredArchiveId()).toBeNull();
-    expect(await getConfiguredArchive()).toBeNull();
-    await assertArchiveCatalogId('another-source');
-    expect(prisma.workflowGroup.findUnique).not.toHaveBeenCalled();
+  it.each([undefined, '', '  '])('refuses missing binding %j before any lookup or path access', async (value) => {
+    vi.stubEnv('BESEDY_ARCHIVE_ID', value);
     expect(() => requireArchiveId()).toThrow(ArchiveConfigurationError);
+    expect(() => assertConfiguredArchiveId(ID)).toThrow(ArchiveConfigurationError);
+    await expect(assertArchiveCatalogId(ID)).rejects.toThrow(ArchiveConfigurationError);
     await expect(requireArchive()).rejects.toThrow('BESEDY_ARCHIVE_ID is required');
+    expect(prisma.workflowGroup.findUnique).not.toHaveBeenCalled();
   });
 
   it.each(['newest', '../20251225_120000', '20251225_120000/extra'])('refuses malformed binding %s', async (value) => {
     vi.stubEnv('BESEDY_ARCHIVE_ID', value);
-    await expect(getConfiguredArchive()).rejects.toThrow(ArchiveConfigurationError);
+    await expect(requireArchive()).rejects.toThrow(ArchiveConfigurationError);
     expect(prisma.workflowGroup.findUnique).not.toHaveBeenCalled();
   });
 

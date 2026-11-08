@@ -77,10 +77,12 @@ describe("internal ingest completion route", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     process.env = { ...originalEnv, BESEDY_JOB_SERVICE_SECRET: "job-secret" };
+    vi.stubEnv('BESEDY_ARCHIVE_ID', CATALOG_ID);
     syncCatalogGroup = (await import("@/lib/catalog-sync")).syncCatalogGroup as ReturnType<
       typeof vi.fn
     >;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
+    prisma.workflowGroup.findUnique.mockResolvedValue({ id: CATALOG_ID, isActive: true });
   });
 
   afterEach(() => {
