@@ -222,6 +222,13 @@ def test_mutation_rejects_old_chunk_store_without_migrating(
         )
 
 
+def test_mutation_does_not_create_a_missing_chunk_store(tmp_path: Path) -> None:
+    store_path = tmp_path / "missing.sqlite"
+    with pytest.raises(sqlite3.OperationalError):
+        replace_chunks_for_audio_hash(path=store_path, audio_hash="a" * 64, chunks=[])
+    assert not store_path.exists()
+
+
 def test_lookup_chunk_neighbors_returns_before_and_after_chunks(tmp_path: Path) -> None:
     store_path = tmp_path / "chunk_store.sqlite"
     write_chunk_store(

@@ -59,8 +59,9 @@ def _chunk_select_columns(*, table_alias: str = "") -> str:
     )
 
 
-def _connect(path: Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(path)
+def _connect(path: Path, *, create: bool = False) -> sqlite3.Connection:
+    mode = "rwc" if create else "rw"
+    connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode={mode}", uri=True)
     connection.row_factory = sqlite3.Row
     return connection
 
@@ -332,7 +333,7 @@ def write_chunk_store(*, path: Path | str, chunks: Sequence[RagChunk]) -> Path:
     if temporary_path.exists():
         temporary_path.unlink()
 
-    connection = _connect(temporary_path)
+    connection = _connect(temporary_path, create=True)
     try:
         _initialize_schema(connection)
         rows = [_chunk_row(chunk) for chunk in chunks]
