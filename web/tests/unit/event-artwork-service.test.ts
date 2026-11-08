@@ -251,16 +251,15 @@ describe("event artwork service", () => {
       expect(storage.readArtworkAsset).toHaveBeenCalledWith("/artworks/square.web.webp");
     });
 
-    it("falls back to the original when no WebP copy exists yet", async () => {
+    it('requires the WebP copy for web requests', async () => {
       storage.readArtworkAsset.mockImplementation(async (filePath: string) =>
         filePath.endsWith(".png") ? { bytes: Buffer.from("png"), resolvedPath: filePath } : null
       );
 
-      await expect(loadEventArtworkAsset(base)).resolves.toMatchObject({
-        bytes: Buffer.from("png"),
-        contentType: "image/png",
-        served: "original",
-      });
+      await expect(loadEventArtworkAsset(base)).resolves.toBeNull();
+      expect(storage.readArtworkAsset).toHaveBeenCalledExactlyOnceWith(
+        '/artworks/square.web.webp',
+      );
     });
 
     it("serves the original when asked, without reading the WebP copy", async () => {

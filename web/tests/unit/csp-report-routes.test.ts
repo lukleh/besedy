@@ -11,7 +11,7 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-vi.mock("@/lib/auth/permissions", () => ({
+vi.mock('@/lib/auth/session', () => ({
   getCurrentUserId: vi.fn(),
 }));
 
@@ -40,7 +40,7 @@ describe("csp-report routes", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
-    getCurrentUserId = (await import("@/lib/auth/permissions")).getCurrentUserId as ReturnType<typeof vi.fn>;
+    getCurrentUserId = (await import('@/lib/auth/session')).getCurrentUserId as ReturnType<typeof vi.fn>;
     getCurrentUserId.mockResolvedValue("user-1");
   });
 

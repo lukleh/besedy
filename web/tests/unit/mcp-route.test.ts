@@ -1,3 +1,4 @@
+import { createMcpHandler } from '@modelcontextprotocol/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -130,7 +131,16 @@ describe('MCP route hardening', () => {
     const response = await POST(request());
 
     expect(response.status).toBe(404);
-    expect(mocks.requireMcpAuth).not.toHaveBeenCalled();
+    expect(mocks.requireMcpAuth).not.toHaveBeenCalled()
+  });
+
+  it('configures the endpoint to reject previous protocol revisions', async () => {
+    const { POST } = await import('@/app/api/mcp/route');
+    await POST(request());
+    expect(createMcpHandler).toHaveBeenCalledWith(expect.any(Function), {
+      legacy: 'reject',
+      responseMode: 'json'
+    });
   });
 
   it('does not debit authenticated limits when token verification fails', async () => {

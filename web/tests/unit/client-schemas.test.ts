@@ -15,7 +15,7 @@ describe("client response schemas", () => {
     expect(result.success).toBe(false);
   });
 
-  it("defaults a missing RAG capability to false during rolling deploys", () => {
+  it('rejects a response missing the current RAG capability', () => {
     const result = catalogFeaturesResponseSchema.safeParse({
       features: {
         events: {
@@ -28,8 +28,6 @@ describe("client response schemas", () => {
       },
     });
 
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.data.features.events.canUseRagSearch).toBe(false);
+    expect(result.success).toBe(false);
   });
 });

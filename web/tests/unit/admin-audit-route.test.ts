@@ -67,7 +67,17 @@ describe("admin audit route", () => {
           payloadVersion: 1,
           resource: "auth",
           resourceId: "admin-1",
-          details: null,
+          details: {
+            audit: {
+              payloadVersion: 1,
+              domain: 'auth',
+              subjectType: 'user',
+              outcome: 'success',
+              summary: 'Signed in',
+              actorSnapshot: { type: 'user', userId: 'admin-1' },
+              subjectSnapshot: { type: 'user' }
+            }
+          },
           ipAddress: null,
           userAgent: null,
           createdAt: new Date("2026-03-15T03:00:00.000Z"),
@@ -92,8 +102,7 @@ describe("admin audit route", () => {
     expect(prisma.auditLog.count).toHaveBeenCalledWith({
       where: {
         AND: [
-          { domain: { not: null } },
-        ],
+          { domain: { not: null } }],
       },
     });
     expect(prisma.auditLog.findMany).toHaveBeenNthCalledWith(
@@ -101,8 +110,7 @@ describe("admin audit route", () => {
       expect.objectContaining({
         where: {
           AND: [
-            { domain: { not: null } },
-          ],
+            { domain: { not: null } }],
         },
       })
     );
@@ -118,7 +126,6 @@ describe("admin audit route", () => {
           id: "log-1",
           domain: "auth",
           outcome: "success",
-          isCanonical: true,
         },
       ],
     });

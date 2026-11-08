@@ -46,15 +46,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (!asset) {
       return NextResponse.json({ error: "Artwork candidate not found" }, { status: 404 });
     }
-    // A web request answered with the original is a stand-in until the WebP
-    // copy exists, so the browser must ask again instead of keeping it a year.
-    const cacheControl =
-      asset.served === size.data ? "private, max-age=31536000, immutable" : "private, no-cache";
     return new NextResponse(new Uint8Array(asset.bytes), {
       headers: {
         "Content-Type": asset.contentType,
         "Content-Length": String(asset.bytes.length),
-        "Cache-Control": cacheControl,
+        "Cache-Control": 'private, max-age=31536000, immutable',
         ETag: `"${asset.sha256}"`,
         "X-Content-Type-Options": "nosniff",
       },

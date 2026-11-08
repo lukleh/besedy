@@ -41,7 +41,6 @@ vi.mock("@/lib/access/capabilities", () => ({
 
 vi.mock("@/lib/audit/logger", () => ({
   logAccessDenied: vi.fn(),
-  logAudit: vi.fn(),
   logDataAccessEvent: vi.fn(),
   AuditAction: {
     TRANSCRIPT_DOWNLOADED: "TRANSCRIPT_DOWNLOADED",

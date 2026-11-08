@@ -42,7 +42,6 @@ vi.mock("@/lib/db", () => ({
 
 vi.mock("@/lib/audit/logger", () => ({
   logUserEvent: vi.fn(),
-  logAudit: vi.fn(),
   logUserLifecycleEvent: vi.fn(),
 }));
 

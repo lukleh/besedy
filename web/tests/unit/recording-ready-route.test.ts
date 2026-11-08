@@ -14,7 +14,6 @@ vi.mock("@/lib/audit/logger", () => ({
     CATALOG_UPDATED: "CATALOG_UPDATED",
   },
   logAccessDenied: vi.fn(),
-  logAudit: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({

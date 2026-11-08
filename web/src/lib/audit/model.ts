@@ -53,8 +53,8 @@ export interface AuditMetadataEnvelope {
   catalogId?: string | null;
   outcome: AuditOutcome;
   summary: string;
-  actorSnapshot?: AuditActorSnapshot | null;
-  subjectSnapshot?: AuditSubjectSnapshot | null;
+  actorSnapshot: AuditActorSnapshot;
+  subjectSnapshot: AuditSubjectSnapshot;
 }
 
 export interface AuditLogUser {
@@ -98,7 +98,6 @@ export interface AuditListItem {
   summary: string;
   actor: AuditActorView;
   target: AuditTargetView | null;
-  isCanonical: boolean;
 }
 
 export interface AuditDetailViewModel extends AuditListItem {
@@ -157,15 +156,12 @@ function getCatalogId(
   payload: Record<string, unknown> | null,
   subjectSnapshot?: AuditSubjectSnapshot | null
 ): string | null {
-  return subjectSnapshot?.catalogId ?? getString(payload?.catalogId) ?? getString(payload?.groupId);
+  return (
+    subjectSnapshot?.catalogId ?? getString(payload?.catalogId) ?? getString(payload?.groupId)
+  );
 }
 
-/**
- * The role a grant event should headline. Records written before the
- * role-based rework carry the retired `accessLevel` instead; they are history
- * and are not rewritten, so they headline no role (their raw payload still
- * shows the old value).
- */
+/** The role assigned by a grant event. */
 function getGrantRole(payload: Record<string, unknown> | null): string | null {
   return getString(payload?.role);
 }
@@ -364,7 +360,7 @@ export function buildAuditSummary({
     case "PORTAL_ADMISSION_RESET":
       return `Portal admission reset for ${subjectLabel}`;
     case "PENDING_CATALOG_GRANT_CREATED":
-      return `Pending ${grantRole ?? "catalog"} grant created for ${subjectLabel}${catalogInfo}`;
+      return `Pending ${grantRole ?? 'catalog'} grant created for ${subjectLabel}${catalogInfo}`;
     case "PENDING_CATALOG_GRANT_UPDATED":
       return `Pending catalog grant updated for ${subjectLabel}${catalogInfo}`;
     case "PENDING_CATALOG_GRANT_REVOKED":
@@ -466,7 +462,8 @@ export function getAuditMetadata(details: unknown): AuditMetadataEnvelope | null
   const outcome = getString(audit.outcome);
   const summary = getString(audit.summary);
 
-  if (!domain || !subjectType || !outcome || !summary) {
+  if (!domain || !subjectType || !outcome || !summary ||
+      !isRecord(audit.actorSnapshot) || !isRecord(audit.subjectSnapshot)) {
     return null;
   }
 
@@ -478,24 +475,20 @@ export function getAuditMetadata(details: unknown): AuditMetadataEnvelope | null
     catalogId: getString(audit.catalogId),
     outcome: outcome as AuditOutcome,
     summary,
-    actorSnapshot: isRecord(audit.actorSnapshot)
-      ? {
-          type: (getString(audit.actorSnapshot.type) as AuditActorSnapshot["type"]) ?? "user",
-          userId: getString(audit.actorSnapshot.userId),
-          name: getString(audit.actorSnapshot.name),
-          email: getString(audit.actorSnapshot.email),
-        }
-      : null,
-    subjectSnapshot: isRecord(audit.subjectSnapshot)
-      ? {
-          type: (getString(audit.subjectSnapshot.type) as AuditSubjectType) ?? "unknown",
-          id: getString(audit.subjectSnapshot.id),
-          label: getString(audit.subjectSnapshot.label),
-          secondaryLabel: getString(audit.subjectSnapshot.secondaryLabel),
-          catalogId: getString(audit.subjectSnapshot.catalogId),
-          catalogLabel: getString(audit.subjectSnapshot.catalogLabel),
-        }
-      : null,
+    actorSnapshot: {
+      type: (getString(audit.actorSnapshot.type) as AuditActorSnapshot["type"]) ?? "user",
+      userId: getString(audit.actorSnapshot.userId),
+      name: getString(audit.actorSnapshot.name),
+      email: getString(audit.actorSnapshot.email),
+    },
+    subjectSnapshot: {
+      type: (getString(audit.subjectSnapshot.type) as AuditSubjectType) ?? "unknown",
+      id: getString(audit.subjectSnapshot.id),
+      label: getString(audit.subjectSnapshot.label),
+      secondaryLabel: getString(audit.subjectSnapshot.secondaryLabel),
+      catalogId: getString(audit.subjectSnapshot.catalogId),
+      catalogLabel: getString(audit.subjectSnapshot.catalogLabel),
+    },
   };
 }
 
@@ -513,9 +506,9 @@ function toCreatedAtString(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
 }
 
-function buildActorView(row: AuditLogRecord, metadata: AuditMetadataEnvelope | null): AuditActorView {
-  const actorSnapshot = metadata?.actorSnapshot;
-  if (actorSnapshot?.type === "system") {
+function buildActorView(row: AuditLogRecord, metadata: AuditMetadataEnvelope): AuditActorView {
+  const actorSnapshot = metadata.actorSnapshot;
+  if (actorSnapshot.type === "system") {
     return {
       kind: "system",
       userId: actorSnapshot.userId ?? null,
@@ -535,51 +528,28 @@ function buildActorView(row: AuditLogRecord, metadata: AuditMetadataEnvelope | n
     };
   }
 
-  if (actorSnapshot) {
-    return {
-      kind: actorSnapshot.type === "anonymous" ? "anonymous" : "user",
-      userId: actorSnapshot.userId ?? row.userId ?? null,
-      label: actorSnapshot.name ?? actorSnapshot.email ?? actorSnapshot.userId ?? "Unknown user",
-      secondaryLabel: actorSnapshot.name && actorSnapshot.email ? actorSnapshot.email : null,
-      image: null,
-    };
-  }
-
-  if (row.userId) {
-    return {
-      kind: "user",
-      userId: row.userId,
-      label: row.userId,
-      secondaryLabel: null,
-      image: null,
-    };
-  }
-
   return {
-    kind: "system",
-    userId: null,
-    label: "System",
-    secondaryLabel: null,
+    kind: actorSnapshot.type === "anonymous" ? "anonymous" : "user",
+    userId: actorSnapshot.userId ?? row.userId ?? null,
+    label: actorSnapshot.name ?? actorSnapshot.email ?? actorSnapshot.userId ?? "Unknown user",
+    secondaryLabel: actorSnapshot.name && actorSnapshot.email ? actorSnapshot.email : null,
     image: null,
   };
 }
 
 function buildTargetView(
   row: AuditLogRecord,
-  metadata: AuditMetadataEnvelope | null,
+  metadata: AuditMetadataEnvelope,
   payload: Record<string, unknown> | null
 ): AuditTargetView | null {
-  const subjectSnapshot = metadata?.subjectSnapshot;
+  const subjectSnapshot = metadata.subjectSnapshot;
   const label = pickSubjectLabel(payload, subjectSnapshot, row.resourceId);
   if (!label && !subjectSnapshot && !row.resourceId) {
     return null;
   }
 
   return {
-    type:
-      (getString(row.subjectType) as AuditSubjectType | null) ??
-      metadata?.subjectType ??
-      inferSubjectType(row.action, row.resource),
+    type: metadata.subjectType,
     id: subjectSnapshot?.id ?? metadata?.subjectId ?? row.subjectId ?? row.resourceId ?? null,
     label: label ?? row.resource,
     secondaryLabel:
@@ -590,28 +560,19 @@ function buildTargetView(
   };
 }
 
-function buildSummary(row: AuditLogRecord, metadata: AuditMetadataEnvelope | null): string {
-  const payload = getAuditPayload(row.details);
-  if (metadata?.summary) {
-    return metadata.summary;
-  }
-
-  return buildAuditSummary({
-    action: row.action,
-    resource: row.resource,
-    resourceId: row.resourceId,
-    payload,
-    actorSnapshot: metadata?.actorSnapshot,
-    subjectSnapshot: metadata?.subjectSnapshot,
-  });
-}
-
 export function mapAuditLogToListItem(row: AuditLogRecord): AuditListItem {
   const metadata = getAuditMetadata(row.details);
   const payload = getAuditPayload(row.details);
-  const canonicalDomain = getString(row.domain) as AuditDomain | null;
-  const canonicalOutcome = getString(row.outcome) as AuditOutcome | null;
-  const isCanonical = Boolean(row.payloadVersion ?? row.domain ?? row.subjectType ?? row.outcome);
+  if (
+    !metadata ||
+    row.payloadVersion !== AUDIT_PAYLOAD_VERSION ||
+    row.domain !== metadata.domain ||
+    row.subjectType !== metadata.subjectType ||
+    row.outcome !== metadata.outcome) {
+    throw new Error(
+      `Audit entry ${row.id} does not use the current audit contract`
+    );
+  }
 
   return {
     id: row.id,
@@ -625,12 +586,11 @@ export function mapAuditLogToListItem(row: AuditLogRecord): AuditListItem {
     userAgent: row.userAgent,
     createdAt: toCreatedAtString(row.createdAt),
     user: row.user,
-    domain: canonicalDomain ?? metadata?.domain ?? inferAuditDomain(row.action, row.resource),
-    outcome: canonicalOutcome ?? metadata?.outcome ?? inferAuditOutcome(row.action),
-    summary: buildSummary(row, metadata),
+    domain: metadata.domain,
+    outcome: metadata.outcome,
+    summary: metadata.summary,
     actor: buildActorView(row, metadata),
     target: buildTargetView(row, metadata, payload),
-    isCanonical,
   };
 }
 

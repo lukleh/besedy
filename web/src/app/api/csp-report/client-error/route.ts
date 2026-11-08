@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { toPrismaJson } from "@/lib/prisma-json";
-import { getCurrentUserId } from "@/lib/auth/permissions";
+import { getCurrentUserId } from '@/lib/auth/session';
 import { createServerLogger } from "@/lib/log/server";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
     ) as string;
     const safeStack = truncate(typeof stack === "string" ? stack : undefined, MAX_STACK_LENGTH);
     const safeUserAgent =
-      typeof userAgent === "string" ? userAgent : request.headers.get("user-agent") ?? undefined;
+      typeof userAgent === "string" ? userAgent : (request.headers.get("user-agent") ?? undefined);
     const safeSource = truncate(
       typeof source === "string" ? source : undefined,
       50

@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { requireArchive } from "@/lib/archive";
-import {
-  isAdmin,
-  isSuperadmin,
-} from "@/lib/auth/permissions";
 import { requireAdminCapability } from "@/lib/access/require-admin";
 import { mapAuditLogToDetailViewModel } from "@/lib/audit/model";
 
@@ -86,14 +82,22 @@ async function fetchRelatedEntity(
       case "audio":
       case "transcript":
       case "metadata": {
+        if (!recordedCatalogId) {
+          return {
+            type: 'audio',
+            found: false,
+            data: null,
+            error: 'Recording audit has no source provenance'
+          }
+        }
         const archive = await requireArchive();
-        if (recordedCatalogId && recordedCatalogId !== archive.id) {
+        if (recordedCatalogId !== archive.id) {
           return {
             type: "audio", found: false, data: null,
             error: "Historical recording belongs to another source",
           };
         }
-        const scopedCatalogId = recordedCatalogId ?? archive.id;
+        const scopedCatalogId = recordedCatalogId;
         // resourceId is an audio hash (SHA-256)
         // First try to get curated metadata from database
         const audioMetadata = await prisma.audioMetadata.findFirst({
@@ -165,8 +169,7 @@ async function fetchRelatedEntity(
           };
         }
 
-        // Preserve recorded provenance; unscoped legacy rows may use the
-        // bound archive, never a different source selected by recency/default.
+        // Resolve only the source recorded by this audit event.
         const activeGroup = await prisma.workflowGroup.findFirst({
           where: { id: scopedCatalogId },
         });
@@ -416,16 +419,13 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId: currentUserId } = await requireAdminCapability({
+    await requireAdminCapability({
       message: "Admin access required",
     });
 
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const expand = searchParams.get("expand") === "true";
-
-    const isSuperAdmin = await isSuperadmin();
-    const isAdminUser = await isAdmin();
 
     const log = await prisma.auditLog.findFirst({
       where: {
@@ -447,14 +447,8 @@ export async function GET(
     if (!log) {
       return NextResponse.json(
         { error: "Audit log entry not found" },
-        { status: 404 }
+        { status: 404 },
       );
-    }
-
-    // Superadmins and admins can see all logs, others only their own
-    const canViewAllLogs = isSuperAdmin || isAdminUser;
-    if (!canViewAllLogs && log.userId !== currentUserId) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     // If expand is requested, fetch related entity
@@ -462,7 +456,7 @@ export async function GET(
     let relatedEntity: RelatedEntity | null = null;
     if (expand) {
       relatedEntity = await fetchRelatedEntity(
-        log.resource, log.resourceId, log.catalogId ?? detail.target?.catalogId,
+        log.resource, log.resourceId, log.catalogId,
       );
     }
 
