@@ -204,6 +204,10 @@ def _load_transcription_workflows(
             item.get("language", DEFAULT_TRANSCRIPTION_LANGUAGE), context=context
         )
         validate_workflow_language(workflow_id, language, align_model, context=context)
+        if workflow_id == "nemo-rnnt" and align_model:
+            raise ValueError(
+                f"{context} nemo-rnnt uses native word timestamps and does not accept align_model"
+            )
 
         pipeline_default = bool(item.get("pipeline_default", True))
         expected_default = bool(item.get("expected_default", pipeline_default))

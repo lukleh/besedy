@@ -137,6 +137,33 @@ language = "cs"
 pipeline_default = false
 expected_default = false
 
+# Optional offline RNNT candidate. This uses the separate NeMo 3.1 Docker
+# worker, rather than the Canary image. Native RNNT word timestamps are used.
+# Tested snapshot: 023ce907267a09a308a5cb69239447cb3d0c1597.
+[[transcription_workflows]]
+workflow_id = "nemo-rnnt"
+workflow_label = "nemo-rnnt"
+model = "nvidia/nemotron-labs-unified-asr-0.6b"
+vad_model = "silero_vad_v6"
+language = "cs"
+pipeline_default = false
+expected_default = false
+
+# Optional CzechSpeech variant. Convert the ORIGINAL checkpoint from
+# moravianai/CzechSpeech (snapshot 0762c5de1e8a2438f8e70f07c0d56beb27684ede)
+# into this uniquely named CTranslate2 directory; see docs/backends.md.
+# CC-BY-NC-4.0; commercial use requires a separate license. The model was
+# trained without timestamps, so the existing Czech WhisperX aligner is required.
+[[transcription_workflows]]
+workflow_id = "whisperx"
+workflow_label = "whisperx"
+model = "/path/to/whisper_models/czechspeech-ct2"
+vad_model = "silero"
+align_model = "comodoro/wav2vec2-xls-r-300m-cs-250"
+language = "cs"
+pipeline_default = false
+expected_default = false
+
 # Optional: Qwen3-ASR backend (external Silero VAD in Besedy)
 # [[transcription_workflows]]
 # workflow_id = "qwen3-asr"

@@ -238,8 +238,55 @@ artifacts, real caches, and host-resolvable paths.
 
 ### Backend Matrix
 
-Transcription: `faster-whisper`, `whisperx`, `qwen3-asr`, `nemo` (greedy +
-beam). Diarization: `pyannote`.
+Transcription: `faster-whisper`, `whisperx`, `qwen3-asr`, `nemo` (Canary greedy +
+beam), and `nemo-rnnt` (optional). Diarization: `pyannote`.
+
+### Optional Unified and CzechSpeech candidates
+
+`besedy.toml.example` includes two opt-in candidates with both
+`pipeline_default = false` and `expected_default = false`. Normal pipeline runs
+and expected-output checks do not include them; explicitly selecting a workflow
+runs its configured variants. Keep the established RAG backend while comparing
+these candidates: correction workspaces require the existing Faster Whisper
+chunk/VAD contract, which a new RNNT transcript does not supply.
+
+**Nemotron Labs Unified 0.6B:** configure `workflow_id = "nemo-rnnt"` with
+`model = "nvidia/nemotron-labs-unified-asr-0.6b"`, `language = "cs"`, and
+`vad_model = "silero_vad_v6"`. Build the separate worker:
+
+```bash
+docker compose -f backends/docker-compose.yml build nemo-rnnt
+just catalog transcribe --workflow nemo-rnnt --hash <full_audio_hash>
+```
+
+This is an offline RNNT workflow with native word timestamps. It uses the NeMo
+3.1 runtime rather than upgrading the existing Canary image. The tested source
+checkpoint revision is `023ce907267a09a308a5cb69239447cb3d0c1597`; for a fixed run,
+the `model` setting can also name that snapshot's local `.nemo` file. The model
+publisher currently documents inference support. Separate partial fine-tuning
+experiments do not reproduce its combined offline/streaming training recipe.
+[Model card](https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b)
+
+**CzechSpeech:** use the original `moravianai/CzechSpeech` checkpoint, rather than
+the throwaway fine-tuned smoke artifact. The tested revision is
+`0762c5de1e8a2438f8e70f07c0d56beb27684ede`. Convert its downloaded HF snapshot
+through the existing helper:
+
+```bash
+./backends/faster-whisper/convert_model.sh \
+  --model /path/to/huggingface/snapshots/0762c5de1e8a2438f8e70f07c0d56beb27684ede \
+  --output-dir /path/to/whisper_models/czechspeech-ct2
+just catalog transcribe --workflow whisperx \
+  --model /path/to/whisper_models/czechspeech-ct2 --hash <full_audio_hash>
+```
+
+Use the same path in the optional config entry, with
+`align_model = "comodoro/wav2vec2-xls-r-300m-cs-250"`. CzechSpeech was trained
+without timestamps; WhisperX supplies the existing Czech forced alignment.
+Its weights are CC-BY-NC-4.0 for non-commercial use; commercial use needs a
+separate license. Give each converted model a unique directory name, such as
+`czechspeech-ct2`: local model identities use their directory basename.
+[Model card](https://huggingface.co/moravianai/CzechSpeech)
 
 ### Artifact Checks
 

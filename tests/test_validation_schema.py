@@ -55,6 +55,39 @@ class TestValidateSharedSchema:
         issues = validate_shared_schema(data)
         assert issues == []
 
+    def test_unknown_confidence_matches_canonical_nullable_contract(self):
+        data = {
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": "Ahoj",
+                    "confidence": None,
+                    "words": [{"word": "Ahoj", "start": 0.0, "end": 1.0, "confidence": None}],
+                }
+            ]
+        }
+        assert validate_shared_schema(data) == []
+
+    def test_non_numeric_confidence_still_rejected(self):
+        for invalid in (True, False, "high", [], {}):
+            data = {
+                "segments": [
+                    {
+                        "start": 0.0,
+                        "end": 1.0,
+                        "text": "Ahoj",
+                        "confidence": invalid,
+                        "words": [
+                            {"word": "Ahoj", "start": 0.0, "end": 1.0, "confidence": invalid}
+                        ],
+                    }
+                ]
+            }
+            issues = validate_shared_schema(data)
+            assert len(issues) == 2
+            assert all("confidence" in issue for issue in issues)
+
     def test_valid_with_meta(self):
         """Meta object is optional and valid."""
         data = {

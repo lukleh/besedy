@@ -99,6 +99,7 @@ Runs speech-to-text transcription using one or more backends:
   faster-whisper  Optimized Whisper implementation (multi-language)
   whisperx        Whisper + alignment (word timestamps, VAD support)
   qwen3-asr       Qwen3-ASR with external Silero VAD segmentation
+  nemo-rnnt       NeMo RNNT with external Silero VAD and native word timestamps
 
 Requires staged audio: run 'catalog stage-audio' first.
 
@@ -161,7 +162,7 @@ Example:
         metavar="WORKFLOW",
         help=(
             "Run only specified backend(s). Can be repeated: --workflow canary-nemo "
-            "--workflow faster-whisper. Default: all configured transcription workflows. "
+            "--workflow faster-whisper. Default: configured pipeline-default workflows. "
             "Matches workflow_id or workflow_label (and workflow_id family prefixes like "
             "canary-nemo -> canary-nemo-beam) and runs all configured models for that workflow."
         ),

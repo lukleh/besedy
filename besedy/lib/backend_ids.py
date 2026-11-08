@@ -4,7 +4,7 @@ This module is the single source of truth for canonical backend IDs used across 
 
 Canonical identifiers:
 - Workflow IDs (CLI + config): ``canary-nemo``, ``canary-nemo-beam``, ``faster-whisper``, ``whisperx``,
-  ``qwen3-asr``, ``pyannote``
+  ``qwen3-asr``, ``nemo-rnnt``, ``pyannote``
 - Transcript JSON ``meta.backend`` (transcription only): uses the same IDs as workflow IDs.
 
 Backward-compatibility note:
@@ -51,6 +51,11 @@ _BACKENDS: tuple[BackendId, ...] = (
         workflow_id="qwen3-asr",
         kind="transcription",
         meta_backend="qwen3-asr",
+    ),
+    BackendId(
+        workflow_id="nemo-rnnt",
+        kind="transcription",
+        meta_backend="nemo-rnnt",
     ),
     BackendId(
         workflow_id="pyannote",

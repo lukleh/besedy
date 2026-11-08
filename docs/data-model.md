@@ -51,6 +51,7 @@ Canonical workflow IDs used in CLI commands, directory names, and
 | Faster-Whisper | `faster-whisper` | `faster-whisper/large-v3@silero_vad_v6@lang-cs` |
 | WhisperX | `whisperx` | `whisperx/large-v3@silero@lang-cs` |
 | Qwen3-ASR | `qwen3-asr` | `qwen3-asr/<model>@<vad>[@<align>]@lang-cs` |
+| NeMo RNNT | `nemo-rnnt` | `nemo-rnnt/<model>@<vad>@lang-cs` |
 | Pyannote Diarization | `pyannote` | `speaker_diarization/pyannote_speaker-diarization-community-1` |
 
 **Output-component pattern:**

@@ -20,6 +20,7 @@ TRANSCRIPTS_DIRNAME = "transcripts"
 # that supports configured transcription variants must use its WorkflowConfig
 # instead of consulting these defaults.
 NEMO_VAD_WORKFLOW_LABEL = "canary-nemo"
+NEMO_RNNT_WORKFLOW_LABEL = "nemo-rnnt"
 FASTER_WHISPER_VAD_MODEL_FILENAME = "silero_vad_v6.onnx"
 PYANNOTE_DIARIZATION_WORKFLOW_LABEL = "speaker_diarization"
 PYANNOTE_DIARIZATION_MODEL_NAME = "pyannote_speaker-diarization-community-1"

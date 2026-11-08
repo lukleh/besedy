@@ -19,6 +19,14 @@ services:
       dockerfile: backends/nemo/Dockerfile
     init: true
     gpus: all
+  nemo-rnnt:
+    image: "${BESEDY_NEMO_RNNT_IMAGE:-besedy/nemo-rnnt:local}"
+    pull_policy: never
+    build:
+      context: ..
+      dockerfile: backends/nemo-rnnt/Dockerfile
+    init: true
+    gpus: all
   qwen3-asr:
     image: "${BESEDY_QWEN3_ASR_IMAGE:-besedy/qwen3-asr:local}"
     pull_policy: never

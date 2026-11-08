@@ -40,6 +40,7 @@ NEMO_WHISPERX_ALIGN_SCRIPT_PATH = (
 )
 FASTER_WHISPER_SCRIPT_PATH = PROJECT_ROOT / "besedy" / "workflows" / "transcribe_faster_whisper.py"
 QWEN3_ASR_SCRIPT_PATH = PROJECT_ROOT / "besedy" / "workflows" / "transcribe_qwen3_asr.py"
+NEMO_RNNT_SCRIPT_PATH = PROJECT_ROOT / "besedy" / "workflows" / "transcribe_nemo_rnnt.py"
 WHISPERX_SCRIPT_PATH = PROJECT_ROOT / "besedy" / "workflows" / "transcribe_whisperx.py"
 PYANNOTE_DIARIZATION_SCRIPT_PATH = PROJECT_ROOT / "besedy" / "workflows" / "diarize_pyannote.py"
 
@@ -173,7 +174,13 @@ def build_workflows(
     ]
     whisperx_jobs = [job for job in transcription_jobs if job.config.workflow_id == "whisperx"]
     faster_jobs = [job for job in transcription_jobs if job.config.workflow_id == "faster-whisper"]
-    qwen_jobs = [job for job in transcription_jobs if job.config.workflow_id == "qwen3-asr"]
+    prompted_asr_scripts = {
+        "qwen3-asr": QWEN3_ASR_SCRIPT_PATH,
+        "nemo-rnnt": NEMO_RNNT_SCRIPT_PATH,
+    }
+    prompted_asr_jobs = [
+        job for job in transcription_jobs if job.config.workflow_id in prompted_asr_scripts
+    ]
 
     if nemo_jobs:
         for job in nemo_jobs:
@@ -397,44 +404,44 @@ def build_workflows(
                 )
             )
 
-    if qwen_jobs:
-        for job in qwen_jobs:
+    if prompted_asr_jobs:
+        for job in prompted_asr_jobs:
             cfg = job.config
-            qwen_entries = [
+            asr_entries = [
                 entry for entry in prepared if hash_component_from_sha(entry.sha256) in job.hashes
             ]
-            if not qwen_entries:
+            if not asr_entries:
                 continue
 
             output_component = cfg.output_component(sanitize_model_identifier)
-            qwen_label = f"{cfg.workflow_label}-{output_component}"
+            asr_label = f"{cfg.workflow_label}-{output_component}"
 
             workflow_root = output_root / cfg.workflow_label
             workflow_root.mkdir(parents=True, exist_ok=True)
 
-            qwen_argv = ["--output-dir", str(workflow_root), "--model", str(cfg.model_name)]
-            qwen_argv.extend(["--language", cfg.language])
+            asr_argv = ["--output-dir", str(workflow_root), "--model", str(cfg.model_name)]
+            asr_argv.extend(["--language", cfg.language])
             if cfg.vad_model:
-                qwen_argv.extend(["--vad-model", str(cfg.vad_model)])
+                asr_argv.extend(["--vad-model", str(cfg.vad_model)])
             if cfg.align_model:
-                qwen_argv.extend(["--align-model", str(cfg.align_model)])
-            qwen_argv.append("--audio")
-            qwen_argv.extend(str(entry.staged) for entry in qwen_entries)
+                asr_argv.extend(["--align-model", str(cfg.align_model)])
+            asr_argv.append("--audio")
+            asr_argv.extend(str(entry.staged) for entry in asr_entries)
 
-            qwen_extra_env = {
+            asr_extra_env = {
                 "PYTORCH_ALLOC_CONF": "expandable_segments:True",
                 "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
                 **forward_host_env("HF_TOKEN"),
             }
 
             process = build_python_backend_process(
-                backend_id="qwen3-asr",
-                display_name="qwen3-asr",
-                script_path=QWEN3_ASR_SCRIPT_PATH,
-                script_args=qwen_argv,
-                docker_service="qwen3-asr",
-                extra_env=qwen_extra_env,
-                input_paths=[str(entry.staged) for entry in qwen_entries],
+                backend_id=cfg.workflow_id,
+                display_name=cfg.workflow_id,
+                script_path=prompted_asr_scripts[cfg.workflow_id],
+                script_args=asr_argv,
+                docker_service=cfg.workflow_id,
+                extra_env=asr_extra_env,
+                input_paths=[str(entry.staged) for entry in asr_entries],
                 output_paths=_as_path_args(workflow_root),
                 model_paths=_local_model_paths(
                     cfg.model_name,
@@ -445,7 +452,7 @@ def build_workflows(
             )
             workflows.append(
                 _workflow_from_backend_process(
-                    label=qwen_label,
+                    label=asr_label,
                     process=process,
                 )
             )

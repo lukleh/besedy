@@ -72,6 +72,7 @@ copying command tables or test-user matrices into provider-specific files.
 - Optional backend image builds (one-time, as needed):
   - `docker compose -f backends/docker-compose.yml build whisperx`
   - `docker compose -f backends/docker-compose.yml build nemo`
+  - `docker compose -f backends/docker-compose.yml build nemo-rnnt`
   - `docker compose -f backends/docker-compose.yml build faster-whisper`
   - `docker compose -f backends/docker-compose.yml build qwen3-asr`
   - `docker compose -f backends/docker-compose.yml build pyannote`
@@ -214,7 +215,7 @@ No route picks a catalog from `?group=` or a saved preference.
 
 ## Data & Workflow Notes
 
-- Workflow IDs: `canary-nemo`, `canary-nemo-beam`, `faster-whisper`,
+- Workflow IDs: `canary-nemo`, `canary-nemo-beam`, `nemo-rnnt`, `faster-whisper`,
   `whisperx`, `qwen3-asr`, `pyannote`;
   source of truth: `besedy/lib/backend_ids.py`.
 - Transcripts live under

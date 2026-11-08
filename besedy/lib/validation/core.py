@@ -62,8 +62,8 @@ def validate_shared_schema(data: dict[str, Any]) -> list[str]:
             issues.append(f"Segment {idx} 'end' must be a number")
         if "text" in seg and not isinstance(seg.get("text"), str):
             issues.append(f"Segment {idx} 'text' must be a string")
-        if "confidence" in seg and not _is_number(seg.get("confidence")):
-            issues.append(f"Segment {idx} 'confidence' must be a number")
+        if seg.get("confidence") is not None and not _is_number(seg["confidence"]):
+            issues.append(f"Segment {idx} 'confidence' must be a number or null")
 
         if "words" in seg:
             words = seg.get("words")
@@ -84,8 +84,10 @@ def validate_shared_schema(data: dict[str, Any]) -> list[str]:
                     issues.append(f"Segment {idx} word {w_idx} 'end' must be a number")
                 if "word" in word and not isinstance(word.get("word"), str):
                     issues.append(f"Segment {idx} word {w_idx} 'word' must be a string")
-                if "confidence" in word and not _is_number(word.get("confidence")):
-                    issues.append(f"Segment {idx} word {w_idx} 'confidence' must be a number")
+                if word.get("confidence") is not None and not _is_number(word["confidence"]):
+                    issues.append(
+                        f"Segment {idx} word {w_idx} 'confidence' must be a number or null"
+                    )
 
     if "meta" in data and not isinstance(data.get("meta"), dict):
         issues.append("'meta' must be an object when provided")
