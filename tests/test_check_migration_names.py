@@ -199,6 +199,20 @@ def test_reviewed_complete_baseline_can_replace_history(repo: Path) -> None:
     assert "Verified current-schema baseline" in result.stdout
 
 
+def test_baseline_check_runs_from_web_like_ci(repo: Path) -> None:
+    _squash_to_baseline(repo)
+    cwd = repo / "web"
+    result = subprocess.run(
+        ["bash", os.path.relpath(CHECK, cwd), "main"],
+        cwd=cwd,
+        env=GIT_ENV,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_baseline_cannot_hide_unreviewed_history_change(repo: Path) -> None:
     _squash_to_baseline(repo)
     manifest = repo / "web/prisma/baseline.json"
