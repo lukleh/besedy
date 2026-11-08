@@ -9,7 +9,6 @@ from besedy.lib.rag_chunk_store import (
     build_fts_query,
     count_chunks_by_audio_hash,
     delete_chunks_for_audio_hashes,
-    ensure_chunk_store_fts,
     list_chunk_ids_by_audio_hashes,
     list_chunks,
     lookup_chunk_neighbors,
@@ -200,72 +199,27 @@ def test_build_fts_query_does_not_expose_raw_match_syntax() -> None:
         build_fts_query("a", match_mode="prefix")
 
 
-def test_ensure_chunk_store_fts_recovers_partial_existing_backfill(tmp_path: Path) -> None:
-    store_path = tmp_path / "legacy_chunk_store.sqlite"
-    with sqlite3.connect(store_path) as connection:
-        connection.executescript(
-            """
-            CREATE TABLE chunks (
-              chunk_id TEXT PRIMARY KEY,
-              audio_hash TEXT NOT NULL,
-              chunk_ordinal INTEGER NOT NULL,
-              start_sec REAL NOT NULL,
-              end_sec REAL NOT NULL,
-              text TEXT NOT NULL,
-              run_id TEXT NOT NULL,
-              backend_key TEXT NOT NULL,
-              chunk_version TEXT NOT NULL,
-              token_count INTEGER NOT NULL,
-              source_path TEXT NOT NULL
-            );
-            INSERT INTO chunks VALUES (
-              'legacy-chunk',
-              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-              0,
-              0.0,
-              5.0,
-              'starší hledatelný přepis',
-              '20260206_120000',
-              'faster-whisper/large-v3@silero_vad_v6@lang-cs',
-              'v2',
-              3,
-              '/tmp/transcript.json'
-            );
-            CREATE VIRTUAL TABLE chunks_fts USING fts5(
-              text,
-              content = 'chunks',
-              content_rowid = 'rowid',
-              tokenize = 'unicode61 remove_diacritics 2'
-            );
-            """
-        )
-
-    ensure_chunk_store_fts(path=store_path)
-
-    assert _fts_matches(store_path, "hledatelny") == ["legacy-chunk"]
-
-
-def test_ensure_chunk_store_fts_recovers_missing_index_with_completion_marker(
-    tmp_path: Path,
+@pytest.mark.parametrize("missing_table", ["chunks_fts", "chunk_store_metadata"])
+def test_mutation_rejects_old_chunk_store_without_migrating(
+    tmp_path: Path, missing_table: str
 ) -> None:
-    store_path = tmp_path / "missing_fts_chunk_store.sqlite"
+    store_path = tmp_path / "old.sqlite"
     write_chunk_store(
         path=store_path,
-        chunks=[
-            _chunk(
-                chunk_id="chunk-0",
-                audio_hash="a" * 64,
-                chunk_ordinal=0,
-                text="obnovený hledatelný přepis",
-            )
-        ],
+        chunks=[_chunk(chunk_id="chunk-0", audio_hash="a" * 64, chunk_ordinal=0, text="original")],
     )
     with sqlite3.connect(store_path) as connection:
-        connection.execute("DROP TABLE chunks_fts")
-
-    ensure_chunk_store_fts(path=store_path)
-
-    assert _fts_matches(store_path, "hledatelny") == ["chunk-0"]
+        connection.execute(f"DROP TABLE {missing_table}")
+    with pytest.raises(ValueError, match="--rebuild"):
+        delete_chunks_for_audio_hashes(path=store_path, audio_hashes=["a" * 64])
+    assert [c.chunk_id for c in list_chunks(path=store_path)] == ["chunk-0"]
+    with sqlite3.connect(store_path) as connection:
+        assert (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE name = ?", (missing_table,)
+            ).fetchone()
+            is None
+        )
 
 
 def test_lookup_chunk_neighbors_returns_before_and_after_chunks(tmp_path: Path) -> None:
