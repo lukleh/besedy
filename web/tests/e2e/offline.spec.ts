@@ -575,7 +575,7 @@ test.describe('Offline Mode', () => {
       await setOffline(context, false);
     });
 
-    test('a downloaded event cold-starts at its normal URL and is reachable from the catalog list offline', async ({
+    test('a downloaded event cold-starts at its normal URL and offline catalog navigation opens Downloads', async ({
       page,
       context,
       browserName,
@@ -618,30 +618,33 @@ test.describe('Offline Mode', () => {
         timeout: 15_000,
       });
 
-      // The catalog list shows the downloaded events and opens one.
+      // A failed catalog navigation shows Downloads directly. It needs no
+      // catalog API response or second navigation to reach the local library.
       await page.goto(URLS.catalog);
-      await expect(page.getByTestId('local-event-list')).toBeVisible({
+      await expect(page).toHaveURL(URLS.catalog);
+      await expect(page.getByTestId('downloads-storage')).toBeVisible({
         timeout: 15_000,
       });
-      // The list renders cards on phones and table rows on desktop.
-      const eventCard = page
-        .getByTestId(`event-card-${eventId}`)
-        .filter({ visible: true });
-      if ((await eventCard.count()) > 0) {
-        await eventCard.first().click();
-      } else {
-        await page
-          .getByRole('row')
-          .filter({ has: page.getByTestId(`event-downloaded-${eventId}`) })
-          .click();
-      }
+      await expect(page.getByTestId('offline-unavailable')).toHaveCount(0);
+      await page.getByRole('link', { name: /open|otevřít/i }).first().click();
       await expect(page).toHaveURL(
-        new RegExp(`/catalog/${TEST_CATALOG_ID}/event/${eventId}$`),
+        `${URLS.event(eventId)}?backTo=%2Fdownloads`,
         { timeout: 15_000 },
       );
       await expect(page.getByTestId('audio-play-button')).toBeVisible({
         timeout: 15_000,
       });
+      const audio = page.locator('audio');
+      const positionBeforePlay = await audio.evaluate(
+        (element: HTMLAudioElement) => element.currentTime,
+      );
+      await page.getByTestId('audio-play-button').click();
+      await expect
+        .poll(
+          () => audio.evaluate((element: HTMLAudioElement) => element.currentTime),
+          { timeout: 15_000 },
+        )
+        .toBeGreaterThan(positionBeforePlay + 0.2);
 
       // Back online in the same session-free document: the header must show
       // the signed-in account again, not a sign-in button.
