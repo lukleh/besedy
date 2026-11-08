@@ -40,9 +40,63 @@ def test_production_recipes_do_not_require_removed_scanner_secret() -> None:
 def test_web_only_production_deploys_do_not_start_or_recreate_dependencies() -> None:
     justfile = JUSTFILE.read_text(encoding="utf-8")
 
-    assert "{{ prod_compose }} up -d --no-deps web" in justfile
     assert "{{ prod_compose }} up -d --no-deps --no-build --remove-orphans web" in justfile
     assert "{{ prod_compose }} up -d --no-recreate --remove-orphans" in justfile
+
+
+def test_rebuild_uses_the_verified_build_backup_migration_and_apply_path() -> None:
+    justfile = JUSTFILE.read_text(encoding="utf-8")
+    rebuild = justfile.split("\nprod-rebuild:", maxsplit=1)[1].split(
+        "\n# Build the production", maxsplit=1
+    )[0]
+    assert rebuild.strip().splitlines() == [
+        "just prod-build --no-cache", "    just prod-apply"
+    ]
+
+
+PRODUCTION_ENV = {
+    "AUTH_URL": "https://example.test",
+    "NEXT_PUBLIC_APP_URL": "https://example.test",
+    "AUTH_SECRET": "test-auth-secret",
+    "AUTH_GOOGLE_ID": "test-google-id",
+    "AUTH_GOOGLE_SECRET": "test-google-secret",
+    "DATABASE_URL": "postgresql://test.invalid/test",
+    "VAPID_PUBLIC_KEY": "test-public-key",
+    "NEXT_PUBLIC_VAPID_PUBLIC_KEY": "test-public-key",
+    "VAPID_PRIVATE_KEY": "test-private-key",
+}
+
+
+def _validate_production_env(tmp_path, values):
+    env_file = tmp_path / "web.env.prod"
+    env_file.write_text("".join(f"{key}={value}\n" for key, value in values.items()))
+    env = {key: value for key, value in os.environ.items() if key not in PRODUCTION_ENV}
+    env["BESEDY_WEB_ENV_PROD"] = str(env_file)
+    return subprocess.run(
+        ["bash", "-euc", '. "$1"; load_production_web_env; validate_production_web_env',
+         "bash", str(PROJECT_ROOT / "scripts/production_web_env.sh")],
+        env=env, capture_output=True, text=True, check=False,
+    )
+
+
+def test_shared_production_env_accepts_valid_configuration(tmp_path):
+    result = _validate_production_env(tmp_path, PRODUCTION_ENV)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("missing", PRODUCTION_ENV)
+def test_shared_production_env_requires_each_build_setting(tmp_path, missing):
+    values = {key: value for key, value in PRODUCTION_ENV.items() if key != missing}
+    result = _validate_production_env(tmp_path, values)
+    assert result.returncode == 1
+    assert f"Missing required env: {missing}" in result.stderr
+
+
+@pytest.mark.parametrize("field", ["NEXT_PUBLIC_APP_URL", "NEXT_PUBLIC_VAPID_PUBLIC_KEY"])
+def test_shared_production_env_refuses_mismatched_public_settings(tmp_path, field):
+    result = _validate_production_env(tmp_path, {**PRODUCTION_ENV, field: "mismatch"})
+    assert result.returncode == 1
+    assert f"{field} must match" in result.stderr
 
 
 def test_postgres_18_uses_its_parent_data_volume_in_every_environment() -> None:
@@ -108,7 +162,7 @@ def test_prod_apply_refuses_an_image_from_a_different_checkout_before_downtime()
 
     label = 'org.opencontainers.image.revision'
     assert label in apply_recipe
-    assert 'resolve_web_env_file.sh production' in apply_recipe
+    assert "load_production_web_env" in apply_recipe
     assert 'if [ "$image_commit" != "$git_commit" ]' in apply_recipe
     assert "Run just prod-build from this checkout before applying it." in apply_recipe
     assert apply_recipe.index(label) < apply_recipe.index("{{ prod_compose }} stop web\n")
@@ -116,21 +170,21 @@ def test_prod_apply_refuses_an_image_from_a_different_checkout_before_downtime()
 
 def test_prod_build_reads_jobs_image_without_polluting_web_validation() -> None:
     justfile = JUSTFILE.read_text(encoding="utf-8")
-    build_recipe = justfile.split("\nprod-build:", maxsplit=1)[1].split(
+    build_recipe = justfile.split("\nprod-build *args:", maxsplit=1)[1].split(
         "\n# Stop the web writer", maxsplit=1
     )[0]
     assert "resolve_jobs_env_file.sh production" in build_recipe
     assert "Missing production jobs env file" in build_recipe
     assert build_recipe.count('. "$jobs_env"') == 1
     assert build_recipe.index('jobs_image="$(') < build_recipe.index("cd web")
-    assert build_recipe.index("require_env DATABASE_URL") < build_recipe.index(
+    assert build_recipe.index("validate_production_web_env") < build_recipe.index(
         'docker image inspect "$jobs_image"'
     )
 
 
 def test_fresh_host_can_build_web_before_the_coordinated_jobs_build() -> None:
     justfile = JUSTFILE.read_text(encoding="utf-8")
-    build_recipe = justfile.split("\nprod-build:", maxsplit=1)[1].split(
+    build_recipe = justfile.split("\nprod-build *args:", maxsplit=1)[1].split(
         "\n# Stop the web writer", maxsplit=1
     )[0]
     coordinated_recipe = justfile.split("prod-deploy-with-jobs:", maxsplit=1)[
