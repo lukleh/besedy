@@ -32,8 +32,9 @@ display and search convenience only.
 - Commands must derive timestamps from their input chain and validate alignment.
 - Stable pointers are mutable coordination state, while generation contents are
   treated as published artifacts.
-- Compatibility readers may recognize historical names, but new writers follow
-  the canonical layout.
+- Readers and writers require the current schema and canonical names. Unsupported
+  artifacts must be explicitly migrated, rebuilt or retired before use; routine
+  readers do not translate historical formats or discover old version directories.
 
 ## Practice since 2026-10 (clarification)
 
