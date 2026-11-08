@@ -72,3 +72,26 @@ def test_retirement_moves_only_explicit_unreferenced_files(tmp_path):
     assert main([*args, "--apply"]) == 0
     assert not obsolete.exists()
     assert (tmp_path / "retired" / obsolete.name).read_text() == "old"
+
+
+def test_retirement_destination_must_be_disjoint_from_active_artifacts(tmp_path):
+    obsolete = tmp_path / "audio_catalog_merged_v2.csv"
+    obsolete.write_text("old")
+    active = tmp_path / "transcripts_20251222_144441"
+    active.mkdir()
+    references = tmp_path / "references.json"
+    references.write_text(json.dumps([str(active)]))
+    with pytest.raises(SystemExit, match="1"):
+        main(
+            [
+                "--retire-file",
+                str(obsolete),
+                "--references-json",
+                str(references),
+                "--retired-dir",
+                str(active / "retired"),
+                "--apply",
+            ]
+        )
+    assert obsolete.exists()
+    assert not (active / "retired").exists()

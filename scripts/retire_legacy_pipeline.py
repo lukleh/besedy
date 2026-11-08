@@ -81,7 +81,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path)
     parser.add_argument("--retire-file", type=Path, action="append", default=[])
     parser.add_argument(
-        "--references-json", type=Path, help="JSON array of all active DB/config path references"
+        "--references-json",
+        type=Path,
+        help="JSON array of active artifact files/subtrees, excluding generic storage roots",
     )
     parser.add_argument("--retired-dir", type=Path, help="Destination outside every live data root")
     parser.add_argument("--apply", action="store_true")
@@ -108,6 +110,13 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("References must be a JSON array of absolute host paths")
             references = [Path(path).resolve() for path in raw_references]
         destination = args.retired_dir.resolve() if args.retired_dir else None
+        if destination and any(
+            destination == reference
+            or reference in destination.parents
+            or destination in reference.parents
+            for reference in references
+        ):
+            raise ValueError("Retirement destination overlaps an active artifact reference")
         for path in retired:
             if not path.is_file():
                 raise ValueError(f"Only individual regular files can be retired: {path}")

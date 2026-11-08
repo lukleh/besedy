@@ -17,6 +17,14 @@ rename `transcript_original.json` without verifying and converting its schema.
 Recordings lists must be `{"version": 1, "audio_hashes": [...]}` objects;
 empty lists use that same object with an empty array.
 
+For an old bare JSON hash array or newline-separated list, preserve the hashes
+inside that versioned object and validate each as a full lowercase audio hash.
+Do not translate another hash algorithm into this contract by relabeling it.
+For an old `MM:SS` catalog duration, prefix the zero-hour component and pad all
+components (for example `1:30` becomes `00:01:30`). Re-measure source audio when
+the old value is fractional, invalid or ambiguous. These are explicit file
+edits before rollout; routine readers do not convert them.
+
 Incomplete loudness rows are automatically measured again. This rebuilds a
 derived cache under the current contract; it does not retain an alternate
 format reader.
@@ -42,8 +50,11 @@ fresh canonical hash. It does not follow directory symlinks.
 
 To retire standalone historical CSVs, first collect every live DB/config path
 reference, map container paths to host paths, and save the absolute host paths
-as a JSON array. Include any configured parent data roots whose contents must
-stay live. Run during maintenance so references cannot change during the move.
+as a JSON array. List concrete artifact files and active artifact subtrees,
+such as the configured transcript generation. Exclude broad storage roots
+such as `text_data_dir` or `AUDIO_DIR`: those contain both live and obsolete
+artifacts and would prevent retirement of every contained file. Run during
+maintenance so references cannot change during the move.
 
 ```sh
 uv run python -m scripts.retire_legacy_pipeline \
@@ -55,7 +66,8 @@ uv run python -m scripts.retire_legacy_pipeline \
 The tool refuses referenced files, directories, destination collisions, and
 retirement without the reference snapshot. Only explicitly named files move;
 repeat `--retire-file` for each reviewed file. The destination must be outside
-the live data trees. Review the dry-run, then repeat with `--apply`. Preserve
+the live data trees; the tool also refuses a destination overlapping an active
+artifact reference. Review the dry-run, then repeat with `--apply`. Preserve
 the retired files until their useful metadata has been reconciled; remove
 them afterward according to the normal backup policy.
 
