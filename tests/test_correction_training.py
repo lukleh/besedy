@@ -186,16 +186,12 @@ def test_a_catalog_lists_its_test_recordings_next_to_its_corrections(tmp_path: P
         load_test_recordings(listed)
 
 
-def test_an_export_without_machine_text_leaves_the_baseline_columns_empty(tree) -> None:
+@pytest.mark.parametrize("missing", ["machineText", "origin"])
+def test_export_requires_machine_text_and_origin(tree, missing: str) -> None:
     export, root, output = tree
-    for span in export["workspaces"][0]["chunks"][0]["spans"]:
-        del span["machineText"]
-        del span["origin"]
-    build_dataset(export, root, output)
-    row = _rows(output)[0]
-    assert row["machine_text"] is None
-    assert row["revision_origins"] == [None, None]
-    assert json.loads((output / "dataset.json").read_text())["schema_version"] == 2
+    del export["workspaces"][0]["chunks"][0]["spans"][0][missing]
+    with pytest.raises(TrainingExportError, match="Every training span"):
+        build_dataset(export, root, output)
 
 
 def test_fillers_are_stripped_from_the_machine_text_as_from_the_label(tree) -> None:

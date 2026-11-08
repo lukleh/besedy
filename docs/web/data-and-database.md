@@ -418,13 +418,15 @@ Two more guards keep the correction data as it was recorded:
 
 - `web/tests/unit/correction-migration-guard.test.ts` fails on any migration
   after the contract that drops, renames or retypes a correction column,
-  deletes or rewrites correction rows, or makes deletes cascade into them.
+  deletes or rewrites correction rows, or makes deletes cascade into them. The
+  sole pinned exception is the guarded retirement of unused pre-contract machine
+  snapshots described in ADR 0012.
 - `web/scripts/correction-integrity-check.sh`, run nightly from the host's
   cron, checks every live workspace: the frozen source against its
   fingerprint, the stored spans against a fresh segmentation of it, the staged
   audio's size (and its SHA-256 on one night a week per workspace,
   `AUDIO_HASH_EVERY_DAYS`), the manifest, and every revision against its text
-  hash. A workspace cut by an older segmentation version is noted, not failed.
+  hash. An unsupported segmentation version fails and requires migration.
   It also reports orphan manifests: `starting` or `active` ones with no live
   workspace in the database. It mails `ALERT_EMAIL` when anything differs or
   the check cannot run.

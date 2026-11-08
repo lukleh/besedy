@@ -952,8 +952,7 @@ enum TranscriptPublicationStatus {
   ROLLED_BACK
 }
 
-/// Where a text revision's words came from (ADR 0012). Null on revisions written
-/// before the correction data contract.
+/// Where a text revision's words came from (ADR 0012).
 enum TranscriptRevisionOrigin {
   /// Imported from the frozen machine source when the workspace started
   MACHINE
@@ -1023,18 +1022,16 @@ model TranscriptWorkspace {
   createdAt             DateTime                  @default(now()) @map("created_at")
   updatedAt             DateTime                  @updatedAt @map("updated_at")
   archivedAt            DateTime?                 @map("archived_at")
-  /// ADR 0012 segmentation the spans were cut with (e.g. chunks-v1); null only
-  /// on workspaces started before the correction data contract. The other
-  /// contract columns below are set together with it (database check).
-  segmentationVersion   String?                   @map("segmentation_version") @db.VarChar(32)
+  /// Current ADR 0012 segmentation contract; enforced by a database check.
+  segmentationVersion   String                    @map("segmentation_version") @db.VarChar(32)
   /// The segmentation parameters, in samples, as the contract file states them
-  segmentationParams    Json?                     @map("segmentation_params")
+  segmentationParams    Json                      @map("segmentation_params")
   /// Decoded chunks in the frozen source; equals its segment count
-  sourceChunkCount      Int?                      @map("source_chunk_count")
+  sourceChunkCount      Int                       @map("source_chunk_count")
   /// Staged 16 kHz WAV the span times refer to, as the source recorded it
-  stagedAudioPath       String?                   @map("staged_audio_path")
-  stagedAudioSize       BigInt?                   @map("staged_audio_size")
-  stagedAudioSha256     String?                   @map("staged_audio_sha256") @db.VarChar(64)
+  stagedAudioPath       String                    @map("staged_audio_path")
+  stagedAudioSize       BigInt                    @map("staged_audio_size")
+  stagedAudioSha256     String                    @map("staged_audio_sha256") @db.VarChar(64)
 
   workflowGroup     WorkflowGroup             @relation(fields: [workflowGroupId], references: [id], onDelete: Restrict)
   startedBy         User?                     @relation("TranscriptWorkspaceStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
@@ -1065,19 +1062,18 @@ model TranscriptSpan {
   originalTextHash  String   @map("original_text_hash") @db.VarChar(64)
   /// Set immediately after the imported revision rows are written
   currentRevisionId String?  @map("current_revision_id") @db.Uuid
-  /// ADR 0012: the decoded chunk this span belongs to, 0-based. Null only on
-  /// spans of workspaces started before the correction data contract.
-  chunkOrdinal      Int?     @map("chunk_ordinal")
+  /// ADR 0012: the decoded chunk this span belongs to, 0-based.
+  chunkOrdinal      Int      @map("chunk_ordinal")
   /// First and last index into the frozen source's clip_timestamps
-  firstRegionIndex  Int?     @map("first_region_index")
-  lastRegionIndex   Int?     @map("last_region_index")
+  firstRegionIndex  Int      @map("first_region_index")
+  lastRegionIndex   Int      @map("last_region_index")
   /// Exact bounds in samples of the staged 16 kHz audio
-  startSample       Int?     @map("start_sample")
-  endSample         Int?     @map("end_sample")
+  startSample       Int      @map("start_sample")
+  endSample         Int      @map("end_sample")
   /// The span's VAD regions as [[startSample, endSample], ...]
-  speechRegions     Json?    @map("speech_regions")
+  speechRegions     Json     @map("speech_regions")
   /// The machine words assigned to the span, as the source stored them
-  machineWords      Json?    @map("machine_words")
+  machineWords      Json     @map("machine_words")
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
@@ -1098,30 +1094,29 @@ model TranscriptSpan {
 /// Immutable normalized text. Decisions bind to a revision, never to a hash
 /// alone, so returning to earlier wording never revives an old approval.
 model TranscriptSpanRevision {
-  id                 String                    @id @default(uuid()) @db.Uuid
-  workspaceId        String                    @map("workspace_id") @db.Uuid
-  spanId             String                    @map("span_id") @db.Uuid
+  id                 String                   @id @default(uuid()) @db.Uuid
+  workspaceId        String                   @map("workspace_id") @db.Uuid
+  spanId             String                   @map("span_id") @db.Uuid
   text               String
-  textHash           String                    @map("text_hash") @db.VarChar(64)
-  previousRevisionId String?                   @map("previous_revision_id") @db.Uuid
+  textHash           String                   @map("text_hash") @db.VarChar(64)
+  previousRevisionId String?                  @map("previous_revision_id") @db.Uuid
   /// Immutable identity of the editor; null for the revision imported from the
   /// frozen machine source, which nobody wrote. Kept alongside the nullable
   /// relation so history can still say who created a revision after that
   /// account is deleted, as ADR 0006 requires of it.
-  actorKey           String?                   @map("actor_key")
-  authorId           String?                   @map("author_id")
-  createdAt          DateTime                  @default(now()) @map("created_at")
-  /// ADR 0012: where the text came from; null on revisions written before the
-  /// correction data contract
-  origin             TranscriptRevisionOrigin?
+  actorKey           String?                  @map("actor_key")
+  authorId           String?                  @map("author_id")
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  /// ADR 0012: where the text came from
+  origin             TranscriptRevisionOrigin
   /// Backend key the text was taken from, set exactly when origin is SUGGESTION
-  suggestionBackend  String?                   @map("suggestion_backend") @db.VarChar(255)
+  suggestionBackend  String?                  @map("suggestion_backend") @db.VarChar(255)
   /// Guide revision active when this revision was written
-  guideRevisionId    String?                   @map("guide_revision_id") @db.Uuid
+  guideRevisionId    String                   @map("guide_revision_id") @db.Uuid
 
   workspace        TranscriptWorkspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   span             TranscriptSpan              @relation("TranscriptSpanRevisions", fields: [spanId], references: [id], onDelete: Restrict)
-  guideRevision    TranscriptGuideRevision?    @relation(fields: [guideRevisionId], references: [id], onDelete: Restrict)
+  guideRevision    TranscriptGuideRevision     @relation(fields: [guideRevisionId], references: [id], onDelete: Restrict)
   previousRevision TranscriptSpanRevision?     @relation("TranscriptSpanRevisionChain", fields: [previousRevisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   nextRevisions    TranscriptSpanRevision[]    @relation("TranscriptSpanRevisionChain")
   author           User?                       @relation("TranscriptSpanRevisionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
@@ -1155,10 +1150,10 @@ model TranscriptSpanDecision {
   idempotencyKey  String?                @map("idempotency_key") @db.VarChar(64)
   /// The command this row recorded, which `kind` alone cannot name: an edit
   /// and a bare approval both store APPROVE.
-  commandName     String?                @map("command_name") @db.VarChar(32)
+  commandName     String                 @map("command_name") @db.VarChar(32)
   /// SHA-256 of that command's payload, so two edits carrying different text
   /// are not mistaken for a retry of each other.
-  commandDigest   String?                @map("command_digest") @db.VarChar(64)
+  commandDigest   String                 @map("command_digest") @db.VarChar(64)
   /// Write order. Timestamps have millisecond precision and two decisions can
   /// share one, while the reducer needs to know which of a person's decisions
   /// came last; every writer holds the workspace lock, so this sequence is
@@ -1167,8 +1162,8 @@ model TranscriptSpanDecision {
   createdAt       DateTime               @default(now()) @map("created_at")
   /// ADR 0012: share of the span's speech regions this person played before an
   /// approve or disapprove, 0..1, as the client measured it. Never evidence of
-  /// approval; training export uses it. Null on withdrawals and on decisions
-  /// made before the correction data contract.
+  /// approval; training export uses it. Null only on withdrawals; a decision
+  /// made without listening is recorded with a heard fraction of zero.
   heardFraction   Float?                 @map("heard_fraction")
   /// Slowest and fastest playback rate used while listening
   minPlaybackRate Float?                 @map("min_playback_rate")
@@ -1217,7 +1212,7 @@ model TranscriptPublication {
   workflowGroupId         String                      @map("workflow_group_id") @db.VarChar(15)
   audioHash               String                      @map("audio_hash") @db.VarChar(64)
   status                  TranscriptPublicationStatus @default(PENDING)
-  /// Historical policy: v1 always records 2
+  /// Approval threshold recorded with the publication snapshot
   requiredApprovals       Int                         @default(2) @map("required_approvals")
   guideRevisionId         String?                     @map("guide_revision_id") @db.Uuid
   publishedById           String?                     @map("published_by")
