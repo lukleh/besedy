@@ -113,6 +113,12 @@ _TRANSCRIPTION_DEFAULTS: dict[str, WorkflowDefaults] = {
         "default_parallel": 1,
         "aggressive_fill": False,
     },
+    "ark-asr": {
+        "vram_per_instance_gb": 6.0,
+        "safety_margin_percent": 0.10,
+        "default_parallel": 1,
+        "aggressive_fill": False,
+    },
 }
 
 _DIARIZATION_CONFIGS: list[WorkflowConfig] = [

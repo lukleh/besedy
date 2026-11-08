@@ -21,6 +21,7 @@ TRANSCRIPTS_DIRNAME = "transcripts"
 # instead of consulting these defaults.
 NEMO_VAD_WORKFLOW_LABEL = "canary-nemo"
 NEMO_RNNT_WORKFLOW_LABEL = "nemo-rnnt"
+ARK_ASR_WORKFLOW_LABEL = "ark-asr"
 FASTER_WHISPER_VAD_MODEL_FILENAME = "silero_vad_v6.onnx"
 PYANNOTE_DIARIZATION_WORKFLOW_LABEL = "speaker_diarization"
 PYANNOTE_DIARIZATION_MODEL_NAME = "pyannote_speaker-diarization-community-1"

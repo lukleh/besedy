@@ -22,6 +22,7 @@ class WorkflowCommand:
     argv: Sequence[str]
     extra_env: dict[str, str] | None = None
     parallel_group: str | None = None
+    prerequisite_label: str | None = None
 
 
 @dataclass(frozen=True)

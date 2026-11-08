@@ -1,6 +1,6 @@
 # ML Backends
 
-> **Last Updated:** 2026-10-03
+> **Last Updated:** 2026-11-08
 
 How Besedy's ML backends are deployed and configured.
 
@@ -31,8 +31,8 @@ Dependency versions live in build files (`pyproject.toml`, `uv.lock`,
 
 ### Locked Worker Images
 
-The faster-whisper, NeMo, WhisperX, pyannote and ColBERT images are locked so
-that a rebuild reproduces the image that produced the existing transcripts and
+The faster-whisper, NeMo, WhisperX, ARK-ASR, pyannote and ColBERT images are locked
+so that a rebuild reproduces the image that produced the existing transcripts and
 indexes. Each Dockerfile pins its base image by digest and installs its
 `requirements.lock` (the image's `pip freeze --all`) with
 `pip install --no-deps`, so pip installs exactly the locked versions.
@@ -239,7 +239,7 @@ artifacts, real caches, and host-resolvable paths.
 ### Backend Matrix
 
 Transcription: `faster-whisper`, `whisperx`, `qwen3-asr`, `nemo` (Canary greedy +
-beam), and `nemo-rnnt` (optional). Diarization: `pyannote`.
+beam), `nemo-rnnt` (optional), and `ark-asr` (optional). Diarization: `pyannote`.
 
 ### Optional Unified and CzechSpeech candidates
 
@@ -287,6 +287,56 @@ Its weights are CC-BY-NC-4.0 for non-commercial use; commercial use needs a
 separate license. Give each converted model a unique directory name, such as
 `czechspeech-ct2`: local model identities use their directory basename.
 [Model card](https://huggingface.co/moravianai/CzechSpeech)
+
+### Optional ARK-ASR 0.6B candidate
+
+The `ark-asr` entry in `besedy.toml.example` is excluded from both normal
+pipeline runs and expected-output checks. Build its separate worker and the
+existing alignment worker, then select it explicitly:
+
+```bash
+docker compose -f backends/docker-compose.yml build ark-asr whisperx
+just catalog transcribe --workflow ark-asr --hash <full_audio_hash>
+```
+
+The model is `Edge0/ARK-ASR-0.6B`, with weights and custom model code pinned to
+`45776b56d58cdfb2e2eb632f7e110f38684633e0`. This is a separate Transformers
+runtime rather than an upgrade to the existing Whisper, Qwen, or NeMo images.
+The checkpoint supplies text, without native word timestamps. Silero splits a
+full recording into bounded speech chunks; a second WhisperX worker supplies
+word alignment using `comodoro/wav2vec2-xls-r-300m-cs-250`.
+
+Decoding has a fixed 512-token budget per chunk. A chunk that reaches that limit
+without finishing aborts the file; capped text is not published. The raw bundle
+is written atomically only after the whole file succeeds, and failed ASR blocks
+the alignment stage.
+
+This integration remains experimental. A real Czech recording produced
+repetition loops, and short-slice diagnostics produced unexpected English text.
+The complete pipeline run did not finish successfully. Keep it opt-in for
+evaluation; these results do not justify promoting it to a default or claiming
+reliable Czech quality.
+
+`language = "cs"` chooses the transcript path and the Czech forced aligner.
+It does not force the ARK decoder's language: the decoder detects language
+automatically. A concrete language and an explicit `align_model` are required;
+`language = "auto"` cannot select a fixed-language aligner safely.
+
+The first stage writes atomic `ark_segments.json` bundles. Only successful
+alignment writes canonical `transcript.json`. A normal retry validates and reuses
+completed raw ASR before running missing alignment, without loading ARK weights
+again; `--overwrite` reruns both stages. Model/code
+revision, decoder-language behavior, chunk/VAD provenance, and alignment model
+are carried into the canonical metadata. Artifacts retain the full audio hash
+and the model/VAD/aligner/language output identity.
+Alignment runs only after its ARK stage succeeds, so failed retranscription
+cannot publish an old raw bundle as a new completed transcript.
+
+This adds an inference experiment. It does not establish a supervised
+fine-tuning recipe or change the correction and search defaults. The publisher's
+training work uses teacher-based on-policy distillation; a smaller adaptation
+needs separate validation.
+[Pinned model card](https://huggingface.co/Edge0/ARK-ASR-0.6B/blob/45776b56d58cdfb2e2eb632f7e110f38684633e0/README.md)
 
 ### Artifact Checks
 

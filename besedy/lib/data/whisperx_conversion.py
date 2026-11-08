@@ -143,7 +143,18 @@ def convert_whisperx(
 
     segments_payload, transcript_text, total_words = _build_segments(payload)
 
-    generation_params: dict[str, Any] = {"language": payload.get("language")}
+    source_meta = payload.get("meta")
+    source_params = source_meta.get("generation_params") if isinstance(source_meta, dict) else None
+    generation_params: dict[str, Any] = (
+        dict(source_params) if isinstance(source_params, dict) else {}
+    )
+    generation_params["language"] = payload.get("language")
+    if "word_timestamps" in generation_params:
+        generation_params["asr_word_timestamps"] = generation_params["word_timestamps"]
+        generation_params["word_timestamps"] = True
+    if "timestamp_source" in generation_params:
+        generation_params["asr_timestamp_source"] = generation_params["timestamp_source"]
+        generation_params["timestamp_source"] = "whisperx_forced_alignment"
     if align_model:
         generation_params["align_model"] = align_model
     if vad_method:
@@ -164,7 +175,10 @@ def convert_whisperx(
         "generation_params": generation_params,
     }
 
-    return {"meta": meta, "segments": segments_payload}
+    converted = {"meta": meta, "segments": segments_payload}
+    if "vad_segments" in payload:
+        converted["vad_segments"] = payload["vad_segments"]
+    return converted
 
 
 __all__ = ["WhisperXConversionError", "convert_whisperx"]

@@ -46,6 +46,36 @@ def test_launch_workflows_single(monkeypatch):
     assert called["argv"] == ["echo", "hi"]
 
 
+@pytest.mark.parametrize("raw_result", [0, 7, OSError("cannot launch")])
+def test_launch_workflows_gates_alignment_but_keeps_independent_jobs(
+    monkeypatch, raw_result, capsys
+):
+    launched = []
+
+    def fake_run(argv, **kwargs):
+        launched.append(argv[0])
+        if argv[0] == "raw":
+            if isinstance(raw_result, OSError):
+                raise raw_result
+            return raw_result
+        return 0
+
+    monkeypatch.setattr("besedy.lib.workflow.runner.subprocess.run", fake_run)
+    specs = [
+        WorkflowCommand(label="raw", argv=["raw"]),
+        WorkflowCommand(label="align", argv=["align"], prerequisite_label="raw"),
+        WorkflowCommand(label="independent", argv=["independent"]),
+    ]
+    failures = launch_workflows(specs, base_env={})
+    if raw_result == 0:
+        assert launched == ["raw", "align", "independent"]
+        assert failures == []
+    else:
+        assert launched == ["raw", "independent"]
+        assert failures == [("raw", -1 if isinstance(raw_result, OSError) else 7), ("align", 1)]
+        assert "prerequisite raw did not complete successfully" in capsys.readouterr().err
+
+
 def test_launch_workflows_redacts_sensitive_env_values_in_logged_commands(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

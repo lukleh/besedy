@@ -28,6 +28,7 @@ DOCKER_GPU_REQUIRED_BACKENDS: frozenset[str] = frozenset(
         "whisperx",
         "nemo",
         "nemo-rnnt",
+        "ark-asr",
     }
 )
 

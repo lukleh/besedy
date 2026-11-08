@@ -132,6 +132,14 @@ def validate_workflow_language(
 ) -> None:
     """Enforce per-workflow language rules shared by config loading and CLIs."""
     normalized_language = language.strip().casefold()
+    if workflow_id == "ark-asr":
+        if not align_model:
+            raise ValueError(f"{context} ark-asr requires align_model for word timestamps")
+        if normalized_language == AUTO_LANGUAGE:
+            raise ValueError(
+                f"{context} ark-asr requires a concrete language for forced alignment; "
+                "the ASR decoder still detects its language automatically"
+            )
     if (
         workflow_id in _WORKFLOWS_WITHOUT_LANGUAGE_DETECTION
         and normalized_language == AUTO_LANGUAGE

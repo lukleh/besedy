@@ -35,6 +35,14 @@ services:
       dockerfile: backends/qwen3-asr/Dockerfile
     init: true
     gpus: all
+  ark-asr:
+    image: "${BESEDY_ARK_ASR_IMAGE:-besedy/ark-asr:local}"
+    pull_policy: never
+    build:
+      context: ..
+      dockerfile: backends/ark-asr/Dockerfile
+    init: true
+    gpus: all
   whisperx:
     image: "${BESEDY_WHISPERX_IMAGE:-besedy/whisperx:local}"
     pull_policy: never

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from besedy.core.paths_common import (
+    ARK_ASR_WORKFLOW_LABEL,
     BESEDY_ROOT,
     CONFIG_DIR,
     FASTER_WHISPER_VAD_MODEL_FILENAME,
@@ -81,6 +82,7 @@ from besedy.core.paths_transcripts import (
 )
 
 __all__ = [
+    "ARK_ASR_WORKFLOW_LABEL",
     "BESEDY_ROOT",
     "CONFIG_DIR",
     "DIARIZATION_FALLBACK_LOG_PATH",

@@ -13,7 +13,7 @@
       "properties": {
         "backend": {
           "type": "string",
-          "enum": ["canary-nemo", "canary-nemo-beam", "faster-whisper", "whisperx", "qwen3-asr", "nemo-rnnt"]
+          "enum": ["canary-nemo", "canary-nemo-beam", "faster-whisper", "whisperx", "qwen3-asr", "nemo-rnnt", "ark-asr"]
         },
         "model": { "type": "string" },
         "audio_filepath": { "type": "string" },
@@ -32,7 +32,7 @@
       "items": { "$ref": "#/$defs/segment" }
     },
     "vad_segments": {
-      "description": "Speech regions found before decoding, for backends that segment audio first (qwen3-asr, nemo-rnnt). faster-whisper does not write it: its batched pipeline segments internally, and the decoded regions are in meta.generation_params.transcription_options.clip_timestamps, as start/end sample indices at 16 kHz.",
+      "description": "Speech regions found before decoding, for backends that segment audio first (qwen3-asr, nemo-rnnt, ark-asr). faster-whisper does not write it: its batched pipeline segments internally, and the decoded regions are in meta.generation_params.transcription_options.clip_timestamps, as start/end sample indices at 16 kHz.",
       "type": "array",
       "items": { "$ref": "#/$defs/time_range" }
     }

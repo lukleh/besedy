@@ -510,6 +510,7 @@ def main() -> None:
             transcript_meta = transcript_payload.get("meta") or {}
 
         segments_meta: dict[str, Any] | None = None
+        segments_payload: dict[str, Any] = {}
         segments: list[dict[str, Any]] = []
 
         if segments_path and segments_path.exists():
@@ -596,6 +597,13 @@ def main() -> None:
             "segments": aligned.get("segments", []),
             "word_segments": aligned.get("word_segments", []),
         }
+        # Preserve ASR provenance before conversion writes the completion marker.
+        # The same aligner also accepts raw segments from non-Canary backends.
+        generation_params = (segments_meta or {}).get("generation_params")
+        if isinstance(generation_params, dict):
+            aligned_payload["meta"] = {"generation_params": generation_params}
+        if "vad_segments" in segments_payload:
+            aligned_payload["vad_segments"] = segments_payload["vad_segments"]
         _write_json(aligned_output, aligned_payload)
         logging.info("Saved aligned output: %s", aligned_output)
 

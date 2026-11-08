@@ -41,6 +41,7 @@ NEMO_WHISPERX_ALIGN_SCRIPT_PATH = (
 FASTER_WHISPER_SCRIPT_PATH = PROJECT_ROOT / "besedy" / "workflows" / "transcribe_faster_whisper.py"
 QWEN3_ASR_SCRIPT_PATH = PROJECT_ROOT / "besedy" / "workflows" / "transcribe_qwen3_asr.py"
 NEMO_RNNT_SCRIPT_PATH = PROJECT_ROOT / "besedy" / "workflows" / "transcribe_nemo_rnnt.py"
+ARK_ASR_SCRIPT_PATH = PROJECT_ROOT / "besedy" / "workflows" / "transcribe_ark_asr.py"
 WHISPERX_SCRIPT_PATH = PROJECT_ROOT / "besedy" / "workflows" / "transcribe_whisperx.py"
 PYANNOTE_DIARIZATION_SCRIPT_PATH = PROJECT_ROOT / "besedy" / "workflows" / "diarize_pyannote.py"
 
@@ -114,12 +115,14 @@ def _workflow_from_backend_process(
     label: str,
     process,
     parallel_group: str | None = None,
+    prerequisite_label: str | None = None,
 ) -> WorkflowSpec:
     return WorkflowSpec(
         label=label,
         argv=process.argv,
         extra_env=process.extra_env,
         parallel_group=parallel_group,
+        prerequisite_label=prerequisite_label,
     )
 
 
@@ -147,6 +150,69 @@ def _redact_printable_argv(argv: Sequence[str]) -> str:
 def artifact_exists(workflow_id: str, output_root: Path, hash_component: str) -> bool:
     """Check if artifact exists for workflow and hash."""
     return path_builder(workflow_id).artifact_exists(hash_component, output_root)
+
+
+def _build_alignment_workflow(
+    job: TranscriptionJob,
+    prepared: Sequence[PreparedEntry],
+    output_root: Path,
+    *,
+    segments_filename: str,
+    overwrite: bool,
+    prerequisite_label: str | None = None,
+) -> WorkflowSpec:
+    """Align raw ASR text using the existing WhisperX worker."""
+    cfg = job.config
+    output_component = cfg.output_component(sanitize_model_identifier)
+    base_label = f"{cfg.workflow_label}-{output_component}"
+    align_entries = [
+        entry for entry in prepared if hash_component_from_sha(entry.sha256) in job.align_hashes
+    ]
+    segments_paths = [
+        output_root / cfg.workflow_label / output_component / hash_component / segments_filename
+        for hash_component in sorted(job.align_hashes)
+    ]
+    align_argv = [
+        "--segments",
+        *[str(path) for path in segments_paths],
+        "--backend",
+        cfg.workflow_id,
+        "--model",
+        cfg.model_name,
+        "--language",
+        cfg.language,
+    ]
+    if cfg.align_model:
+        align_argv.extend(["--align-model", cfg.align_model])
+    if not overwrite:
+        align_argv.append("--skip-existing")
+
+    align_input_paths = [entry.staged for entry in align_entries]
+    align_input_paths.extend(
+        _metadata_audio_paths(
+            *segments_paths,
+            *(path.parent / "transcript.json" for path in segments_paths),
+        )
+    )
+
+    process = build_python_backend_process(
+        backend_id="whisperx",
+        display_name="WhisperX",
+        script_path=NEMO_WHISPERX_ALIGN_SCRIPT_PATH,
+        script_args=align_argv,
+        docker_service="whisperx",
+        extra_env={
+            "BESEDY_WHISPERX_CLI": "whisperx",
+            **forward_host_env("HF_TOKEN"),
+        },
+        input_paths=[str(path) for path in align_input_paths],
+        output_paths=[str(path.parent) for path in segments_paths],
+        model_paths=_local_model_paths(cfg.align_model),
+        docker_gpus="all",
+    )
+    return _workflow_from_backend_process(
+        label=f"{base_label}-align", process=process, prerequisite_label=prerequisite_label
+    )
 
 
 def build_workflows(
@@ -177,6 +243,7 @@ def build_workflows(
     prompted_asr_scripts = {
         "qwen3-asr": QWEN3_ASR_SCRIPT_PATH,
         "nemo-rnnt": NEMO_RNNT_SCRIPT_PATH,
+        "ark-asr": ARK_ASR_SCRIPT_PATH,
     }
     prompted_asr_jobs = [
         job for job in transcription_jobs if job.config.workflow_id in prompted_asr_scripts
@@ -300,61 +367,13 @@ def build_workflows(
                     )
 
             if has_align:
-                align_entries = [
-                    entry
-                    for entry in prepared
-                    if hash_component_from_sha(entry.sha256) in job.align_hashes
-                ]
-                segments_paths = [
-                    output_root
-                    / cfg.workflow_label
-                    / output_component
-                    / hash_component
-                    / "nemo_beam_segments.json"
-                    for hash_component in sorted(job.align_hashes)
-                ]
-                align_argv = [
-                    "--segments",
-                    *[str(path) for path in segments_paths],
-                    "--backend",
-                    cfg.workflow_id,
-                    "--model",
-                    cfg.model_name,
-                    "--language",
-                    cfg.language,
-                ]
-                if cfg.align_model:
-                    align_argv.extend(["--align-model", cfg.align_model])
-                if not config.overwrite:
-                    align_argv.append("--skip-existing")
-
-                align_input_paths = [entry.staged for entry in align_entries]
-                align_input_paths.extend(
-                    _metadata_audio_paths(
-                        *segments_paths,
-                        *(path.parent / "transcript.json" for path in segments_paths),
-                    )
-                )
-
-                process = build_python_backend_process(
-                    backend_id="whisperx",
-                    display_name="WhisperX",
-                    script_path=NEMO_WHISPERX_ALIGN_SCRIPT_PATH,
-                    script_args=align_argv,
-                    docker_service="whisperx",
-                    extra_env={
-                        "BESEDY_WHISPERX_CLI": "whisperx",
-                        **forward_host_env("HF_TOKEN"),
-                    },
-                    input_paths=[str(path) for path in align_input_paths],
-                    output_paths=[str(path.parent) for path in segments_paths],
-                    model_paths=_local_model_paths(cfg.align_model),
-                    docker_gpus="all",
-                )
                 workflows.append(
-                    _workflow_from_backend_process(
-                        label=f"{base_label}-align",
-                        process=process,
+                    _build_alignment_workflow(
+                        job,
+                        prepared,
+                        output_root,
+                        segments_filename="nemo_beam_segments.json",
+                        overwrite=config.overwrite,
                     )
                 )
 
@@ -425,6 +444,8 @@ def build_workflows(
                 asr_argv.extend(["--vad-model", str(cfg.vad_model)])
             if cfg.align_model:
                 asr_argv.extend(["--align-model", str(cfg.align_model)])
+            if cfg.workflow_id == "ark-asr" and not config.overwrite:
+                asr_argv.append("--skip-existing")
             asr_argv.append("--audio")
             asr_argv.extend(str(entry.staged) for entry in asr_entries)
 
@@ -454,6 +475,21 @@ def build_workflows(
                 _workflow_from_backend_process(
                     label=asr_label,
                     process=process,
+                )
+            )
+
+    for job in transcription_jobs:
+        if job.config.workflow_id == "ark-asr" and job.align_hashes:
+            cfg = job.config
+            raw_label = f"{cfg.workflow_label}-{cfg.output_component(sanitize_model_identifier)}"
+            workflows.append(
+                _build_alignment_workflow(
+                    job,
+                    prepared,
+                    output_root,
+                    segments_filename="ark_segments.json",
+                    overwrite=config.overwrite,
+                    prerequisite_label=raw_label if job.hashes else None,
                 )
             )
 
@@ -618,6 +654,7 @@ def launch_workflows(
     install_signal_handlers()
 
     failures: list[tuple[str, int]] = []
+    successful: set[str] = set()
 
     def run_spec(spec: WorkflowSpec) -> int | None:
         env = base_env.copy()
@@ -639,11 +676,20 @@ def launch_workflows(
             failures.append((spec.label, return_code))
         else:
             print(f"{spec.label} completed successfully.")
+            successful.add(spec.label)
         return return_code
 
     processed_parallel_groups: set[str] = set()
 
     for spec in workflows:
+        if spec.prerequisite_label and spec.prerequisite_label not in successful:
+            print(
+                f"Skipping {spec.label}; prerequisite {spec.prerequisite_label} "
+                "did not complete successfully.",
+                file=sys.stderr,
+            )
+            failures.append((spec.label, 1))
+            continue
         if spec.parallel_group:
             group_id = spec.parallel_group
             if group_id in processed_parallel_groups:
@@ -678,6 +724,7 @@ def launch_workflows(
                     failures.append((label, ret_code))
                 else:
                     print(f"{label} completed successfully.")
+                    successful.add(label)
 
             processed_parallel_groups.add(group_id)
         else:

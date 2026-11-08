@@ -100,6 +100,7 @@ Runs speech-to-text transcription using one or more backends:
   whisperx        Whisper + alignment (word timestamps, VAD support)
   qwen3-asr       Qwen3-ASR with external Silero VAD segmentation
   nemo-rnnt       NeMo RNNT with external Silero VAD and native word timestamps
+  ark-asr         ARK-ASR with external Silero VAD and WhisperX alignment
 
 Requires staged audio: run 'catalog stage-audio' first.
 
@@ -375,7 +376,15 @@ def handle_transcribe(
 
         for cfg in selected_configs:
             base_dir = workflow_dirs[cfg] / hash_component
-            if cfg.workflow_id in {"canary-nemo", "canary-nemo-beam"}:
+            if cfg.workflow_id == "ark-asr":
+                # Let the raw worker validate cached provenance/structure before
+                # reusing it; a file's existence alone does not prove completeness.
+                need_align = request.overwrite or not (base_dir / "transcript.json").exists()
+                if need_align:
+                    candidates_by_config[cfg].append((row, hash_component))
+                    align_candidates_by_config[cfg].append((row, hash_component))
+                    row_needs_any_work = True
+            elif cfg.workflow_id in {"canary-nemo", "canary-nemo-beam"}:
                 if cfg.decode_strategy == "beam":
                     segments_exists = (base_dir / "nemo_beam_segments.json").exists()
                     transcript_exists = (base_dir / "transcript.json").exists()

@@ -23,6 +23,7 @@ def test_require_workflow_id_accepts_canonical_only():
     assert require_workflow_id("whisperx") == "whisperx"
     assert require_workflow_id("qwen3-asr") == "qwen3-asr"
     assert require_workflow_id("nemo-rnnt") == "nemo-rnnt"
+    assert require_workflow_id("ark-asr") == "ark-asr"
     assert require_workflow_id("pyannote") == "pyannote"
 
     with pytest.raises(ValueError):
@@ -42,6 +43,7 @@ def test_transcript_meta_backend_mapping():
     assert require_transcript_meta_backend("faster-whisper") == "faster-whisper"
     assert require_transcript_meta_backend("qwen3-asr") == "qwen3-asr"
     assert require_transcript_meta_backend("nemo-rnnt") == "nemo-rnnt"
+    assert require_transcript_meta_backend("ark-asr") == "ark-asr"
 
     assert workflow_id_from_meta_backend("canary-nemo") == "canary-nemo"
     assert workflow_id_from_meta_backend("canary-nemo-beam") == "canary-nemo-beam"
@@ -49,6 +51,7 @@ def test_transcript_meta_backend_mapping():
     assert workflow_id_from_meta_backend("faster-whisper") == "faster-whisper"
     assert workflow_id_from_meta_backend("qwen3-asr") == "qwen3-asr"
     assert workflow_id_from_meta_backend("nemo-rnnt") == "nemo-rnnt"
+    assert workflow_id_from_meta_backend("ark-asr") == "ark-asr"
 
     with pytest.raises(ValueError):
         require_transcript_meta_backend("pyannote")
@@ -61,6 +64,7 @@ def test_constants_are_sane():
     assert "faster-whisper" in TRANSCRIPTION_WORKFLOW_IDS
     assert "qwen3-asr" in TRANSCRIPTION_WORKFLOW_IDS
     assert "nemo-rnnt" in TRANSCRIPTION_WORKFLOW_IDS
+    assert "ark-asr" in TRANSCRIPTION_WORKFLOW_IDS
     assert "pyannote" in DIARIZATION_WORKFLOW_IDS
 
     assert "canary-nemo" in TRANSCRIPT_META_BACKENDS
@@ -69,6 +73,7 @@ def test_constants_are_sane():
     assert "whisperx" in TRANSCRIPT_META_BACKENDS
     assert "qwen3-asr" in TRANSCRIPT_META_BACKENDS
     assert "nemo-rnnt" in TRANSCRIPT_META_BACKENDS
+    assert "ark-asr" in TRANSCRIPT_META_BACKENDS
 
 
 def test_workflow_configs_and_backend_ids_stay_in_sync():

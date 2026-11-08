@@ -12,12 +12,13 @@ usable transcript timing, and maintainable Docker workers.
 | Qwen3-ASR 0.6B/1.7B | Keep the existing optional family. Czech and supervised fine-tuning are supported. The native Transformers port changes runtime integration; it is not a new set of trained weights. [Publisher repository](https://github.com/QwenLM/Qwen3-ASR) |
 | Nemotron Labs Unified 0.6B | Add as an optional offline workflow. It supplies a different ASR architecture, Czech support, and native RNNT timing. The publisher currently documents inference support; our partial training experiment does not reproduce its original combined offline/streaming objective. [Model card](https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b) |
 | CzechSpeech | Add as an optional WhisperX model variant. It is Czech-tuned and turbo-based, and reuses the existing backend. Its training is predominantly parliamentary speech; spontaneous conversation was not evaluated by the publisher. It needs separate alignment and has a non-commercial license, with commercial licensing available separately. [Model card](https://huggingface.co/moravianai/CzechSpeech) |
-| ARK-ASR 0.6B/3B | Strong next benchmark candidate. Public weights, Apache-2.0, and explicit Czech support. The smaller name counts the decoder: there is also a separate roughly 0.6B audio encoder. Both use custom model code and need timing integration. Start with the smaller checkpoint. [0.6B card](https://huggingface.co/Edge0/ARK-ASR-0.6B/raw/main/README.md), [3B card](https://huggingface.co/Edge0/ARK-ASR-3B) |
+| ARK-ASR 0.6B/3B | The experimental 0.6B Docker integration hit generation-limit failures on a full Czech recording; keep it out of defaults. See [trial limitations](backends.md#optional-ark-asr-06b-candidate). Public weights, Apache-2.0, and explicit Czech support. The smaller name counts the decoder: there is also a separate roughly 0.6B audio encoder. Both use custom model code. [0.6B card](https://huggingface.co/Edge0/ARK-ASR-0.6B/blob/45776b56d58cdfb2e2eb632f7e110f38684633e0/README.md), [3B card](https://huggingface.co/Edge0/ARK-ASR-3B) |
 | Meta Omnilingual v2 | Another worthwhile benchmark: start with CTC 1B v2. Czech is listed as `ces_Latn`; publisher estimates are about 3 GiB inference for CTC 1B and 6 GiB for LLM 1B with short clips on A100/BF16. It adds a fairseq2 runtime and timing work. These are December 2025 checkpoints, rather than a new 2026 release. [Repository](https://github.com/facebookresearch/omnilingual-asr), [language inventory](https://github.com/facebookresearch/omnilingual-asr/blob/main/src/omnilingual_asr/models/wav2vec2_llama/lang_ids.py) |
 
-ARK and Meta were identified by the broader second pass. They have not been
-downloaded, trained, or benchmarked in this change. They broaden the next
-comparison rather than justify adding more default pipeline work immediately.
+ARK and Meta were identified by the broader second pass. ARK 0.6B has a
+separate experimental integration; its long-recording trial did not produce a
+complete transcript. Meta remains a candidate for a later benchmark. Neither
+warrants adding default pipeline work without held-out evaluation.
 
 ## Where Mistral fits
 
@@ -70,7 +71,6 @@ English short-form leaderboard averages do not determine the winner for long
 Czech discussions. A smoke fine-tune proves optimizer/save/reload execution,
 not generalization or improved recognition.
 
-The implementation adds two optional candidates and preserves the existing
-correction/search source. ARK 0.6B is the next new family I would benchmark,
-followed by Meta CTC 1B v2. Add further workers only when measured benefits
-justify maintaining them.
+The optional integrations preserve the existing correction/search source.
+Meta CTC 1B v2 is the next family to consider after evaluating ARK 0.6B.
+Add further workers only when measured benefits justify maintaining them.
