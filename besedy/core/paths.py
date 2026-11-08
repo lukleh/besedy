@@ -19,9 +19,7 @@ from besedy.core.paths_common import (
     WebEnvMode,
     resolve_project_path,
 )
-from besedy.core.paths_diarization import preferred_diarization_speakers_path
 from besedy.core.paths_runtime import (
-    DIARIZATION_FALLBACK_LOG_PATH,
     FFMPEG_LOG_DIR,
     FRAME_VAD_LOCAL_MODEL_PATH,
     LOGS_DIR,
@@ -74,7 +72,6 @@ from besedy.core.paths_transcripts import (
 __all__ = [
     "BESEDY_ROOT",
     "CONFIG_DIR",
-    "DIARIZATION_FALLBACK_LOG_PATH",
     "FFMPEG_LOG_DIR",
     "FRAME_VAD_CONFIG_PATH",
     "FRAME_VAD_LOCAL_MODEL_PATH",
@@ -133,5 +130,4 @@ __all__ = [
     "require_timestamped_transcripts_root",
     "require_run_id_from_transcripts_root",
     "validate_mono_wav_16k",
-    "preferred_diarization_speakers_path",
 ]

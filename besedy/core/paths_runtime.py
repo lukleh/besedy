@@ -152,7 +152,6 @@ def iter_existing_web_env_paths(
 
 LOGS_DIR = resolve_logs_dir()
 FFMPEG_LOG_DIR = LOGS_DIR / "ffmpeg"
-DIARIZATION_FALLBACK_LOG_PATH = LOGS_DIR / "diarization_fallbacks.jsonl"
 FRAME_VAD_LOCAL_MODEL_PATH = resolve_models_dir() / "frame_vad_multilingual_marblenet_v2.0.nemo"
 
 
