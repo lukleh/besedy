@@ -23,7 +23,6 @@ vi.mock('@/lib/log/server', () => ({
 }));
 
 import {
-  summarizeMcpInvocationInput,
   summarizeMcpInvocationResult,
   trackMcpToolInvocation,
 } from '@/lib/mcp/usage';
@@ -35,9 +34,7 @@ const context = {
   accessProfile: {
     userId: 'user-1',
     canEnterPortal: true,
-    defaultCatalogId: 'catalog-1',
-    defaultCatalogSource: 'user_preference' as const,
-    catalogs: [],
+    archive: { id: 'catalog-1', label: 'Archive' },
   },
 };
 
@@ -46,20 +43,6 @@ describe('MCP usage telemetry', () => {
     vi.clearAllMocks();
     mocks.createInvocation.mockResolvedValue({ id: 'invocation-1' });
     mocks.logAccessDenied.mockResolvedValue(undefined);
-  });
-
-  it('extracts only the catalog ID from tool arguments', () => {
-    const summary = summarizeMcpInvocationInput({
-      catalogId: 'catalog-1',
-      audioHash: 'a'.repeat(64),
-      query: 'private search terms',
-      limit: 10,
-      contextChunks: 2,
-      filters: { audioHashes: ['secret'], eventIds: [42] },
-      unknownField: 'must not be stored',
-    });
-
-    expect(summary).toEqual({ catalogId: 'catalog-1' });
   });
 
   it('extracts transcript volume without retaining transcript content', () => {
@@ -94,7 +77,6 @@ describe('MCP usage telemetry', () => {
       trackMcpToolInvocation(
         context,
         'search_transcripts',
-        { query: 'private', limit: 10 },
         () => result,
       ),
     ).resolves.toBe(result);
@@ -116,14 +98,13 @@ describe('MCP usage telemetry', () => {
   it('normalizes and bounds untrusted OAuth client names', async () => {
     const result = {
       content: [{ type: 'text' as const, text: 'ok' }],
-      structuredContent: { catalogs: [] },
+      structuredContent: { account: {} },
     } satisfies CallToolResult;
     const unsafeClientName = `Injected\nMCP\u0000\u001b ACTIVITY\u2028\u202e${'x'.repeat(300)}`;
 
     await trackMcpToolInvocation(
       { ...context, clientName: unsafeClientName },
-      'list_catalogs',
-      {},
+      'who_am_i',
       () => result,
     );
 
@@ -133,16 +114,15 @@ describe('MCP usage telemetry', () => {
     expect(clientName).toMatch(/^Injected MCP ACTIVITY x+$/u);
   });
 
-  it('bounds untrusted catalog IDs to the database column width', async () => {
+  it('bounds result source IDs to the database column width', async () => {
     const result = {
       content: [{ type: 'text' as const, text: 'ok' }],
-      structuredContent: { events: [] },
+      structuredContent: { catalogId: `catalog-${'x'.repeat(300)}`, events: [] },
     } satisfies CallToolResult;
 
     await trackMcpToolInvocation(
       context,
       'list_events',
-      { catalogId: `catalog-${'x'.repeat(300)}` },
       () => result,
     );
 
@@ -150,14 +130,14 @@ describe('MCP usage telemetry', () => {
     expect(Array.from(catalogId)).toHaveLength(191);
   });
 
-  it('attributes default-catalog calls without assigning a catalog to global tools', async () => {
+  it('attributes archive reads without assigning an archive to identity calls', async () => {
     const result = {
       content: [{ type: 'text' as const, text: 'ok' }],
       structuredContent: { events: [] },
     } satisfies CallToolResult;
 
-    await trackMcpToolInvocation(context, 'list_events', {}, () => result);
-    await trackMcpToolInvocation(context, 'list_catalogs', {}, () => result);
+    await trackMcpToolInvocation(context, 'list_events', () => result);
+    await trackMcpToolInvocation(context, 'who_am_i', () => result);
 
     expect(mocks.createInvocation).toHaveBeenNthCalledWith(1, {
       data: expect.objectContaining({ catalogId: 'catalog-1' }),
@@ -183,7 +163,6 @@ describe('MCP usage telemetry', () => {
     await trackMcpToolInvocation(
       context,
       'get_transcript',
-      { catalogId: 'catalog-1', audioHash: 'a'.repeat(64) },
       () => result,
     );
 
@@ -209,7 +188,7 @@ describe('MCP usage telemetry', () => {
     const failure = new Error('backend failed');
 
     await expect(
-      trackMcpToolInvocation(context, 'list_catalogs', {}, () => {
+      trackMcpToolInvocation(context, 'who_am_i', () => {
         throw failure;
       }),
     ).rejects.toBe(failure);
@@ -226,11 +205,11 @@ describe('MCP usage telemetry', () => {
     mocks.createInvocation.mockRejectedValueOnce(new Error('database offline'));
     const result = {
       content: [{ type: 'text' as const, text: 'ok' }],
-      structuredContent: { catalogs: [] },
+      structuredContent: { account: {} },
     } satisfies CallToolResult;
 
     await expect(
-      trackMcpToolInvocation(context, 'list_catalogs', {}, () => result),
+      trackMcpToolInvocation(context, 'who_am_i', () => result),
     ).resolves.toBe(result);
     expect(mocks.loggerError).toHaveBeenCalledOnce();
   });

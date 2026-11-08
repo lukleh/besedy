@@ -1,156 +1,88 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getMcpAccessProfile } from '@/lib/mcp/access-profile';
-import { listUserCatalogAccessEntries } from '@/lib/access/catalog-access-queries';
+import { requireArchive } from '@/lib/archive';
 import { resolvePortalActorContext } from '@/lib/policy/actor';
 
-vi.mock('@/lib/access/catalog-access-queries', () => ({
-  listUserCatalogAccessEntries: vi.fn(),
-}));
-
-vi.mock('@/lib/policy/actor', () => ({
+vi.mock('@/lib/archive', () => ({ requireArchive: vi.fn() }));
+vi.mock('@/lib/policy/actor', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/policy/actor')>()),
   resolvePortalActorContext: vi.fn(),
 }));
-
 vi.mock('@/lib/db', () => ({
-  default: {
-    workflowGroup: { findMany: vi.fn() },
-    userPreferences: { findUnique: vi.fn() },
-  },
+  default: { catalogAccess: { findUnique: vi.fn() } },
 }));
 
+const actor = {
+  userId: 'user-1',
+  isAuthenticated: true,
+  userStatus: 'ACTIVE' as const,
+  systemRole: 'USER' as const,
+  canEnterPortal: true,
+};
+const archive = { id: 'bound-archive', label: 'Besedy' };
+
 describe('MCP access profile', () => {
-  let prisma: {
-    workflowGroup: { findMany: ReturnType<typeof vi.fn> };
-    userPreferences: { findUnique: ReturnType<typeof vi.fn> };
-  };
+  let findAccess: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    prisma = (await import('@/lib/db')).default as unknown as typeof prisma;
+    findAccess = (await import('@/lib/db')).default.catalogAccess.findUnique as unknown as typeof findAccess;
+    vi.mocked(resolvePortalActorContext).mockResolvedValue(actor);
+    vi.mocked(requireArchive).mockResolvedValue(archive);
+    findAccess.mockResolvedValue({ status: 'ACTIVE' });
+  });
+
+  it('checks only the configured archive membership for the authenticated actor', async () => {
+    await expect(getMcpAccessProfile('user-1')).resolves.toEqual({
+      userId: 'user-1', canEnterPortal: true, archive,
+    });
+    expect(findAccess).toHaveBeenCalledWith({
+      where: { userId_catalogId: { userId: 'user-1', catalogId: archive.id } },
+      select: { status: true },
+    });
+  });
+
+  it('returns no archive access for a blocked actor', async () => {
     vi.mocked(resolvePortalActorContext).mockResolvedValue({
-      userId: 'user-1',
-      isAuthenticated: true,
-      userStatus: 'ACTIVE',
-      systemRole: 'USER',
-      canEnterPortal: true,
+      ...actor, userStatus: 'BLOCKED', canEnterPortal: false,
     });
-    vi.mocked(listUserCatalogAccessEntries).mockResolvedValue([
-      { catalogId: 'catalog-listener' },
-      { catalogId: 'catalog-viewer' },
-    ]);
-    prisma.userPreferences.findUnique.mockResolvedValue({
-      activeGroupId: 'catalog-viewer',
+    await expect(getMcpAccessProfile('user-1')).resolves.toEqual({
+      userId: 'user-1', canEnterPortal: false, archive: null,
     });
-    prisma.workflowGroup.findMany.mockResolvedValue([
-      { id: 'catalog-listener', label: 'Listener', isDefault: true },
-      { id: 'catalog-viewer', label: 'Viewer', isDefault: false },
-    ]);
+    expect(requireArchive).not.toHaveBeenCalled();
+    expect(findAccess).not.toHaveBeenCalled();
   });
 
-  it('gives every accessible catalog the uniform MCP read surface', async () => {
-    const profile = await getMcpAccessProfile('user-1');
-
-    expect(profile.canEnterPortal).toBe(true);
-    expect(profile.catalogs).toEqual([
-      expect.objectContaining({
-        id: 'catalog-listener',
-        isDefault: false,
-      }),
-      expect.objectContaining({
-        id: 'catalog-viewer',
-        isDefault: true,
-      }),
-    ]);
-    expect(profile.defaultCatalogId).toBe('catalog-viewer');
-    expect(profile.defaultCatalogSource).toBe('user_preference');
-  });
-
-  it('returns no MCP catalogs for a blocked user', async () => {
-    vi.mocked(resolvePortalActorContext).mockResolvedValue({
-      userId: 'blocked-1',
-      isAuthenticated: true,
-      userStatus: 'BLOCKED',
-      systemRole: 'USER',
-      canEnterPortal: false,
-    });
-
-    await expect(getMcpAccessProfile('blocked-1')).resolves.toEqual({
-      userId: 'blocked-1',
-      canEnterPortal: false,
-      defaultCatalogId: null,
-      defaultCatalogSource: null,
-      catalogs: [],
-    });
-    expect(prisma.workflowGroup.findMany).not.toHaveBeenCalled();
-    expect(listUserCatalogAccessEntries).not.toHaveBeenCalled();
-  });
-
-  it('keeps an active user without grants eligible for MCP tools but no catalogs', async () => {
-    vi.mocked(listUserCatalogAccessEntries).mockResolvedValue([]);
-    prisma.workflowGroup.findMany.mockResolvedValue([]);
-
+  it.each([null, { status: 'REVOKED' }])('withholds archive access for a missing or revoked membership (%s)', async (access) => {
+    findAccess.mockResolvedValue(access);
     await expect(getMcpAccessProfile('user-1')).resolves.toMatchObject({
-      canEnterPortal: true,
-      defaultCatalogId: null,
-      catalogs: [],
+      canEnterPortal: true, archive: null,
     });
   });
 
-  it('reuses a provided canonical actor', async () => {
-    const actor = {
-      userId: 'user-1',
-      isAuthenticated: true,
-      userStatus: 'ACTIVE' as const,
-      systemRole: 'USER' as const,
-      canEnterPortal: true,
-    };
-
+  it('reuses the canonical actor provided by verified request authentication', async () => {
     const profile = await getMcpAccessProfile('user-1', { actor });
-
     expect(resolvePortalActorContext).not.toHaveBeenCalled();
-    expect(profile).toMatchObject({
-      userId: 'user-1',
-      canEnterPortal: true,
-    });
+    expect(profile.archive).toEqual(archive);
   });
 
-  it('rejects a provided actor for a different user', async () => {
-    await expect(
-      getMcpAccessProfile('user-1', {
-        actor: {
-          userId: 'user-2',
-          isAuthenticated: true,
-          userStatus: 'ACTIVE',
-          systemRole: 'USER',
-          canEnterPortal: true,
-        },
-      }),
-    ).rejects.toThrow(
-      'MCP access profile actor does not match the requested user',
-    );
-    expect(prisma.userPreferences.findUnique).not.toHaveBeenCalled();
+  it('rejects a provided actor for a different user before reading access', async () => {
+    await expect(getMcpAccessProfile('user-1', {
+      actor: { ...actor, userId: 'user-2' },
+    })).rejects.toThrow('MCP access profile actor does not match the requested user');
+    expect(requireArchive).not.toHaveBeenCalled();
+    expect(findAccess).not.toHaveBeenCalled();
   });
 
-  it('keeps catalog admin discovery while applying listener visibility', async () => {
-    vi.mocked(resolvePortalActorContext).mockResolvedValue({
-      userId: 'admin-1',
-      isAuthenticated: true,
-      userStatus: 'ACTIVE',
-      systemRole: 'ADMIN',
-      canEnterPortal: true,
-    });
-    vi.mocked(listUserCatalogAccessEntries).mockResolvedValue([
-      { catalogId: 'catalog-listener' },
-    ]);
-    prisma.workflowGroup.findMany.mockResolvedValue([
-      { id: 'catalog-listener', label: 'Admin catalog', isDefault: true },
-    ]);
+  it('retains system-admin authority on only the bound archive', async () => {
+    vi.mocked(resolvePortalActorContext).mockResolvedValue({ ...actor, systemRole: 'ADMIN' });
+    await expect(getMcpAccessProfile('user-1')).resolves.toMatchObject({ archive });
+    expect(findAccess).not.toHaveBeenCalled();
+  });
 
-    const profile = await getMcpAccessProfile('admin-1');
-
-    expect(profile.canEnterPortal).toBe(true);
-    expect(profile.catalogs).toEqual([
-      { id: 'catalog-listener', label: 'Admin catalog', isDefault: true },
-    ]);
+  it('fails when the archive binding is invalid instead of choosing another source', async () => {
+    vi.mocked(requireArchive).mockRejectedValue(new Error('Archive binding is invalid'));
+    await expect(getMcpAccessProfile('user-1')).rejects.toThrow('Archive binding is invalid');
+    expect(findAccess).not.toHaveBeenCalled();
   });
 });

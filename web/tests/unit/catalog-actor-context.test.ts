@@ -7,7 +7,7 @@ import {
 vi.mock("@/lib/db", () => ({
   default: {
     user: { findUnique: vi.fn() },
-    workflowGroup: { findFirst: vi.fn() },
+    workflowGroup: { findFirst: vi.fn(), findUnique: vi.fn() },
     catalogAccess: { findUnique: vi.fn() },
   },
 }));
@@ -15,14 +15,16 @@ vi.mock("@/lib/db", () => ({
 describe("catalog actor context", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.stubEnv("BESEDY_ARCHIVE_ID", "20251225_120000");
     const prisma = (await import("@/lib/db")).default;
+    vi.mocked(prisma.workflowGroup.findUnique).mockResolvedValue({ id: "20251225_120000", isActive: true } as never);
     vi.mocked(prisma.user.findUnique).mockResolvedValue({
       status: "ACTIVE",
       isAdmin: false,
       isSuperadmin: false,
     } as never);
     vi.mocked(prisma.workflowGroup.findFirst).mockResolvedValue({
-      id: "catalog-1",
+      id: "20251225_120000",
     } as never);
   });
 
@@ -34,7 +36,7 @@ describe("catalog actor context", () => {
       status: "ACTIVE",
     } as never);
 
-    const actor = await resolveCatalogActorContext("catalog-1", "user-1");
+    const actor = await resolveCatalogActorContext("20251225_120000", "user-1");
 
     expect(actor).toMatchObject({
       catalogExists: true,

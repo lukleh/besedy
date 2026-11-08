@@ -4,7 +4,7 @@ import { HashSchema } from '@/lib/validation/schemas';
 
 const CatalogIdSchema = z
   .string()
-  .describe('Stable ID of the Besedy catalog that produced this result.');
+  .describe('Stable pipeline source ID of this deployment’s Besedy archive.');
 const WebUrlSchema = z
   .string()
   .url()
@@ -60,23 +60,11 @@ export const WhoAmIOutputSchema = z.object({
     clientId: z.string(),
     clientName: z.string().nullable(),
     grantedScopes: z.array(z.string()),
-    defaultCatalogId: CatalogIdSchema.nullable(),
-  }),
-});
-
-export const ListCatalogsOutputSchema = z.object({
-  catalogs: z.array(
-    z.object({
+    archive: z.object({
       id: CatalogIdSchema,
       label: z.string().nullable(),
-      isDefault: z.boolean(),
-    }),
-  ),
-  defaultCatalogId: CatalogIdSchema.nullable(),
-  defaultCatalogSource: z
-    .enum(['user_preference', 'global_default', 'most_recent'])
-    .nullable(),
-  nextCursor: NullableCursorSchema,
+    }).nullable(),
+  }),
 });
 
 export const ListLocationsOutputSchema = z.object({
@@ -143,7 +131,6 @@ export const GetRecordingOutputSchema = z.object({
 });
 
 const TranscriptContinuationSchema = z.object({
-  catalogId: CatalogIdSchema,
   audioHash: HashSchema,
   mode: z.literal('page'),
   startSec: z.number().nonnegative().optional(),
@@ -204,7 +191,6 @@ const TranscriptSearchResultSchema = z.object({
     .nullable(),
   transcriptRequest: z
     .object({
-      catalogId: CatalogIdSchema,
       audioHash: HashSchema,
       mode: z.literal('page'),
       startSec: z.number().nonnegative(),
@@ -278,7 +264,6 @@ export const ListBookmarksOutputSchema = z.object({
         ),
       transcriptRequest: z
         .object({
-          catalogId: CatalogIdSchema,
           audioHash: HashSchema,
           mode: z.literal('page'),
           startSec: z.number().nonnegative(),

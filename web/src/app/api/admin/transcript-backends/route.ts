@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/db";
-import { getConfiguredArchive } from "@/lib/archive";
+import { requireArchive } from "@/lib/archive";
 import { resolveTranscriptsPath } from "@/lib/paths";
 import { discoverTranscriptBackends, orderTranscriptBackends } from "@/lib/transcript";
 import {
@@ -27,15 +26,9 @@ export async function GET() {
   try {
     await requireAdminCapability({ message: "Unauthorized" });
 
-    const archive = await getConfiguredArchive();
+    const archive = await requireArchive();
 
-    const workflowGroups = await prisma.workflowGroup.findMany({
-      select: { id: true },
-      where: { isActive: true, ...(archive ? { id: archive.id } : {}) },
-    });
-
-    const roots = workflowGroups.map((group) => resolveTranscriptsPath(group.id));
-    const discovered = await discoverTranscriptBackends(roots);
+    const discovered = await discoverTranscriptBackends([resolveTranscriptsPath(archive.id)]);
     const priorities = await listTranscriptBackendPriorities();
 
     const orderedDiscovered = orderTranscriptBackends(discovered, priorities);

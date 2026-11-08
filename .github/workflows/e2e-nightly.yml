@@ -78,6 +78,11 @@ jobs:
         run: npm run test:e2e:generate
       - name: Start the test stack
         run: just test-up
+      - name: Invitation transaction and rollback tests
+        working-directory: web
+        env:
+          BESEDY_INVITATION_TEST_DATABASE_URL: postgresql://besedy_test:besedy_test@127.0.0.1:5434/besedy_test
+        run: npx vitest run tests/unit/admission-postgres.test.ts --maxWorkers=3
       # CI=true gives every test two retries; a test that only passes on a
       # retry still fails the night, so flakiness is not hidden.
       - name: Playwright smoke (@smoke, Desktop Chrome)

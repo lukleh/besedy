@@ -260,6 +260,13 @@ export const auth = betterAuth({
           (user as Record<string, unknown>).invitedAt = admission.admittedAt;
         },
         after: async (user) => {
+          // The bootstrap account deliberately has no invitation or archive prerequisite.
+          const createdUser = await prisma.user.findUnique({
+            where: { id: user.id },
+            select: { email: true, isSuperadmin: true },
+          });
+          if (createdUser?.isSuperadmin) return;
+
           let claim:
             | {
                 portalAdmissionId: string | null;
@@ -278,20 +285,12 @@ export const auth = betterAuth({
           }
 
           if (!claim) {
-            // Superadmin bootstrap intentionally bypasses pending-admission claim.
-            const createdUser = await prisma.user.findUnique({
-              where: { id: user.id },
-              select: { email: true, isSuperadmin: true },
-            });
-
-            if (createdUser?.isSuperadmin) {
-              return;
-            }
-
             // Claim failed after pre-check (e.g. concurrent consume/revoke).
-            // Remove the just-created user to avoid leaving an authenticated
-            // account without a valid pending-admission claim.
-            await prisma.user.delete({ where: { id: user.id } }).catch((err) =>
+            // Remove only the provisional account. An administrator may have
+            // blocked or activated it while the claim was in progress.
+            await prisma.user.deleteMany({
+              where: { id: user.id, status: "PENDING" },
+            }).catch((err) =>
               console.error("[auth] Failed to roll back user after admission claim miss:", err)
             );
 

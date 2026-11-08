@@ -1,4 +1,3 @@
-import { getConfiguredArchive } from '@/lib/archive';
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { requireAuth } from "@/lib/auth/permissions";
@@ -11,7 +10,6 @@ import {
   validateParams,
   validateRequestBody,
   forbidden,
-  badRequest,
   notFound,
   handlePrismaError,
 } from "@/lib/api";
@@ -29,8 +27,6 @@ const UPDATABLE_CATALOG_FIELDS = [
   "metadataCatalogPath",
   "duplicatesCatalogPath",
   "transcriptsPath",
-  "isDefault",
-  "isActive",
 ] as const;
 
 /** Fields a catalog administrator may not change; see ADR 0005. */
@@ -39,14 +35,10 @@ const SYSTEM_ONLY_CATALOG_FIELDS = [
   "metadataCatalogPath",
   "duplicatesCatalogPath",
   "transcriptsPath",
-  "isDefault",
-  "isActive",
 ] as const;
 
 const SYSTEM_ONLY_DENIED_MESSAGE =
-  "System admin access required to change catalog paths, default or active flags";
-
-const DEACTIVATE_DENIED_MESSAGE = "System admin access required to deactivate a catalog";
+  "System admin access required to change catalog paths";
 
 /**
  * GET /api/catalogs/:id - Get a single workflow group (catalog)
@@ -118,9 +110,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const bodyResult = await validateRequestBody(request, UpdateCatalogSchema);
     if (!bodyResult.success) return bodyResult.response;
     const updates = bodyResult.data;
-    if (updates.isActive === false && await getConfiguredArchive()) {
-      return badRequest('The deployment archive cannot be deactivated');
-    }
 
     // Check if group exists
     const existing = await prisma.workflowGroup.findUnique({
@@ -145,9 +134,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Paths decide which files a catalog reads and serves, and the default and
-    // active flags reach every user of the portal, so a catalog grant does not
-    // cover them: they need the same system authority as creating a catalog.
+    // Paths decide which files the archive reads and serves. A catalog grant
+    // does not cover them; changing them requires system authority.
     const systemOnlyChanges = SYSTEM_ONLY_CATALOG_FIELDS.filter(
       (field) => field in changes
     );
@@ -160,20 +148,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return forbidden(SYSTEM_ONLY_DENIED_MESSAGE);
     }
 
-    const group = await prisma.$transaction(async (tx) => {
-      // If setting as default, unset other defaults in the same transaction so
-      // a failed update cannot leave the portal without a default catalog.
-      if (data.isDefault === true) {
-        await tx.workflowGroup.updateMany({
-          where: { isDefault: true, id: { not: id } },
-          data: { isDefault: false },
-        });
-      }
-
-      return tx.workflowGroup.update({
-        where: { id },
-        data,
-      });
+    const group = await prisma.workflowGroup.update({
+      where: { id },
+      data,
     });
 
     if (Object.keys(changes).length > 0) {
@@ -189,95 +166,5 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json(group);
   } catch (error) {
     return handlePrismaError(error, "catalog", "update");
-  }
-}
-
-/**
- * DELETE /api/catalogs/:id - Soft-delete a workflow group (sets isActive = false)
- */
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
-  try {
-    // Keep the handler-level check as defense in depth for direct invocation
-    // paths that bypass proxy enforcement, including route unit tests.
-    const sourceError = validateMutationSource(_request);
-    if (sourceError) return sourceError;
-
-    const currentUserId = await requireAuth();
-
-    const paramsResult = validateParams(await params, TimestampIdParamSchema);
-    if (!paramsResult.success) return paramsResult.response;
-    const { id } = paramsResult.data;
-
-    const access = await requireCatalogManagementAccess(id, {
-      userId: currentUserId,
-      activeCatalogOnly: false,
-      auditResource: "catalog_settings",
-      auditResourceId: id,
-      deniedMessage: "Admin access required to update catalog settings",
-      deniedReason: "Admin access required to update catalog settings",
-      authorize: canManageCatalogConfiguration,
-    });
-    if (!access.ok) {
-      return access.response;
-    }
-
-    // Check if group exists
-    const existing = await prisma.workflowGroup.findUnique({
-      where: { id },
-    });
-
-    if (!existing) {
-      return notFound("catalog");
-    }
-
-    if (await getConfiguredArchive()) {
-      return badRequest('The deployment archive cannot be deactivated');
-    }
-
-    // Deactivating clears the active and default flags, which PUT reserves for
-    // system admins, so a catalog grant does not cover it either (ADR 0005).
-    if (!hasSystemAdminAuthority(access.actor)) {
-      await logAccessDenied(access.userId, "catalog_settings", id, {
-        catalogId: id,
-        reason: DEACTIVATE_DENIED_MESSAGE,
-        fields: ["isActive", "isDefault"],
-      });
-      return forbidden(DEACTIVATE_DENIED_MESSAGE);
-    }
-
-    const group = await prisma.$transaction(async (tx) => {
-      // Soft delete by setting isActive = false
-      const deactivated = await tx.workflowGroup.update({
-        where: { id },
-        data: {
-          isActive: false,
-          isDefault: false, // Can't be default if inactive
-        },
-      });
-
-      // If this was the active group in preferences, clear it
-      await tx.userPreferences.updateMany({
-        where: { activeGroupId: id },
-        data: { activeGroupId: null },
-      });
-
-      return deactivated;
-    });
-
-    // Audit log catalog deactivation
-    await logCatalogLifecycleEvent({
-      actorId: access.userId,
-      action: "CATALOG_DEACTIVATED",
-      catalogId: id,
-      catalogLabel: existing.label,
-      details: {
-        label: existing.label,
-        wasDefault: existing.isDefault,
-      },
-    });
-
-    return NextResponse.json({ success: true, group });
-  } catch (error) {
-    return handlePrismaError(error, "catalog", "delete");
   }
 }

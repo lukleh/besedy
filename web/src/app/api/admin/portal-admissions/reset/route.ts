@@ -5,6 +5,7 @@ import { EmailSchema } from "@/lib/validation/schemas";
 import {
   PortalAdmissionNotClaimedError,
   PortalAdmissionNotFoundError,
+  PortalAdmissionMissingContentAccessError,
   PortalAdmissionUserStillExistsError,
   resetClaimedPortalAdmission,
 } from "@/lib/admission/admin-reset";
@@ -56,6 +57,9 @@ export async function POST(request: NextRequest) {
     }
     if (error instanceof PortalAdmissionUserStillExistsError) {
       return conflict("Delete the existing user before resetting portal admission");
+    }
+    if (error instanceof PortalAdmissionMissingContentAccessError) {
+      return conflict("Cannot reset an admission without saved active content access");
     }
     return handlePrismaError(error, "portal admission", "update");
   }

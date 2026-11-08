@@ -21,6 +21,7 @@ vi.mock("@/lib/admission/admin-reset", () => ({
   PortalAdmissionNotFoundError: class PortalAdmissionNotFoundError extends Error {},
   PortalAdmissionNotClaimedError: class PortalAdmissionNotClaimedError extends Error {},
   PortalAdmissionUserStillExistsError: class PortalAdmissionUserStillExistsError extends Error {},
+  PortalAdmissionMissingContentAccessError: class PortalAdmissionMissingContentAccessError extends Error {},
 }));
 
 vi.mock("@/lib/audit/logger", () => ({
@@ -110,6 +111,28 @@ describe("admin portal admission reset route", () => {
     await expect(response.json()).resolves.toEqual({
       code: "CONFLICT",
       error: "Delete the existing user before resetting portal admission",
+    });
+  });
+
+  it("returns conflict when resetting would create a sign-in-only invitation", async () => {
+    const { PortalAdmissionMissingContentAccessError } = await import(
+      "@/lib/admission/admin-reset"
+    );
+    requireAuth.mockResolvedValue("admin-1");
+    resetClaimedPortalAdmission.mockRejectedValue(
+      new PortalAdmissionMissingContentAccessError("user@example.com")
+    );
+
+    const response = await postPortalAdmissionReset(
+      new NextRequest("http://localhost/api/admin/portal-admissions/reset", {
+        method: "POST",
+        body: JSON.stringify({ email: "user@example.com" }),
+      })
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Cannot reset an admission without saved active content access",
     });
   });
 });

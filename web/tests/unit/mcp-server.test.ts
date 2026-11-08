@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BESEDY_MCP_INSTRUCTIONS,
   createBesedyMcpServer,
-  paginateCatalogs,
 } from '@/lib/mcp/server';
 import {
   TRANSCRIPT_VERIFICATION_GUIDANCE,
@@ -11,7 +10,6 @@ import {
 } from '@/lib/mcp/tools/shared';
 import type {
   McpAccessProfile,
-  McpCatalogAccess,
 } from '@/lib/mcp/access-profile';
 import { getMcpIdentity } from '@/lib/mcp/identity';
 import {
@@ -59,7 +57,6 @@ vi.mock('@/lib/mcp/usage', () => ({
     async (
       _context: unknown,
       _toolName: string,
-      _input: unknown,
       operation: () => unknown,
     ) => operation(),
   ),
@@ -128,65 +125,30 @@ async function invokeMcp(
   }>;
 }
 
-function catalog(id: string, isDefault: boolean): McpCatalogAccess {
-  return {
-    id,
-    label: id,
-    isDefault,
-  };
-}
-
-function catalogToolCalls(catalogId: string) {
+function archiveToolCalls() {
   return [
-    { name: 'list_locations', arguments: { catalogId } },
-    { name: 'list_recorders', arguments: { catalogId } },
-    { name: 'list_events', arguments: { catalogId } },
-    { name: 'get_event', arguments: { catalogId, eventId: 42 } },
+    { name: 'list_locations', arguments: {} },
+    { name: 'list_recorders', arguments: {} },
+    { name: 'list_events', arguments: {} },
+    { name: 'get_event', arguments: { eventId: 42 } },
     {
       name: 'get_recording',
-      arguments: { catalogId, audioHash: 'a'.repeat(64) },
+      arguments: { audioHash: 'a'.repeat(64) },
     },
     {
       name: 'get_transcript',
-      arguments: { catalogId, audioHash: 'a'.repeat(64), mode: 'page' },
+      arguments: { audioHash: 'a'.repeat(64), mode: 'page' },
     },
     {
       name: 'search_transcripts',
-      arguments: { catalogId, query: 'search phrase' },
+      arguments: { query: 'search phrase' },
     },
     {
       name: 'find_transcript_mentions',
-      arguments: { catalogId, query: 'exact phrase' },
+      arguments: { query: 'exact phrase' },
     },
   ];
 }
-
-describe('MCP server catalog pagination', () => {
-  const catalogs = Array.from({ length: 105 }, (_, index) => ({
-    id: `catalog-${String(index).padStart(3, '0')}`,
-  }));
-
-  it('returns stable bounded pages', () => {
-    const first = paginateCatalogs(catalogs, undefined, 100);
-    expect(first?.items).toHaveLength(100);
-    expect(first?.nextCursor).toBe('catalog-099');
-
-    const second = paginateCatalogs(
-      catalogs,
-      first?.nextCursor ?? undefined,
-      100,
-    );
-    expect(second?.items).toEqual(catalogs.slice(100));
-    expect(second?.nextCursor).toBeNull();
-  });
-
-  it('rejects an unknown cursor and clamps oversized internal calls', () => {
-    expect(paginateCatalogs(catalogs, 'missing', 50)).toBeNull();
-    expect(paginateCatalogs(catalogs, undefined, 1_000)?.items).toHaveLength(
-      100,
-    );
-  });
-});
 
 describe('MCP personalized tool surface', () => {
   beforeEach(() => {
@@ -194,9 +156,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: null,
-      defaultCatalogSource: null,
-      catalogs: [],
+      archive: null,
     };
     vi.mocked(getMcpIdentity).mockResolvedValue({
       userId: 'user-1',
@@ -213,7 +173,6 @@ describe('MCP personalized tool surface', () => {
 
     expect(tools.map((tool) => tool.name)).toEqual([
       'who_am_i',
-      'list_catalogs',
       'list_locations',
       'list_recorders',
       'list_events',
@@ -229,9 +188,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
 
     const body = await invokeMcp('tools/call', {
@@ -251,14 +208,14 @@ describe('MCP personalized tool surface', () => {
         clientId: 'client-1',
         clientName: 'Test MCP client',
         grantedScopes: ['openid', 'profile', 'email', 'besedy:read'],
-        defaultCatalogId: 'viewer-catalog',
+        archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
       },
     });
     expect(body.result?.content).toEqual([
       {
         type: 'text',
         text: expect.stringMatching(
-          /Account ID: user-1[\s\S]*Default catalog: viewer-catalog[\s\S]*Scopes: openid, profile, email, besedy:read/,
+          /Account ID: user-1[\s\S]*Archive: viewer-catalog[\s\S]*Scopes: openid, profile, email, besedy:read/,
         ),
       },
     ]);
@@ -268,9 +225,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: null,
-      defaultCatalogSource: null,
-      catalogs: [],
+      archive: null,
     };
 
     const body = await invokeMcp(
@@ -296,9 +251,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: null,
-      defaultCatalogSource: null,
-      catalogs: [],
+      archive: null,
     };
     vi.mocked(getMcpIdentity).mockResolvedValueOnce(null);
 
@@ -318,69 +271,17 @@ describe('MCP personalized tool surface', () => {
     });
   });
 
-  it('returns explicit catalog authority and a structured cursor error', async () => {
-    accessProfile = {
-      userId: 'user-1',
-      canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'global_default',
-      catalogs: [catalog('viewer-catalog', true)],
-    };
-
-    const successBody = await invokeMcp('tools/call', {
-      name: 'list_catalogs',
-      arguments: {},
-    });
-    expect(successBody.result?.structuredContent).toEqual({
-      catalogs: [
-        {
-          id: 'viewer-catalog',
-          label: 'viewer-catalog',
-          isDefault: true,
-        },
-      ],
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'global_default',
-      nextCursor: null,
-    });
-    expect(successBody.result?.content).toEqual([
-      {
-        type: 'text',
-        text: expect.stringMatching(
-          /viewer-catalog · viewer-catalog · default$/m,
-        ),
-      },
-    ]);
-
-    const errorBody = await invokeMcp('tools/call', {
-      name: 'list_catalogs',
-      arguments: { cursor: 'missing-catalog' },
-    });
-    expect(errorBody.result).toMatchObject({
-      isError: true,
-      structuredContent: {
-        error: {
-          code: 'invalid_cursor',
-          message: 'Invalid catalog cursor',
-        },
-      },
-    });
-  });
-
   it('exposes every tool to a listener-only user', async () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'listener-catalog',
-      defaultCatalogSource: 'global_default',
-      catalogs: [catalog('listener-catalog', true)],
+      archive: { id: 'listener-catalog', label: 'listener-catalog' },
     };
 
     const body = await invokeMcp('tools/list');
     const tools = body.result?.tools as Array<{ name: string }>;
     expect(tools.map((tool) => tool.name)).toEqual([
       'who_am_i',
-      'list_catalogs',
       'list_locations',
       'list_recorders',
       'list_events',
@@ -393,16 +294,11 @@ describe('MCP personalized tool surface', () => {
     expect(getMcpIdentity).not.toHaveBeenCalled();
   });
 
-  it('exposes the complete read surface when any catalog permits it', async () => {
+  it('advertises the complete archive read surface with documented output shapes', async () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [
-        catalog('listener-catalog', false),
-        catalog('viewer-catalog', true),
-      ],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
 
     const body = await invokeMcp('tools/list');
@@ -412,7 +308,6 @@ describe('MCP personalized tool surface', () => {
     }>;
     expect(tools.map((tool) => tool.name)).toEqual([
       'who_am_i',
-      'list_catalogs',
       'list_locations',
       'list_recorders',
       'list_events',
@@ -437,9 +332,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
 
     const body = await invokeMcp('tools/list');
@@ -466,7 +359,6 @@ describe('MCP personalized tool surface', () => {
     const transcriptTool = tools.find((tool) => tool.name === 'get_transcript');
     const recordingTool = tools.find((tool) => tool.name === 'get_recording');
     const identityTool = tools.find((tool) => tool.name === 'who_am_i');
-    const catalogsTool = tools.find((tool) => tool.name === 'list_catalogs');
     const eventsTool = tools.find((tool) => tool.name === 'list_events');
     const locationsTool = tools.find((tool) => tool.name === 'list_locations');
     const recordersTool = tools.find((tool) => tool.name === 'list_recorders');
@@ -560,7 +452,6 @@ describe('MCP personalized tool surface', () => {
     );
     expect(eventsTool?.inputSchema.properties.released).toBeUndefined();
     expect(identityTool?.description).toContain('diagnose identity or access');
-    expect(catalogsTool?.description).toContain('effective default');
   });
 
   it('provides concise cross-tool instructions for clients without a skill', async () => {
@@ -618,7 +509,6 @@ describe('MCP personalized tool surface', () => {
 
   it('renders usable and unavailable transcript verification handoffs', () => {
     const request = {
-      catalogId: 'viewer-catalog',
       audioHash: 'a'.repeat(64),
       mode: 'page',
       startSec: 0,
@@ -635,13 +525,11 @@ describe('MCP personalized tool surface', () => {
     );
   });
 
-  it('uses the effective default catalog when catalogId is omitted', async () => {
+  it('uses the bound archive without catalog-selection arguments', async () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
     vi.mocked(listMcpEvents).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -734,13 +622,11 @@ describe('MCP personalized tool surface', () => {
     ).toMatch(/never cite it as what was said/);
   });
 
-  it('lists the caller bookmarks in the resolved catalog', async () => {
+  it('lists the caller bookmarks in the bound archive', async () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
     const audioHash = 'a'.repeat(64);
     vi.mocked(listMcpBookmarks).mockResolvedValue({
@@ -767,7 +653,6 @@ describe('MCP personalized tool surface', () => {
             isPrimary: true,
           },
           transcriptRequest: {
-            catalogId: 'viewer-catalog',
             audioHash,
             mode: 'page',
             startSec: 65.5,
@@ -804,7 +689,7 @@ describe('MCP personalized tool surface', () => {
           `Recording: ${audioHash}`,
           'User comment: Worth quoting',
           'Saved excerpt: Saved line',
-          `Transcript request: {"catalogId":"viewer-catalog","audioHash":"${audioHash}","mode":"page","startSec":65.5,"endSec":185.5}`,
+          `Transcript request: {"audioHash":"${audioHash}","mode":"page","startSec":65.5,"endSec":185.5}`,
           'Next cursor: next-bookmarks',
         ].join('\n'),
       },
@@ -815,9 +700,7 @@ describe('MCP personalized tool surface', () => {
       { name: 'list_bookmarks', arguments: { catalogId: 'other-catalog' } },
       bookmarksConnection,
     );
-    expect(denied.result?.structuredContent).toMatchObject({
-      error: { code: 'not_found' },
-    });
+    expect(denied.result?.isError).toBe(true);
     expect(listMcpBookmarks).toHaveBeenCalledOnce();
   });
 
@@ -825,9 +708,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
     vi.mocked(listMcpLocations).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -877,9 +758,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
     vi.mocked(getMcpEvent).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -928,9 +807,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
     vi.mocked(getMcpRecording).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -978,9 +855,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
     vi.mocked(getMcpTranscript).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -999,7 +874,6 @@ describe('MCP personalized tool surface', () => {
         totalMatching: 2,
       },
       continuation: {
-        catalogId: 'viewer-catalog',
         audioHash: 'a'.repeat(64),
         mode: 'page',
         segmentOffset: 1,
@@ -1064,9 +938,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
     vi.mocked(searchMcpTranscripts).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -1096,7 +968,6 @@ describe('MCP personalized tool surface', () => {
             afterText: 'Later context',
           },
           transcriptRequest: {
-            catalogId: 'viewer-catalog',
             audioHash: 'a'.repeat(64),
             mode: 'page',
             startSec: 0,
@@ -1116,7 +987,7 @@ describe('MCP personalized tool surface', () => {
       {
         type: 'text',
         text: expect.stringMatching(
-          /ranked, non-exhaustive candidate[\s\S]*2026-08-28 · Prague[\s\S]*Event: 42[\s\S]*Recording: a{64}[\s\S]*Search evidence[\s\S]*Before: Earlier context[\s\S]*After: Later context[\s\S]*Transcript request: \{"catalogId":"viewer-catalog"/,
+          /ranked, non-exhaustive candidate[\s\S]*2026-08-28 · Prague[\s\S]*Event: 42[\s\S]*Recording: a{64}[\s\S]*Search evidence[\s\S]*Before: Earlier context[\s\S]*After: Later context[\s\S]*Transcript request: \{"audioHash":/,
         ),
       },
     ]);
@@ -1161,9 +1032,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
     vi.mocked(searchMcpTranscripts).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -1220,9 +1089,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
     vi.mocked(findMcpTranscriptMentions).mockResolvedValue({
       catalogId: 'viewer-catalog',
@@ -1262,9 +1129,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
 
     const invalidBody = await invokeMcp('tools/call', {
@@ -1319,25 +1184,19 @@ describe('MCP personalized tool surface', () => {
     ]);
   });
 
-  it('does not reveal inaccessible catalogs through any catalog tool', async () => {
+  it('rejects retired catalog-selection arguments without reading another archive', async () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
-    for (const call of catalogToolCalls('missing-catalog')) {
-      const body = await invokeMcp('tools/call', call);
+    for (const call of archiveToolCalls()) {
+      const body = await invokeMcp('tools/call', {
+        ...call,
+        arguments: { ...call.arguments, catalogId: 'missing-catalog' },
+      });
       expect(body.result).toMatchObject({
         isError: true,
-        structuredContent: {
-          error: {
-            code: 'not_found',
-            message: 'Catalog not found or inaccessible',
-            retryable: false,
-          },
-        },
       });
     }
     expect(listMcpEvents).not.toHaveBeenCalled();
@@ -1350,13 +1209,28 @@ describe('MCP personalized tool surface', () => {
     expect(findMcpTranscriptMentions).not.toHaveBeenCalled();
   });
 
+  it('denies every archive read to an account without archive access', async () => {
+    for (const call of archiveToolCalls()) {
+      const body = await invokeMcp('tools/call', call);
+      expect(body.result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          error: { code: 'not_found', message: 'Archive not found or inaccessible' },
+        },
+      });
+    }
+    expect(listMcpEvents).not.toHaveBeenCalled();
+    expect(getMcpRecording).not.toHaveBeenCalled();
+    expect(getMcpTranscript).not.toHaveBeenCalled();
+    expect(searchMcpTranscripts).not.toHaveBeenCalled();
+    expect(findMcpTranscriptMentions).not.toHaveBeenCalled();
+  });
+
   it('marks transient read failures as retryable', async () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
     vi.mocked(searchMcpTranscripts).mockRejectedValue(
       new McpReadError(
@@ -1383,9 +1257,7 @@ describe('MCP personalized tool surface', () => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
-      defaultCatalogId: 'viewer-catalog',
-      defaultCatalogSource: 'user_preference',
-      catalogs: [catalog('viewer-catalog', true)],
+      archive: { id: 'viewer-catalog', label: 'viewer-catalog' },
     };
     vi.mocked(getMcpRecording).mockRejectedValue(
       new Error('database host secret'),

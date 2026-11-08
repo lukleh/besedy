@@ -9,7 +9,7 @@ import type {
 import { z } from 'zod';
 import type {
   McpAccessProfile,
-  McpCatalogAccess,
+  McpArchiveAccess,
 } from '@/lib/mcp/access-profile';
 import { McpReadError } from '@/lib/mcp/read-service';
 import { createServerLogger } from '@/lib/log/server';
@@ -54,14 +54,7 @@ export function describeSearchedRecordings(
 }
 
 export function createLookupListInputSchema(itemName: string) {
-  return z.object({
-    catalogId: z
-      .string()
-      .min(1)
-      .optional()
-      .describe(
-        'Accessible Besedy catalog to inspect. Omit it to use the effective default catalog.',
-      ),
+  return z.strictObject({
     query: z
       .string()
       .trim()
@@ -76,7 +69,7 @@ export function createLookupListInputSchema(itemName: string) {
       .min(1)
       .optional()
       .describe(
-        'Opaque continuation cursor returned by the previous page. Pass it back unchanged with the same catalog and query.',
+        'Opaque continuation cursor returned by the previous page. Pass it back unchanged with the same query.',
       ),
     limit: z
       .number()
@@ -119,33 +112,23 @@ export function registerBesedyTool<
   callback: ToolCallback<InputArgs>,
 ): RegisteredTool {
   const trackedCallback = (async (args, serverContext) =>
-    trackMcpToolInvocation(context, name, args, () =>
+    trackMcpToolInvocation(context, name, () =>
       callback(args, serverContext),
     )) as ToolCallback<InputArgs>;
 
   return server.registerTool(name, config, trackedCallback);
 }
 
-export function resolveToolCatalog(
+export function resolveToolArchive(
   profile: McpAccessProfile,
-  catalogId: string | undefined,
-): McpCatalogAccess | { error: string; code: string } {
-  const resolvedId = catalogId ?? profile.defaultCatalogId ?? undefined;
-  if (!resolvedId) {
-    return {
-      code: 'catalog_required',
-      error:
-        'No accessible default catalog is available; provide catalogId explicitly',
-    };
-  }
-  const catalog = profile.catalogs.find((entry) => entry.id === resolvedId);
-  if (!catalog) {
+): McpArchiveAccess | { error: string; code: string } {
+  if (!profile.archive) {
     return {
       code: 'not_found',
-      error: 'Catalog not found or inaccessible',
+      error: 'Archive not found or inaccessible',
     };
   }
-  return catalog;
+  return profile.archive;
 }
 
 export function toolSuccess(

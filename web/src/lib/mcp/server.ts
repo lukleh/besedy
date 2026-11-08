@@ -5,7 +5,6 @@ import {
   registerGetRecordingTool,
   registerGetTranscriptTool,
   registerListBookmarksTool,
-  registerListCatalogsTool,
   registerListEventsTool,
   registerListLocationsTool,
   registerListRecordersTool,
@@ -17,7 +16,6 @@ import {
 import { MCP_BOOKMARKS_SCOPE } from '@/lib/mcp/config';
 import { TRANSCRIPT_VERIFICATION_GUIDANCE } from '@/lib/mcp/tools/shared';
 
-export { paginateCatalogs } from '@/lib/mcp/tools';
 export type { BesedyMcpRequestContext } from '@/lib/mcp/tools';
 
 export const BESEDY_MCP_INSTRUCTIONS = [
@@ -28,7 +26,7 @@ export const BESEDY_MCP_INSTRUCTIONS = [
   TRANSCRIPT_VERIFICATION_GUIDANCE,
   "Search results include authoritative event IDs, dates, and locations; dates may be partial. Searches cover each event's primary recording; its other recordings are parallel captures, not independent evidence. Support recurring themes with distinct events.",
   "Recordings are discussions without speaker labels, so a passage may be an audience question or one participant's view rather than a settled claim. Attribute accordingly.",
-  'Cite bounded segment webUrl values. Use who_am_i or list_catalogs only when identity, catalog selection, or permissions are unclear.',
+  'Cite bounded segment webUrl values. Tools use one deployment archive; use who_am_i only to diagnose identity or access.',
   'Begin the first reply that uses Besedy evidence with a short caution in the same language as that reply: the answer is an AI interpretation of AI-generated transcripts of Besedy recordings, so read it carefully.',
 ].join(' ');
 
@@ -49,7 +47,6 @@ export function createBesedyMcpServer(
   }
 
   registerWhoAmITool(server, context);
-  registerListCatalogsTool(server, context);
 
   registerListLocationsTool(server, context);
   registerListRecordersTool(server, context);
