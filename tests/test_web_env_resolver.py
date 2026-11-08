@@ -136,7 +136,7 @@ if [[ " $* " == *" config --format json "* ]]; then
     external=false
   fi
   volume_target="/var/lib/postgresql"
-  printf '{"name":"%s","services":{"db":{"container_name":"%s-db","image":"pgvector/pgvector:pg18","networks":{"default":null},"volumes":[{"type":"volume","source":"postgres_data","target":"%s"}]},"web":{"container_name":"%s-web","environment":{"APP_ENV":"%s"},"networks":{"besedy_internal":null,"default":null}}},"volumes":{"postgres_data":{"name":"%s","external":%s}},"networks":{"default":{"name":"%s_default","driver_opts":{"com.docker.network.bridge.name":"%s"},"enable_ipv6":false},"besedy_internal":{"name":"%s","external":true}}}\n' \
+  printf '{"name":"%s","services":{"db":{"container_name":"%s-db","image":"postgres:18","networks":{"default":null},"volumes":[{"type":"volume","source":"postgres_data","target":"%s"}]},"web":{"container_name":"%s-web","environment":{"APP_ENV":"%s"},"networks":{"besedy_internal":null,"default":null}}},"volumes":{"postgres_data":{"name":"%s","external":%s}},"networks":{"default":{"name":"%s_default","driver_opts":{"com.docker.network.bridge.name":"%s"},"enable_ipv6":false},"besedy_internal":{"name":"%s","external":true}}}\n' \
     "$COMPOSE_PROJECT_NAME" "$COMPOSE_PROJECT_NAME" "$volume_target" \
     "$COMPOSE_PROJECT_NAME" "$APP_ENV" "$volume_source" "$external" \
     "$COMPOSE_PROJECT_NAME" "$BESEDY_WEB_BRIDGE_NAME" "$BESEDY_INTERNAL_NETWORK"
@@ -286,7 +286,7 @@ def compose_config(
         "services": {
             "db": {
                 "container_name": f"besedy-{instance}-db",
-                "image": "pgvector/pgvector:pg18",
+                "image": "postgres:18",
                 "networks": db_networks or {"default": None},
                 "volumes": [
                     {
@@ -425,7 +425,7 @@ def _bind_config(mode: str, root: Path) -> dict[str, object]:
         "services": {
             "db": {
                 "container_name": f"{project}-db",
-                "image": "pgvector/pgvector:pg18",
+                "image": "postgres:18",
                 "networks": {"default": None},
                 "volumes": [
                     {"type": "volume", "source": "postgres_data", "target": "/var/lib/postgresql"}

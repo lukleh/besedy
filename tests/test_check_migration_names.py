@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -165,3 +168,67 @@ def test_base_without_timestamped_migrations_still_reports(tmp_path: Path) -> No
     assert result.returncode == 1
     assert "::error::add_without_timestamp" in result.stdout
     assert "20261003090000_first" not in result.stdout
+
+
+def _squash_to_baseline(repo: Path) -> None:
+    root = repo / "web/prisma/migrations"
+    retired = {
+        p.parent.name: hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in root.glob("*/migration.sql")
+    }
+    for name in retired:
+        shutil.rmtree(root / name)
+    baseline = "20261108000000_current_schema"
+    _add_migration(repo, baseline)
+    checksum = hashlib.sha256((root / baseline / "migration.sql").read_bytes()).hexdigest()
+    (repo / "web/prisma/baseline.json").write_text(
+        json.dumps(
+            {
+                "baseline": baseline,
+                "baseline_checksum": checksum,
+                "retired_migrations": retired,
+            }
+        )
+    )
+
+
+def test_reviewed_complete_baseline_can_replace_history(repo: Path) -> None:
+    _squash_to_baseline(repo)
+    result = _check(repo)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Verified current-schema baseline" in result.stdout
+
+
+def test_baseline_cannot_hide_unreviewed_history_change(repo: Path) -> None:
+    _squash_to_baseline(repo)
+    manifest = repo / "web/prisma/baseline.json"
+    content = json.loads(manifest.read_text())
+    content["retired_migrations"][BASE_MIGRATIONS[0]] = "wrong"
+    manifest.write_text(json.dumps(content))
+    result = _check(repo)
+    assert result.returncode == 1
+    assert "Migration changed" in result.stderr
+
+
+def test_existing_baseline_does_not_allow_future_migration_deletion(repo: Path) -> None:
+    _squash_to_baseline(repo)
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    shutil.rmtree(repo / "web/prisma/migrations/20261108000000_current_schema")
+    result = _check(repo)
+    assert result.returncode == 1
+
+
+def test_baseline_cannot_retire_only_part_of_history(repo: Path) -> None:
+    original = repo / "web/prisma/migrations" / BASE_MIGRATIONS[0] / "migration.sql"
+    original_sql = original.read_text()
+    _squash_to_baseline(repo)
+    _add_migration(repo, BASE_MIGRATIONS[0])
+    original.write_text(original_sql)
+    manifest_path = repo / "web/prisma/baseline.json"
+    manifest = json.loads(manifest_path.read_text())
+    del manifest["retired_migrations"][BASE_MIGRATIONS[0]]
+    manifest_path.write_text(json.dumps(manifest))
+    result = _check(repo)
+    assert result.returncode == 1
+    assert "complete base migration history" in result.stderr

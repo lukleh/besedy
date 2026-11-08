@@ -8,6 +8,7 @@
 # Existing names are left alone: production has applied them under those names.
 # For the same reason a migration on the base branch must not be renamed or
 # deleted; Prisma would treat a renamed one as new and run its SQL again.
+# The current-schema baseline has one checksum-pinned, complete-history exception.
 #
 # Usage: check_migration_names.sh <base-ref>
 set -euo pipefail
@@ -27,6 +28,12 @@ done | sort)
 removed=$(comm -23 <(printf '%s\n' "$base_names") <(printf '%s\n' "$head_names") | sed '/^$/d')
 added=$(comm -13 <(printf '%s\n' "$base_names") <(printf '%s\n' "$head_names") | sed '/^$/d')
 failed=0
+
+if [[ -n "$removed" ]]; then
+    if [[ -f web/prisma/baseline.json ]] && node "$(dirname "$0")/check_migration_baseline.mjs" "$base_ref"; then
+        removed=""
+    fi
+fi
 
 if [[ -n "$removed" ]]; then
     while IFS= read -r name; do

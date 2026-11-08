@@ -22,7 +22,7 @@ services:
   db:
     # Keep the database major version and its storage layout coupled in source.
     # PostgreSQL 18 stores versioned clusters below /var/lib/postgresql.
-    image: pgvector/pgvector:pg18
+    image: postgres:18
     container_name: besedy-${BESEDY_COMPOSE_INSTANCE:-unmanaged}-db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-besedy}
