@@ -7,7 +7,6 @@ import RecordingContent, {
 import { createPlaybackClock } from "@/lib/playback-clock";
 
 const useQueryMock = vi.fn();
-const useHydratedBooleanMock = vi.fn();
 const useRecordingEntryMock = vi.fn();
 const useCatalogContextMock = vi.fn();
 const useOnlineStatusMock = vi.fn();
@@ -52,10 +51,6 @@ vi.mock("next/link", () => ({
 
 vi.mock("@/hooks/use-catalog-context", () => ({
   useCatalogContext: () => useCatalogContextMock(),
-}));
-
-vi.mock("@/hooks/use-hydrated-state", () => ({
-  useHydratedBoolean: (...args: unknown[]) => useHydratedBooleanMock(...args),
 }));
 
 vi.mock("@/hooks/use-online-status", () => ({
@@ -106,10 +101,6 @@ vi.mock("@/components/player/audio-player", () => ({
   },
 }));
 
-vi.mock("@/components/transcript/transcript-stream-viewer", () => ({
-  TranscriptStreamViewer: () => <div data-testid="transcript-stream-viewer" />,
-}));
-
 vi.mock("@/components/transcript/transcript-viewer", () => ({
   TranscriptViewer: (props: unknown) => {
     transcriptViewerMock(props);
@@ -117,7 +108,7 @@ vi.mock("@/components/transcript/transcript-viewer", () => ({
   },
 }));
 
-describe("RecordingContent transcript toggle", () => {
+describe("RecordingContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
@@ -145,7 +136,6 @@ describe("RecordingContent transcript toggle", () => {
       handlePlayerSeek: vi.fn(),
       handlePlayingChange: vi.fn(),
       handleSeek: vi.fn(),
-      isPlaying: false,
       seekRequest: undefined,
       setCurrentTime: vi.fn(),
     });
@@ -203,7 +193,6 @@ describe("RecordingContent transcript toggle", () => {
   // only way for a curator to reach publication. It depends on both the
   // permission and the recording being in correction scope.
   it("offers the correction surface to a corrector for a recording in scope", () => {
-    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     useRecordingEntryMock.mockReturnValue({
       data: {
         entry: {
@@ -235,7 +224,6 @@ describe("RecordingContent transcript toggle", () => {
   });
 
   it("leaves the correction link to an embedding page that offers it elsewhere", () => {
-    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     useRecordingEntryMock.mockReturnValue({
       data: {
         entry: {
@@ -271,7 +259,6 @@ describe("RecordingContent transcript toggle", () => {
   });
 
   it("does not offer the correction surface for a recording outside correction scope", () => {
-    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     useRecordingEntryMock.mockReturnValue({
       data: {
         entry: {
@@ -302,33 +289,24 @@ describe("RecordingContent transcript toggle", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows transcript stream when the stream view is enabled", () => {
-    useHydratedBooleanMock.mockReturnValue([true, vi.fn()]);
-    grantVariantAccess(true);
+  it.each([false, true])(
+    "renders the transcript reader with variant permission %s",
+    (canSeeTranscriptVariants) => {
+      grantVariantAccess(canSeeTranscriptVariants);
 
-    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
+      render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
 
-    expect(
-      screen.getByRole("heading", { level: 2, name: "recording.transcript" })
-    ).toBeInTheDocument();
-    expect(screen.getByText("recording.transcriptStream")).toBeInTheDocument();
-    expect(screen.getByTestId("transcript-stream-viewer")).toBeInTheDocument();
-    expect(screen.queryByTestId("transcript-viewer")).not.toBeInTheDocument();
-  });
-
-  it("shows the plain transcript when the stream view is disabled", () => {
-    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
-    grantVariantAccess(true);
-
-    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
-
-    expect(screen.getByTestId("transcript-viewer")).toBeInTheDocument();
-    expect(screen.queryByTestId("transcript-stream-viewer")).not.toBeInTheDocument();
-  });
+      expect(
+        screen.getByRole("heading", { level: 2, name: "recording.transcript" })
+      ).toBeInTheDocument();
+      expect(screen.getByTestId("transcript-viewer")).toBeInTheDocument();
+      expect(transcriptViewerMock).toHaveBeenCalledWith(
+        expect.objectContaining({ canSeeTranscriptVariants })
+      );
+    }
+  );
 
   it("passes event download context to the embedded audio player", () => {
-    useHydratedBooleanMock.mockReturnValue([true, vi.fn()]);
-
     render(
       <RecordingContent
         params={{ catalogId: CATALOG_ID, hash: HASH }}
@@ -342,7 +320,6 @@ describe("RecordingContent transcript toggle", () => {
   });
 
   it("shows the listener's bookmarks under the player and marks them on it", () => {
-    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     useRecordingBookmarksMock.mockReturnValue({
       bookmarks: [{ id: "b1", positionSec: 30 }, { id: "b2", positionSec: 95.5 }],
     });
@@ -357,7 +334,6 @@ describe("RecordingContent transcript toggle", () => {
   });
 
   it("has no bookmarks in the session-free offline shell", () => {
-    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     useSessionMock.mockReturnValue({ session: null });
 
     render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
@@ -370,7 +346,6 @@ describe("RecordingContent transcript toggle", () => {
   });
 
   it("uses a completed download's exact audio URL while offline", () => {
-    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     useOnlineStatusMock.mockReturnValue({ isOnline: false });
     useDownloadRecordMock.mockReturnValue({
       status: "complete",
@@ -388,7 +363,6 @@ describe("RecordingContent transcript toggle", () => {
   });
 
   it("offers the AAC copy above the player while a flagged WebM download plays", () => {
-    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     const url = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`;
     useDownloadRecordMock.mockReturnValue({
       key: `${CATALOG_ID}:${HASH}`,
@@ -407,7 +381,6 @@ describe("RecordingContent transcript toggle", () => {
   });
 
   it("shows no notice when the page streams instead of playing a download", () => {
-    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     // Not complete yet, so the page streams and no local package plays.
     useDownloadRecordMock.mockReturnValue({
       key: `${CATALOG_ID}:${HASH}`,
@@ -429,7 +402,6 @@ describe("RecordingContent transcript toggle", () => {
       "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Version/27.0 Mobile/15E148 Safari/604.1";
     Object.defineProperty(navigator, "userAgent", { value: IPHONE_UA, configurable: true });
     const url = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`;
-    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     useOnlineStatusMock.mockReturnValue({ isOnline: false });
     useDownloadRecordMock.mockReturnValue({ key: "k", status: "complete", audioUrl: url });
     try {
@@ -447,7 +419,6 @@ describe("RecordingContent transcript toggle", () => {
   });
 
   it("plays a completed download while online when it matches the selected source", () => {
-    useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
     const url = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`;
     useDownloadRecordMock.mockReturnValue({
       status: "complete",
@@ -526,7 +497,6 @@ describe("RecordingContent transcript toggle", () => {
       "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1";
     const userAgent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(iphone);
     try {
-      useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
       const webmUrl = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`;
       useDownloadRecordMock.mockReturnValue({
         status: "complete",
@@ -599,7 +569,6 @@ describe("RecordingContent transcript toggle", () => {
     let userAgent: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
-      useHydratedBooleanMock.mockReturnValue([false, vi.fn()]);
       userAgent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(iphone);
     });
     afterEach(() => {
@@ -685,19 +654,6 @@ describe("RecordingContent transcript toggle", () => {
     } finally {
       vi.unstubAllGlobals();
     }
-  });
-
-  // The stream view is every machine transcript side by side, so it belongs to
-  // the administrative view. A stored preference does not reopen it.
-  it("keeps the stream view and its switch away from an ordinary reader", () => {
-    useHydratedBooleanMock.mockReturnValue([true, vi.fn()]);
-    grantVariantAccess(false);
-
-    render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
-
-    expect(screen.queryByText("recording.transcriptStream")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("transcript-stream-viewer")).not.toBeInTheDocument();
-    expect(screen.getByTestId("transcript-viewer")).toBeInTheDocument();
   });
 
   it("shows the invalid catalog state when catalog validation fails", () => {

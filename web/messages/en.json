@@ -823,8 +823,7 @@
       "noName": "No name",
       "never": "Never",
       "pendingUser": "Pending User",
-      "addedAt": "Added {time}",
-      "multipleCatalogRoles": "{count} catalog roles"
+      "addedAt": "Added {time}"
     },
     "userDetail": {
       "backToUsers": "Back to Users",
@@ -1386,11 +1385,6 @@
     "filename": "Filename",
     "originalPath": "Original path",
     "transcript": "Transcript",
-    "transcriptStream": "Transcript stream",
-    "transcriptStreamViewportSeconds": "Viewport (s)",
-    "transcriptStreamModels": "Models",
-    "transcriptStreamUnavailable": "Transcript stream unavailable",
-    "transcriptStreamUnavailableDescription": "No transcript timeline found for this recording.",
     "showTranscript": "Show",
     "sourcesTitle": "Sources",
     "sourcesDescription": "Links and files related to this recording.",

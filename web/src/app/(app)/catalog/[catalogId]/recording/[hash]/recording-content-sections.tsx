@@ -1,14 +1,12 @@
 "use client";
 
-import { Fragment, type ComponentProps, type ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, Download, FileAudio, Mic, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import { AudioPlayer } from "@/components/player/audio-player";
-import { TranscriptStreamViewer } from "@/components/transcript/transcript-stream-viewer";
 import { TranscriptViewer, type Transcript } from "@/components/transcript/transcript-viewer";
 import { CorrectionLink } from "@/components/correction/correction-link";
 import {
@@ -18,8 +16,6 @@ import {
   ResponsiveMenuTrigger,
 } from "@/components/ui/responsive-menu";
 import type { PlaybackClock } from "@/lib/playback-clock";
-import { usePlaybackTime } from "@/hooks/use-playback-time";
-import { cn } from "@/lib/utils";
 import { formatRecordingDate } from "@/lib/date-format";
 import type { CatalogEntryResponse } from "@/types/catalog";
 import type { RecordingSeekRequest } from "./use-recording-playback";
@@ -95,11 +91,8 @@ interface RecordingTranscriptSectionProps {
   catalogId: string;
   clock: PlaybackClock;
   hash: string;
-  isPlaying: boolean;
   onSeek: (time: number) => void;
-  onToggleTranscriptStream: (value: boolean) => void;
   onTranscriptChange?: (transcript: Transcript | null) => void;
-  showTranscriptStream: boolean;
 }
 
 export function RecordingPageSkeleton() {
@@ -336,16 +329,6 @@ export function RecordingAudioSection({
   );
 }
 
-// The stream view animates its own playhead from the time, so it follows
-// every update of the clock (only while the page is visible).
-function ClockedTranscriptStreamViewer({
-  clock,
-  ...props
-}: Omit<ComponentProps<typeof TranscriptStreamViewer>, "currentTime"> & { clock: PlaybackClock }) {
-  const currentTime = usePlaybackTime(clock);
-  return <TranscriptStreamViewer currentTime={currentTime} {...props} />;
-}
-
 export function RecordingTranscriptSection({
   canDownloadTranscripts,
   canSeeSpeakers = false,
@@ -356,17 +339,10 @@ export function RecordingTranscriptSection({
   catalogId,
   clock,
   hash,
-  isPlaying,
   onSeek,
-  onToggleTranscriptStream,
   onTranscriptChange,
-  showTranscriptStream,
 }: RecordingTranscriptSectionProps) {
   const t = useTranslations();
-  // The stream view is every machine transcript side by side, so it is the
-  // administrative surface rather than a second way of reading. A stored
-  // preference from when it was shown to everyone does not reopen it.
-  const streamVisible = canSeeTranscriptVariants && showTranscriptStream;
 
   return (
     <div className="space-y-4">
@@ -381,56 +357,20 @@ export function RecordingTranscriptSection({
         {canCorrectTranscripts && correctionEligible && !hideCorrectionLink && (
           <CorrectionLink catalogId={catalogId} hash={hash} />
         )}
-        {canSeeTranscriptVariants && (
-        <div className="inline-flex items-center gap-2 rounded-full border bg-muted/40 px-3 py-1">
-          <span
-            className={cn(
-              "text-sm transition-colors",
-              showTranscriptStream ? "text-muted-foreground" : "font-medium text-foreground"
-            )}
-          >
-            {t("recording.transcript")}
-          </span>
-          <Switch
-            id="transcript-enabled"
-            checked={showTranscriptStream}
-            onCheckedChange={onToggleTranscriptStream}
-            aria-label={`${t("recording.transcript")} / ${t("recording.transcriptStream")}`}
-          />
-          <span
-            className={cn(
-              "text-sm transition-colors",
-              showTranscriptStream ? "font-medium text-foreground" : "text-muted-foreground"
-            )}
-          >
-            {t("recording.transcriptStream")}
-          </span>
-        </div>
-        )}
       </div>
-      {streamVisible ? (
-        <ClockedTranscriptStreamViewer
-          hash={hash}
-          groupId={catalogId}
-          clock={clock}
-          onSeek={onSeek}
-          isPlaying={isPlaying}
-        />
-      ) : (
-        <TranscriptViewer
-          hash={hash}
-          groupId={catalogId}
-          clock={clock}
-          onSeek={onSeek}
-          canDownload={canDownloadTranscripts}
-          canSeeSpeakers={canSeeSpeakers}
-          canSeeTranscriptVariants={canSeeTranscriptVariants}
-          // Only the progress panel's link reads this; an embedding page's
-          // correction action replaces it along with the heading button.
-          canCorrectTranscripts={canCorrectTranscripts && !hideCorrectionLink}
-          onTranscriptChange={onTranscriptChange}
-        />
-      )}
+      <TranscriptViewer
+        hash={hash}
+        groupId={catalogId}
+        clock={clock}
+        onSeek={onSeek}
+        canDownload={canDownloadTranscripts}
+        canSeeSpeakers={canSeeSpeakers}
+        canSeeTranscriptVariants={canSeeTranscriptVariants}
+        // Only the progress panel's link reads this; an embedding page's
+        // correction action replaces it along with the heading button.
+        canCorrectTranscripts={canCorrectTranscripts && !hideCorrectionLink}
+        onTranscriptChange={onTranscriptChange}
+      />
     </div>
   );
 }

@@ -137,8 +137,8 @@ export type AccessStatus = z.infer<typeof AccessStatusSchema>;
 
 /**
  * User account status
- * Note: PENDING is kept for legacy rows; pending onboarding is represented
- * by unclaimed portal admissions.
+ * PENDING protects provisional OAuth accounts until invitation claim and
+ * archive membership activation succeed together.
  */
 export const UserStatusSchema = z.enum(["ACTIVE", "PENDING", "BLOCKED"]);
 export type UserStatus = z.infer<typeof UserStatusSchema>;
