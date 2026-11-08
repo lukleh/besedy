@@ -15,7 +15,7 @@
  */
 import { createClientLogger } from '@/lib/log/client';
 import { browserPrefersAacAudio } from '@/lib/audio-format';
-import { resolveRecordingDisplay } from '@/lib/catalog-recordings/metadata';
+import { resolveRecordingMetadata } from '@/lib/catalog-recordings/metadata';
 import {
   buildAudioSourcesUrl,
   buildAudioUrl,
@@ -523,7 +523,7 @@ function snapshotEventRecording(
 function snapshotEntryRecording(
   entry: CatalogEntryResponse,
 ): DownloadRecordingSnapshot {
-  const display = resolveRecordingDisplay(entry);
+  const display = resolveRecordingMetadata(entry);
   return {
     title: display.title,
     artist: display.artist,

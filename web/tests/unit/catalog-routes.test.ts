@@ -439,6 +439,19 @@ describe("catalog API routes (access gating)", () => {
       .toEqual(["b".repeat(64), "a".repeat(64)]);
   });
 
+  it("sorts untitled recordings by filename rather than their hash", async () => {
+    mockAccessibleCatalog([
+      createEntry({ hash: "a".repeat(64), title: undefined, filename: "Zulu.wav" }),
+      createEntry({ hash: "b".repeat(64), title: undefined, filename: "Alpha.wav" }),
+    ]);
+    const response = await getCatalog(new NextRequest(
+      `http://localhost/api/catalogs/${CATALOG}/recordings?sort=title&dir=asc`,
+    ));
+    expect(response.status).toBe(200);
+    expect((await response.json()).entries.map((entry: { filename: string }) => entry.filename))
+      .toEqual(["Alpha.wav", "Zulu.wav"]);
+  });
+
   it("offers the same curated artists that the artist filter matches", async () => {
     mockAccessibleCatalog([
       createEntry({ artist: "Source", curatedArtist: "Corrected" }),

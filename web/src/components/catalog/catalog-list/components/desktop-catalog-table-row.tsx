@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { resolveRecordingDisplay } from "@/lib/catalog-recordings/metadata";
+import { resolveRecordingMetadata } from "@/lib/catalog-recordings/metadata";
 import { formatPartialDate } from "@/lib/date-format";
 import { recordingDateParts } from "@/lib/date-utils";
 import { DownloadButton } from "@/components/offline/download-button";
@@ -78,7 +78,7 @@ export function DesktopCatalogTableRow({
   const locale = useLocale();
   const t = useTranslations("catalog");
 
-  const { title: displayTitle, artist: displayArtist } = resolveRecordingDisplay(entry);
+  const { title: displayTitle, artist: displayArtist } = resolveRecordingMetadata(entry);
   const titleValue = inlineEdit.getCellValue(entry.hash, "title", displayTitle);
   const artistValue = inlineEdit.getCellValue(entry.hash, "artist", displayArtist);
   const verifiedValue = inlineEdit.getCellValue(

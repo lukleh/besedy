@@ -1,5 +1,5 @@
 import prisma from '@/lib/db';
-import { projectRecordingMetadata, resolveRecordingDisplay } from './metadata';
+import { projectRecordingMetadata, resolveRecordingMetadata } from './metadata';
 export { resolveCatalogRecordingTitle } from './metadata';
 
 export interface CatalogRecordingReadModel {
@@ -78,13 +78,13 @@ export async function loadCatalogRecordingReadModels(
     uniqueHashes.map((audioHash) => {
       const catalog = catalogByHash.get(audioHash);
       const curated = projectRecordingMetadata(metadataByHash.get(audioHash));
-      const display = resolveRecordingDisplay({
+      const display = resolveRecordingMetadata({
         hash: audioHash, title: catalog?.sourceTitle, artist: catalog?.sourceArtist, ...curated,
       });
       const model: CatalogRecordingReadModel = {
         audioHash,
         catalogEntryExists: catalog !== undefined,
-        title: display.title,
+        title: display.title ?? audioHash,
         artist: display.artist,
         album:
           curated.album ??

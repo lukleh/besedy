@@ -38,24 +38,33 @@ export function projectRecordingMetadata(metadata: CuratedMetadata | null | unde
 
 interface RecordingDisplaySources {
   hash: string;
+  filename?: string | null;
   title?: string | null;
   artist?: string | null;
   curatedTitle?: string | null;
   curatedArtist?: string | null;
 }
 
-/** Null means fall back to source data; an explicitly empty correction is kept. */
-export function resolveRecordingDisplay(entry: RecordingDisplaySources) {
+/** Resolve editable metadata without substituting a display label for missing text. */
+export function resolveRecordingMetadata(entry: RecordingDisplaySources) {
   return {
-    title: entry.curatedTitle ?? entry.title ?? entry.hash,
+    title: entry.curatedTitle ?? entry.title ?? null,
     artist: entry.curatedArtist ?? entry.artist ?? null,
   };
+}
+
+export function resolveRecordingDisplay(
+  entry: RecordingDisplaySources,
+  fallbackTitle = entry.filename || entry.hash,
+) {
+  const metadata = resolveRecordingMetadata(entry);
+  return { title: metadata.title || fallbackTitle, artist: metadata.artist };
 }
 
 export function resolveCatalogRecordingTitle(
   audioHash: string,
   sources: { curatedTitle?: string | null; sourceTitle?: string | null },
 ): string {
-  return resolveRecordingDisplay({ hash: audioHash, title: sources.sourceTitle,
-    curatedTitle: sources.curatedTitle }).title;
+  return resolveRecordingMetadata({ hash: audioHash, title: sources.sourceTitle,
+    curatedTitle: sources.curatedTitle }).title ?? audioHash;
 }

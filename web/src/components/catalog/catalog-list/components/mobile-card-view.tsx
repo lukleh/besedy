@@ -34,7 +34,7 @@ export function MobileCardView({ entries, groupId }: MobileCardViewProps) {
   return (
     <div className="space-y-2 @[768px]/catalog:hidden landscape-mobile:block">
       {entries.map((entry) => {
-        const fallbackTitle = resolveRecordingDisplay(entry).title;
+        const fallbackTitle = resolveRecordingDisplay(entry, entry.filename || entry.hash.slice(0, 16)).title;
         const dateStr = formatDate(entry.dateYear, entry.dateMonth, entry.dateDay);
 
         // Enhanced mode: use date + location as title when both fully available
