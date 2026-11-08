@@ -574,7 +574,7 @@ export interface EnqueueEventInput {
   catalogId: string;
   catalogLabel?: string | null;
   eventId: number;
-  /** Preferred recording; defaults to the event's primary recording. */
+  /** Exact recording to save; defaults to the event's primary when omitted. */
   hash?: string | null;
 }
 
@@ -841,14 +841,13 @@ class DownloadManager {
       buildEventDetailUrl(input.catalogId, input.eventId),
       controller.signal,
     );
-    const recording =
-      (input.hash
-        ? event.recordings.find((item) => item.audioHash === input.hash)
-        : undefined) ??
-      event.recordings.find((item) => item.isPrimary) ??
-      event.recordings[0];
+    const recording = input.hash
+      ? event.recordings.find((item) => item.audioHash === input.hash)
+      : event.recordings.find((item) => item.isPrimary) ?? event.recordings[0];
     if (!recording) {
-      throw new Error('Event has no recordings to download');
+      throw new Error(input.hash
+        ? 'This recording is no longer attached to the event. Reload the event before downloading.'
+        : 'Event has no recordings to download');
     }
 
     return this.enqueueRecording({

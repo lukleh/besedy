@@ -25,7 +25,7 @@ import type {
   CatalogEntryResponse,
   CatalogEntryWithPermissions,
 } from '@/types/catalog';
-import type { EventDetailResponse } from '@/types/event-detail';
+import type { EventDetailResponse, EventRecording } from '@/types/event-detail';
 import { downloadManager } from './download-manager';
 import {
   getDownloadBundle,
@@ -110,8 +110,8 @@ async function readPackage(
 // ---------------------------------------------------------------------------
 
 /**
- * The event detail for a downloaded event. Only recordings with a complete
- * local package are offered, and every server-side capability is closed.
+ * The event detail for a downloaded event. Its saved capture stays the playback
+ * identity even if another capture is now preferred or is also downloaded.
  */
 export async function readLocalEventDetail(
   catalogId: string,
@@ -121,17 +121,11 @@ export async function readLocalEventDetail(
   if (!record) return null;
   const { bundle } = await readPackage(record);
   const detail = bundle?.eventDetail ?? synthesizeEventDetail(record);
-  const localHashes = new Set(
-    (await completeRecords())
-      .filter((item) => item.catalogId === catalogId)
-      .map((item) => item.hash),
-  );
-  const recordings = detail.recordings.filter((recording) =>
-    localHashes.has(recording.audioHash),
-  );
+  const recording = detail.recordings.find((item) => item.audioHash === record.hash)
+    ?? recordingFromSnapshot(record);
   return {
     ...detail,
-    recordings,
+    recordings: [recording],
     canViewArtworkCandidates: false,
     canManageArtwork: false,
     canPublishArtwork: false,
@@ -141,10 +135,25 @@ export async function readLocalEventDetail(
   };
 }
 
+function recordingFromSnapshot(record: DownloadRecord): EventRecording {
+  const recording = record.recording;
+  return {
+    audioHash: record.hash,
+    isPrimary: true,
+    sortOrder: 0,
+    title: recording?.title ?? '',
+    artist: recording?.artist ?? null,
+    durationHms: recording?.durationHms ?? null,
+    verified: false,
+    recorder: recording?.recorderName
+      ? { id: 0, name: recording.recorderName }
+      : null,
+  };
+}
+
 /** Event detail for a package written before the payload was stored. */
 function synthesizeEventDetail(record: DownloadRecord): EventDetailResponse {
   const event = record.event;
-  const recording = record.recording;
   if (!event) {
     throw new Error('Download record has no event snapshot');
   }
@@ -163,20 +172,7 @@ function synthesizeEventDetail(record: DownloadRecord): EventDetailResponse {
     // Older packages did not record release state; a download is a strong
     // signal the listener could reach the event, so present it as released.
     released: true,
-    recordings: [
-      {
-        audioHash: record.hash,
-        isPrimary: true,
-        sortOrder: 0,
-        title: recording?.title ?? '',
-        artist: recording?.artist ?? null,
-        durationHms: recording?.durationHms ?? null,
-        verified: false,
-        recorder: recording?.recorderName
-          ? { id: 0, name: recording.recorderName }
-          : null,
-      },
-    ],
+    recordings: [recordingFromSnapshot(record)],
     artworkStatus: event.publishedArtwork ? 'published' : 'none',
     publishedArtwork: event.publishedArtwork
       ? {

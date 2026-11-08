@@ -190,7 +190,7 @@ describe('local content source', () => {
   });
 
   describe('readLocalEventDetail', () => {
-    it('serves the stored payload with server-only capabilities closed and only downloaded recordings', async () => {
+    it('serves the stored payload with server-only capabilities closed and its saved recording', async () => {
       mocks.records = [record()];
       mocks.bundles.set(`${CATALOG}:${HASH}`, bundle({ eventDetail: eventDetail() }));
       const { readLocalEventDetail } = await loadSource();
@@ -202,6 +202,46 @@ describe('local content source', () => {
       expect(detail?.canManageSources).toBe(false);
       expect(detail?.canViewArtworkCandidates).toBe(false);
       expect(detail?.latestDraftCandidate).toBeNull();
+    });
+
+    it('keeps the downloaded capture when another attached recording is also complete and now preferred', async () => {
+      mocks.records = [record(), record({
+        key: `${CATALOG}:${OTHER_HASH}`,
+        hash: OTHER_HASH,
+        eventKey: null,
+        event: null,
+      })];
+      const detail = eventDetail();
+      detail.recordings = detail.recordings.map((recording) => ({
+        ...recording,
+        isPrimary: recording.audioHash === OTHER_HASH,
+      }));
+      mocks.bundles.set(`${CATALOG}:${HASH}`, bundle({ eventDetail: detail }));
+      const { readLocalEventDetail } = await loadSource();
+
+      const result = await readLocalEventDetail(CATALOG, 7);
+
+      expect(result?.recordings).toHaveLength(1);
+      expect(result?.recordings[0]).toMatchObject({ audioHash: HASH, title: 'A' });
+    });
+
+    it('uses the saved recording snapshot when newer event data no longer lists that capture', async () => {
+      mocks.records = [record()];
+      const detail = eventDetail();
+      detail.recordings = detail.recordings.filter((recording) => recording.audioHash === OTHER_HASH);
+      mocks.bundles.set(`${CATALOG}:${HASH}`, bundle({ eventDetail: detail }));
+      const { readLocalEventDetail } = await loadSource();
+
+      const result = await readLocalEventDetail(CATALOG, 7);
+
+      expect(result?.description).toBe('About winter');
+      expect(result?.recordings).toHaveLength(1);
+      expect(result?.recordings[0]).toMatchObject({
+        audioHash: HASH,
+        title: 'Talk',
+        durationHms: '01:00:00',
+        recorder: { name: 'Zoom' },
+      });
     });
 
     it('synthesizes a page from the snapshots of a package written before the payload was stored', async () => {
