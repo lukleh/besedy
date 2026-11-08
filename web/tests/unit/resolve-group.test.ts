@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { prismaMock, getAdminCapability, getCatalogCapability } = vi.hoisted(() => ({
   prismaMock: {
-    workflowGroup: { findFirst: vi.fn() },
+    workflowGroup: { findFirst: vi.fn(), findUnique: vi.fn() },
     userPreferences: { findUnique: vi.fn() },
   },
   getAdminCapability: vi.fn(),
@@ -13,8 +13,16 @@ vi.mock("@/lib/db", () => ({ default: prismaMock }));
 vi.mock("@/lib/access/capabilities", () => ({ getAdminCapability, getCatalogCapability }));
 
 import { findActiveCatalog, resolveCatalogWithAccess } from "@/lib/catalog/resolve-group";
+import { ArchiveConfigurationError } from "@/lib/archive";
 
 const CATALOG = "20250101_120000";
+
+beforeEach(() => {
+  vi.stubEnv("BESEDY_ARCHIVE_ID", CATALOG);
+  prismaMock.workflowGroup.findUnique.mockResolvedValue({
+    id: CATALOG, label: "Archive", isActive: true,
+  });
+});
 
 describe("findActiveCatalog", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -76,5 +84,51 @@ describe("resolveCatalogWithAccess", () => {
       group: { id: CATALOG, isActive: true },
       hasAccess: false,
     });
+  });
+
+  it.each(["20260101_120000", "20260102_120000"])(
+    "does not let admin authority reopen foreign source %s",
+    async (foreignId) => {
+      prismaMock.workflowGroup.findFirst.mockResolvedValue({ id: foreignId, isActive: true });
+      getAdminCapability.mockResolvedValue({ canAccessAdmin: true });
+
+      await expect(resolveCatalogWithAccess(foreignId, "admin-1")).resolves.toEqual({
+        group: null, hasAccess: false,
+      });
+      expect(prismaMock.workflowGroup.findFirst).not.toHaveBeenCalled();
+      expect(getAdminCapability).not.toHaveBeenCalled();
+      expect(getCatalogCapability).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe("active catalog archive scope", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("hides a foreign source from callers that perform their own access check", async () => {
+    prismaMock.workflowGroup.findFirst.mockResolvedValue({ id: "20260101_120000", isActive: true });
+    await expect(findActiveCatalog("20260101_120000")).resolves.toBeNull();
+    expect(prismaMock.workflowGroup.findFirst).not.toHaveBeenCalled();
+  });
+
+  it.each([null, { id: CATALOG, isActive: false }])(
+    "does not disguise missing or inactive archive configuration as a missing request target",
+    async (archive) => {
+      prismaMock.workflowGroup.findUnique.mockResolvedValue(archive);
+      await expect(findActiveCatalog(CATALOG)).rejects.toThrow(ArchiveConfigurationError);
+      expect(prismaMock.workflowGroup.findFirst).not.toHaveBeenCalled();
+    }
+  );
+
+  it("propagates malformed configuration", async () => {
+    vi.stubEnv("BESEDY_ARCHIVE_ID", "newest");
+    await expect(findActiveCatalog(CATALOG)).rejects.toThrow(ArchiveConfigurationError);
+    expect(prismaMock.workflowGroup.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("propagates database failures", async () => {
+    const error = new Error("database unavailable");
+    prismaMock.workflowGroup.findUnique.mockRejectedValueOnce(error);
+    await expect(findActiveCatalog(CATALOG)).rejects.toBe(error);
   });
 });
