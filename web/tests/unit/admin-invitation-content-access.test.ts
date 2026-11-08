@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
     workflowGroup: { findUnique: vi.fn() },
     user: { findUnique: vi.fn() },
     portalAdmission: { findUnique: vi.fn() },
+    pendingCatalogGrant: { findUnique: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -87,6 +88,7 @@ beforeEach(() => {
   });
   mocks.prisma.user.findUnique.mockResolvedValue(null);
   mocks.prisma.portalAdmission.findUnique.mockResolvedValue(null);
+  mocks.prisma.pendingCatalogGrant.findUnique.mockResolvedValue(null);
   mocks.prisma.$transaction.mockImplementation(async (callback) =>
     callback(mocks.tx)
   );
@@ -226,6 +228,8 @@ describe("pending invitation editing", () => {
   });
 
   it("still updates the assigned role while preserving content access", async () => {
+    const state = await mocks.loadPendingAdmissionState();
+    state.pendingGrants[0].extraPermissions = ["bulk_export_transcripts"];
     const response = await patchAdminPendingRecord(
       EMAIL,
       request({ role: "corrector" }, "PATCH")
@@ -233,7 +237,11 @@ describe("pending invitation editing", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.syncPendingAdmissionState).toHaveBeenCalledWith(
-      expect.objectContaining({ catalogId: CATALOG_ID, role: "corrector" }),
+      expect.objectContaining({
+        catalogId: CATALOG_ID,
+        role: "corrector",
+        extraPermissions: ["bulk_export_transcripts"],
+      }),
       expect.objectContaining({
         allowAdminDeniedReopen: true,
         requirePending: true,
@@ -245,6 +253,70 @@ describe("pending invitation editing", () => {
       mocks.tx
     );
     expect(mocks.revokePendingAdmissionState).not.toHaveBeenCalled();
+    expect(mocks.prisma.pendingCatalogGrant.findUnique).not.toHaveBeenCalled();
+  });
+
+  it.each(["REVOKED", "CONSUMED"] as const)(
+    "assigns an explicit role using the existing %s grant snapshot",
+    async (status) => {
+      const state = await mocks.loadPendingAdmissionState();
+      mocks.loadPendingAdmissionState.mockResolvedValue({
+        ...state,
+        pendingGrants: [],
+      });
+      const historicalGrant = {
+        role: "reader",
+        extraPermissions: ["download_audio"],
+        status,
+      };
+      mocks.prisma.pendingCatalogGrant.findUnique.mockResolvedValue(
+        historicalGrant
+      );
+
+      const response = await patchAdminPendingRecord(
+        EMAIL,
+        request({ role: "corrector" }, "PATCH")
+      );
+
+      expect(response.status).toBe(200);
+      expect(mocks.prisma.pendingCatalogGrant.findUnique).toHaveBeenCalledWith({
+        where: { email_catalogId: { email: EMAIL, catalogId: CATALOG_ID } },
+        select: { role: true, extraPermissions: true, status: true },
+      });
+      expect(mocks.syncPendingAdmissionState).toHaveBeenCalledWith(
+        expect.objectContaining({ role: "corrector", extraPermissions: [] }),
+        {
+          allowAdminDeniedReopen: true,
+          requirePending: true,
+          expectedGrant: historicalGrant,
+        },
+        mocks.tx
+      );
+    }
+  );
+
+  it("rejects a fresh pending grant that appears after the pending read model was loaded", async () => {
+    const state = await mocks.loadPendingAdmissionState();
+    mocks.loadPendingAdmissionState.mockResolvedValue({
+      ...state,
+      pendingGrants: [],
+    });
+    mocks.prisma.pendingCatalogGrant.findUnique.mockResolvedValue({
+      role: "catalog_admin",
+      extraPermissions: ["bulk_export_transcripts"],
+      status: "PENDING",
+    });
+
+    const response = await patchAdminPendingRecord(
+      EMAIL,
+      request({ role: "listener", notes: "Stale save" }, "PATCH")
+    );
+
+    expect(response.status).toBe(409);
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+    expect(mocks.syncPendingAdmissionState).not.toHaveBeenCalled();
+    expect(mocks.tx.portalAdmission.updateMany).not.toHaveBeenCalled();
+    expect(mocks.tx.pendingCatalogGrant.updateMany).not.toHaveBeenCalled();
   });
 
   it("updates bound notes without reopening or rewriting the role", async () => {
@@ -277,6 +349,7 @@ describe("pending invitation editing", () => {
     expect(response.status).toBe(200);
     expect(mocks.syncPendingAdmissionState).not.toHaveBeenCalled();
     expect(mocks.tx.pendingCatalogGrant.updateMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.pendingCatalogGrant.findUnique).not.toHaveBeenCalled();
     expect(mocks.tx.portalAdmission.updateMany).toHaveBeenCalledWith({
       where: { email: EMAIL, status: "PENDING" },
       data: { notes: "operator review" },

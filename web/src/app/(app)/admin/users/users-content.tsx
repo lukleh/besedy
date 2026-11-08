@@ -375,18 +375,16 @@ export default function UsersPageContent() {
     mutationFn: async ({
       admission,
       role,
-      extraPermissions,
       notes,
     }: {
       admission: PendingPortalAdmission;
       role?: CatalogRole;
-      extraPermissions?: string[];
       notes?: string | null;
     }) => {
       return fetchJson(getPendingPortalAdmissionMutationPath(admission), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role, extraPermissions, notes }),
+        body: JSON.stringify({ role, notes }),
       });
     },
     onSuccess: () => {
@@ -561,11 +559,6 @@ export default function UsersPageContent() {
       updatePendingAdmission.mutate({
         admission,
         role: roleChanged ? editAdmissionForm.role || undefined : undefined,
-        extraPermissions: roleChanged
-          ? (admission.pendingGrants.find(
-              (grant) => grant.catalogId === archive?.id
-            )?.extraPermissions ?? [])
-          : undefined,
         notes: editAdmissionForm.notes || null,
       });
     }

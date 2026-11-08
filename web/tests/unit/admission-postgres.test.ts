@@ -58,6 +58,7 @@ let reset: typeof import("../../src/lib/admission/admin-reset");
 let userCreateHooks: UserCreateHooks;
 let adminPatch: typeof import("../../src/app/api/admin/users/[id]/route").PATCH;
 let inviteByEmail: typeof import("../../src/app/api/catalogs/[id]/pending-catalog-grants/route").POST;
+let adminPendingRecord: typeof import("../../src/lib/admission/admin-pending-record-route");
 let policy: typeof import("../../src/lib/policy/actor");
 const foreignSourceId = "20991107_000001";
 const emails: string[] = [];
@@ -100,6 +101,40 @@ async function beginSignup() {
   return createSignupUser(email);
 }
 
+async function seedLegacyAdmission(status: "REVOKED" | "CONSUMED") {
+  const email = `legacy-${randomUUID()}@example.com`;
+  emails.push(email);
+  await db.$transaction((tx) =>
+    lifecycle.syncPendingAdmissionState(invitation(email), {}, tx)
+  );
+  await db.portalAdmission.update({
+    where: { email },
+    data: { source: "STANDALONE" },
+  });
+  const where = { email_catalogId: { email, catalogId: TEST_CATALOG_ID } };
+  await db.pendingCatalogGrant.update({
+    where,
+    data: {
+      status,
+      ...(status === "REVOKED"
+        ? { revokedById: authHarness.actorId, revokedAt: new Date() }
+        : { consumedById: authHarness.actorId, consumedAt: new Date() }),
+    },
+  });
+  return { email, where };
+}
+
+function pendingPatch(email: string, body: unknown) {
+  return adminPendingRecord.patchAdminPendingRecord(
+    email,
+    new NextRequest(`http://localhost:3002/api/admin/portal-admissions/${email}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  );
+}
+
 describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
   "PostgreSQL invitation transactions",
   () => {
@@ -125,6 +160,9 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
       ({ POST: inviteByEmail } = await import(
         "../../src/app/api/catalogs/[id]/pending-catalog-grants/route"
       ));
+      adminPendingRecord = await import(
+        "../../src/lib/admission/admin-pending-record-route"
+      );
       policy = await import("../../src/lib/policy/actor");
       await import("../../src/lib/auth/index");
       userCreateHooks = (
@@ -412,6 +450,173 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
         });
       }
     );
+
+    test.each(["REVOKED", "CONSUMED"] as const)(
+      "legacy %s grant stays historical until an explicit role assignment repairs it",
+      async (status) => {
+        const { email, where } = await seedLegacyAdmission(status);
+        const historical = await db.pendingCatalogGrant.findUniqueOrThrow({
+          where,
+        });
+        const admission = await db.portalAdmission.findUniqueOrThrow({
+          where: { email },
+        });
+        const view = await adminPendingRecord.getAdminPendingRecord(email);
+        expect(view.status).toBe(200);
+        expect(await view.json()).toMatchObject({ role: null, pendingGrants: [] });
+
+        const notes = await pendingPatch(email, {
+          notes: "Reviewed legacy invitation",
+        });
+        expect(notes.status).toBe(200);
+        expect(await db.pendingCatalogGrant.findUnique({ where })).toEqual(historical);
+        const extras = await pendingPatch(email, {
+          extraPermissions: ["download_original_audio"],
+        });
+        expect(extras.status).toBe(400);
+        expect(await db.pendingCatalogGrant.findUnique({ where })).toEqual(historical);
+
+        const response = await pendingPatch(email, { role: "corrector" });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({
+          role: "corrector",
+          pendingGrantCount: 1,
+        });
+        expect(
+          await db.pendingCatalogGrant.count({
+            where: { email, catalogId: TEST_CATALOG_ID },
+          })
+        ).toBe(1);
+        expect(await db.pendingCatalogGrant.findUnique({ where })).toMatchObject({
+          id: historical.id,
+          status: "PENDING",
+          role: "corrector",
+          extraPermissions: [],
+          revokedAt: null,
+          revokedById: null,
+          consumedAt: null,
+          consumedById: null,
+        });
+        expect(
+          await db.portalAdmission.findUnique({ where: { email } })
+        ).toMatchObject({
+          id: admission.id,
+          status: "PENDING",
+          source: "STANDALONE",
+          admittedAt: admission.admittedAt,
+          admittedById: admission.admittedById,
+        });
+      }
+    );
+
+    test("legacy repair preserves a fresh pending grant reopened after its read model was loaded", async () => {
+      const { email, where } = await seedLegacyAdmission("REVOKED");
+      const admission = await db.portalAdmission.findUniqueOrThrow({
+        where: { email },
+      });
+      const shared = await import(
+        "../../src/lib/admission/admin-pending-record-shared"
+      );
+      const load = shared.loadPendingAdmissionState;
+      const snapshot = vi.spyOn(shared, "loadPendingAdmissionState");
+      let independentGrant: unknown;
+      snapshot.mockImplementationOnce(async (canonicalEmail) => {
+        const state = await load(canonicalEmail);
+        expect(state.pendingGrants).toEqual([]);
+        independentGrant = await db.pendingCatalogGrant.update({
+          where,
+          data: {
+            status: "PENDING",
+            role: "catalog_admin",
+            extraPermissions: ["bulk_export_transcripts"],
+            notes: "Reopened independently",
+            revokedById: null,
+            revokedAt: null,
+          },
+        });
+        return state;
+      });
+
+      try {
+        const response = await pendingPatch(email, {
+          role: "listener",
+          notes: "Stale save",
+        });
+        expect(response.status).toBe(409);
+      } finally {
+        snapshot.mockRestore();
+      }
+      expect(await db.pendingCatalogGrant.findUnique({ where })).toEqual(
+        independentGrant
+      );
+      expect(await db.portalAdmission.findUnique({ where: { email } })).toEqual(
+        admission
+      );
+    });
+
+    test.each(["REVOKED", "CONSUMED"] as const)(
+      "conditional legacy %s repair cannot overwrite a changed grant",
+      async (status) => {
+        const { email, where } = await seedLegacyAdmission(status);
+        const admission = await db.portalAdmission.findUniqueOrThrow({
+          where: { email },
+        });
+        const expectedGrant = await db.pendingCatalogGrant.findUniqueOrThrow({
+          where,
+        });
+        await db.pendingCatalogGrant.update({
+          where,
+          data: {
+            status: "REVOKED",
+            role: "catalog_admin",
+            extraPermissions: ["bulk_export_transcripts"],
+            notes: "Independent administrator decision",
+          },
+        });
+        await expect(
+          db.$transaction((tx) =>
+            lifecycle.syncPendingAdmissionState(
+              { ...invitation(email), role: "listener", notes: "Stale save" },
+              {
+                allowAdminDeniedReopen: true,
+                requirePending: true,
+                expectedGrant,
+              },
+              tx
+            )
+          )
+        ).rejects.toBeInstanceOf(lifecycle.PendingAdmissionUnavailableError);
+        expect(await db.pendingCatalogGrant.findUnique({ where })).toMatchObject({
+          status: "REVOKED",
+          role: "catalog_admin",
+          extraPermissions: ["bulk_export_transcripts"],
+          notes: "Independent administrator decision",
+        });
+        expect(await db.portalAdmission.findUnique({ where: { email } })).toEqual(
+          admission
+        );
+      }
+    );
+
+    test("role-only pending edits preserve current extras rather than an older dialog's snapshot", async () => {
+      const user = await seed();
+      const where = {
+        email_catalogId: { email: user.email!, catalogId: TEST_CATALOG_ID },
+      };
+      await db.pendingCatalogGrant.update({
+        where,
+        data: { extraPermissions: ["bulk_export_transcripts"] },
+      });
+
+      expect((await pendingPatch(user.email!, { role: "corrector" })).status).toBe(
+        200
+      );
+      expect(await db.pendingCatalogGrant.findUnique({ where })).toMatchObject({
+        role: "corrector",
+        extraPermissions: ["bulk_export_transcripts"],
+        status: "PENDING",
+      });
+    });
 
     test("revocation commits before a competing claim without granting access", async () => {
       const user = await seed();

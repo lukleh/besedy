@@ -173,6 +173,23 @@ export async function patchAdminPendingRecord(
     const previousNotes = admission.notes ?? grant?.notes ?? null;
     const nextNotes = notes !== undefined ? notes : previousNotes;
 
+    // Legacy admissions can retain a revoked/consumed row hidden from the
+    // pending read model. Explicit role assignment must update that row with
+    // the same conditional guard as a pending grant, rather than insert again.
+    const expectedGrant = grant
+      ? { ...grant, status: "PENDING" as const }
+      : role
+        ? await prisma.pendingCatalogGrant.findUnique({
+            where: {
+              email_catalogId: { email: canonicalEmail, catalogId: archive.id },
+            },
+            select: { role: true, extraPermissions: true, status: true },
+          })
+        : null;
+    if (!grant && expectedGrant?.status === "PENDING") {
+      throw new PendingAdmissionUnavailableError();
+    }
+
     await prisma.$transaction(async (tx) => {
       if (changesGrant && nextRole) {
         await syncPendingAdmissionState(
@@ -188,7 +205,7 @@ export async function patchAdminPendingRecord(
           {
             allowAdminDeniedReopen: true,
             requirePending: true,
-            expectedGrant: grant ? { ...grant, status: "PENDING" } : null,
+            expectedGrant,
           },
           tx
         );

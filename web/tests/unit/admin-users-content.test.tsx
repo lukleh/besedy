@@ -245,7 +245,7 @@ describe("admin user archive invitations", () => {
     ).toBeDisabled();
   });
 
-  it("preserves bound grant extras on an explicit pending role change", async () => {
+  it("omits cached extras on a pending role change so the server preserves current extras", async () => {
     admission.role = "reader";
     admission.catalogId = archive.id;
     admission.pendingGrantCount = 1;
@@ -271,7 +271,6 @@ describe("admin user archive invitations", () => {
 
     await expectMutation("/api/admin/portal-admissions/invitation-1", "PATCH", {
       role: "corrector",
-      extraPermissions: ["download_audio"],
       notes: "Original note",
     });
   });
