@@ -338,7 +338,7 @@ class TestPipelineRagIndexing:
 
         faster_key = rag_backend_key_for_workflow(faster_workflow)
         monkeypatch.setattr(
-            "besedy.commands.catalog.pipeline._resolve_pipeline_rag_backend_key",
+            "besedy.commands.catalog.pipeline.resolve_pipeline_rag_backend_key",
             lambda _args: faster_key,
         )
 
@@ -389,7 +389,7 @@ class TestPipelineRagIndexing:
         )
         legacy_key = "faster-whisper/large-v3@silero_vad_v6"
         monkeypatch.setattr(
-            "besedy.commands.catalog.pipeline._resolve_pipeline_rag_backend_key",
+            "besedy.commands.catalog.pipeline.resolve_pipeline_rag_backend_key",
             lambda _args: legacy_key,
         )
 
@@ -418,7 +418,7 @@ class TestPipelineRagIndexing:
         monkeypatch.setattr(pipeline, "should_run_rag_colbert_index", lambda _args: True)
         monkeypatch.setattr(
             pipeline,
-            "_resolve_pipeline_rag_backend_key",
+            "resolve_pipeline_rag_backend_key",
             lambda _args: "faster-whisper/large-v3@silero_vad_v6",
         )
 
@@ -451,7 +451,7 @@ class TestPipelineRagIndexing:
         )
         monkeypatch.setattr(pipeline, "resolve_catalog_csv", lambda *_args, **_kwargs: csv_path)
         monkeypatch.setattr(pipeline, "should_run_rag_colbert_index", lambda _args: True)
-        monkeypatch.setattr(pipeline, "_resolve_pipeline_rag_backend_key", raise_runtime_error)
+        monkeypatch.setattr(pipeline, "resolve_pipeline_rag_backend_key", raise_runtime_error)
 
         assert handle_run_pipeline(_pipeline_args()) == 1
         stderr = capsys.readouterr().err
@@ -569,7 +569,7 @@ class TestPipelineRagIndexing:
     def test_should_run_rag_colbert_index_honors_skip_flag(self) -> None:
         assert should_run_rag_colbert_index(_pipeline_args(skip_rag_colbert_index=True)) is False
 
-    def test_resolve_pipeline_rag_backend_key_can_auto_discover_backend_without_db(
+    def testresolve_pipeline_rag_backend_key_can_auto_discover_backend_without_db(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -582,7 +582,7 @@ class TestPipelineRagIndexing:
         monkeypatch.setenv("BESEDY_WEB_ENV_PROD", str(env_file))
         monkeypatch.delenv("RAG_BACKEND_KEY", raising=False)
         assert (
-            pipeline._resolve_pipeline_rag_backend_key(_pipeline_args())
+            pipeline.resolve_pipeline_rag_backend_key(_pipeline_args())
             == "canary-nemo/nvidia_canary-1b-v2_beam"
         )
 
@@ -646,7 +646,7 @@ class TestPipelineRagIndexing:
         )
         monkeypatch.setattr(
             pipeline,
-            "_resolve_pipeline_rag_backend_key",
+            "resolve_pipeline_rag_backend_key",
             lambda _args: rag_backend_key_for_workflow(faster_workflow),
         )
 
@@ -851,7 +851,7 @@ class TestPipelineRagIndexing:
         )
         monkeypatch.setattr(
             pipeline,
-            "_resolve_pipeline_rag_backend_key",
+            "resolve_pipeline_rag_backend_key",
             lambda _args: rag_backend_key_for_workflow(workflow),
         )
 
@@ -902,7 +902,7 @@ class TestPipelineRagIndexing:
         )
         monkeypatch.setattr(
             pipeline,
-            "_resolve_pipeline_rag_backend_key",
+            "resolve_pipeline_rag_backend_key",
             lambda _args: rag_backend_key_for_workflow(workflow),
         )
 
