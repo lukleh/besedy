@@ -145,7 +145,9 @@ const mcpHandler = createMcpHandler(
     });
   },
   {
-    legacy: 'reject',
+    // Connected clients use SDK-supported 2025 revisions; keep native stateless
+    // negotiation through the same authenticated server factory.
+    legacy: 'stateless',
     responseMode: 'json',
   },
 );

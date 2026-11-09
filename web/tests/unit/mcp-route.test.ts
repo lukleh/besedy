@@ -134,11 +134,11 @@ describe('MCP route hardening', () => {
     expect(mocks.requireMcpAuth).not.toHaveBeenCalled()
   });
 
-  it('configures the endpoint to reject previous protocol revisions', async () => {
+  it('serves supported client protocol revisions through the same authenticated factory', async () => {
     const { POST } = await import('@/app/api/mcp/route');
     await POST(request());
     expect(createMcpHandler).toHaveBeenCalledWith(expect.any(Function), {
-      legacy: 'reject',
+      legacy: 'stateless',
       responseMode: 'json'
     });
   });
