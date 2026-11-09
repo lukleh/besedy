@@ -263,6 +263,11 @@ PostgreSQL 18. The baseline includes the current consent triggers, usage view,
 partial indexes and correction CHECK constraints. Retired RAG tables and their
 pgvector bootstrap dependency are absent. The old SQL remains in Git history.
 
+The server image is `postgres:18-bookworm`, preserving Debian 12 and its
+glibc/locales when reusing the existing database volume. Keep that distribution
+pin: switching libc versions can invalidate collation-dependent indexes even
+within the same PostgreSQL major version.
+
 Existing installations must adopt this baseline **before applying later
 migrations or switching the database image**. Use the existing stopped-writer,
 verified-backup maintenance procedure:
@@ -279,7 +284,7 @@ verified-backup maintenance procedure:
    image changes: `DROP EXTENSION IF EXISTS vector;`. Use RESTRICT (the default),
    never CASCADE; unexpected dependencies must stop the cutover.
 4. Take and restore-test a post-cutover backup, then continue the normal
-   migration/deployment procedure. New backups restore with `postgres:18`.
+   migration/deployment procedure. New backups restore with `postgres:18-bookworm`.
 
 The manifest records the one observed empty historical checksum explicitly;
 all other retired records must match their source checksums. Owners/grants and

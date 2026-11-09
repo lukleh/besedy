@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import math
 from dataclasses import asdict, is_dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -23,6 +22,7 @@ from besedy.core.paths import (
 )
 from besedy.lib.audio.probe import measure_audio_duration_seconds
 from besedy.lib.data.atomic_io import atomic_write_text
+from besedy.lib.data.transcript_conversion import normalize_segments
 from besedy.lib.workflow.config import select_transcription_workflow
 from besedy.lib.workflow.faster_whisper_options import production_transcribe_options
 from besedy.lib.workflow.language import (
@@ -173,94 +173,27 @@ def build_payload(
     info,
     segments,
 ) -> dict:
-    segments_payload: list[dict[str, Any]] = []
-    transcript_parts: list[str] = []
-    total_words = 0
-    previous_end: float | None = None
-
-    for seg in segments:
-        start = float(getattr(seg, "start", 0.0) or 0.0)
-        end = float(getattr(seg, "end", start) or start)
-        if previous_end is not None and start < previous_end:
-            start = previous_end
-            if end < start:
-                end = start
-
-        text = (getattr(seg, "text", "") or "").strip()
-        transcript_parts.append(text)
-
-        words_payload: list[dict[str, Any]] = []
-        word_confidences: list[float] = []
-        for word in getattr(seg, "words", []) or []:
-            word_text = (getattr(word, "word", "") or "").strip()
-            if not word_text:
-                continue
-
-            w_start = getattr(word, "start", None)
-            w_end = getattr(word, "end", None)
-            if w_start is None and w_end is None:
-                w_start = start
-                w_end = start
-            if w_start is None:
-                w_start = w_end
-            if w_end is None:
-                w_end = w_start
-
-            w_start = float(w_start or start)
-            w_end = float(w_end or w_start)
-            if w_end < w_start:
-                w_end = w_start
-
-            # Clamp to segment bounds and enforce monotonic word ordering.
-            w_start = max(start, w_start)
-            w_end = min(end, max(w_end, w_start))
-            if words_payload:
-                prev_word_end = words_payload[-1]["end"]
-                if w_start < prev_word_end:
-                    w_start = prev_word_end
-                    w_end = max(w_end, w_start)
-
-            probability = getattr(word, "probability", None)
-            confidence = float(probability) if probability is not None else None
-            if confidence is not None:
-                # Faster-whisper probabilities are already in [0, 1], but clamp for safety.
-                confidence = max(0.0, min(1.0, confidence))
-                word_confidences.append(confidence)
-
-            words_payload.append(
-                {
-                    "start": round(w_start, 6),
-                    "end": round(w_end, 6),
-                    "word": word_text,
-                    "confidence": confidence,
-                }
-            )
-
-        total_words += len(words_payload)
-
-        segment_confidence: float | None = None
-        if word_confidences:
-            segment_confidence = sum(word_confidences) / len(word_confidences)
-        else:
-            avg_logprob = getattr(seg, "avg_logprob", None)
-            if avg_logprob is not None:
-                try:
-                    segment_confidence = float(math.exp(avg_logprob))
-                except (TypeError, ValueError, OverflowError):
-                    segment_confidence = None
-
-        segments_payload.append(
+    segments_payload, transcript_text, total_words = normalize_segments(
+        (
             {
-                "start": round(start, 6),
-                "end": round(end, 6),
-                "text": text,
-                "confidence": segment_confidence,
-                "words": words_payload,
+                "start": getattr(seg, "start", 0.0) or 0.0,
+                "end": getattr(seg, "end", None)
+                if getattr(seg, "end", None) is not None
+                else getattr(seg, "start", 0.0) or 0.0,
+                "text": getattr(seg, "text", ""),
+                "avg_logprob": getattr(seg, "avg_logprob", None),
+                "words": [
+                    {
+                        key: getattr(word, key, None)
+                        for key in ("start", "end", "word", "probability")
+                    }
+                    for word in getattr(seg, "words", []) or []
+                ],
             }
-        )
-        previous_end = segments_payload[-1]["end"]
-
-    transcript_text = " ".join(part for part in transcript_parts if part).strip()
+            for seg in segments
+        ),
+        confidence_field="probability",
+    )
 
     info_dict: dict[str, Any] = {}
     if info is not None:
