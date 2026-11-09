@@ -1498,7 +1498,10 @@ class DownloadManager {
       };
 
       const completed = this.records.get(key);
-      if (!completed || !isCurrentDownloadBundle(completed, bundle)) {
+      if (!completed || !isCurrentDownloadBundle({
+        ...completed,
+        hasArtwork: artwork !== null,
+      }, bundle)) {
         throw new Error(
           'The recording metadata is incomplete. Download it again.',
         );
