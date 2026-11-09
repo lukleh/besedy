@@ -663,10 +663,12 @@ class TestPipelineRagIndexing:
         )
 
         assert handle_run_pipeline(args) == 0
-        assert [request.language for request in transcribe_calls] == [
-            canary_workflow.language,
-            faster_workflow.language,
+        assert [request.workflow_configs for request in transcribe_calls] == [
+            (canary_workflow,),
+            (faster_workflow,),
         ]
+        assert transcribe_calls[0].workflow_configs[0] is canary_workflow
+        assert transcribe_calls[1].workflow_configs[0] is faster_workflow
         assert len(colbert_calls) == 1
 
         colbert_args = colbert_calls[0]

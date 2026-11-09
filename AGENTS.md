@@ -195,7 +195,8 @@ No route picks a catalog from `?group=` or a saved preference.
 
 ## Production DB & Catalog Paths (Reference)
 
-- **Where catalog CSV paths live (DB):** `workflow_group` holds `archived_catalog_path`, `metadata_catalog_path`, `duplicates_catalog_path`, `transcripts_path`. Source of truth: `web/prisma/schema.prisma`.
+- **Where catalog CSV paths live (DB):** `workflow_group` holds `archived_catalog_path`, `metadata_catalog_path`, and `duplicates_catalog_path`. Source of truth: `web/prisma/schema.prisma`.
+- **Transcript binding:** `transcripts_path` is historical data. Runtime readers and workers derive the generation from the source ID, text-data root, and shared TOML `paths.transcripts_dir` parent (default `transcripts`); see `docs/web/single-archive.md`. Do not add a per-source override.
 - **Where container path roots are defined:** the resolved production env file (`BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`; see template in `web/.env.prod.example`) defines `TEXT_DATA_DIR`, `AUDIO_DIR`, `ORIGINAL_AUDIO_DIR`, `UPLOADS_DIR` (admin recording uploads, shared with the host ingest worker), and optional `BESEDY_PATH_MAPPINGS` for host↔container path rewrites.
 - **Existing path-mapping logic:** helpers that read production path mappings now use `BESEDY_WEB_ENV_PROD` or `~/.config/lukleh/besedy/web.env.prod`.
 - **How to connect to prod DB (local host → prod container):**

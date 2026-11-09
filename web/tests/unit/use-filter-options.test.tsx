@@ -78,7 +78,7 @@ describe("useFilterOptions", () => {
     };
 
     queryClient.setQueryData(
-      ["catalog-filter-options", groupId, {}],
+      ["catalog-filter-options", groupId, ""],
       cachedOptions
     );
 
@@ -156,7 +156,7 @@ describe("useFilterOptions", () => {
     };
 
     queryClient.setQueryData(
-      ["catalog-filter-options", groupId, {}],
+      ["catalog-filter-options", groupId, ""],
       cachedOptions
     );
     fetchJsonMock.mockRejectedValueOnce(new ApiError("Access denied", 403));

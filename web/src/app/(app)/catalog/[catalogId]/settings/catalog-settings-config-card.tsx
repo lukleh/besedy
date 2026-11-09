@@ -178,14 +178,8 @@ export function CatalogSettingsConfigCard({
                 <Label htmlFor="transcripts-path">{t("configuration.transcriptsPath")}</Label>
                 <Input
                   id="transcripts-path"
-                  value={configDraft.transcriptsPath}
-                  onChange={(event) =>
-                    updateDraft((draft) => ({
-                      ...draft,
-                      transcriptsPath: event.target.value,
-                    }))
-                  }
-                  disabled={pathsAndFlagsDisabled}
+                  value={catalogConfig?.transcriptsPath ?? ""}
+                  disabled
                 />
               </div>
             </div>

@@ -23,9 +23,7 @@ production_inputs=(
   "scripts/resolve_web_version.sh"
 )
 
-# Computes the web-v2-<hash> fingerprint for an arbitrary commit-ish without
-# requiring a checkout, so callers can recompute it for historical commits
-# (see resolve_web_version_history.sh). Only browser-visible/build-shaping
+# Compute the tracked build fingerprint. Only browser-visible/build-shaping
 # env values belong in the hash below. Never add secrets.
 web_version_fingerprint() {
   local repo_root="$1" commit="$2"
@@ -86,9 +84,4 @@ resolve_web_version_main() {
   printf '%s\n' "$version"
 }
 
-# Only run the CLI behavior (dirty-tree checks, HEAD resolution) when this
-# file is executed directly. resolve_web_version_history.sh sources it to
-# reuse `production_inputs` and `web_version_fingerprint` for other commits.
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  resolve_web_version_main "$@"
-fi
+resolve_web_version_main "$@"

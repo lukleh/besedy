@@ -21,9 +21,9 @@ from rich.table import Table
 
 from besedy.commands.catalog.csv_utils import resolve_catalog_csv
 from besedy.commands.catalog.metadata import format_duration
-from besedy.config.settings import config
 from besedy.core.cli_output import print_json_result
 from besedy.core.paths import (
+    catalog_transcripts_dirname,
     extract_timestamp_from_catalog,
     resolve_catalogs_root,
     resolve_transcripts_parent,
@@ -347,7 +347,7 @@ def handle_check_durations(args: argparse.Namespace) -> int:
     normalized_csv = catalog_dir / f"audio_catalog_{timestamp}_loudness_normalized.csv"
     archived_csv = catalog_dir / f"audio_catalog_{timestamp}_loudness_archived.csv"
     transcripts_parent = resolve_transcripts_parent()
-    transcripts_root = transcripts_parent / f"{config.paths.transcripts_dir}_{timestamp}"
+    transcripts_root = transcripts_parent / catalog_transcripts_dirname(timestamp)
 
     if output_format == "text":
         console.print(f"\n[bold]Duration check for {csv_path.name}[/bold]")
