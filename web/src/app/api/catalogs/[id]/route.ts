@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveTranscriptsPath } from "@/lib/paths";
 import prisma from "@/lib/db";
 import { requireAuth } from "@/lib/auth/permissions";
 import { requireCatalogManagementAccess } from "@/lib/access/catalog-management-route-access";
@@ -26,7 +27,6 @@ const UPDATABLE_CATALOG_FIELDS = [
   "archivedCatalogPath",
   "metadataCatalogPath",
   "duplicatesCatalogPath",
-  "transcriptsPath",
 ] as const;
 
 /** Fields a catalog administrator may not change; see ADR 0005. */
@@ -34,7 +34,6 @@ const SYSTEM_ONLY_CATALOG_FIELDS = [
   "archivedCatalogPath",
   "metadataCatalogPath",
   "duplicatesCatalogPath",
-  "transcriptsPath",
 ] as const;
 
 const SYSTEM_ONLY_DENIED_MESSAGE =
@@ -72,7 +71,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return notFound("catalog");
     }
 
-    return NextResponse.json(group);
+    return NextResponse.json({ ...group, transcriptsPath: resolveTranscriptsPath(group.id) });
   } catch (error) {
     return handlePrismaError(error, "catalog", "fetch");
   }
@@ -119,6 +118,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (!existing) {
       return notFound("catalog");
     }
+    const transcriptsPath = resolveTranscriptsPath(existing.id);
 
     // The settings form sends every field, so compare with the stored row and
     // authorize, write and record only what actually changes.
@@ -163,7 +163,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       });
     }
 
-    return NextResponse.json(group);
+    return NextResponse.json({ ...group, transcriptsPath });
   } catch (error) {
     return handlePrismaError(error, "catalog", "update");
   }
