@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { HashSchema } from '@/lib/validation/schemas';
 
 export const jobStatusSchema = z.enum([
   'QUEUED',
@@ -7,6 +8,21 @@ export const jobStatusSchema = z.enum([
   'FAILED',
   'CANCELLED',
 ]);
+
+export const ingestResultRecordSchema = z.object({
+  protocol: z.literal('besedy-job'),
+  version: z.literal(1),
+  kind: z.literal('result'),
+  catalogId: z.string().min(1),
+  intakeId: z.string().min(1),
+  attempt: z.number().int().positive(),
+  payload: z.object({
+    status: z.enum(['SUCCEEDED', 'REJECTED', 'FAILED', 'REMOVED']),
+    audioHash: HashSchema.transform((value) => value.toLowerCase()).nullable(),
+    errorCode: z.string().nullable(),
+    errorMessage: z.string().nullable(),
+  }),
+});
 
 export const ingestJobPayloadSchema = z
   .object({
@@ -23,6 +39,7 @@ export const ingestJobSchema = z
     requested_by_id: z.string().nullable(),
     catalog_id: z.string().nullable(),
     payload: ingestJobPayloadSchema,
+    result: z.unknown().optional(),
     error_message: z.string().nullable().optional(),
     progress_label: z.string().nullable().optional(),
     created_at: z.string().nullable().optional(),

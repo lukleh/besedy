@@ -1,7 +1,7 @@
 [
   {
     "id": "oblique_implicit_acceptance_001",
-    "query": "najdi misto, kde recnik rozlisuje prijeti situace od souhlasu s nasilim",
+    "question": "najdi misto, kde recnik rozlisuje prijeti situace od souhlasu s nasilim",
     "category": "implicit_theme",
     "targets": [
       {
@@ -15,7 +15,7 @@
   },
   {
     "id": "oblique_metaphor_household_001",
-    "query": "najdi pasaz, kde se abstraktni duchovni pojem vysvetluje pres beznou vec z domacnosti",
+    "question": "najdi pasaz, kde se abstraktni duchovni pojem vysvetluje pres beznou vec z domacnosti",
     "category": "metaphor_or_analogy",
     "targets": [
       {
@@ -29,7 +29,7 @@
   },
   {
     "id": "oblique_behavioral_moment_001",
-    "query": "najdi chvili, kdy nekdo polozi praktickou namitku a odpoved ji prevede na praci s pozornosti",
+    "question": "najdi chvili, kdy nekdo polozi praktickou namitku a odpoved ji prevede na praci s pozornosti",
     "category": "behavioral_moment",
     "targets": [
       {

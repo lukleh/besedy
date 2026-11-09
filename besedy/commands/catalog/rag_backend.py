@@ -8,7 +8,7 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-from besedy.core.paths import PROJECT_ROOT, iter_existing_web_env_paths
+from besedy.core.paths import iter_existing_web_env_paths
 from besedy.lib.rag_retrieval_chunking import normalize_backend_key
 from besedy.lib.workflow.config import WorkflowConfig, get_transcription_workflows
 from besedy.lib.workflow.paths import sanitize_model_identifier
@@ -41,8 +41,6 @@ def resolve_pipeline_rag_backend_key(args: argparse.Namespace) -> str:
 
     candidates = [
         *iter_existing_web_env_paths("production"),
-        PROJECT_ROOT / "web" / ".env.local",
-        PROJECT_ROOT / ".env.local",
         *iter_existing_web_env_paths("development", "test"),
     ]
     deduped_candidates: list[Path] = []

@@ -149,7 +149,7 @@ def test_resolve_colbert_scope_bundle_prefers_active_pointer(tmp_path: Path) -> 
     assert resolved.chunk_version == "v2"
 
 
-def test_resolve_colbert_scope_bundle_selects_latest_valid_bundle(tmp_path: Path) -> None:
+def test_resolve_colbert_scope_bundle_selects_only_current_version(tmp_path: Path) -> None:
     _write_bundle(
         root_dir=tmp_path,
         chunk_version="v2",
@@ -171,7 +171,7 @@ def test_resolve_colbert_scope_bundle_selects_latest_valid_bundle(tmp_path: Path
     )
 
     assert resolved is not None
-    assert resolved.chunk_version == "v3"
+    assert resolved.chunk_version == "v2"
 
 
 def test_resolve_colbert_scope_bundle_ignores_incomplete_bundle(tmp_path: Path) -> None:
@@ -198,3 +198,58 @@ def test_resolve_colbert_scope_bundle_ignores_incomplete_bundle(tmp_path: Path) 
 
     assert resolved is not None
     assert resolved.chunk_version == "v2"
+
+
+def test_resolve_colbert_scope_bundle_rejects_version_override(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="Unsupported chunk version"):
+        resolve_colbert_scope_bundle(
+            workflow_group_id=WORKFLOW_GROUP_ID,
+            backend_key=BACKEND_KEY,
+            colbert_model=COLBERT_MODEL,
+            chunk_version="v1",
+            root_dir=tmp_path,
+        )
+
+
+def test_resolve_colbert_scope_bundle_does_not_select_old_only_bundle(tmp_path: Path) -> None:
+    _write_bundle(
+        root_dir=tmp_path,
+        chunk_version="v1",
+        timestamp="20260403_090000",
+        built_at="2026-04-03T09:00:00Z",
+    )
+    assert (
+        resolve_colbert_scope_bundle(
+            workflow_group_id=WORKFLOW_GROUP_ID,
+            backend_key=BACKEND_KEY,
+            colbert_model=COLBERT_MODEL,
+            root_dir=tmp_path,
+        )
+        is None
+    )
+
+
+def test_old_active_pointer_requires_rebuild_and_allows_explicit_rebuild(tmp_path: Path) -> None:
+    bundle = _write_bundle(
+        root_dir=tmp_path,
+        chunk_version="v1",
+        timestamp="20260403_090000",
+        built_at="2026-04-03T09:00:00Z",
+    )
+    write_colbert_active_pointer(
+        workflow_group_id=WORKFLOW_GROUP_ID,
+        backend_key=BACKEND_KEY,
+        colbert_model=COLBERT_MODEL,
+        chunk_version="v1",
+        index_dir=bundle,
+        root_dir=tmp_path,
+    )
+    arguments = dict(
+        workflow_group_id=WORKFLOW_GROUP_ID,
+        backend_key=BACKEND_KEY,
+        colbert_model=COLBERT_MODEL,
+        root_dir=tmp_path,
+    )
+    with pytest.raises(RuntimeError, match="unsupported chunk version"):
+        resolve_colbert_scope_bundle(**arguments)
+    assert resolve_colbert_scope_bundle(**arguments, require_compatible_engine=False) is None
