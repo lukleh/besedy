@@ -1,6 +1,7 @@
 """The pipeline, host worker and web reader agree on catalog generations."""
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -90,3 +91,51 @@ def test_text_root_override_without_a_config_keeps_the_default_parent(tmp_path, 
     monkeypatch.setenv("BESEDY_CONFIG", str(tmp_path / "missing.toml"))
     monkeypatch.setattr(settings, "_CONFIG", None)
     assert resolve_transcripts_parent() == tmp_path / CONTRACT["parent"]
+
+
+@pytest.mark.parametrize("config_override", [None, "", "   "])
+@pytest.mark.parametrize("content", ["[paths\n", '[paths]\ntranscripts_dir = "custom"\n'])
+def test_environment_only_root_ignores_invalid_discovered_config(
+    tmp_path, monkeypatch, config_override, content
+):
+    host_config = tmp_path / "host-config"
+    host_config.mkdir()
+    (host_config / "besedy.toml").write_text(content)
+    monkeypatch.setattr(settings, "_resolve_preferred_config_home", lambda: host_config)
+    monkeypatch.setattr(settings, "_CONFIG", None)
+    monkeypatch.setenv("BESEDY_TEXT_DATA_ROOT", str(tmp_path / "text"))
+    if config_override is None:
+        monkeypatch.delenv("BESEDY_CONFIG", raising=False)
+    else:
+        monkeypatch.setenv("BESEDY_CONFIG", config_override)
+
+    expected = tmp_path / "text" / CONTRACT["parent"]
+    assert resolve_transcripts_parent() == expected
+    assert resolve_transcripts_root() == expected
+    assert settings._CONFIG is None
+
+
+def test_environment_only_root_ignores_custom_parent_in_discovered_config(tmp_path, monkeypatch):
+    _configure_text_paths(tmp_path, monkeypatch, "custom-transcripts")
+    monkeypatch.setattr(settings, "_resolve_preferred_config_home", lambda: tmp_path)
+    monkeypatch.delenv("BESEDY_CONFIG")
+    override = tmp_path / "override"
+    monkeypatch.setenv("BESEDY_TEXT_DATA_ROOT", str(override))
+
+    assert resolve_transcripts_parent() == override / CONTRACT["parent"]
+    assert settings._CONFIG is None
+
+
+@pytest.mark.parametrize(
+    ("content", "error"),
+    [("[paths\n", tomllib.TOMLDecodeError), ('[paths]\ntranscripts_dir = "custom"\n', KeyError)],
+)
+def test_environment_root_keeps_explicit_config_errors(tmp_path, monkeypatch, content, error):
+    config_path = tmp_path / "besedy.toml"
+    config_path.write_text(content)
+    monkeypatch.setenv("BESEDY_CONFIG", str(config_path))
+    monkeypatch.setenv("BESEDY_TEXT_DATA_ROOT", str(tmp_path / "override"))
+    monkeypatch.setattr(settings, "_CONFIG", None)
+
+    with pytest.raises(error):
+        resolve_transcripts_parent()

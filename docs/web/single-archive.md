@@ -151,6 +151,9 @@ and web reader use `<text_data_dir>/<transcripts_dir>/transcripts_<source-id>` i
 their own mount namespace. `[paths].transcripts_dir` is the shared TOML parent,
 defaulting to `transcripts` when omitted or empty. Keep the same relative parent
 in host and container configuration; their text-data roots may differ by mount.
+For Python paths using `BESEDY_TEXT_DATA_ROOT`, set `BESEDY_CONFIG` explicitly to
+use a custom parent. Without an explicit config, that environment override uses
+the default parent without loading a discovered host config.
 Settings show that effective directory read-only;
 `transcriptsPath` is rejected in source updates and registration. The old
 `workflow_group.transcripts_path` value remains historical data and is unused;
