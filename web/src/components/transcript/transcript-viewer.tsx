@@ -21,6 +21,7 @@ import {
   ResponsiveMenuTrigger,
 } from "@/components/ui/responsive-menu";
 import { fetchJson } from "@/lib/api/fetch-json";
+import { copyToClipboard } from "@/lib/clipboard";
 import {
   readLocalDiarization,
   readLocalDiarizationBackends,
@@ -162,6 +163,7 @@ export function TranscriptViewer({
       clock &&
       clock.get() > 0
     ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restore the visible playhead after changing transcript source
       setScrollToTime(clock.get());
     }
     prevBackendRef.current = effectiveBackend;
@@ -234,23 +236,7 @@ export function TranscriptViewer({
   const handleTranscriptCopy = useCallback(async () => {
     if (!transcriptPlainText) return;
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(transcriptPlainText);
-      } else {
-        const textarea = document.createElement("textarea");
-        textarea.value = transcriptPlainText;
-        textarea.setAttribute("readonly", "true");
-        textarea.style.position = "fixed";
-        textarea.style.top = "-9999px";
-        textarea.style.left = "-9999px";
-        document.body.appendChild(textarea);
-        textarea.select();
-        const success = document.execCommand("copy");
-        document.body.removeChild(textarea);
-        if (!success) {
-          throw new Error("Copy failed");
-        }
-      }
+      await copyToClipboard(transcriptPlainText);
       setCopySuccess(true);
       if (copyResetRef.current) {
         window.clearTimeout(copyResetRef.current);

@@ -26,6 +26,22 @@ describe("useRagSearch", () => {
     window.sessionStorage.clear();
   });
 
+  it("keeps successful results when optional session persistence fails", async () => {
+    fetchJsonMock.mockResolvedValue({ results: [{ chunkId: "result-1" }] });
+    const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("storage unavailable");
+    });
+    try {
+      const { result } = renderHook(() => useRagSearch({
+        activeCatalogId: "catalog-1", canUseRagSearch: true, dataLoaded: false,
+      }));
+      await act(async () => { await result.current.executeRagSearch("question"); });
+      expect(result.current.ragResults).toEqual([{ chunkId: "result-1" }]);
+      expect(result.current.ragError).toBeNull();
+      expect(result.current.ragLoading).toBe(false);
+    } finally { storage.mockRestore(); }
+  });
+
   it("preserves restored RAG state on initial render with cached catalog data", async () => {
     const activeCatalogId = "catalog-1";
     const savedQuery = "restore me";
