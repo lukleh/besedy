@@ -21,14 +21,12 @@ import type {
   Diarization,
   Transcript,
 } from '@/components/transcript/transcript-viewer-types';
-import type {
-  CatalogEntryResponse,
-  CatalogEntryWithPermissions,
-} from '@/types/catalog';
-import type { EventDetailResponse, EventRecording } from '@/types/event-detail';
+import type { CatalogEntryWithPermissions } from '@/types/catalog';
+import type { EventDetailResponse } from '@/types/event-detail';
 import { downloadManager } from './download-manager';
 import {
   getDownloadBundle,
+  isCurrentDownloadBundle,
   makeDownloadKey,
   makeEventKey,
   type DownloadBundlePayload,
@@ -83,26 +81,14 @@ export async function findLocalEvent(
 ): Promise<DownloadRecord | null> {
   const eventKey = makeEventKey(catalogId, eventId);
   const records = await completeRecords();
-  return (
-    records.find((record) => record.eventKey === eventKey) ??
-    // Records written before event keys were stored only carry the snapshot.
-    records.find(
-      (record) => record.catalogId === catalogId && record.event?.id === eventId,
-    ) ??
-    null
-  );
+  return records.find((record) => record.eventKey === eventKey) ?? null;
 }
 
 async function readPackage(
   record: DownloadRecord,
-): Promise<{ record: DownloadRecord; bundle: DownloadBundlePayload | null }> {
-  let bundle: DownloadBundlePayload | null = null;
-  try {
-    bundle = (await getDownloadBundle(record.key)) ?? null;
-  } catch {
-    // The registry row alone still describes a playable recording.
-  }
-  return { record, bundle };
+): Promise<DownloadBundlePayload | null> {
+  const bundle = await getDownloadBundle(record.key).catch(() => undefined);
+  return isCurrentDownloadBundle(record, bundle) ? bundle : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,10 +105,13 @@ export async function readLocalEventDetail(
 ): Promise<EventDetailResponse | null> {
   const record = await findLocalEvent(catalogId, eventId);
   if (!record) return null;
-  const { bundle } = await readPackage(record);
-  const detail = bundle?.eventDetail ?? synthesizeEventDetail(record);
-  const recording = detail.recordings.find((item) => item.audioHash === record.hash)
-    ?? recordingFromSnapshot(record);
+  const bundle = await readPackage(record);
+  const detail = bundle?.eventDetail;
+  if (!detail) return null;
+  const recording = detail.recordings.find(
+    (item) => item.audioHash === record.hash,
+  );
+  if (!recording) return null;
   return {
     ...detail,
     recordings: [recording],
@@ -132,58 +121,6 @@ export async function readLocalEventDetail(
     canManageSources: false,
     canEditMetadata: false,
     latestDraftCandidate: null,
-  };
-}
-
-function recordingFromSnapshot(record: DownloadRecord): EventRecording {
-  const recording = record.recording;
-  return {
-    audioHash: record.hash,
-    isPrimary: true,
-    sortOrder: 0,
-    title: recording?.title ?? '',
-    artist: recording?.artist ?? null,
-    durationHms: recording?.durationHms ?? null,
-    verified: false,
-    recorder: recording?.recorderName
-      ? { id: 0, name: recording.recorderName }
-      : null,
-  };
-}
-
-/** Event detail for a package written before the payload was stored. */
-function synthesizeEventDetail(record: DownloadRecord): EventDetailResponse {
-  const event = record.event;
-  if (!event) {
-    throw new Error('Download record has no event snapshot');
-  }
-  return {
-    id: event.id,
-    workflowGroupId: record.catalogId,
-    title: event.title,
-    location: event.locationName ? { id: 0, name: event.locationName } : null,
-    dateYear: event.dateYear,
-    dateMonth: event.dateMonth,
-    dateDay: event.dateDay,
-    sessionIndex: event.sessionIndex,
-    sessionOrdinal: event.sessionOrdinal ?? 1,
-    sessionCount: event.sessionCount ?? 1,
-    description: null,
-    // Older packages did not record release state; a download is a strong
-    // signal the listener could reach the event, so present it as released.
-    released: true,
-    recordings: [recordingFromSnapshot(record)],
-    artworkStatus: event.publishedArtwork ? 'published' : 'none',
-    publishedArtwork: event.publishedArtwork
-      ? {
-          id: event.publishedArtwork.id,
-          publishedAt: event.publishedArtwork.publishedAt,
-          assets: {
-            square: { bytes: 0, sha256: '' },
-            landscape: { bytes: 0, sha256: '' },
-          },
-        }
-      : null,
   };
 }
 
@@ -201,17 +138,18 @@ export async function readLocalRecordingEntry(
 ): Promise<CatalogEntryWithPermissions | null> {
   const record = await findLocalRecording(catalogId, hash);
   if (!record) return null;
-  const { bundle } = await readPackage(record);
-  const stored = bundle?.entry ?? null;
-  const entry = stored?.entry ?? synthesizeEntry(record);
+  const bundle = await readPackage(record);
+  if (!bundle) return null;
+  const stored = bundle.entry;
   return {
     entry: {
-      ...entry,
+      ...stored.entry,
       // Server-side audio downloads are not available offline.
       hasArchivedAudio: false,
       hasOriginalAudio: false,
     },
-    canViewTranscripts: bundle?.transcript !== null && bundle?.transcript !== undefined,
+    canViewTranscripts:
+      bundle?.transcript !== null && bundle?.transcript !== undefined,
     canEditMetadata: false,
     canDownloadAudio: false,
     canDownloadOriginalAudio: false,
@@ -226,32 +164,6 @@ export async function readLocalRecordingEntry(
   };
 }
 
-function synthesizeEntry(record: DownloadRecord): CatalogEntryResponse {
-  const recording = record.recording;
-  return {
-    hash: record.hash,
-    title: recording?.title ?? undefined,
-    artist: recording?.artist ?? undefined,
-    duration: recording?.durationHms ?? undefined,
-    dateYear: recording?.dateYear ?? null,
-    dateMonth: recording?.dateMonth ?? null,
-    dateDay: recording?.dateDay ?? null,
-    recorder: recording?.recorderName
-      ? { id: 0, name: recording.recorderName }
-      : null,
-    // Only event downloads stored a location; it is the event's.
-    location: record.event?.locationName
-      ? { id: 0, name: record.event.locationName }
-      : null,
-    hasArchived: true,
-    hasMetadata: true,
-    isActionable: true,
-    isPublished: true,
-    hasArchivedAudio: false,
-    hasOriginalAudio: false,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Transcript
 // ---------------------------------------------------------------------------
@@ -262,7 +174,7 @@ async function readTranscriptPackage(
 ): Promise<DownloadBundlePayload | null> {
   const record = await findLocalRecording(catalogId, hash);
   if (!record) return null;
-  return (await readPackage(record)).bundle;
+  return readPackage(record);
 }
 
 export async function readLocalTranscriptBackends(
@@ -271,9 +183,7 @@ export async function readLocalTranscriptBackends(
 ): Promise<AvailableTranscripts | null> {
   const bundle = await readTranscriptPackage(catalogId, hash);
   if (!bundle) return null;
-  const backend = bundle.transcript
-    ? bundle.transcriptBackend ?? bundle.transcript.backend
-    : null;
+  const backend = bundle.transcript ? bundle.transcriptBackend : null;
   return { hash, backends: backend ? [backend] : [] };
 }
 

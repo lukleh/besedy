@@ -59,6 +59,7 @@ import {
   getDownload,
   getDownloadBundle,
   isIndexedDBAvailable,
+  isCurrentDownloadBundle,
   listDownloads,
   makeDownloadKey,
   makeEventKey,
@@ -118,17 +119,6 @@ async function ensureOfflinePlaybackWorker(): Promise<void> {
     // registration.
     onChange();
   });
-}
-
-function emptyDownloadBundle(key: string): DownloadBundlePayload {
-  return {
-    key,
-    transcriptBackend: null,
-    transcript: null,
-    diarization: null,
-    artwork: null,
-    updatedAt: 0,
-  };
 }
 
 /** Load the real session-free route so its HTML and build graph are cached. */
@@ -658,17 +648,13 @@ class DownloadManager {
     const recovered: DownloadRecord[] = [];
     for (const record of stored) {
       // A download that was in flight when the page closed is simply queued again.
-      const normalized =
-        record.catalogLabel === undefined
-          ? { ...record, catalogLabel: null }
-          : record;
       const next =
-        normalized.status === 'downloading'
+        record.status === 'downloading'
           ? {
-              ...normalized,
+              ...record,
               status: 'queued' as const,
             }
-          : normalized;
+          : record;
       this.records.set(record.key, next);
       if (next !== record) recovered.push(next);
     }
@@ -982,10 +968,13 @@ class DownloadManager {
    * error instead of a download that fails when played; Retry resumes from
    * the chunks that exist.
    */
-  private async verifyCompletePackages(audioCache: Cache | null): Promise<void> {
+  private async verifyCompletePackages(
+    audioCache: Cache | null,
+    keys: Iterable<string> = this.records.keys(),
+  ): Promise<void> {
     // Fail closed: with no readable cache every completed package below
     // becomes retryable, because bytes that cannot be read cannot be offered.
-    for (const key of Array.from(this.records.keys())) {
+    for (const key of Array.from(keys)) {
       if (this.records.get(key)?.status !== 'complete') continue;
       // Another tab may remove or change this download while hydration runs.
       // Verify and write under its lock against the persisted row, so a
@@ -1000,9 +989,37 @@ class DownloadManager {
           this.records.set(key, persisted);
           return;
         }
+        let bundle: DownloadBundlePayload | undefined;
+        let bundleReadFailed = false;
+        try {
+          bundle = await getDownloadBundle(key);
+        } catch (error) {
+          bundleReadFailed = true;
+          logger.warn('Could not read a downloaded package', { key, error });
+        }
+        if (!bundleReadFailed && !isCurrentDownloadBundle(persisted, bundle)) {
+          // Discard unsupported content, not the person's playback-progress queue.
+          // The registry keeps the identity/snapshots needed to download it again.
+          await this.deleteBundle(persisted);
+          await this.write({
+            ...persisted,
+            status: 'error',
+            error: INCOMPLETE_PACKAGE_ERROR,
+            progress: 0,
+            bytesLoaded: 0,
+            audioUrl: null,
+            audioCacheKey: null,
+            transcriptBackend: null,
+            hasArtwork: false,
+            resumeOnReconnect: false,
+            completedAt: null,
+          });
+          return;
+        }
         let audioVerified = false;
         try {
           audioVerified =
+            !bundleReadFailed &&
             audioCache !== null &&
             persisted.audioCacheKey !== null &&
             (await verifyAudioCache(audioCache, persisted.audioCacheKey));
@@ -1048,9 +1065,7 @@ class DownloadManager {
    * Re-check completed packages against the server while online: drop a
    * transcript the account may no longer retain, keep the stored entry's
    * permissions current (the local reader derives the speaker overlay from
-   * them), and store the event detail and entry payloads on packages written
-   * before they were part of the bundle, so the shared pages can render them
-   * offline.
+   * them). Unsupported packages are discarded during verification, never rebuilt.
    */
   private async reconcileTranscriptPermissions(userId: string): Promise<void> {
     const signal = new AbortController().signal;
@@ -1069,11 +1084,8 @@ class DownloadManager {
       } catch {
         bundle = undefined;
       }
-      const missingEntry = !bundle?.entry;
-      const missingEventDetail =
-        record.eventKey !== null && !bundle?.eventDetail;
-      const needsPackageRefresh = missingEntry || missingEventDetail;
-      if (record.transcriptBackend === null && !needsPackageRefresh) continue;
+      if (!bundle || (record.transcriptBackend === null && !bundle.diarization))
+        continue;
 
       let entry: CatalogEntryWithPermissions | null = null;
       try {
@@ -1116,29 +1128,14 @@ class DownloadManager {
         (bundle?.entry?.canSeeSpeakers === true) !== speakersPermitted;
       const dropDiarization =
         entry !== null && !speakersPermitted && !!bundle?.diarization;
-      if (entry && (needsPackageRefresh || entitlementChanged || dropDiarization)) {
-        let eventDetail = bundle?.eventDetail ?? null;
-        const eventId = eventIdFromKey(record.eventKey, record.catalogId);
-        if (missingEventDetail && eventId !== null) {
-          try {
-            eventDetail = await tryFetchJson<EventDetailResponse>(
-              buildEventDetailUrl(record.catalogId, eventId),
-              signal,
-            );
-          } catch (error) {
-            if (isNetworkError(error)) return;
-            eventDetail = null;
-          }
-        }
+      if (entry && (entitlementChanged || dropDiarization)) {
         if (!this.online || this.userId !== userId) return;
         try {
-          const current =
-            (await getDownloadBundle(record.key)) ??
-            emptyDownloadBundle(record.key);
+          const current = await getDownloadBundle(record.key);
+          if (!current) continue;
           await putDownloadBundle({
             ...current,
             entry,
-            eventDetail: eventDetail ?? current.eventDetail ?? null,
             // The overlay is administrative; a revoked permission removes it.
             diarization: speakersPermitted ? current.diarization : null,
             updatedAt: Date.now(),
@@ -1211,6 +1208,7 @@ class DownloadManager {
     try {
       const stored = await listDownloads();
       const next = new Map<string, DownloadRecord>();
+      const changedPackages: string[] = [];
       for (const record of stored) {
         // Keep our own in-flight record; its progress is ahead of the database.
         if (record.key === this.activeKey) {
@@ -1218,9 +1216,21 @@ class DownloadManager {
           next.set(record.key, active ?? record);
         } else {
           next.set(record.key, record);
+          if (
+            record.status === 'complete' &&
+            this.records.get(record.key)?.updatedAt !== record.updatedAt
+          ) {
+            changedPackages.push(record.key);
+          }
         }
       }
       this.records = next;
+      if (changedPackages.length) {
+        const cache = await caches
+          .open(OFFLINE_CACHE_NAMES.audio)
+          .catch(() => null);
+        await this.verifyCompletePackages(cache, changedPackages);
+      }
       this.publish();
       void this.processQueue();
     } catch (error) {
@@ -1303,10 +1313,11 @@ class DownloadManager {
           next && this.online;
           next = this.nextQueued()
         ) {
+          let reloadRequired = false;
           await this.withDownloadLock(next.key, async () => {
             const persisted = await getDownload(next.key);
             if (!persisted || persisted.status !== 'queued') {
-              await this.reloadFromDatabase();
+              reloadRequired = true;
               return;
             }
             this.records.set(next.key, persisted);
@@ -1318,6 +1329,7 @@ class DownloadManager {
               this.jobs.delete(next.key);
             }
           });
+          if (reloadRequired) await this.reloadFromDatabase();
         }
       });
     } finally {
@@ -1386,10 +1398,18 @@ class DownloadManager {
       const eventDetail =
         eventId === null
           ? null
-          : await tryFetchJson<EventDetailResponse>(
+          : await fetchJson<EventDetailResponse>(
               buildEventDetailUrl(catalogId, eventId),
               signal,
             );
+      const eventRecording = eventDetail?.recordings.find(
+        (recording) => recording.audioHash === hash,
+      );
+      if (eventDetail && !eventRecording) {
+        throw new Error(
+          'This recording is no longer attached to the event. Download the event again.',
+        );
+      }
       const sources = await tryFetchJson<SourcesResponse>(
         buildAudioSourcesUrl(catalogId, hash),
         signal,
@@ -1418,7 +1438,11 @@ class DownloadManager {
       await this.update(key, {
         audioUrl,
         audioCacheKey,
-        recording: started.recording ?? snapshotEntryRecording(entry.entry),
+        event: eventDetail ? snapshotEvent(eventDetail) : null,
+        recording:
+          eventDetail && eventRecording
+            ? snapshotEventRecording(eventRecording, eventDetail)
+            : snapshotEntryRecording(entry.entry),
       });
 
       await downloadAudioChunks({
@@ -1462,7 +1486,7 @@ class DownloadManager {
         );
       }
 
-      await putDownloadBundle({
+      const bundle: DownloadBundlePayload = {
         key,
         transcriptBackend,
         transcript,
@@ -1471,7 +1495,18 @@ class DownloadManager {
         eventDetail,
         entry,
         updatedAt: Date.now(),
-      });
+      };
+
+      const completed = this.records.get(key);
+      if (!completed || !isCurrentDownloadBundle({
+        ...completed,
+        hasArtwork: artwork !== null,
+      }, bundle)) {
+        throw new Error(
+          'The recording metadata is incomplete. Download it again.',
+        );
+      }
+      await putDownloadBundle(bundle);
 
       await this.update(key, {
         status: 'complete',
@@ -1603,7 +1638,12 @@ class DownloadManager {
       removals.push(
         caches
           .open(OFFLINE_CACHE_NAMES.audio)
-          .then((cache) => deleteAudioCacheEntries(cache, audioCacheKey)),
+          .then((cache) =>
+            deleteAudioCacheEntries(
+              cache,
+              new URL(audioCacheKey, window.location.origin).toString(),
+            ),
+          ),
       );
     }
     const results = await Promise.allSettled(removals);

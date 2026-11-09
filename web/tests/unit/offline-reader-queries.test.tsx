@@ -134,6 +134,21 @@ beforeEach(() => {
   vi.mocked(fetchJson).mockRejectedValue(new TypeError('Failed to fetch'));
   vi.mocked(getDownloadBundle).mockImplementation(async (key) => ({
     key,
+    eventDetail: null,
+    entry: {
+      entry: {
+        hash: HASH,
+        hasArchived: true,
+        hasMetadata: true,
+        isActionable: true,
+        isPublished: true,
+        hasArchivedAudio: true,
+        hasOriginalAudio: false,
+      },
+      canViewTranscripts: false,
+      canEditMetadata: false,
+      canDownloadAudio: true,
+    },
     transcriptBackend: null,
     transcript: null,
     diarization: null,
@@ -162,7 +177,9 @@ describe('downloaded readers after going offline', () => {
     );
     await waitFor(() => expect(result.current).toBe(`/audio/${HASH}?local=1`));
     rerender({ hash: OTHER_HASH });
-    await waitFor(() => expect(result.current).toBe(`/audio/${OTHER_HASH}?local=1`));
+    await waitFor(() =>
+      expect(result.current).toBe(`/audio/${OTHER_HASH}?local=1`),
+    );
     expect(fetchJson).not.toHaveBeenCalled();
   });
 
