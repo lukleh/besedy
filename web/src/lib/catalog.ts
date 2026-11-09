@@ -1,4 +1,5 @@
 import prisma from "@/lib/db";
+import { projectRecordingMetadata } from "@/lib/catalog-recordings/metadata";
 import {
   canViewRecordingForGrant,
   requiresReadyRecordingScope,
@@ -37,12 +38,6 @@ export {
   parseDuration,
   scopeCatalogEntriesForAccess,
 } from "./catalog-filters";
-
-function compareCatalogEntryTitles(a: CatalogEntry, b: CatalogEntry): number {
-  const aTitle = a.title || a.filename || a.hash;
-  const bTitle = b.title || b.filename || b.hash;
-  return aTitle.localeCompare(bTitle);
-}
 
 export async function getCatalogEntry(
   groupId: string,
@@ -268,37 +263,10 @@ export async function loadEnrichedCatalogEntries(
     },
   });
 
-  const entries = entryRows
-    .map((row) => ({
-      entry: mapCatalogEntryRowToCatalogEntry(row),
-      duplicateCount: row.duplicateCount,
-    }))
-    .sort((a, b) => compareCatalogEntryTitles(a.entry, b.entry));
   const metadataByHash = new Map(metadataRecords.map((metadata) => [metadata.audioHash, metadata]));
-
-  return entries.map(({ entry, duplicateCount }) => {
-    const meta = metadataByHash.get(entry.hash);
-
-    return {
-      ...entry,
-      curated: !!meta,
-      curatedTitle: meta?.title,
-      curatedArtist: meta?.artist,
-      dateYear: meta?.dateYear ?? null,
-      dateMonth: meta?.dateMonth ?? null,
-      dateDay: meta?.dateDay ?? null,
-      verified: meta?.verified ?? false,
-      verifiedAt: meta?.verifiedAt?.toISOString() ?? null,
-      tags: meta?.tags ?? [],
-      notes: meta?.notes ?? null,
-      recorderId: meta?.recorderId ?? null,
-      recorder: meta?.recorder ? { id: meta.recorder.id, name: meta.recorder.name } : null,
-      locationId: meta?.locationId ?? null,
-      location: meta?.location ? { id: meta.location.id, name: meta.location.name } : null,
-      albumId: meta?.albumId ?? null,
-      album: meta?.album ? { id: meta.album.id, name: meta.album.name } : null,
-      part: meta?.part ?? null,
-      duplicateCount,
-    };
-  });
+  return entryRows.map((row) => ({
+    ...mapCatalogEntryRowToCatalogEntry(row),
+    ...projectRecordingMetadata(metadataByHash.get(row.audioHash)),
+    duplicateCount: row.duplicateCount,
+  }));
 }

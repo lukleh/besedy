@@ -837,6 +837,8 @@ grew most by file count over the retained dailies) and `worktree-report.sh`
 (linked git worktrees and which ones look safe to remove); each helper is cut
 off after `HELPER_REPORT_TIMEOUT_SECONDS` (default 600) so a cold snapshot
 filesystem cannot stall the report. Sends every run when `REPORT_EMAIL` is set.
+Deployment ages come only from `web_deploy_log`; missing records have an unknown
+age, and a missing table fails the report instead of approximating dates from Git.
 
 **`backup-health-check.sh`** -- Verifies: backup dir exists, latest
 `besedy_YYYYMMDD_HHMMSS.sql.gz` exists and is fresh (default `MAX_AGE_HOURS=30`),

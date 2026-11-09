@@ -1,3 +1,4 @@
+import { resolveRecordingDisplay } from "@/lib/catalog-recordings/metadata";
 import { scopeRecordingsForAccess } from "@/lib/policy/recording";
 import { recordingDateParts } from "./date-utils";
 import type {
@@ -63,13 +64,13 @@ export function applyFilters(
   if (filters.artist) {
     if (filters.artist === EMPTY_STRING_FILTER) {
       filtered = filtered.filter((entry) => {
-        const artist = entry.curatedArtist ?? entry.artist;
+        const artist = resolveRecordingDisplay(entry).artist;
         return !artist || artist.trim() === "";
       });
     } else {
       const artistLower = filters.artist.toLowerCase();
       filtered = filtered.filter((entry) =>
-        ((entry.curatedArtist ?? entry.artist)?.toLowerCase() || "").includes(artistLower),
+        (resolveRecordingDisplay(entry).artist?.toLowerCase() || "").includes(artistLower),
       );
     }
   }
