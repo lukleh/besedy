@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 const migration = readFileSync(
   resolve(
     process.cwd(),
-    'prisma/migrations/20260828190000_preserve_and_roll_up_mcp_usage/migration.sql',
+    'prisma/migrations/20261108000000_current_schema/migration.sql',
   ),
   'utf8',
 );
@@ -18,12 +18,9 @@ const retentionScript = readFileSync(retentionScriptPath, 'utf8');
 
 describe('MCP usage retention', () => {
   it('preserves an immutable actor ID and exposes raw plus daily usage', () => {
-    expect(migration).toContain('ADD COLUMN "actor_user_id" TEXT');
-    expect(migration).toContain(
-      'SET "actor_user_id" = COALESCE("user_id", \'deleted:\' || "id")',
-    );
-    expect(migration).toContain('CREATE TABLE "mcp_tool_usage_daily"');
-    expect(migration).toContain('CREATE VIEW "mcp_tool_usage"');
+    expect(migration).toContain('actor_user_id text NOT NULL');
+    expect(migration).toContain('CREATE TABLE public.mcp_tool_usage_daily');
+    expect(migration).toContain('CREATE VIEW public.mcp_tool_usage');
     expect(migration).toContain('UNION ALL');
   });
 

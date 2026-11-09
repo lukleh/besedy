@@ -25,6 +25,7 @@ from besedy.commands.catalog.transcribe import TranscribeRequest, handle_transcr
 from besedy.core.paths import (
     PYANNOTE_DIARIZATION_MODEL_NAME,
     PYANNOTE_DIARIZATION_WORKFLOW_LABEL,
+    catalog_transcripts_dirname,
     extract_timestamp_from_catalog,
     resolve_audio_artifacts_root,
     resolve_catalogs_root,
@@ -308,7 +309,7 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
 
     # Use the transcripts parent container so we don't double-append the run id
     # when the "transcripts" symlink already points at a timestamped directory.
-    transcripts_run_root = resolve_transcripts_parent() / f"transcripts_{timestamp}"
+    transcripts_run_root = resolve_transcripts_parent() / catalog_transcripts_dirname(timestamp)
 
     # Calculate total steps dynamically (each workflow is a separate step)
     total_steps = 3  # loudness, stage-audio, archive
@@ -423,21 +424,9 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
 
         transcribe_args = TranscribeRequest(
             csv=workflow_csv,
-            output_root=None,  # Let handler resolve from text_data_dir
             no_symlink=no_symlink,
-            overwrite=False,
             continue_on_error=True,
-            limit=None,
-            hash_filter=None,
-            workflows=[workflow.workflow_id],
-            model=workflow.model_name,
-            language=workflow.language,
-            nemo_parallel=None,
-            nemo_decode_strategy=workflow.decode_strategy,
-            nemo_beam_size=2,
-            nemo_softmax_temperature=1.0,
-            nemo_beam_length_penalty=None,
-            nemo_beam_max_generation_delta=None,
+            workflow_configs=(workflow,),
         )
 
         result = _run_backend_step(handle_transcribe, transcribe_args)

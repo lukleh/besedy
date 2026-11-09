@@ -20,7 +20,7 @@ from pathlib import Path
 
 from prefect import flow, task
 
-from besedy.core.paths_runtime import resolve_transcripts_parent
+from besedy.core.paths import catalog_transcripts_dirname, resolve_transcripts_parent
 from besedy.lib.internal_ingest_client import (
     CorrectionIndexSyncReport,
     CorrectionIndexSyncStatus,
@@ -54,7 +54,7 @@ def resolve_catalog_transcripts_root(catalog_id: str) -> Path:
     points at, which may belong to another catalog.
     """
     catalog_id = validate_deployment_catalog_id(catalog_id)
-    root = resolve_transcripts_parent() / f"transcripts_{catalog_id}"
+    root = resolve_transcripts_parent() / catalog_transcripts_dirname(catalog_id)
     if not root.is_dir():
         raise CorrectionIndexFlowError(
             f"No transcript generation for catalog {catalog_id} at {root}.",

@@ -9,7 +9,7 @@ import shlex
 import subprocess
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from besedy.core.paths import (
@@ -223,22 +223,12 @@ def build_workflows(
                         process_label = base_label
                         parallel_group = None
 
-                    nemo_argv = ["--output-dir", str(workflow_root)]
-                    if cfg.model_name:
-                        nemo_argv.extend(["--model", str(cfg.model_name)])
-                    if cfg.vad_model:
-                        nemo_argv.extend(["--vad-model", str(cfg.vad_model)])
-                    if cfg.decode_strategy:
-                        nemo_argv.extend(["--decode-strategy", str(cfg.decode_strategy)])
-                    nemo_argv.extend(
-                        [
-                            "--source-lang",
-                            cfg.language,
-                            "--target-lang",
-                            cfg.language,
-                        ]
-                    )
-
+                    nemo_argv = [
+                        "--output-dir",
+                        str(workflow_root),
+                        "--workflow-config",
+                        json.dumps(asdict(cfg)),
+                    ]
                     beam_size = config.nemo_beam_size
                     softmax_temperature = config.nemo_softmax_temperature
                     beam_length_penalty = config.nemo_beam_length_penalty

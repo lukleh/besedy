@@ -203,7 +203,9 @@ absolute: a relative value resolves against the checkout the worker runs from,
 so ingest output would land inside `~/worktrees/besedy/prod-ingest`. An empty
 value for either is an error.
 `uploads_dir` and `corrections_dir` resolve under those two when relative, and
-keys such as `transcripts_dir` are subdirectory names that stay relative.
+transcript generations use `<transcripts_dir>/transcripts_<source-id>` under each
+process's text-data root. The TOML parent defaults to `transcripts`; keep its
+value aligned in host and container configuration.
 
 For development run the worker in the foreground from the dev checkout with
 `just ingest-worker-run` (defaults to pool `besedy-ingest-dev`).
