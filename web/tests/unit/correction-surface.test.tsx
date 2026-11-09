@@ -93,6 +93,9 @@ function span(ordinal: number, overrides: Partial<Record<string, unknown>> = {})
     commentCount: 0,
     lastEditedById: null,
     lastEditedAt: null,
+    speechRegions: [[ordinal * 160000, (ordinal + 1) * 160000]],
+    machineWords: [],
+    flags: [],
     ...overrides,
   };
 }

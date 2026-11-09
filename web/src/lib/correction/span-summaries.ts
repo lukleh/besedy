@@ -10,8 +10,8 @@ export interface SpanSummaryRow {
   startSeconds: number;
   endSeconds: number;
   originalText: string;
-  /** ADR 0012 speech regions in samples; null on spans from before the contract */
-  speechRegions: number[][] | null;
+  /** ADR 0012 speech regions in samples */
+  speechRegions: number[][];
   /** The machine words assigned to the span, with their times in seconds */
   machineWords: MachineWordView[];
   currentRevision: {
@@ -20,8 +20,8 @@ export interface SpanSummaryRow {
     actorKey: string | null;
     createdAt: Date;
     previousRevisionId: string | null;
-    /** ADR 0012 origin of the text; null on revisions from before the contract */
-    origin: TranscriptRevisionOrigin | null;
+    /** ADR 0012 origin of the text */
+    origin: TranscriptRevisionOrigin;
   } | null;
   summary: SpanDecisionSummary;
 }
@@ -148,7 +148,7 @@ export async function loadSpanSummaries(
     startSeconds: span.startSeconds,
     endSeconds: span.endSeconds,
     originalText: span.originalText,
-    speechRegions: Array.isArray(span.speechRegions) ? (span.speechRegions as number[][]) : null,
+    speechRegions: span.speechRegions as number[][],
     machineWords: toMachineWordViews(span.machineWords),
     currentRevision: span.currentRevision,
     summary: summaries.get(span.id) ?? NO_DECISIONS,

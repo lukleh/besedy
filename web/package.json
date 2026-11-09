@@ -20,6 +20,7 @@
     "test": "vitest run",
     "pretest:watch": "npm run prisma:generate",
     "test:watch": "vitest",
+    "test:correction-contract-migration": "tsx scripts/correction-contract-migration-smoke.ts",
     "test:correction-smoke": "tsx scripts/correction-smoke.ts",
     "test:catalog-sync-smoke": "tsx scripts/catalog-sync-smoke.ts",
     "pretest:coverage": "npm run prisma:generate",

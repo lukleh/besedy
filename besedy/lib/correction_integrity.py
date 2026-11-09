@@ -3,7 +3,7 @@
 Correction work cannot be redone, so production checks every night that what
 it depends on is still intact. ``web/scripts/correction-integrity-check.sh``
 reads the workspaces from PostgreSQL and passes them here as JSON; this module
-checks, for each live workspace under the data contract:
+checks, for each live workspace:
 
 - the frozen source file still has the fingerprint recorded at start;
 - cutting that source again gives exactly the stored spans, with the stored
@@ -14,8 +14,8 @@ checks, for each live workspace under the data contract:
 - the workspace manifest the Python guards read is present and agrees;
 - every text revision still matches its hash (counted in SQL).
 
-A workspace cut by another segmentation version is noted rather than failed:
-this code cannot re-cut it, and the other checks still run.
+A workspace cut by another segmentation version fails the check; it must be
+migrated to the current contract before this code can verify its spans.
 
 It also reports orphan manifests: an ``active`` or ``starting`` manifest whose
 workspace is not live in the database, left by a start that crashed before its
@@ -60,7 +60,6 @@ START_IN_PROGRESS = timedelta(hours=1)
 @dataclass
 class WorkspaceCheck:
     problems: list[str] = field(default_factory=list)
-    notes: list[str] = field(default_factory=list)
 
 
 def audio_hash_due(workspace_id: str, every_days: int, today: date) -> bool:
@@ -99,9 +98,9 @@ def check_workspace(
         problems.append("frozen source fingerprint changed")
 
     if workspace["segmentation_version"] != cs.SEGMENTATION_VERSION:
-        result.notes.append(
-            f"cut with segmentation {workspace['segmentation_version']}, this code cuts "
-            f"{cs.SEGMENTATION_VERSION}; stored spans not re-checked"
+        problems.append(
+            f"unsupported segmentation {workspace['segmentation_version']}, this code cuts "
+            f"{cs.SEGMENTATION_VERSION}; migrate the workspace before checking its spans"
         )
     else:
         try:
@@ -270,8 +269,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{'FAIL' if check.problems else 'OK  '} {workspace}")
         for problem in check.problems:
             print(f"     - {problem}")
-        for note in check.notes:
-            print(f"     note: {note}")
     orphans = find_orphan_manifests(root, (str(w["id"]) for w in workspaces))
     for path, problems in orphans.items():
         print(f"FAIL {path}")

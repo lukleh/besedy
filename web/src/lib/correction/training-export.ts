@@ -32,8 +32,8 @@ export const DEFAULT_TRAINING_EXPORT_POLICY: TrainingExportPolicy = {
   minHeardFraction: MIN_HEARD_FRACTION_FOR_TRAINING,
 };
 
-/** Where a span's current text came from, lowercase (ADR 0012); null before the contract */
-export type TrainingExportOrigin = "machine" | "manual" | "suggestion" | null;
+/** Where a span's current text came from, lowercase (ADR 0012) */
+export type TrainingExportOrigin = "machine" | "manual" | "suggestion";
 
 export interface TrainingExportSpan {
   spanId: string;
@@ -74,7 +74,7 @@ export interface TrainingExport {
   workspaces: TrainingExportWorkspace[];
 }
 
-function toExportOrigin(origin: TranscriptRevisionOrigin | null): TrainingExportOrigin {
+function toExportOrigin(origin: TranscriptRevisionOrigin): TrainingExportOrigin {
   switch (origin) {
     case "MACHINE":
       return "machine";
@@ -82,8 +82,6 @@ function toExportOrigin(origin: TranscriptRevisionOrigin | null): TrainingExport
       return "manual";
     case "SUGGESTION":
       return "suggestion";
-    default:
-      return null;
   }
 }
 
@@ -136,7 +134,6 @@ async function buildTrainingExportSnapshot(
     where: {
       workflowGroupId: catalogId,
       status: "ACTIVE",
-      segmentationVersion: { not: null },
       ...(filter.audioHash ? { audioHash: filter.audioHash } : {}),
     },
     orderBy: { createdAt: "asc" },
@@ -169,7 +166,7 @@ async function buildTrainingExportSnapshot(
     const chunks = new Map<number, TrainingExportChunk>();
     for (const span of summaries) {
       const placement = regionsBySpan.get(span.id);
-      if (!placement || placement.chunkOrdinal === null || !span.currentRevision) continue;
+      if (!placement || !span.currentRevision) continue;
       const chunk = chunks.get(placement.chunkOrdinal) ?? {
         chunk: placement.chunkOrdinal,
         eligible: true,
@@ -183,8 +180,8 @@ async function buildTrainingExportSnapshot(
         text: span.currentRevision.text,
         machineText: span.originalText,
         origin: toExportOrigin(span.currentRevision.origin),
-        firstRegion: placement.firstRegionIndex ?? 0,
-        lastRegion: placement.lastRegionIndex ?? 0,
+        firstRegion: placement.firstRegionIndex,
+        lastRegion: placement.lastRegionIndex,
       });
 
       const reasons: string[] = [];
@@ -213,11 +210,11 @@ async function buildTrainingExportSnapshot(
       audioHash: workspace.audioHash,
       sourceBackend: workspace.sourceBackend,
       sourceFingerprint: workspace.sourceFingerprint,
-      segmentationVersion: workspace.segmentationVersion ?? "",
+      segmentationVersion: workspace.segmentationVersion,
       stagedAudio: {
-        path: workspace.stagedAudioPath ?? "",
-        size: Number(workspace.stagedAudioSize ?? 0),
-        sha256: workspace.stagedAudioSha256 ?? "",
+        path: workspace.stagedAudioPath,
+        size: Number(workspace.stagedAudioSize),
+        sha256: workspace.stagedAudioSha256,
       },
       chunks: [...chunks.values()].sort((a, b) => a.chunk - b.chunk),
     });

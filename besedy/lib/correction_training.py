@@ -13,9 +13,9 @@ in labels.
 
 Manifest rows (``DATASET_SCHEMA_VERSION`` 2) carry, besides the label
 (``text``), the chunk's machine text (``machine_text``: the spans' production
-transcript joined, null when the export predates it) and the origin of every
+transcript joined) and the origin of every
 span's current revision (``revision_origins``, parallel to ``revision_ids``:
-``machine``, ``manual``, ``suggestion`` or null), so the machine-vs-human
+``machine``, ``manual`` or ``suggestion``), so the machine-vs-human
 baseline can be scored from a dataset alone.
 """
 
@@ -229,10 +229,12 @@ def _read_regions(
     return bytes(frames)
 
 
-def _machine_text(spans: Sequence[Mapping[str, Any]], *, keep_fillers: bool) -> str | None:
-    """The spans' machine texts joined like the label; None when the export lacks them."""
-    if any(span.get("machineText") is None for span in spans):
-        return None
+def _machine_text(spans: Sequence[Mapping[str, Any]], *, keep_fillers: bool) -> str:
+    """The current export records machine text and revision origin for every span."""
+    if any(not isinstance(span.get("machineText"), str) for span in spans):
+        raise TrainingExportError("Every training span must record machineText")
+    if any(span.get("origin") not in {"machine", "manual", "suggestion"} for span in spans):
+        raise TrainingExportError("Every training span must record a current revision origin")
     text = cs.normalize_span_text(" ".join(str(span["machineText"]) for span in spans))
     return text if keep_fillers else strip_fillers(text)
 
@@ -338,7 +340,7 @@ def build_dataset(
                         "chunk": chunk["chunk"],
                         "machine_text": machine_text,
                         "revision_ids": [span["revisionId"] for span in chunk["spans"]],
-                        "revision_origins": [span.get("origin") for span in chunk["spans"]],
+                        "revision_origins": [span["origin"] for span in chunk["spans"]],
                         "source_backend": workspace["sourceBackend"],
                     }
                 )
