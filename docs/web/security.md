@@ -45,9 +45,11 @@ There is one live invitation per canonical email: the existing `PortalAdmission`
 row plus at most one bound `PendingCatalogGrant`. Source foreign keys, IDs,
 provenance and historical rows stay in place. No membership table, permission
 copying or automatic migration is required. Existing unbacked admissions remain
-visible to administrators for notes and cancellation, but cannot be claimed.
-A notes-only save never assigns a role or reopens a revoked admission. Explicit
-role assignment is required to add archive access to a legacy admission.
+visible to administrators for cancellation, but cannot be claimed or edited.
+Their former notes-only and in-place role-assignment paths are retired: revoke
+the admission and create a new invitation with explicit archive access. All
+edits to role-backed invitations, including notes, use the same conditional
+admission/grant transition and cannot reopen a revoked admission.
 
 Revoking the bound invitation revokes portal admission even if historical grants
 exist on other sources. An `ADMIN_DENIED` tombstone can only be reopened by an
@@ -458,11 +460,8 @@ role.
 
 `see_transcript_variants` covers the fact that more than one machine transcript
 exists. Without it, `GET /api/catalogs/:id/recordings/:hash/transcript` lists only
-the default backend and refuses to serve any other, `GET …/transcript/compare` — the
-multi-backend stream view in its entirety — is refused, and the picker, the
-variant counts and the stream switch are not rendered. **Reading is now the
-default view**; the stream used to be, and a stored preference saying so does
-not reopen it.
+the default backend and refuses to serve any other, and the picker and variant
+counts are not rendered.
 
 `see_speakers` covers the diarization overlay. Without it,
 `GET …/transcript/speakers` reports no backends, the `speaker` on each

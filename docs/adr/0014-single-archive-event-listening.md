@@ -48,9 +48,9 @@ Existing correction workspaces retain their frozen source even if an editor
 changes the event's preferred recording.
 
 The ordinary listener presentation should be reusable for an online event and
-its downloaded snapshot. Editorial tools and transcript comparison remain
-separate consumers; they need not be embedded as optional modes of the audience
-page. A global listener runtime is unnecessary for page-owned playback.
+its downloaded snapshot. Editorial tools remain separate consumers; they need
+not be embedded as optional modes of the audience page. A global listener
+runtime is unnecessary for page-owned playback.
 
 ### Offline contract
 
