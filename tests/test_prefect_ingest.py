@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -27,7 +28,9 @@ from besedy.lib.internal_ingest_client import (  # noqa: E402
     IngestCompletionStatus,
     IngestProgressReport,
 )
+from besedy.lib.job_records import JOB_RECORDS_ENV, parse_job_record  # noqa: E402
 from besedy.lib.prefect_jobs.api import PrefectJobsApiService  # noqa: E402
+from besedy.lib.prefect_jobs.client import RuntimePrefectJobsClient  # noqa: E402
 from besedy.lib.prefect_jobs.flows import ingest_recording as ingest_module  # noqa: E402
 from besedy.lib.prefect_jobs.models import (  # noqa: E402
     IngestSubmitRequest,
@@ -78,6 +81,9 @@ class FakePrefectClient:
 
     def read_flow_run(self, *, flow_run_id: str) -> object:
         return self.flow_run
+
+    def read_job_result(self, *, flow_run_id: str, attempt: int) -> dict | None:
+        return None
 
     def read_flow_runs(self, *, tags, limit, state_names=None):  # type: ignore[no-untyped-def]
         self.read_flow_runs_calls.append({"tags": tags, "limit": limit, "state_names": state_names})
@@ -312,7 +318,7 @@ def test_catalog_cli_command_uses_module_entrypoint() -> None:
 def _run_pipeline_output() -> str:
     """Step headers exactly as `run-pipeline` prints them, between other output."""
     buffer = io.StringIO()
-    with redirect_stdout(buffer):
+    with patch.dict("os.environ", {JOB_RECORDS_ENV: "1"}), redirect_stdout(buffer):
         print("Pipeline for catalog")
         print_step(1, 9, "loudness", "Analyzing audio loudness")
         print("  Already analyzed: 253 files")
@@ -325,14 +331,21 @@ def _run_pipeline_output() -> str:
 PIPELINE_OUTPUT = _run_pipeline_output()
 
 
-def test_parse_pipeline_step_reads_run_pipeline_headers() -> None:
-    steps = [ingest_module.parse_pipeline_step(line) for line in PIPELINE_OUTPUT.splitlines()]
-
-    assert [step for step in steps if step is not None] == [
-        IngestProgressReport(label="loudness (Analyzing audio loudness)", step=1, total=9),
-        IngestProgressReport(label="transcribe (canary-nemo@lang-cs)", step=4, total=9),
-        IngestProgressReport(label="cluster-speakers", step=9, total=9),
+def test_pipeline_announces_typed_progress_independent_of_its_headings() -> None:
+    records = [parse_job_record(line) for line in PIPELINE_OUTPUT.splitlines()]
+    assert [record["payload"] for record in records if record is not None] == [
+        {"label": "loudness (Analyzing audio loudness)", "step": 1, "total": 9},
+        {"label": "transcribe (canary-nemo@lang-cs)", "step": 4, "total": 9},
+        {"label": "cluster-speakers", "step": 9, "total": 9},
     ]
+
+
+def test_pipeline_records_are_opt_in(monkeypatch, capsys) -> None:
+    monkeypatch.delenv(JOB_RECORDS_ENV, raising=False)
+    print_step(1, 2, "stage-audio")
+    output = capsys.readouterr().out
+    assert "[1/2] stage-audio..." in output
+    assert all(parse_job_record(line) is None for line in output.splitlines())
 
 
 def test_run_catalog_cli_reports_steps_and_runs_the_child_unbuffered(
@@ -671,22 +684,25 @@ def test_flow_carries_outcome_when_final_report_cannot_be_delivered(
         ingest_module.report_completion, "retries", 0
     )  # keep the test fast; retry policy is Prefect's
 
-    with pytest.raises(ingest_module.IngestFlowError) as failure:
-        ingest_module.ingest_recording_flow(
-            catalog_id=CATALOG_ID, intake_id=INTAKE_ID, original_filename="talk.mp3"
-        )
-
-    assert failure.value.error_code == "completion_report_failed"
-    message = str(failure.value)
-    marker = ingest_module.COMPLETION_REPORT_FAILED_MARKER
-    assert marker in message
-    outcome = json.loads(message[message.index(marker) + len(marker) :])
-    assert outcome == {
+    state = ingest_module.ingest_recording_flow(
+        catalog_id=CATALOG_ID, intake_id=INTAKE_ID, original_filename="talk.mp3",
+        return_state=True,
+    )
+    failure = state.result(raise_on_failure=False)
+    assert failure.error_code == "completion_report_failed"
+    assert "SUCCEEDED" not in str(failure)
+    client = RuntimePrefectJobsClient()
+    flow_run_id = str(state.state_details.flow_run_id)
+    record = client.read_job_result(flow_run_id=flow_run_id, attempt=1)
+    assert record is not None
+    assert record["payload"] == {
         "status": "SUCCEEDED",
         "audioHash": NEW_HASH,
         "errorCode": None,
         "errorMessage": None,
     }
+    assert client.read_job_result(flow_run_id=flow_run_id, attempt=2) is None
+    assert client.read_job_result(flow_run_id=str(uuid4()), attempt=1) is None
     # The recording itself was accepted; only the callback was lost.
     assert (paths.accepted_dir / "talk.mp3").is_file()
 
