@@ -24,7 +24,6 @@ from rich.progress import (
 )
 
 from besedy.commands.catalog.metadata import get_loudness_metrics
-from besedy.commands.catalog.system import detect_logical_cpus
 from besedy.commands.catalog.ui import (
     Ansi,
     color_text,
@@ -34,6 +33,7 @@ from besedy.core.symlinks import (
     create_or_update_symlink,
     validate_symlink_can_be_created,
 )
+from besedy.core.system import detect_logical_cpus
 from besedy.lib.catalog.manager import check_ffmpeg, check_ffprobe, load_csv
 from besedy.lib.data.atomic_io import atomic_path
 from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
@@ -74,7 +74,6 @@ class LoudnessRequest:
 # Columns to add/update during loudness analysis
 LOUDNESS_COLUMNS = [
     "sample_rate",
-    "bit_depth",
     "channels",
     "bitrate_kbps",
     "codec_profile",
@@ -298,8 +297,16 @@ def handle_loudness(
             _, existing_rows = load_csv(output_path, encoding=request.encoding)
             for row in existing_rows:
                 row_hash = row.get(hash_column, "").strip()
-                # Consider it "done" if it has loudness data
-                if row_hash and row.get("integrated_loudness_lufs", "").strip():
+                if row_hash and all(
+                    row.get(field, "").strip()
+                    for field in (
+                        "integrated_loudness_lufs",
+                        "true_peak_db",
+                        "loudness_range_lu",
+                        "input_thresh",
+                        "target_offset",
+                    )
+                ):
                     existing_loudness[row_hash] = row
             print(f"Found {len(existing_loudness)} files with existing loudness data")
         except Exception as exc:
@@ -417,7 +424,6 @@ def handle_loudness(
                         if metrics:
                             # All metrics are strings from AudioQualityMetrics
                             result_row["sample_rate"] = metrics.sample_rate or ""
-                            result_row["bit_depth"] = metrics.bit_depth or ""
                             result_row["channels"] = metrics.channels or ""
                             result_row["bitrate_kbps"] = metrics.bitrate_kbps or ""
                             result_row["codec_profile"] = metrics.codec_profile or ""

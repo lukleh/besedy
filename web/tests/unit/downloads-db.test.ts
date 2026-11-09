@@ -39,6 +39,8 @@ describe('downloads database', () => {
         dateMonth: null,
         dateDay: null,
         sessionIndex: 1,
+        sessionOrdinal: 1,
+        sessionCount: 1,
         publishedArtwork: null,
       },
       recording: null,
@@ -97,23 +99,30 @@ describe('downloads database', () => {
     expect(database.version).toBe(6);
   });
 
-  it('rewrites pre-rename poster field names on already-downloaded records', async () => {
+  it('leaves old payloads unsupported and preserves unsynced playback progress on upgrade', async () => {
     const legacyKey = 'cat:' + HASH;
     const legacy = indexedDB.open('besedy-offline', 4);
     await new Promise<void>((resolve, reject) => {
       legacy.onupgradeneeded = () => {
         const database = legacy.result;
-        const downloads = database.createObjectStore('downloads', { keyPath: 'key' });
+        const downloads = database.createObjectStore('downloads', {
+          keyPath: 'key',
+        });
         downloads.createIndex('byCatalog', 'catalogId');
         downloads.createIndex('byEventKey', 'eventKey');
         downloads.createIndex('byStatus', 'status');
         database.createObjectStore('downloadBundles', { keyPath: 'key' });
-        const progress = database.createObjectStore('pendingPlaybackProgress', { keyPath: 'key' });
+        const progress = database.createObjectStore('pendingPlaybackProgress', {
+          keyPath: 'key',
+        });
         progress.createIndex('byUser', 'userId');
       };
       legacy.onsuccess = () => {
         const database = legacy.result;
-        const tx = database.transaction(['downloads', 'downloadBundles'], 'readwrite');
+        const tx = database.transaction(
+          ['downloads', 'downloadBundles', 'pendingPlaybackProgress'],
+          'readwrite',
+        );
         tx.objectStore('downloads').put({
           key: legacyKey,
           catalogId: 'cat',
@@ -151,7 +160,23 @@ describe('downloads database', () => {
           transcriptBackend: null,
           transcript: null,
           diarization: null,
-          poster: { blob: new Blob(['x']), contentType: 'image/jpeg', variant: 'square', posterId: 'p1' },
+          poster: {
+            blob: new Blob(['x']),
+            contentType: 'image/jpeg',
+            variant: 'square',
+            posterId: 'p1',
+          },
+          updatedAt: 0,
+        });
+        tx.objectStore('pendingPlaybackProgress').put({
+          key: 'u1:cat:' + HASH,
+          userId: 'u1',
+          catalogId: 'cat',
+          hash: HASH,
+          positionSec: 42,
+          durationSec: 120,
+          completed: false,
+          revision: 1,
           updatedAt: 0,
         });
         tx.oncomplete = () => {
@@ -165,108 +190,14 @@ describe('downloads database', () => {
 
     const db = await loadDb();
     const record = await db.getDownload(legacyKey);
-    expect(record).toMatchObject({ hasArtwork: true });
-    expect((record?.event as { publishedArtwork?: unknown } | null)?.publishedArtwork).toEqual({
-      id: 'p1',
-      publishedAt: '2026-09-19T00:00:00Z',
-    });
-    expect(record).not.toHaveProperty('hasPoster');
-
+    expect(record).toHaveProperty('hasPoster', true);
+    expect(record).not.toHaveProperty('hasArtwork');
     const bundle = await db.getDownloadBundle(legacyKey);
-    expect(bundle?.artwork).toMatchObject({ contentType: 'image/jpeg', variant: 'square', artworkId: 'p1' });
-    expect(bundle).not.toHaveProperty('poster');
-  });
-
-  it('deletes stored inline audio copies and recovers packages stuck on the inline error', async () => {
-    const complete = 'cat:' + HASH;
-    const stuck = 'cat:' + 'f'.repeat(64);
-    const withoutCopy = 'cat:' + 'd'.repeat(64);
-    const legacy = indexedDB.open('besedy-offline', 5);
-    const record = (key: string, status: string, error: string | null) => ({
-      key,
-      catalogId: 'cat',
-      catalogLabel: null,
-      hash: key.slice(4),
-      userId: 'u1',
-      eventKey: null,
-      event: null,
-      recording: null,
-      audioUrl: `/api/catalogs/cat/recordings/${key.slice(4)}/audio`,
-      audioCacheKey: `https://besedy.test/api/catalogs/cat/recordings/${key.slice(4)}/audio`,
-      status,
-      progress: status === 'complete' ? 100 : 0,
-      bytesLoaded: 10,
-      totalBytes: 10,
-      error,
-      resumeOnReconnect: false,
-      transcriptBackend: null,
-      hasArtwork: false,
-      createdAt: 0,
-      updatedAt: 42,
-      completedAt: status === 'complete' ? 42 : null,
-    });
-    await new Promise<void>((resolve, reject) => {
-      legacy.onupgradeneeded = () => {
-        const database = legacy.result;
-        const downloads = database.createObjectStore('downloads', { keyPath: 'key' });
-        downloads.createIndex('byCatalog', 'catalogId');
-        downloads.createIndex('byEventKey', 'eventKey');
-        downloads.createIndex('byStatus', 'status');
-        database.createObjectStore('downloadBundles', { keyPath: 'key' });
-        const progress = database.createObjectStore('pendingPlaybackProgress', { keyPath: 'key' });
-        progress.createIndex('byUser', 'userId');
-      };
-      legacy.onsuccess = () => {
-        const database = legacy.result;
-        const tx = database.transaction(['downloads', 'downloadBundles'], 'readwrite');
-        tx.objectStore('downloads').put(record(complete, 'complete', null));
-        tx.objectStore('downloads').put(record(stuck, 'error', 'inline-audio-unavailable'));
-        for (const key of [complete, stuck]) {
-          tx.objectStore('downloadBundles').put({
-            key,
-            transcriptBackend: 'whisperx/large',
-            transcript: null,
-            diarization: null,
-            artwork: null,
-            inlineAudio: { data: new Uint8Array(10).buffer, contentType: 'audio/webm' },
-            updatedAt: 0,
-          });
-        }
-        // A download that needed no copy: the old job stored an explicit null.
-        tx.objectStore('downloadBundles').put({
-          key: withoutCopy,
-          transcriptBackend: null,
-          transcript: null,
-          diarization: null,
-          artwork: null,
-          inlineAudio: null,
-          updatedAt: 0,
-        });
-        tx.oncomplete = () => {
-          database.close();
-          resolve();
-        };
-        tx.onerror = () => reject(tx.error);
-      };
-      legacy.onerror = () => reject(legacy.error);
-    });
-
-    const db = await loadDb();
-    for (const key of [complete, stuck]) {
-      const bundle = await db.getDownloadBundle(key);
-      expect(bundle).not.toHaveProperty('inlineAudio');
-      expect(bundle?.transcriptBackend).toBe('whisperx/large');
-    }
-    // Left as it was rather than rewritten for nothing.
-    expect(await db.getDownloadBundle(withoutCopy)).toHaveProperty('inlineAudio', null);
-    expect(await db.getDownload(complete)).toMatchObject({ status: 'complete', error: null });
-    // Its chunks verified before; hydration checks them again as for any package.
-    expect(await db.getDownload(stuck)).toMatchObject({
-      status: 'complete',
-      error: null,
-      progress: 100,
-      completedAt: 42,
-    });
+    expect(bundle).toHaveProperty('poster');
+    expect(db.isCurrentDownloadBundle(record!, bundle)).toBe(false);
+    expect(await db.listPendingPlaybackProgress('u1')).toEqual([
+      expect.objectContaining({ positionSec: 42, revision: 1 }),
+    ]);
   });
 
   it('keeps large payloads separate from lightweight registry rows', async () => {
@@ -280,10 +211,26 @@ describe('downloads database', () => {
         segments: [{ start: 0, end: 1, text: 'Hello' }],
       },
       diarization: null,
+      eventDetail: null,
+      entry: {
+        entry: {
+          hash: HASH,
+          hasArchived: true,
+          hasMetadata: true,
+          isActionable: true,
+          isPublished: true,
+          hasArchivedAudio: true,
+          hasOriginalAudio: false,
+        },
+        canViewTranscripts: true,
+        canEditMetadata: false,
+        canDownloadAudio: true,
+      },
       artwork: {
         blob: new Blob(['artwork'], { type: 'image/jpeg' }),
         contentType: 'image/jpeg',
-        variant: 'portrait',
+        variant: 'square',
+        artworkId: 'art-1',
       },
       updatedAt: Date.now(),
     });
@@ -291,7 +238,7 @@ describe('downloads database', () => {
     expect(await db.getDownloadBundle(key)).toMatchObject({
       key,
       transcriptBackend: 'whisperx/large',
-      artwork: { variant: 'portrait' },
+      artwork: { variant: 'square', artworkId: 'art-1' },
     });
     await db.deleteDownloadBundle(key);
     expect(await db.getDownloadBundle(key)).toBeUndefined();

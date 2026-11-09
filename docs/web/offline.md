@@ -67,11 +67,10 @@ The `besedy-offline` IndexedDB database currently has three stores:
 - `downloads` is the lightweight registry and source of truth for state,
   progress, byte counts, selected audio URL, event/recording snapshots, and
   download status.
-- `downloadBundles` holds large optional payloads: the default transcript and
-  diarization when permitted, published artwork, the event-detail and
-  recording-entry payloads the shared pages render from. Audio is never stored
-  here: until version 6 of the database a Base64 inline copy of the recording
-  was, and the upgrade to version 6 deletes it (#162).
+- `downloadBundles` holds the recording-entry payload and, for event downloads,
+  the complete event-detail payload the shared pages render from. Permitted
+  transcript, diarization and published artwork payloads are optional. Audio
+  is never stored here.
 - `pendingPlaybackProgress` retains local playback changes for later account
   synchronisation.
 
@@ -87,32 +86,22 @@ uncapped `bytes=0-` for a multi-hour recording pushed that process past its
 memory limit and WebKit terminated the page. A suffix range keeps its tail; a
 request without `Range` still gets the whole body as a `200`.
 
-Each package is keyed by the URL's `source`, `variant` and `format`
+Each package is keyed by the current URL's `source` and `format`
 (`getAudioCacheKey` and the worker's `getCacheKey`, which must agree), with the
-defaults `archived` and `webm` dropped. WebKit browsers (`prefersAacAudio` in
-`web/src/lib/audio-format.ts`: every iOS browser and Safari on macOS) download
-and play the AAC-in-MP4 copy (`format=aac`) when `/audio/sources` lists one for
-the chosen source, because Safari loads a WebM audio file whole into its GPU
-process instead of streaming it (#291). That copy has its own key, so a WebM
-package downloaded earlier on the same device is not touched by the AAC one's
-cleanup, and it still counts as the download of that source: the page keeps
-playing it rather than streaming the copy, which a service worker from before
-the `format` key would otherwise answer with that WebM package in 4 MiB pieces.
-On WebKit the player waits for `/audio/sources` before it starts, so it never
-begins on the WebM of a recording that has a copy; the wait is skipped when a
-complete download will play, and ends after 3 s, when the player starts on the
-WebM. A WebM download that was paused before the copy
-existed restarts from the beginning as the copy when it is resumed (the key
-differs), on purpose: finishing it would leave a package Safari cannot stream.
+defaults `archived` and `webm` dropped. Retired `listening`, `variant` and `group`
+selectors are rejected. WebKit browsers download and play the AAC-in-MP4 copy
+(`format=aac`) when `/audio/sources` lists it. WebM and AAC remain current browser
+formats; online playback follows the selected codec, while offline playback
+uses the complete local package.
 
-On WebKit a WebM package downloaded before the copy existed still plays through
-the worker only up to Safari's first capped response, so the Downloads page
-flags it while online once `/audio/sources` lists the copy for that package's
-own source (`useAacUpgradeAvailable`), with a **Download again** action
-(`downloadManager.redownload`). That re-queues the package in place, keeping
-its event, transcript and artwork; the job builds the URL as a new download
-would, so it fetches the copy, and the WebM chunks are deleted when it starts
-because the key changes with the format.
+Audio metadata has one current schema (`schemaVersion: 1`) and a required
+per-download generation. On hydration, readable metadata outside that contract
+is discarded under the shared cache lock and its Downloads row becomes retryable.
+Retry requests current source metadata and chooses the browser's current codec;
+there is no separate historical-format upgrade flow. Unreadable storage stays
+intact and is marked retryable. Destructive migration is also skipped when Web
+Locks are unavailable, so a stale read cannot delete another tab's replacement;
+unsupported packages still become retryable. Playback progress remains separate.
 
 The remaining caches are intentionally small:
 
@@ -126,15 +115,9 @@ Normal application HTML and API JSON are not placed in an offline cache.
 
 A complete local recording reaches the media element one way on every browser:
 the player loads the recording URL with a `local=1` marker and the service
-worker answers Range requests from the chunked cache. Until #162 the WebKit and
-Android browsers used a Base64 data URL built from an inline copy stored with
-the download, and the debug panel could switch a device to it or to an object
-URL composed from the chunks (`blob`). Device runs showed the worker playing
-offline on a Pixel and, with the AAC copy, on an iPhone, while the inline copy
-of a multi-hour recording was too large for Safari to play and the composed
-Blob was read whole into Safari's GPU process, so both are gone, with the
-per-device override. A `besedy:offline-audio-transport` value left in
-`localStorage` from that override is no longer read.
+worker answers Range requests from the chunked cache. The AAC copy provides
+that same transport on WebKit. No whole-recording Blob or inline audio copy
+is constructed.
 
 The player's debug panel (the bug icon under the controls) shows the source
 kind the element was handed (`network` or `worker-cache`), whether a worker
@@ -152,15 +135,29 @@ each chunk, stores permitted transcript/diarization and artwork payloads, and
 requires a controlling service worker before reporting a cache-backed download
 complete.
 
-On hydration the manager verifies every completed package against Cache
-Storage: the metadata entry must be complete and every chunk present. A record
-that fails this check, or cannot be checked because the cache is unreadable,
-is not shown as downloaded; it becomes a retryable error with the message that
-the audio is incomplete on this device, and Retry resumes the download from
-the longest contiguous prefix of chunks that survived. Registry state alone never proves
-playability. The header's Downloads badge counts only completed packages, i.e.
-what verified as playable when the page loaded; the check is not repeated while
-the page stays open.
+On hydration the manager accepts only packages that already satisfy the current
+stored shape: a complete recording-entry payload, a matching event-detail payload
+for an event download, and current artwork fields. It does not rename old
+artwork, reconstruct page data from snapshots, backfill missing payloads, or
+recover retired inline-audio formats. Unsupported packages become retryable
+Downloads rows: their identity and display snapshots remain, while their bundle
+and cached audio are discarded. Retry fetches the current metadata and downloads
+the recording again. Only packages whose payloads and audio metadata both satisfy the current
+contracts remain complete. The audio metadata cutover requires earlier saved
+recordings to be downloaded again.
+
+The same verification checks the audio metadata and every cached chunk. Missing,
+incomplete or unreadable audio becomes a retryable error; Retry resumes from the
+longest contiguous prefix that survived. Registry state alone never proves
+playability. A new download cannot become complete until the recording-entry
+request, the event-detail request for event downloads, and package validation
+succeed. The header's Downloads badge counts only verified complete packages.
+
+The database remains at version 6. No data conversion or database migration runs
+for this policy. The `pendingPlaybackProgress` store is left intact, including
+when an unsupported download is discarded, so unsynchronised listening progress
+can still reach the server. The rule applies to completed packages received from
+other tabs as well as those found at startup.
 
 One queued download runs at a time. A global Web Lock prevents queue ownership
 in two tabs, a per-download lock prevents concurrent mutation of one record,
@@ -184,8 +181,9 @@ and re-download.
 On startup and reconnect, the manager rechecks completed packages for the
 signed-in account. If the account no longer has transcript-download
 permission, it removes the stored transcript and diarization while retaining
-audio and artwork; packages written before the event-detail and entry payloads
-were stored receive them. This best-effort revocation cannot remove data from a device
+audio and artwork. It refreshes stored speaker permission and removes the
+overlay when that permission is revoked. It does not repair unsupported package
+formats. This best-effort revocation cannot remove data from a device
 that remains offline; temporary network or authentication failures are not
 treated as permission decisions. Signing out deletes the database and
 protected audio/shell caches.
@@ -213,14 +211,6 @@ session request still pending) it shows neither sign-in nor the signed-out
 appearance toggles. When the connection returns, the shell requests the
 session again so the header shows the signed-in account without a full
 navigation.
-
-A worker from before this shell answers a failed navigation with a redirect to
-`/downloads?from=<original URL>`. Until the new worker is applied through the
-update banner, the shell honours that `from` URL when it is same-origin: it
-restores path and search with `history.replaceState`, lets the router re-read
-the URL, and then renders the requested page from local packages with its
-query parameters intact. This is what makes downloads made before a deploy
-usable offline during the update window.
 
 `web/public/sw.js` serves complete downloaded audio first, serves `/downloads`
 network-first with a cached-shell fallback, and answers other failed app
@@ -314,11 +304,11 @@ application.
 | Source selection | Page data comes from the server whenever the document or data request succeeds; the local source is used when that request fails and a complete local package exists. Audio prefers a complete local package even while online, because it is the same bytes by hash and avoids the online-to-offline transition as a special case. Do not use `navigator.onLine` as the sole decision because it does not prove a request will succeed. |
 | Routing and application shell | Cache a session-free local-mode bootstrap that can start after a reload or browser/PWA restart without changing the requested URL. Render Downloads for home/catalog navigation and the shared downloaded event or recording page at its normal URL. |
 | Download package schema | Store selected recording identity and every read-only display value required by the shared event-page and event-card models. Store published artwork and, when permitted, the default transcript together with its diarization, in the same shape the shared transcript component consumes online, with an explicit content-availability manifest. |
-| Download completion and markers | Mark an event complete only after the local playback implementation loads its package, reaches metadata, performs a silent non-zero seek, and reaches `canplay` without calling `play()`. Required model data must be durable, and each conditional payload must be stored or authoritatively known to be unavailable or not permitted. Derive status from catalog/event identity and recording hash, with migration support for existing records. |
+| Download completion and markers | Mark an event complete only after the local playback implementation loads its package, reaches metadata, performs a silent non-zero seek, and reaches `canplay` without calling `play()`. Required model data must be durable, and each conditional payload must be stored or authoritatively known to be unavailable or not permitted. Derive status from catalog/event identity and recording hash; unsupported stored shapes require a new download. |
 | Audio storage and transport | Keep media storage and online/local resolution behind a boundary that is invisible to pages and components. The worker or media layer transports local audio; neither decides product routing nor owns long-running downloads. |
 | Permissions and lifecycle | Retain transcript content only when permitted, reconcile it after a successful reconnect, and delete user-owned packages and protected caches on sign-out. |
 | Playback progress | Preserve local playback position while offline and synchronise it when the account reconnects, using the existing durable pending-progress mechanism. |
-| Migration and cleanup | Migrate existing registry/bundle records where possible; retire the separate offline-detail implementation and fixed banner only after shared local pages are in use. |
+| Compatibility and cleanup | Retain packages that already satisfy the current shape. Discard unsupported bundle/audio content while keeping retryable identity, display snapshots and unsynchronised playback progress. Retire legacy selection and navigation paths. |
 | Test coverage | Add browser-level coverage for offline transition, offline cold start and reload, event switching, shared-page parity, marker visibility on mobile/desktop, transcript parity, events with and without artwork, permissions, and unavailable local content. |
 
 ## Offline event package

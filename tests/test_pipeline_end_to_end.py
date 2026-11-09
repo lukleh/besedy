@@ -269,7 +269,7 @@ def test_catalog_create_then_run_pipeline_produces_what_the_web_reads(
     assert backends.calls == ["faster-whisper", "pyannote", "pyannote", "cluster-speakers"]
 
 
-def test_pipeline_skips_incomplete_loudness_before_transcription(
+def test_pipeline_remeasures_incomplete_loudness_before_transcription(
     pipeline_env, require_ffmpeg, capsys
 ) -> None:  # type: ignore[no-untyped-def]
     tmp_path, text_root, audio_root, backends = pipeline_env
@@ -282,9 +282,7 @@ def test_pipeline_skips_incomplete_loudness_before_transcription(
     timestamp = catalog_csv.stem.removeprefix("audio_catalog_")
     source_rows = _rows(catalog_csv)
     incomplete = next(row for row in source_rows if Path(row["Full Path"]).name == "incomplete.wav")
-    good_hash = next(row["Hash"] for row in source_rows if row["Hash"] != incomplete["Hash"])
-    # A legacy partial analysis is considered cached by the loudness command.
-    # Staging must not turn it into a successful plain conversion.
+    # Incomplete cached measurements must be recomputed before staging.
     loudness_csv = catalog_csv.with_name(f"{catalog_csv.stem}_loudness.csv")
     with loudness_csv.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
@@ -304,18 +302,8 @@ def test_pipeline_skips_incomplete_loudness_before_transcription(
         ]
     )
 
-    assert result == 2
+    assert result == 0
     normalized = _rows(catalog_csv.with_name(f"{catalog_csv.stem}_loudness_normalized.csv"))
-    assert [row["Hash"] for row in normalized] == [good_hash]
-    assert backends.transcribed_hashes == [good_hash]
-    assert not (audio_root / f"audio_staged_{timestamp}" / f"{incomplete['Hash']}.wav").exists()
-    (workflow,) = get_transcription_workflows(workflow_id="faster-whisper")
-    transcripts_root = resolve_transcripts_parent() / f"transcripts_{timestamp}"
-    assert path_builder(workflow).artifact_path(good_hash, transcripts_root).is_file()
-    assert not path_builder(workflow).artifact_path(incomplete["Hash"], transcripts_root).exists()
-    output = capsys.readouterr().out
-    assert "Skipped rows: 1" in output
-    assert f"{incomplete['Hash']}: missing loudness measurements:" in output
-    assert "true_peak_db" in output
-    assert "catalog loudness --overwrite" in output
-    assert "  - stage-audio" in output
+    assert {row["Hash"] for row in normalized} == {row["Hash"] for row in source_rows}
+    assert set(backends.transcribed_hashes) == {row["Hash"] for row in source_rows}
+    assert (audio_root / f"audio_staged_{timestamp}" / f"{incomplete['Hash']}.wav").is_file()

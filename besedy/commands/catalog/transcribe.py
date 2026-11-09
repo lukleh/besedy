@@ -303,7 +303,7 @@ def handle_transcribe(
                 file=sys.stderr,
             )
             return 1
-        rows = [row for row in rows if row.sha256.strip().lower() == target_hash]
+        rows = [row for row in rows if row.audio_hash.strip().lower() == target_hash]
         if not rows:
             print(
                 f"Error: hash {target_hash} not found in {csv_path.name}.",
@@ -377,7 +377,7 @@ def handle_transcribe(
     }
     pending_hashes = {plan.audio_hash for plans in plans_by_config.values() for plan in plans}
     already_complete = sum(
-        hash_component_from_sha(row.sha256) not in pending_hashes for row in rows
+        hash_component_from_sha(row.audio_hash) not in pending_hashes for row in rows
     )
 
     transcription_jobs = []
@@ -394,7 +394,7 @@ def handle_transcribe(
     selected_hashes = {
         audio_hash for job in transcription_jobs for audio_hash in job.hashes | job.align_hashes
     }
-    filtered_rows = [row for row in rows if hash_component_from_sha(row.sha256) in selected_hashes]
+    filtered_rows = [row for row in rows if hash_component_from_sha(row.audio_hash) in selected_hashes]
 
     if not filtered_rows:
         print("No audio files require transcription.")
@@ -416,7 +416,7 @@ def handle_transcribe(
         print_workflow_summary(prepared, skipped_total, [], already_complete=already_complete)
         return EXIT_ROWS_SKIPPED if skipped_total else 0
 
-    valid_hashes = {hash_component_from_sha(entry.sha256) for entry in prepared}
+    valid_hashes = {hash_component_from_sha(entry.audio_hash) for entry in prepared}
     transcription_jobs = [
         TranscriptionJob(
             job.config,

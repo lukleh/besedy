@@ -5,23 +5,16 @@ import fs from 'fs/promises';
  * Part of every stored fingerprint. Bump it when sync starts reading
  * something new from unchanged sources: the next sync then sees every source
  * as changed and rebuilds it once, instead of skipping a file whose bytes
- * are the same. v5: reject malformed CSVs and invalid recording identities.
+ * are the same. v6 requires complete current headers and the decoded-audio hash contract.
  */
-export const SOURCE_FINGERPRINT_VERSION = 'v5';
+export const SOURCE_FINGERPRINT_VERSION = 'v6';
 
 export interface SourceSnapshot {
   content: string;
   fingerprint: string;
 }
 
-/**
- * Build a content generation identifier for a catalog source.
- *
- * Earlier fingerprints used file size, mtime, and the resolved path. Those
- * attributes are useful cache hints but are not an identity: deployments can
- * preserve them while replacing a file. A versioned SHA-256 makes the stored
- * projection generation depend only on the bytes that were parsed.
- */
+/** Hash the exact parsed source bytes under the current projection contract. */
 export function buildSourceFingerprint(content: string | Uint8Array): string {
   const digest = createHash('sha256').update(content).digest('hex');
   return `${SOURCE_FINGERPRINT_VERSION}:sha256:${digest}`;

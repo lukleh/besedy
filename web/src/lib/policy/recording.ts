@@ -73,8 +73,7 @@ export function canViewRecordingForGrant(
  * Whether the actor sees that more than one machine transcript exists.
  *
  * Administrative: the alternatives are unevaluated model output, and every
- * other role reads the one default backend. Covers the per-recording picker
- * and the multi-backend stream view.
+ * other role reads the one default backend. Covers the per-recording picker.
  */
 export function canSeeTranscriptVariants(context: CatalogPolicyContext): boolean {
   return (

@@ -8,7 +8,7 @@
 
 **Cause:** The file was written in another encoding (for example ISO-8859-1)
 or is not JSON at all (for example a macOS `._*` resource-fork file).
-`load_json_with_fallback()` reads strict UTF-8 and refuses such files rather
+`load_json_utf8()` reads strict UTF-8 and refuses such files rather
 than dropping the bytes it cannot decode.
 
 **Fix:** Check the file with `file -i <path>`. Regenerate it, or convert it
@@ -167,12 +167,12 @@ transcript into memory at once.
 ```python
 from pathlib import Path
 from besedy.core.paths import iter_transcript_paths
-from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.data.encoding import load_json_utf8
 from besedy.lib.data.lookup import find_transcripts_for_hash, load_transcript_json
 
 # Stream all transcripts
 for path in iter_transcript_paths(Path("transcripts")):
-    transcript = load_json_with_fallback(path)
+    transcript = load_json_utf8(path)
     ...
 
 # Or scope to a single hash/workflow up front

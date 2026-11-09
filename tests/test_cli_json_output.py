@@ -50,21 +50,21 @@ def _patch_catalog_check(
 
     csv_path = tmp_path / "audio_catalog_20260101_000000.csv"
     csv_path.write_text("Hash,Full Path\n", encoding="utf-8")
-    normalized_path = tmp_path / "audio_catalog_20260101_000000_normalized.csv"
+    normalized_path = tmp_path / "audio_catalog_20260101_000000_loudness_normalized.csv"
     normalized_path.write_text("Hash,Full Path\n", encoding="utf-8")
     transcripts_root = tmp_path / "transcripts_20260101_000000"
     transcripts_root.mkdir()
 
     catalog_entries = [
         CatalogEntry(
-            sha256=hash_a,
+            audio_hash=hash_a,
             filename="a.wav",
             full_path=str(tmp_path / "a.wav"),
             duration_str="00:01:00",
             duration_seconds=60.0,
         ),
         CatalogEntry(
-            sha256=hash_b,
+            audio_hash=hash_b,
             filename="b.wav",
             full_path=str(tmp_path / "b.wav"),
             duration_str="00:01:00",

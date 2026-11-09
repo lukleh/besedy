@@ -79,10 +79,6 @@ export function buildTranscriptDownloadUrl(
   return `${buildTranscriptBackendsUrl(catalogId, hash)}/download?${params.toString()}`;
 }
 
-export function buildTranscriptCompareUrl(catalogId: string, hash: string): string {
-  return `${buildTranscriptBackendsUrl(catalogId, hash)}/compare`;
-}
-
 export function buildDiarizationBackendsUrl(catalogId: string, hash: string): string {
   return `${buildTranscriptBackendsUrl(catalogId, hash)}/speakers`;
 }

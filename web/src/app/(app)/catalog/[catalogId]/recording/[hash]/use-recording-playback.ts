@@ -488,8 +488,7 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     persistCurrentPlaybackPosition({ positionSec: time });
   }, [persistCurrentPlaybackPosition]);
 
-  // Seeks from outside the player (transcript clicks, the stream timeline)
-  // are handed to it as a request.
+  // Transcript clicks are handed to the player as a seek request.
   const handleSeek = useCallback((time: number) => {
     noteSeek(time);
     setSeekRequest({ time, key: Date.now() });
@@ -509,7 +508,6 @@ export function useRecordingPlayback(catalogId: string, hash: string) {
     handlePlayerSeek,
     handlePlayingChange,
     handleSeek,
-    isPlaying,
     seekRequest,
     setCurrentTime,
   };

@@ -25,12 +25,19 @@ from besedy.commands.catalog import stage as stage_command
 from besedy.commands.catalog.file_processing import AddFilesResult
 from besedy.commands.catalog.loudness import LoudnessRequest, handle_loudness
 from besedy.commands.catalog.stage import StageAudioRequest, handle_stage_audio
-from besedy.lib.catalog.manager import AUDIO_HASH_ALGORITHM, FileRecord, write_merged_csv
+from besedy.commands.catalog.ui import DUPLICATES_CSV_COLUMNS
+from besedy.lib.catalog.manager import (
+    AUDIO_HASH_ALGORITHM,
+    FileRecord,
+    catalog_fieldnames,
+    write_merged_csv,
+)
 from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 
 TS = "20260101_120000"
 HASH_A = "a" * 64
 HASH_B = "b" * 64
+CACHED_MEASUREMENTS = {"integrated_loudness_lufs": "-18.0", "true_peak_db": "-2", "loudness_range_lu": "3", "input_thresh": "-28", "target_offset": "0"}
 
 
 def _write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, str]]) -> None:
@@ -97,8 +104,8 @@ class TestLoudness:
         # A previous run already measured A; this run only has B to analyze.
         _write_csv(
             tmp_path / f"audio_catalog_{TS}_loudness.csv",
-            ["Hash", "Full Path", "integrated_loudness_lufs"],
-            [{"Hash": HASH_A, "Full Path": str(audio_a), "integrated_loudness_lufs": "-18.0"}],
+            ["Hash", "Full Path", *CACHED_MEASUREMENTS],
+            [{"Hash": HASH_A, "Full Path": str(audio_a), **CACHED_MEASUREMENTS}],
         )
         return catalog
 
@@ -118,14 +125,14 @@ class TestLoudness:
         # The old catalog also had a column removed from the current schema.
         _write_csv(
             loudness_csv,
-            ["Hash", "Full Path", "title", "old_column", "integrated_loudness_lufs"],
+            ["Hash", "Full Path", "title", "old_column", *CACHED_MEASUREMENTS],
             [
                 {
                     "Hash": HASH_A,
                     "Full Path": "/missing/old.wav",
                     "title": "Old title",
                     "old_column": "obsolete",
-                    "integrated_loudness_lufs": "-18.0",
+                    **CACHED_MEASUREMENTS,
                 }
             ],
         )
@@ -161,7 +168,7 @@ class TestLoudness:
         )
         _write_csv(
             loudness_csv,
-            ["Hash", "Full Path", "integrated_loudness_lufs"],
+            ["Hash", "Full Path", *CACHED_MEASUREMENTS],
             [
                 *rows,
                 {"Hash": HASH_B, "Full Path": "/removed.wav", "integrated_loudness_lufs": "-20"},
@@ -276,7 +283,7 @@ class TestStageAudioManifest:
     def _staging(*, error: BaseException | None):
         def stage_audio_files(_rows, _staging_dir, *, manifest_writer, **_kwargs):
             manifest_writer.write_entry(
-                SimpleNamespace(sha256=HASH_B, staged=Path("/staged/b.wav")), size_bytes=1
+                SimpleNamespace(audio_hash=HASH_B, staged=Path("/staged/b.wav")), size_bytes=1
             )
             if error is not None:
                 raise error
@@ -342,13 +349,13 @@ class TestAddDuplicates:
         catalog = tmp_path / f"audio_catalog_{TS}.csv"
         _write_csv(
             catalog,
-            ["Hash", "Hash Algorithm", "Full Path"],
-            [{"Hash": HASH_A, "Hash Algorithm": AUDIO_HASH_ALGORITHM, "Full Path": "/a.wav"}],
+            catalog_fieldnames(),
+            [{"Hash": HASH_A, "Hash Algorithm": AUDIO_HASH_ALGORITHM, "Full Path": "/a.wav", "added_at": "2026-01-01T00:00:00Z"}],
         )
         duplicates_csv = catalog.with_name(f"audio_catalog_{TS}_duplicates.csv")
         _write_csv(
             duplicates_csv,
-            ["Hash", "Original Path", "Duplicate Path"],
+            list(DUPLICATES_CSV_COLUMNS),
             [{"Hash": HASH_A, "Original Path": "/a.wav", "Duplicate Path": "/old-copy.wav"}],
         )
         before = duplicates_csv.read_bytes()

@@ -198,9 +198,7 @@ function createAudioStreamResponse(
  *
  * Supports HTTP Range requests for seeking.
  * Query params:
- * - source: Audio source - "archived" (default) or "original". The retired
- *   "listening" source and the `variant` param from old clients are served
- *   as archived.
+ * - source: Audio source - "archived" (default) or "original".
  * - format: "webm" (default) or "aac", the AAC-in-MP4 copy of the resolved
  *   source. There is no fallback to WebM: iOS Safari cannot stream it, so a
  *   missing copy is a 404 and the client picks another source or format.
@@ -280,14 +278,14 @@ export async function GET(
     ({ id: catalogId, hash } = paramsResult.data);
 
     // Validate query parameters
-    const queryResult = AudioQuerySchema.safeParse({
-      source: searchParams.get("source") ?? undefined,
-      format: searchParams.get("format") ?? undefined,
-      download: searchParams.get("download") ?? undefined,
-    });
-    if (!queryResult.success) {
+    const queryValues = Object.fromEntries(searchParams);
+    const repeatedQueryKeys = searchParams.size !== Object.keys(queryValues).length;
+    const queryResult = AudioQuerySchema.safeParse(queryValues);
+    if (!queryResult.success || repeatedQueryKeys) {
       const response = NextResponse.json(
-        { error: "Invalid query parameters", details: queryResult.error.flatten() },
+        { error: "Invalid query parameters", details: queryResult.success
+          ? { formErrors: ["Repeated query parameters are not allowed"], fieldErrors: {} }
+          : queryResult.error.flatten() },
         { status: 400 }
       );
       servedSource = null;

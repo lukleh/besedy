@@ -41,11 +41,11 @@ def test_beam_stages_are_planned_for_the_same_recording(
 def test_other_backends_plan_only_transcription(tmp_path, overwrite):
     config = make_workflow_config()
     rows = [CsvAudioRow(char * 64, f"{char}.wav") for char in "ab"]
-    directory = tmp_path / rows[0].sha256
+    directory = tmp_path / rows[0].audio_hash
     directory.mkdir()
     (directory / "transcript.json").write_text("{}", encoding="utf-8")
     plans = plan_transcription(rows, config, tmp_path, overwrite=overwrite)
     assert [p.audio_hash for p in plans] == [
-        row.sha256 for row in (rows if overwrite else rows[1:])
+        row.audio_hash for row in (rows if overwrite else rows[1:])
     ]
     assert all(p.transcribe and not p.align for p in plans)

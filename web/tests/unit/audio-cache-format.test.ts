@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUDIO_URL_PATTERN,
   deleteAudioCacheEntries,
+  discardUnsupportedAudioCache,
   extractAudioHashFromKey,
   getAudioCacheKey,
   getAudioChunkKey,
@@ -33,14 +34,18 @@ class MemoryCache {
   }
 }
 
+afterEach(() => vi.unstubAllGlobals());
+
 describe("audio cache format", () => {
-  it("normalizes cache keys to source and variant only", () => {
+  it("normalizes current audio keys and rejects retired source selectors", () => {
     const base = getAudioCacheKey(AUDIO_PATH, ORIGIN);
     expect(base).toBe(`${ORIGIN}${AUDIO_PATH}`);
     expect(getAudioCacheKey(`${AUDIO_PATH}?source=archived&download=true`, ORIGIN)).toBe(base);
-    expect(getAudioCacheKey(`${AUDIO_PATH}?variant=loud&source=listening`, ORIGIN)).toBe(
-      `${base}?source=listening&variant=loud`
-    );
+    expect(() => getAudioCacheKey(`${AUDIO_PATH}?variant=loud&source=listening`, ORIGIN)).toThrow('Unsupported audio cache URL');
+  });
+
+  it.each(['source=', 'format=', 'source=listening', 'variant=mobile', 'group=old', 'unknown=1', 'local=no', 'download=maybe', 'format=webm&format=aac', 'source=archived&source=original'])('rejects unsupported cache selectors: %s', (query) => {
+    expect(() => getAudioCacheKey(`${AUDIO_PATH}?${query}`, ORIGIN)).toThrow();
   });
 
   it("keeps the AAC copy under its own key and WebM keys unchanged", () => {
@@ -48,9 +53,7 @@ describe("audio cache format", () => {
     // A package downloaded before `format` existed keeps its key.
     expect(getAudioCacheKey(`${AUDIO_PATH}?format=webm&local=1`, ORIGIN)).toBe(base);
     expect(getAudioCacheKey(`${AUDIO_PATH}?format=aac&local=1`, ORIGIN)).toBe(`${base}?format=aac`);
-    expect(
-      getAudioCacheKey(`${AUDIO_PATH}?format=aac&variant=loud&source=listening`, ORIGIN)
-    ).toBe(`${base}?source=listening&variant=loud&format=aac`);
+    expect(() => getAudioCacheKey(`${AUDIO_PATH}?format=aac&variant=loud&source=listening`, ORIGIN)).toThrow();
     // Cleaning up the WebM package cannot touch the AAC one.
     expect(isAudioCacheEntryFor(base, `${base}?format=aac&_meta`)).toBe(false);
     expect(isAudioCacheEntryFor(`${base}?format=aac`, `${base}?format=aac&_chunk=0`)).toBe(true);
@@ -83,6 +86,8 @@ describe("audio cache format", () => {
     const cache = new MemoryCache();
     const base = getAudioCacheKey(AUDIO_PATH, ORIGIN);
     await writeAudioCacheMeta(cache as unknown as Cache, base, {
+      schemaVersion: 1,
+      generation: 'test-generation',
       totalSize: 10,
       chunkCount: 2,
       chunkSizes: [4, 3],
@@ -91,6 +96,8 @@ describe("audio cache format", () => {
     });
     const meta = await readAudioCacheMeta(cache as unknown as Cache, base);
     expect(meta).toEqual({
+      schemaVersion: 1,
+      generation: 'test-generation',
       totalSize: 10,
       chunkCount: 2,
       chunkSizes: [4, 3],
@@ -108,10 +115,11 @@ describe("audio cache format", () => {
     ).toBe(100);
   });
 
-  it("preserves download generations while keeping legacy metadata readable", async () => {
+  it("preserves the current metadata schema and generation", async () => {
     const cache = new MemoryCache();
     const base = getAudioCacheKey(AUDIO_PATH, ORIGIN);
     const meta = {
+      schemaVersion: 1 as const,
       totalSize: 3,
       chunkCount: 1,
       chunkSizes: [3],
@@ -121,6 +129,9 @@ describe("audio cache format", () => {
     };
     await writeAudioCacheMeta(cache as unknown as Cache, base, meta);
     expect(await readAudioCacheMeta(cache as unknown as Cache, base)).toEqual(meta);
+    const { schemaVersion: _schemaVersion, ...unsupported } = meta;
+    await cache.put(getAudioMetaKey(base), new Response(JSON.stringify(unsupported)));
+    expect(await readAudioCacheMeta(cache as unknown as Cache, base)).toBeNull();
   });
 
   it("rejects malformed metadata", async () => {
@@ -129,6 +140,17 @@ describe("audio cache format", () => {
     expect(await readAudioCacheMeta(cache as unknown as Cache, "k")).toBeNull();
     await cache.put("k?_meta", new Response("not json"));
     expect(await readAudioCacheMeta(cache as unknown as Cache, "k")).toBeNull();
+  });
+
+  it.each([false, true])('discards unsupported bytes only with cross-tab locks: %s', async (withLocks) => {
+    vi.stubGlobal('navigator', withLocks ? { locks: { request: (_name: string, work: () => Promise<unknown>) => work() } } : {});
+    const cache = new MemoryCache();
+    const base = getAudioCacheKey(AUDIO_PATH, ORIGIN);
+    await cache.put(getAudioMetaKey(base), new Response(JSON.stringify({ totalSize: 1, chunkSizes: [1], contentType: 'audio/webm', complete: true })));
+    await cache.put(getAudioChunkKey(base, 0), new Response('a'));
+    expect(await discardUnsupportedAudioCache(cache as unknown as Cache, base)).toBe(withLocks);
+    expect(cache.store.has(getAudioMetaKey(base))).toBe(!withLocks);
+    expect(cache.store.has(getAudioChunkKey(base, 0))).toBe(!withLocks);
   });
 
   it("deletes only the entries of the given key", async () => {

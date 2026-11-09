@@ -17,7 +17,7 @@ import json
 import pytest
 
 from tests.helpers.audio import create_speech_like_wav
-from tests.helpers.transcript import SAMPLE_AUDIO_HASH
+from tests.helpers.transcript import SAMPLE_AUDIO_HASH, canonical_transcript
 
 
 @pytest.fixture
@@ -125,6 +125,7 @@ class TestFasterWhisperRealTranscription:
                     "start": seg.start,
                     "end": seg.end,
                     "text": seg.text,
+                    "confidence": None,
                     "words": [
                         {
                             "word": w.word,
@@ -142,9 +143,9 @@ class TestFasterWhisperRealTranscription:
         # Non-speech audio may produce empty segments - that's OK for this test
         # We're testing that the conversion format is correct when there ARE segments
         if segment_list:
-            from besedy.lib.validation.core import validate_shared_schema
+            from besedy.lib.validation.core import validate_canonical_schema
 
-            issues = validate_shared_schema(canonical)
+            issues = validate_canonical_schema(canonical_transcript(canonical["segments"]))
             assert issues == [], f"Schema validation failed: {issues}"
         else:
             # Empty segments is expected for non-speech test audio
@@ -215,7 +216,7 @@ class TestTranscriptSchemaValidation:
     @pytest.fixture
     def sample_canonical_transcript(self):
         """A valid canonical transcript."""
-        return {
+        data = {
             "segments": [
                 {
                     "start": 0.0,
@@ -241,28 +242,34 @@ class TestTranscriptSchemaValidation:
             ]
         }
 
+        for segment in data["segments"]:
+            segment.setdefault("confidence", None)
+            for word in segment["words"]:
+                word.setdefault("confidence", None)
+        return canonical_transcript(data["segments"])
+
     def test_valid_transcript_passes_validation(self, sample_canonical_transcript):
         """Valid transcript passes schema validation."""
-        from besedy.lib.validation.core import validate_shared_schema
+        from besedy.lib.validation.core import validate_canonical_schema
 
-        issues = validate_shared_schema(sample_canonical_transcript)
+        issues = validate_canonical_schema(sample_canonical_transcript)
         assert issues == []
 
-    def test_transcript_without_words_is_valid(self):
-        """Transcript without words array is valid."""
-        from besedy.lib.validation.core import validate_shared_schema
+    def test_transcript_without_words_is_rejected(self):
+        """Current transcripts require an explicit words array."""
+        from besedy.lib.validation.core import validate_canonical_schema
 
         transcript = {
             "segments": [
                 {"start": 0.0, "end": 2.5, "text": "Hello world."},
             ]
         }
-        issues = validate_shared_schema(transcript)
-        assert issues == []
+        issues = validate_canonical_schema(transcript)
+        assert issues
 
-    def test_transcript_without_confidence_is_valid(self):
-        """Transcript without confidence is valid."""
-        from besedy.lib.validation.core import validate_shared_schema
+    def test_transcript_without_confidence_is_rejected(self):
+        """Current transcripts require confidence, allowing an explicit null."""
+        from besedy.lib.validation.core import validate_canonical_schema
 
         transcript = {
             "segments": [
@@ -276,31 +283,31 @@ class TestTranscriptSchemaValidation:
                 },
             ]
         }
-        issues = validate_shared_schema(transcript)
-        assert issues == []
+        issues = validate_canonical_schema(transcript)
+        assert issues
 
     def test_empty_segments_fails_validation(self):
         """Empty segments array fails validation (requires at least one segment)."""
-        from besedy.lib.validation.core import validate_shared_schema
+        from besedy.lib.validation.core import validate_canonical_schema
 
         transcript = {"segments": []}
-        issues = validate_shared_schema(transcript)
+        issues = validate_canonical_schema(transcript)
         # Current implementation requires non-empty segments
         assert len(issues) > 0
-        assert any("empty" in str(i).lower() for i in issues)
+        assert any("meta" in str(i).lower() for i in issues)
 
     def test_missing_segments_fails_validation(self):
         """Missing segments key fails validation."""
-        from besedy.lib.validation.core import validate_shared_schema
+        from besedy.lib.validation.core import validate_canonical_schema
 
         transcript = {"text": "Hello world"}
-        issues = validate_shared_schema(transcript)
+        issues = validate_canonical_schema(transcript)
         assert len(issues) > 0
         assert any("segments" in str(i).lower() for i in issues)
 
     def test_segment_missing_required_fields_fails(self):
         """Segment missing start/end/text fails validation."""
-        from besedy.lib.validation.core import validate_shared_schema
+        from besedy.lib.validation.core import validate_canonical_schema
 
         # Missing 'text'
         transcript = {
@@ -308,20 +315,20 @@ class TestTranscriptSchemaValidation:
                 {"start": 0.0, "end": 2.5},
             ]
         }
-        issues = validate_shared_schema(transcript)
+        issues = validate_canonical_schema(transcript)
         assert len(issues) > 0
         assert any("text" in str(i).lower() for i in issues)
 
     def test_segment_wrong_type_fails(self):
         """Segment with wrong field types fails validation."""
-        from besedy.lib.validation.core import validate_shared_schema
+        from besedy.lib.validation.core import validate_canonical_schema
 
         transcript = {
             "segments": [
-                {"start": "not a number", "end": 2.5, "text": "Hello"},
+                {"start": "not a number", "end": 2.5, "text": "Hello", "confidence": None, "words": []},
             ]
         }
-        issues = validate_shared_schema(transcript)
+        issues = validate_canonical_schema(transcript)
         assert len(issues) > 0
         assert any("number" in str(i).lower() for i in issues)
 

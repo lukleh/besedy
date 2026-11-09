@@ -73,7 +73,7 @@ Example:
 
 def _plan_payload(plan: RemovalPlan) -> dict[str, object]:
     return {
-        "hash": plan.sha256,
+        "hash": plan.audio_hash,
         "catalog_csv": str(plan.catalog_csv),
         "csv_rows": plan.csv_rows,
         "source_files": [str(path) for path in plan.source_files],
@@ -89,7 +89,7 @@ def _plan_payload(plan: RemovalPlan) -> dict[str, object]:
 
 
 def _format_plan(plan: RemovalPlan, *, executed: RemovalResult | None) -> str:
-    lines = [f"Recording {plan.sha256}"]
+    lines = [f"Recording {plan.audio_hash}"]
     lines.append(f"  catalog: {plan.catalog_csv}")
     for name, count in plan.csv_rows.items():
         lines.append(f"  rows in {name}: {count}")
@@ -173,7 +173,7 @@ def handle_remove(args: argparse.Namespace) -> int:
                 result={"status": "not_found", **_plan_payload(plan)},
             )
         else:
-            print(f"Nothing to remove for {plan.sha256}: no catalog rows or artifacts found.")
+            print(f"Nothing to remove for {plan.audio_hash}: no catalog rows or artifacts found.")
         return 0
 
     if not execute:

@@ -149,7 +149,7 @@ describe("proxy security controls", () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe("http://localhost/");
-    expect(response.headers.get("X-App-Commit")).toBeTruthy();
+    expect(response.headers.get("X-Web-Version")).toBeTruthy();
     expect(response.headers.get("X-Web-Version")).toBeTruthy();
     expect(response.headers.get("X-Frame-Options")).toBe("DENY");
     expect(response.headers.get("Strict-Transport-Security")).toBe(
@@ -167,7 +167,7 @@ describe("proxy security controls", () => {
     expect(response.headers.get("location")).toBe(
       "http://localhost/auth/signin?callbackUrl=%2Fcatalog"
     );
-    expect(response.headers.get("X-App-Commit")).toBeTruthy();
+    expect(response.headers.get("X-Web-Version")).toBeTruthy();
     expect(response.headers.get("X-Frame-Options")).toBe("DENY");
   });
 
@@ -187,7 +187,7 @@ describe("proxy security controls", () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe("http://localhost/catalog");
-    expect(response.headers.get("X-App-Commit")).toBeTruthy();
+    expect(response.headers.get("X-Web-Version")).toBeTruthy();
     expect(response.headers.get("Content-Security-Policy")).toContain(
       "default-src 'self'"
     );
@@ -209,7 +209,7 @@ describe("proxy security controls", () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe("http://localhost/catalog");
-    expect(response.headers.get("X-App-Commit")).toBeTruthy();
+    expect(response.headers.get("X-Web-Version")).toBeTruthy();
   });
 
   it("shows the sign-in page for a signed-out visit that carries OAuth callback parameters", async () => {
@@ -223,7 +223,7 @@ describe("proxy security controls", () => {
     // Callback failures can be displayed directly by the sign-in page.
     expect(response.status).toBe(200);
     expect(response.headers.get("location")).toBeNull();
-    expect(response.headers.get("X-App-Commit")).toBeTruthy();
+    expect(response.headers.get("X-Web-Version")).toBeTruthy();
   });
 
   it("applies security headers to allowlist rejection redirects", async () => {
@@ -238,7 +238,7 @@ describe("proxy security controls", () => {
     expect(response.headers.get("location")).toBe(
       "http://localhost/auth/unauthorized?error=not_authorized%3Auser%40example.com"
     );
-    expect(response.headers.get("X-App-Commit")).toBeTruthy();
+    expect(response.headers.get("X-Web-Version")).toBeTruthy();
     expect(response.headers.get("X-Frame-Options")).toBe("DENY");
   });
 

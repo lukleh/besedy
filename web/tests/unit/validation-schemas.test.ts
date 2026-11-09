@@ -475,7 +475,7 @@ describe("AudioQuerySchema", () => {
   it("accepts valid audio query params", () => {
     const result = AudioQuerySchema.safeParse({
       source: "archived",
-      group: "20251201_143022",
+      format: "aac",
     });
     expect(result.success).toBe(true);
   });
@@ -488,13 +488,8 @@ describe("AudioQuerySchema", () => {
     }
   });
 
-  it("serves the retired listening source from old clients as archived", () => {
-    const result = AudioQuerySchema.safeParse({ source: "listening", variant: "mobile" });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.source).toBe("archived");
-      expect(result.data).not.toHaveProperty("variant");
-    }
+  it.each([{ source: "listening" }, { variant: "mobile" }, { group: "20251201_143022" }])("rejects retired audio selectors: %j", (query) => {
+    expect(AudioQuerySchema.safeParse(query).success).toBe(false);
   });
 
   it("keeps the original source", () => {
