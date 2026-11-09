@@ -20,13 +20,14 @@ from besedy.commands.catalog.workflow_setup import (
 )
 from besedy.core.paths import SHA256_HASH_PATTERN, hash_component_from_sha
 from besedy.lib.audio.types import SkippedEntry
-from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED, CsvAudioRow
+from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 from besedy.lib.workflow.config import (
     WorkflowConfig,
     get_transcription_workflows,
     matches_language,
 )
 from besedy.lib.workflow.paths import path_builder
+from besedy.lib.workflow.planning import plan_transcription
 from besedy.lib.workflow.runner import (
     TranscriptionJob,
     WorkflowRunConfig,
@@ -45,6 +46,8 @@ class TranscribeRequest:
     continue_on_error: bool = False
     limit: int | None = None
     hash_filter: str | None = None
+    # Internal callers pass the variants they already selected, without CLI re-selection.
+    workflow_configs: tuple[WorkflowConfig, ...] | None = None
     workflows: list[str] | None = None
     model: str | None = None
     language: str | None = None
@@ -228,9 +231,7 @@ def selection_values_matching(config: WorkflowConfig, selection: set[str]) -> se
     related IDs (for example `canary` selecting `canary-nemo-beam`).
     """
     exact = {value for value in selection if value in (config.workflow_id, config.workflow_label)}
-    prefixes = {
-        value for value in selection - exact if config.workflow_id.startswith(f"{value}-")
-    }
+    prefixes = {value for value in selection - exact if config.workflow_id.startswith(f"{value}-")}
     return exact | prefixes
 
 
@@ -243,8 +244,21 @@ def handle_transcribe(
 
     # Resolve --workflow selections before touching the catalog or output root so
     # a typo cannot leave a timestamped output directory behind.
-    requested_configs: list[WorkflowConfig] | None = None
-    if request.workflows:
+    requested_configs = (
+        list(request.workflow_configs) if request.workflow_configs is not None else None
+    )
+    if requested_configs is not None and (
+        request.workflows
+        or request.model
+        or request.language is not None
+        or request.nemo_decode_strategy
+    ):
+        print(
+            "Error: exact workflow configurations cannot be combined with CLI selectors.",
+            file=sys.stderr,
+        )
+        return 1
+    if requested_configs is None and request.workflows:
         configured_workflows = get_transcription_workflows()
         selection = set(request.workflows)
         matched_values: set[str] = set()
@@ -355,79 +369,32 @@ def handle_transcribe(
 
     output_root = resolve_output_root(request.output_root)
 
-    workflow_dirs = {cfg: path_builder(cfg).workflow_dir(output_root) for cfg in selected_configs}
-
-    # Build per-config candidate lists (before applying limit)
-    # Each config tracks its candidates independently
-    candidates_by_config: dict[WorkflowConfig, list[tuple[CsvAudioRow, str]]] = {
-        cfg: [] for cfg in selected_configs
+    plans_by_config = {
+        cfg: plan_transcription(
+            rows, cfg, path_builder(cfg).workflow_dir(output_root), overwrite=request.overwrite
+        )
+        for cfg in selected_configs
     }
-    align_candidates_by_config: dict[WorkflowConfig, list[tuple[CsvAudioRow, str]]] = {
-        cfg: [] for cfg in selected_configs
+    pending_hashes = {plan.audio_hash for plans in plans_by_config.values() for plan in plans}
+    already_complete = sum(
+        hash_component_from_sha(row.sha256) not in pending_hashes for row in rows
+    )
+
+    transcription_jobs = []
+    for cfg, plans in plans_by_config.items():
+        selected_plans = plans if missing_limit is None else plans[:missing_limit]
+        if selected_plans:
+            transcription_jobs.append(
+                TranscriptionJob(
+                    cfg,
+                    hashes={plan.audio_hash for plan in selected_plans if plan.transcribe},
+                    align_hashes={plan.audio_hash for plan in selected_plans if plan.align},
+                )
+            )
+    selected_hashes = {
+        audio_hash for job in transcription_jobs for audio_hash in job.hashes | job.align_hashes
     }
-    # Rows whose outputs already exist for every selected config; reported as a count.
-    already_complete = 0
-
-    for row in rows:
-        hash_component = hash_component_from_sha(row.sha256)
-        row_needs_any_work = False
-
-        for cfg in selected_configs:
-            base_dir = workflow_dirs[cfg] / hash_component
-            if cfg.workflow_id in {"canary-nemo", "canary-nemo-beam"}:
-                if cfg.decode_strategy == "beam":
-                    segments_exists = (base_dir / "nemo_beam_segments.json").exists()
-                    transcript_exists = (base_dir / "transcript.json").exists()
-                    need_nemo = request.overwrite or not segments_exists
-                    need_align = request.overwrite or not transcript_exists
-                    if need_nemo:
-                        candidates_by_config[cfg].append((row, hash_component))
-                        row_needs_any_work = True
-                    if need_align:
-                        align_candidates_by_config[cfg].append((row, hash_component))
-                        row_needs_any_work = True
-                else:
-                    transcript_exists = (base_dir / "transcript.json").exists()
-                    need_nemo = request.overwrite or not transcript_exists
-                    if need_nemo:
-                        candidates_by_config[cfg].append((row, hash_component))
-                        row_needs_any_work = True
-            else:
-                transcript_exists = (base_dir / "transcript.json").exists()
-                need_run = request.overwrite or not transcript_exists
-                if need_run:
-                    candidates_by_config[cfg].append((row, hash_component))
-                    row_needs_any_work = True
-
-        if not row_needs_any_work:
-            already_complete += 1
-
-    # Apply limit per config independently
-    # This ensures each workflow/model configuration makes progress independently
-    if missing_limit is not None:
-        for cfg in selected_configs:
-            candidates_by_config[cfg] = candidates_by_config[cfg][:missing_limit]
-            align_candidates_by_config[cfg] = align_candidates_by_config[cfg][:missing_limit]
-
-    # Build pending_by_config and align_by_config from (potentially limited) candidates
-    pending_by_config: dict[WorkflowConfig, set[str]] = {cfg: set() for cfg in selected_configs}
-    align_by_config: dict[WorkflowConfig, set[str]] = {cfg: set() for cfg in selected_configs}
-    for cfg in selected_configs:
-        for row, hash_component in candidates_by_config[cfg]:
-            pending_by_config[cfg].add(hash_component)
-        for row, hash_component in align_candidates_by_config[cfg]:
-            align_by_config[cfg].add(hash_component)
-
-    # Collect all rows that will be processed (union across all configs)
-    # Preserve original catalog order
-    selected_sha256s: set[str] = set()
-    for cfg in selected_configs:
-        for row, hash_component in candidates_by_config[cfg]:
-            selected_sha256s.add(row.sha256)
-        for row, hash_component in align_candidates_by_config[cfg]:
-            selected_sha256s.add(row.sha256)
-
-    filtered_rows: list[CsvAudioRow] = [row for row in rows if row.sha256 in selected_sha256s]
+    filtered_rows = [row for row in rows if hash_component_from_sha(row.sha256) in selected_hashes]
 
     if not filtered_rows:
         print("No audio files require transcription.")
@@ -449,14 +416,16 @@ def handle_transcribe(
         print_workflow_summary(prepared, skipped_total, [], already_complete=already_complete)
         return EXIT_ROWS_SKIPPED if skipped_total else 0
 
-    transcription_jobs: list[TranscriptionJob] = []
-    for cfg in selected_configs:
-        hashes = pending_by_config.get(cfg, set())
-        align_hashes = align_by_config.get(cfg, set())
-        if hashes or align_hashes:
-            transcription_jobs.append(
-                TranscriptionJob(cfg, hashes=hashes, align_hashes=align_hashes)
-            )
+    valid_hashes = {hash_component_from_sha(entry.sha256) for entry in prepared}
+    transcription_jobs = [
+        TranscriptionJob(
+            job.config,
+            hashes=job.hashes & valid_hashes,
+            align_hashes=job.align_hashes & valid_hashes,
+        )
+        for job in transcription_jobs
+        if (job.hashes | job.align_hashes) & valid_hashes
+    ]
 
     workflow_config = WorkflowRunConfig(
         output_root=output_root,

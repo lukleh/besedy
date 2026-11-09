@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { z } from "zod";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
@@ -8,23 +8,8 @@ import {
   getStableAccessLoading,
 } from "@/lib/query/auth-sensitive";
 
-/**
- * Filter criteria matching the API endpoint
- */
-export interface CatalogFilters {
-  status?: "ready" | "incomplete" | "all";
-  duration?: "short" | "medium" | "long" | "all";
-  verified?: "verified" | "unverified" | "all";
-  recorder?: string; // "all" or numeric ID as string
-  location?: string; // "all" or numeric ID as string
-  album?: string; // "all" or numeric ID as string
-  part?: string; // "all" or numeric as string
-  dateYear?: string; // "all" or year as string
-  dateMonth?: string; // "all" or month as string
-  dateDay?: string; // "all" or day as string
-  artist?: string; // "all" or artist name
-  duplicates?: string; // "all" or count as string
-}
+import { buildCatalogFilterParams, type CatalogFilters } from "@/components/catalog/catalog-list/filter-state";
+export type { CatalogFilters } from "@/components/catalog/catalog-list/filter-state";
 
 interface FilterOption<T> {
   value: T;
@@ -117,75 +102,6 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-/**
- * Convert frontend filter values to API query params
- */
-function filtersToParams(filters: CatalogFilters): URLSearchParams {
-  const params = new URLSearchParams();
-
-  if (filters.status && filters.status !== "all") {
-    params.set("status", filters.status);
-  }
-  if (filters.duration && filters.duration !== "all") {
-    params.set("duration", filters.duration);
-  }
-  if (filters.verified && filters.verified !== "all") {
-    params.set("verified", filters.verified === "verified" ? "true" : "false");
-  }
-  if (filters.recorder && filters.recorder !== "all") {
-    params.set("recorder", filters.recorder);
-  }
-  if (filters.location && filters.location !== "all") {
-    params.set("location", filters.location);
-  }
-  if (filters.part && filters.part !== "all") {
-    params.set("part", filters.part);
-  }
-  if (filters.dateYear && filters.dateYear !== "all") {
-    params.set("dateYear", filters.dateYear);
-  }
-  if (filters.dateMonth && filters.dateMonth !== "all") {
-    params.set("dateMonth", filters.dateMonth);
-  }
-  if (filters.dateDay && filters.dateDay !== "all") {
-    params.set("dateDay", filters.dateDay);
-  }
-  if (filters.artist && filters.artist !== "all") {
-    params.set("artist", filters.artist);
-  }
-  if (filters.album && filters.album !== "all") {
-    params.set("album", filters.album);
-  }
-  if (filters.duplicates && filters.duplicates !== "all") {
-    params.set("duplicates", filters.duplicates);
-  }
-
-  return params;
-}
-
-/**
- * Normalize filters to a stable key for caching
- * Only includes non-default values
- */
-function normalizeFiltersForKey(filters: CatalogFilters): Record<string, string> {
-  const result: Record<string, string> = {};
-
-  if (filters.status && filters.status !== "all") result.status = filters.status;
-  if (filters.duration && filters.duration !== "all") result.duration = filters.duration;
-  if (filters.verified && filters.verified !== "all") result.verified = filters.verified;
-  if (filters.recorder && filters.recorder !== "all") result.recorder = filters.recorder;
-  if (filters.location && filters.location !== "all") result.location = filters.location;
-  if (filters.part && filters.part !== "all") result.part = filters.part;
-  if (filters.dateYear && filters.dateYear !== "all") result.dateYear = filters.dateYear;
-  if (filters.dateMonth && filters.dateMonth !== "all") result.dateMonth = filters.dateMonth;
-  if (filters.dateDay && filters.dateDay !== "all") result.dateDay = filters.dateDay;
-  if (filters.artist && filters.artist !== "all") result.artist = filters.artist;
-  if (filters.album && filters.album !== "all") result.album = filters.album;
-  if (filters.duplicates && filters.duplicates !== "all") result.duplicates = filters.duplicates;
-
-  return result;
-}
-
 interface UseFilterOptionsParams {
   groupId: string | undefined;
   filters: CatalogFilters;
@@ -205,18 +121,12 @@ export function useFilterOptions({
   // Debounce filters to prevent excessive API calls during rapid changes
   const debouncedFilters = useDebounce(filters, 150);
 
-  // Normalize for stable query key
-  const normalizedFilters = useMemo(
-    () => normalizeFiltersForKey(debouncedFilters),
-    [debouncedFilters]
-  );
+  const filterKey = buildCatalogFilterParams(debouncedFilters).toString();
 
   const query = useQuery<FilterOptionsResponse>({
-    queryKey: ["catalog-filter-options", groupId, normalizedFilters],
+    queryKey: ["catalog-filter-options", groupId, filterKey],
     queryFn: async () => {
-      const params = filtersToParams(debouncedFilters);
-      const query = params.toString();
-      const url = `/api/catalogs/${encodeURIComponent(groupId ?? "")}/recordings/filter-options${query ? `?${query}` : ""}`;
+      const url = `/api/catalogs/${encodeURIComponent(groupId ?? "")}/recordings/filter-options${filterKey ? `?${filterKey}` : ""}`;
       return fetchJson<FilterOptionsResponse>(url, {
         schema: filterOptionsResponseSchema,
       });
