@@ -33,6 +33,7 @@ from besedy.core.paths import (
     resolve_transcripts_parent,
     sanitize_component,
 )
+from besedy.lib.job_records import emit_job_record
 from besedy.lib.rag_colbert import check_colbert_runtime_ready, default_colbert_index_runtime
 from besedy.lib.runtime.backend_runtime import BackendRuntimeUnavailableError
 from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
@@ -57,6 +58,7 @@ def resolve_pipeline_workflows() -> tuple[list[WorkflowConfig], list[str]]:
 def print_step(step_num: int, total: int, name: str, detail: str = "") -> None:
     """Print a step header."""
     detail_str = f" ({detail})" if detail else ""
+    emit_job_record("progress", {"label": f"{name}{detail_str}", "step": step_num, "total": total})
     print(f"\n[{step_num}/{total}] {name}{detail_str}...")
     print("=" * 60)
 
