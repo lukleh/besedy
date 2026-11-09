@@ -63,9 +63,7 @@ export function useDownloadedEvents(
       if (record.catalogId !== catalogId) continue;
       statusByHash.set(record.hash, record.status);
 
-      // eventKey is the durable association. Event snapshots are display
-      // metadata and can be absent on records written by an earlier release.
-      // Do not make the catalog indicator depend on that optional payload.
+      // eventKey is the durable association; snapshots only supply display metadata.
       if (record.eventKey?.startsWith(eventKeyPrefix)) {
         const eventId = Number(record.eventKey.slice(eventKeyPrefix.length));
         if (Number.isSafeInteger(eventId) && eventId >= 0) {
@@ -73,8 +71,6 @@ export function useDownloadedEvents(
           continue;
         }
       }
-
-      if (record.event) result.set(record.event.id, record.status);
     }
 
     // An individual recording download is still enough to play an event that

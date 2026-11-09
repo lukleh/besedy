@@ -15,9 +15,8 @@
  * The shared pages are imported statically so their chunks belong to this
  * document and are cached by the same warm-up that caches the shell itself.
  */
-import { useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Loader2, WifiOff } from 'lucide-react';
 import RecordingContent from '@/app/(app)/catalog/[catalogId]/recording/[hash]/recording-content';
@@ -28,47 +27,13 @@ import { DOWNLOADS_PATH } from '@/lib/offline/cache-names';
 import { resolveLocalRoute } from '@/lib/offline/local-route';
 import { DownloadsContent } from './downloads-content';
 
-/**
- * A worker from before the URL-preserving shell answers a failed navigation
- * with a redirect to `/downloads?from=<pathname + search>`. Until that worker
- * is replaced, the shell honours that URL. Only a same-origin URL is
- * accepted; the parser also normalises forms such as a backslash path that a
- * prefix check would let through and `replaceState` would then reject.
- */
-export function legacyRedirectTarget(from: string | null): string | null {
-  if (!from || typeof window === 'undefined') return null;
-  let url: URL;
-  try {
-    url = new URL(from, window.location.origin);
-  } catch {
-    return null;
-  }
-  if (url.origin !== window.location.origin) return null;
-  return `${url.pathname}${url.search}`;
-}
-
 export function LocalModeShell() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const hydrated = useIsHydrated();
-  const redirectTarget =
-    hydrated && pathname === DOWNLOADS_PATH
-      ? legacyRedirectTarget(searchParams.get('from'))
-      : null;
-
-  useEffect(() => {
-    if (!redirectTarget) return;
-    // Restore the requested URL, search included. A plain state object lets
-    // the Next.js router pick the change up, so usePathname and
-    // useSearchParams then describe the requested page and routing below
-    // proceeds normally with its query parameters (seek, end).
-    window.history.replaceState(null, '', redirectTarget);
-  }, [redirectTarget]);
-
   // The server renders this document for /downloads. The URL it is replayed
   // at is only known on the client, so route after hydration to keep the
-  // server and client trees identical. A legacy redirect is resolved first.
-  if (!hydrated || redirectTarget) {
+  // server and client trees identical.
+  if (!hydrated) {
     return (
       <div className="flex items-center justify-center py-16 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />

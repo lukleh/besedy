@@ -6,7 +6,7 @@
  * and persisting progress never reads or rewrites every downloaded transcript.
  * The database name is inherited from the earlier catalog-mirror experiment.
  */
-import { deleteDB, openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction } from 'idb';
+import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type {
   Diarization,
   Transcript,
@@ -39,9 +39,8 @@ export interface DownloadEventSnapshot {
   dateMonth: number | null;
   dateDay: number | null;
   sessionIndex: number;
-  /** Absent on records downloaded before ordinals were stored; the cue hides then. */
-  sessionOrdinal?: number;
-  sessionCount?: number;
+  sessionOrdinal: number;
+  sessionCount: number;
   publishedArtwork: {
     id: string;
     publishedAt: string;
@@ -91,9 +90,8 @@ export interface DownloadRecord {
 export interface DownloadArtworkPayload {
   blob: Blob;
   contentType: string;
-  /** `portrait` is retained only for bundles created before ADR 0009. */
-  variant: 'square' | 'landscape' | 'portrait';
-  artworkId?: string;
+  variant: 'square' | 'landscape';
+  artworkId: string;
 }
 
 export interface DownloadBundlePayload {
@@ -105,15 +103,12 @@ export interface DownloadBundlePayload {
   artwork: DownloadArtworkPayload | null;
   /**
    * Event detail payload as served when the event was downloaded. The local
-   * content source renders the shared event page from it. Absent on bundles
-   * written before it was stored and on recording-only downloads.
+   * content source renders the shared event page from it. Recording-only
+   * downloads store null.
    */
-  eventDetail?: EventDetailResponse | null;
-  /**
-   * Recording entry with the permissions observed at download time. Absent on
-   * bundles written before it was stored.
-   */
-  entry?: CatalogEntryWithPermissions | null;
+  eventDetail: EventDetailResponse | null;
+  /** Recording entry with the permissions observed at download time. */
+  entry: CatalogEntryWithPermissions;
   updatedAt: number;
 }
 
@@ -181,105 +176,70 @@ export function isIndexedDBAvailable(): boolean {
   return typeof indexedDB !== 'undefined';
 }
 
-/**
- * Rewrites the pre-rename field names (`hasPoster`, `event.publishedPoster`,
- * `bundle.poster`, `poster.posterId`) left on records written before the
- * poster->artwork rename (ADR 0011). Without this, records saved by an
- * earlier release keep the old keys forever: reads of the new field names
- * silently return `undefined` instead of throwing, so stale offline artwork
- * would just disappear rather than fail loudly.
- */
-async function migrateLegacyArtworkFields(
-  transaction: IDBPTransaction<
-    DownloadsDBSchema,
-    ('downloads' | 'downloadBundles' | 'pendingPlaybackProgress')[],
-    'versionchange'
-  >,
-): Promise<void> {
-  const downloadsStore = transaction.objectStore(DOWNLOADS_STORE);
-  let downloadCursor = await downloadsStore.openCursor();
-  while (downloadCursor) {
-    const record = downloadCursor.value as DownloadRecord & {
-      hasPoster?: boolean;
-      event: (DownloadEventSnapshot & { publishedPoster?: DownloadEventSnapshot['publishedArtwork'] }) | null;
-    };
-    let changed = false;
-    if (record.hasPoster !== undefined) {
-      record.hasArtwork = record.hasPoster;
-      delete record.hasPoster;
-      changed = true;
-    }
-    if (record.event && record.event.publishedPoster !== undefined) {
-      record.event.publishedArtwork = record.event.publishedPoster;
-      delete record.event.publishedPoster;
-      changed = true;
-    }
-    if (changed) await downloadCursor.update(record);
-    downloadCursor = await downloadCursor.continue();
-  }
-
-  const bundlesStore = transaction.objectStore(DOWNLOAD_BUNDLES_STORE);
-  let bundleCursor = await bundlesStore.openCursor();
-  while (bundleCursor) {
-    const bundle = bundleCursor.value as DownloadBundlePayload & {
-      poster?: (Omit<DownloadArtworkPayload, 'artworkId'> & { posterId?: string }) | null;
-    };
-    if (bundle.poster !== undefined) {
-      if (bundle.poster) {
-        const { posterId, ...rest } = bundle.poster;
-        bundle.artwork = { ...rest, artworkId: posterId };
-      } else {
-        bundle.artwork = null;
-      }
-      delete bundle.poster;
-      await bundleCursor.update(bundle);
-    }
-    bundleCursor = await bundleCursor.continue();
-  }
-}
-
-/**
- * Version 6 removes the Base64 inline audio copy (#162): every browser plays
- * downloads through the service worker from the cached chunks, so the copy,
- * as large as the recording itself, is deleted from each bundle. A package
- * left in the old `inline-audio-unavailable` error had verified chunks, so it
- * returns to `complete`; hydration verifies the chunks again right after.
- */
-async function removeInlineAudioCopies(
-  transaction: IDBPTransaction<
-    DownloadsDBSchema,
-    ('downloads' | 'downloadBundles' | 'pendingPlaybackProgress')[],
-    'versionchange'
-  >,
-): Promise<void> {
-  const bundlesStore = transaction.objectStore(DOWNLOAD_BUNDLES_STORE);
-  let bundleCursor = await bundlesStore.openCursor();
-  while (bundleCursor) {
-    const bundle = bundleCursor.value as DownloadBundlePayload & { inlineAudio?: unknown };
-    // Only real copies: downloads that needed none stored `inlineAudio: null`,
-    // and rewriting those bundles (transcripts included) would free nothing.
-    if (bundle.inlineAudio) {
-      delete bundle.inlineAudio;
-      await bundleCursor.update(bundle);
-    }
-    bundleCursor = await bundleCursor.continue();
-  }
-
-  const downloadsStore = transaction.objectStore(DOWNLOADS_STORE);
-  let downloadCursor = await downloadsStore.openCursor();
-  while (downloadCursor) {
-    const record = downloadCursor.value;
-    if (record.status === 'error' && record.error === 'inline-audio-unavailable') {
-      await downloadCursor.update({
-        ...record,
-        status: 'complete',
-        error: null,
-        progress: 100,
-        completedAt: record.updatedAt,
-      });
-    }
-    downloadCursor = await downloadCursor.continue();
-  }
+/** Accept only packages that already contain the current shared-page payloads. */
+export function isCurrentDownloadBundle(
+  record: DownloadRecord,
+  bundle: DownloadBundlePayload | undefined,
+): bundle is DownloadBundlePayload {
+  const stored = bundle?.entry;
+  if (
+    !bundle ||
+    bundle.key !== record.key ||
+    !stored?.entry ||
+    typeof record.hasArtwork !== 'boolean' ||
+    stored.entry.hash !== record.hash ||
+    typeof stored.canViewTranscripts !== 'boolean' ||
+    typeof stored.canEditMetadata !== 'boolean' ||
+    typeof stored.canDownloadAudio !== 'boolean' ||
+    !(
+      [
+        'hasArchived',
+        'hasMetadata',
+        'isActionable',
+        'isPublished',
+        'hasArchivedAudio',
+        'hasOriginalAudio',
+      ] as const
+    ).every((key) => typeof stored.entry[key] === 'boolean') ||
+    'poster' in bundle ||
+    'inlineAudio' in bundle ||
+    (bundle.transcriptBackend !== null &&
+      typeof bundle.transcriptBackend !== 'string') ||
+    (bundle.transcript !== null &&
+      (!bundle.transcript ||
+        bundle.transcript.backend !== bundle.transcriptBackend ||
+        !Array.isArray(bundle.transcript.segments))) ||
+    (bundle.diarization !== null &&
+      (!bundle.diarization || !Array.isArray(bundle.diarization.segments))) ||
+    (bundle.artwork !== null &&
+      (!bundle.artwork ||
+        !['square', 'landscape'].includes(bundle.artwork.variant) ||
+        typeof bundle.artwork.artworkId !== 'string' ||
+        !bundle.artwork.blob ||
+        typeof bundle.artwork.contentType !== 'string'))
+  )
+    return false;
+  if (record.eventKey === null) return bundle.eventDetail === null;
+  const event = bundle.eventDetail;
+  return (
+    !!record.event &&
+    !!event &&
+    record.eventKey === makeEventKey(record.catalogId, event.id) &&
+    record.event.id === event.id &&
+    event.workflowGroupId === record.catalogId &&
+    Number.isInteger(record.event.sessionOrdinal) &&
+    record.event.sessionOrdinal > 0 &&
+    Number.isInteger(record.event.sessionCount) &&
+    record.event.sessionCount >= record.event.sessionOrdinal &&
+    Number.isInteger(event.sessionOrdinal) &&
+    event.sessionOrdinal > 0 &&
+    Number.isInteger(event.sessionCount) &&
+    event.sessionCount >= event.sessionOrdinal &&
+    typeof event.released === 'boolean' &&
+    (event.description === null || typeof event.description === 'string') &&
+    Array.isArray(event.recordings) &&
+    event.recordings.some((recording) => recording?.audioHash === record.hash)
+  );
 }
 
 let dbPromise: Promise<IDBPDatabase<DownloadsDBSchema>> | null = null;
@@ -290,7 +250,7 @@ export function getDownloadsDB(): Promise<IDBPDatabase<DownloadsDBSchema>> {
       DOWNLOADS_DB_NAME,
       DOWNLOADS_DB_VERSION,
       {
-        async upgrade(db, oldVersion, _newVersion, transaction) {
+        upgrade(db) {
           for (const name of Array.from(db.objectStoreNames)) {
             if (
               name !== DOWNLOADS_STORE &&
@@ -316,12 +276,6 @@ export function getDownloadsDB(): Promise<IDBPDatabase<DownloadsDBSchema>> {
               keyPath: 'key',
             });
             store.createIndex('byUser', 'userId');
-          }
-          if (oldVersion > 0 && oldVersion < 5) {
-            await migrateLegacyArtworkFields(transaction);
-          }
-          if (oldVersion > 0 && oldVersion < 6) {
-            await removeInlineAudioCopies(transaction);
           }
         },
         blocking() {
