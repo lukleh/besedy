@@ -249,6 +249,13 @@ only in an explicit, backed-up maintenance procedure.
 
 ### Release Workflow
 
+`prod-build` is the single production web build implementation. Use
+`just prod-build --no-cache` to rebuild without cached layers. `prod-rebuild`
+does that build and then runs `prod-apply`, including the same image-revision
+check, retained backup, migrations and deployment record as `prod-deploy`.
+Environment loading, production build validation and version metadata are
+shared by these recipes through `scripts/production_web_env.sh`.
+
 **Start the existing production stack (no rebuild):**
 
 ```bash
@@ -830,6 +837,8 @@ grew most by file count over the retained dailies) and `worktree-report.sh`
 (linked git worktrees and which ones look safe to remove); each helper is cut
 off after `HELPER_REPORT_TIMEOUT_SECONDS` (default 600) so a cold snapshot
 filesystem cannot stall the report. Sends every run when `REPORT_EMAIL` is set.
+Deployment ages come only from `web_deploy_log`; missing records have an unknown
+age, and a missing table fails the report instead of approximating dates from Git.
 
 **`backup-health-check.sh`** -- Verifies: backup dir exists, latest
 `besedy_YYYYMMDD_HHMMSS.sql.gz` exists and is fresh (default `MAX_AGE_HOURS=30`),

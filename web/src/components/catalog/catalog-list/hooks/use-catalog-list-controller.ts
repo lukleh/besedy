@@ -11,7 +11,6 @@ import { useFilterOptions, type FilterOptionsResponse } from "@/hooks/use-filter
 import { useRecorders, useLocations, useAlbums } from "@/hooks/use-metadata-enums";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { useColumnResize, type ColumnKey as ResizeColumnKey } from "@/hooks/use-column-resize";
-import { useCatalogStatus } from "@/hooks/use-catalog-status";
 import { useReloadBlocker } from "@/contexts/reload-safety-context";
 import {
   useInlineEdit,
@@ -422,14 +421,6 @@ export function useCatalogListController({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.pagination?.totalPages, filters.page, filters.resetPageIfInvalid]);
-
-  const { markAsSynced } = useCatalogStatus(activeCatalogId ?? null);
-
-  useEffect(() => {
-    if (data?.lastModifiedAt) {
-      markAsSynced(data.lastModifiedAt);
-    }
-  }, [data?.lastModifiedAt, markAsSynced]);
 
   const inlineEdit = useInlineEdit({
     catalogId: activeCatalogId ?? "",
