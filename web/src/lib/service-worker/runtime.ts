@@ -15,14 +15,13 @@ import {
   reportWebUpdateEvent,
   type WebUpdateTelemetryEvent
 } from "@/lib/service-worker/telemetry";
-import { normalizeWebVersion, selectObservedWebVersion } from "@/lib/service-worker/version";
+import { normalizeWebVersion } from "@/lib/service-worker/version";
+import { migrateBrowserStorage } from "@/lib/browser-storage";
 import { createClientLogger } from "@/lib/log/client";
 
 const AUTO_APPLY_SW_UPDATES = true;
 const AUTO_APPLY_DELAY_MS = 1000;
 const UPDATE_STATE_STORAGE_KEY = "besedy-sw-update-state";
-const LEGACY_DISMISSED_STORAGE_KEY = "besedy-sw-update-dismissed";
-const LEGACY_DISMISSED_UPDATE_DEADLINE_KEY = "besedy-sw-update-dismissed-deadline";
 const MAX_UPDATE_AGE_MS = 1000 * 60 * 60 * 24;
 const EXPIRED_UPDATE_IDLE_MS = 1000 * 60 * 5;
 const UPDATE_DEADLINE_CHECK_INTERVAL_MS = 1000 * 30;
@@ -89,7 +88,6 @@ export type ServiceWorkerMessageHandler = (message: SWToClientMessage) => void;
 
 interface VersionInfoResponse {
   webVersion?: string | null;
-  commit?: string | null;
 }
 
 interface ServiceWorkerRuntimeOptions {
@@ -140,8 +138,6 @@ function writePersistedUpdateState(state: PersistedUpdateState): void {
 function clearPersistedUpdateState(): void {
   try {
     localStorage.removeItem(UPDATE_STATE_STORAGE_KEY);
-    localStorage.removeItem(LEGACY_DISMISSED_STORAGE_KEY);
-    localStorage.removeItem(LEGACY_DISMISSED_UPDATE_DEADLINE_KEY);
   } catch {
     // Best-effort cleanup for browsers that block local storage.
   }
@@ -165,6 +161,7 @@ function createInitialSnapshot(): ServiceWorkerRuntimeSnapshot {
 }
 
 export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions = {}) {
+  migrateBrowserStorage();
   const clientVersion = normalizeWebVersion(
     options.clientVersion ?? process.env.NEXT_PUBLIC_WEB_VERSION
   );
@@ -464,9 +461,9 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
     // it has been checked independently.
     if (waitingWorker !== worker) return "mismatch";
 
-    // Real ServiceWorker instances always expose scriptURL. If a legacy worker
-    // cannot answer the version handshake, its identity cannot be tied to the
-    // deployment we just probed, so leave it waiting and retry with backoff.
+    // A waiting worker must answer the current version handshake before its
+    // identity can be tied to the deployment we just probed. Leave an
+    // unidentified worker waiting and retry with backoff.
     if (clientVersion && "scriptURL" in worker && !waitingWorkerVersion) {
       registration?.update().catch(() => {});
       setSnapshot((current) => ({ ...current, updateReady: false }));
@@ -516,7 +513,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
 
   async function probeDeploymentVersion(
     allowRecentSuccess = true
-  ): Promise<"ready" | "unreachable" | "unversioned" | "target-changed"> {
+  ): Promise<"ready" | "unreachable" | "target-changed"> {
     const expectedVersion = currentUpdateVersion;
     if (
       allowRecentSuccess &&
@@ -541,11 +538,8 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
       }
 
       const payload = (await response.json().catch(() => null)) as VersionInfoResponse | null;
-      const version = selectObservedWebVersion(payload?.webVersion, payload?.commit, clientVersion);
+      const version = normalizeWebVersion(payload?.webVersion);
       if (!version) {
-        const reportedVersion =
-          normalizeWebVersion(payload?.webVersion) ?? normalizeWebVersion(payload?.commit);
-        if (reportedVersion) return "unversioned";
         reportLifecycleEvent("version_probe_failed");
         return "unreachable";
       }
@@ -932,7 +926,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
 
       const payload = (await response.json().catch(() => null)) as VersionInfoResponse | null;
       observeWebVersionUpdate(
-        selectObservedWebVersion(payload?.webVersion, payload?.commit, clientVersion)
+        normalizeWebVersion(payload?.webVersion)
       );
     } catch {
       // Best-effort fallback only. Errors must stay invisible to users.

@@ -92,9 +92,19 @@ grant permissions to those accounts automatically.
 Every ordinary invitation needs a role and authorized extras for that archive.
 Acceptance consumes only its bound pending grant and activates the pending
 account atomically. Existing other-source grants remain historical records.
-Legacy sign-in-only admissions need an explicit role assignment or revocation;
-editing their notes never grants access. The per-email administrator-denial
-record, blocking and protected-role checks remain authoritative.
+Roleless admissions came from the former sign-in-only invitation flow. They
+remain visible for revocation but cannot be claimed or edited, including notes
+or in-place role assignment. Revoke an old admission and create a new invitation
+with an explicit archive role. Development and test seeders also require a role
+for every invitation. The per-email administrator-denial record, blocking and
+protected-role checks remain authoritative.
+
+Invitation responses expose one bound role and its permission extras; the
+former multi-catalog grant arrays and counts are retired. Historical source,
+claim and revocation fields remain provenance. In particular, `STANDALONE` alone
+does not identify an unusable invitation: a subsequently assigned bound grant
+can make that admission valid. The preflight identifies pending admissions
+without a pending grant for the configured archive.
 
 ## Read-only preflight
 

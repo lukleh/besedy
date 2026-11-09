@@ -8,20 +8,13 @@ import {
   sanitizePostAuthCallbackPath,
   getAllowlistRejectionParam,
 } from "./oauth-routing";
-import { PROTECTED_OFFLINE_CACHE_NAMES } from "@/lib/offline/cache-names";
+import { OFFLINE_CACHE_NAMES, OFFLINE_CACHE_PREFIX } from "@/lib/offline/cache-names";
 import { destroyDownloadsDatabase, isIndexedDBAvailable } from "@/lib/offline/downloads-db";
 import { clearLastRoute } from "@/lib/pwa/last-route";
 
 // Cross-tab auth synchronization using BroadcastChannel
 // This allows sign-out in one tab to redirect all other tabs
 const AUTH_CHANNEL_NAME = "besedy-auth";
-// Legacy cache families from earlier service worker versions.
-const LEGACY_OFFLINE_CACHE_PREFIXES = [
-  "besedy-audio-",
-  "besedy-transcript-",
-  "besedy-data-",
-  "besedy-shell-",
-];
 const isProductionApp = process.env.NEXT_PUBLIC_APP_ENV === "production";
 
 type SignInWithOAuthOptions = {
@@ -76,8 +69,7 @@ async function clearOfflineCaches(): Promise<void> {
       const cacheNames = await caches.keys();
       const targets = cacheNames.filter(
         (name) =>
-          (PROTECTED_OFFLINE_CACHE_NAMES as readonly string[]).includes(name) ||
-          LEGACY_OFFLINE_CACHE_PREFIXES.some((prefix) => name.startsWith(prefix))
+          name.startsWith(OFFLINE_CACHE_PREFIX) && name !== OFFLINE_CACHE_NAMES.static
       );
       await Promise.all(targets.map((name) => caches.delete(name)));
     } catch {

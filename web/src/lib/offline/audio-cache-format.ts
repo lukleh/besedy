@@ -19,23 +19,14 @@ export const AUDIO_CHUNK_SIZE = 2 * 1024 * 1024;
 export const AUDIO_URL_PATTERN = /\/api\/catalogs\/[^/]+\/recordings\/([a-f0-9]{64})\/audio$/;
 
 export interface AudioCacheMeta {
+  schemaVersion: 1;
   totalSize: number;
   chunkCount: number;
   chunkSizes: number[];
   contentType: string;
   complete: boolean;
   /** Changes on restart/repair so old playback failures cannot delete new bytes. */
-  generation?: string;
-}
-
-/**
- * A cache key without its `format`: the recording and source it stores.
- * Used to recognise a download of the same source in the other format.
- */
-export function withoutAudioFormat(cacheKey: string): string {
-  const parsed = new URL(cacheKey);
-  parsed.searchParams.delete("format");
-  return parsed.toString();
+  generation: string;
 }
 
 /** Shared with the worker; never hold this lock across a network request. */
@@ -51,26 +42,27 @@ export async function withAudioCacheLock<T>(
   return locks ? locks.request(getAudioCacheLockName(baseKey), work) : work();
 }
 
-/**
- * Normalize an audio URL into its cache key. Only `source`, `variant` and
- * `format` change the bytes served, so only they survive. The defaults
- * (`archived`, `webm`) are dropped so `…/audio` and `…/audio?source=archived`
- * share one entry, and so WebM packages downloaded before `format` existed
- * keep their keys; the AAC-in-MP4 copy (#291) gets its own.
- */
+/** Only source and format change the current audio bytes; defaults share a key. */
 export function getAudioCacheKey(url: string, origin: string): string {
   const parsed = new URL(url, origin);
-  const source = parsed.searchParams.get("source") || "archived";
-  const variant = parsed.searchParams.get("variant") || "";
-  const format = parsed.searchParams.get("format") || "webm";
+  const source = parsed.searchParams.get("source") ?? "archived";
+  const queryKeys = [...parsed.searchParams.keys()];
+  const download = parsed.searchParams.get("download");
+  const local = parsed.searchParams.get("local");
+  const format = parsed.searchParams.get("format") ?? "webm";
 
+  if (!['archived', 'original'].includes(source) ||
+      new Set(queryKeys).size !== queryKeys.length ||
+      queryKeys.some((key) => !['source', 'format', 'download', 'local'].includes(key)) ||
+      (download !== null && !['true', 'false'].includes(download)) ||
+      (local !== null && local !== '1') ||
+      !['webm', 'aac'].includes(format)) {
+    throw new Error('Unsupported audio cache URL');
+  }
   parsed.search = "";
   parsed.hash = "";
   if (source !== "archived") {
     parsed.searchParams.set("source", source);
-  }
-  if (variant) {
-    parsed.searchParams.set("variant", variant);
   }
   if (format !== "webm") {
     parsed.searchParams.set("format", format);
@@ -109,6 +101,10 @@ function isValidMeta(value: unknown): value is AudioCacheMeta {
   if (!value || typeof value !== "object") return false;
   const meta = value as Partial<AudioCacheMeta>;
   return (
+    meta.schemaVersion === 1 &&
+    typeof meta.generation === 'string' && meta.generation.length > 0 &&
+    typeof meta.complete === 'boolean' &&
+    Number.isInteger(meta.chunkCount) && meta.chunkCount === meta.chunkSizes?.length &&
     typeof meta.totalSize === "number" &&
     Number.isFinite(meta.totalSize) &&
     meta.totalSize >= 0 &&
@@ -128,14 +124,13 @@ export async function readAudioCacheMeta(
     const parsed: unknown = await response.json();
     if (!isValidMeta(parsed)) return null;
     return {
+      schemaVersion: 1,
+      generation: parsed.generation,
       totalSize: parsed.totalSize,
       chunkCount: parsed.chunkSizes.length,
       chunkSizes: parsed.chunkSizes,
       contentType: parsed.contentType,
       complete: parsed.complete === true,
-      ...(typeof parsed.generation === 'string'
-        ? { generation: parsed.generation }
-        : {}),
     };
   } catch {
     return null;
@@ -213,14 +208,30 @@ export function summarizeAudioCacheMeta(meta: AudioCacheMeta): AudioCacheProgres
   };
 }
 
+async function deleteAudioCacheEntriesUnlocked(cache: Cache, baseKey: string): Promise<void> {
+  const keys = await cache.keys();
+  await Promise.all(keys
+    .filter((request) => isAudioCacheEntryFor(baseKey, request.url))
+    .map((request) => cache.delete(request)));
+}
+
 /** Remove every chunk and the metadata entry stored for `baseKey`. */
 export async function deleteAudioCacheEntries(cache: Cache, baseKey: string): Promise<void> {
-  await withAudioCacheLock(baseKey, async () => {
-    const keys = await cache.keys();
-    await Promise.all(
-      keys
-        .filter((request) => isAudioCacheEntryFor(baseKey, request.url))
-        .map((request) => cache.delete(request))
-    );
+  await withAudioCacheLock(baseKey, () => deleteAudioCacheEntriesUnlocked(cache, baseKey));
+}
+
+/** Discard a readable package whose metadata does not satisfy the current contract. */
+export async function discardUnsupportedAudioCache(cache: Cache, baseKey: string): Promise<boolean> {
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+  // Without cross-tab serialization an obsolete read could delete replacement bytes.
+  if (!locks) return false;
+  return locks.request(getAudioCacheLockName(baseKey), async () => {
+    const response = await cache.match(getAudioMetaKey(baseKey));
+    if (!response) return false;
+    // A failed storage read proves nothing about the package. Keep it retryable.
+    const payload: unknown = await response.json().catch(() => null);
+    if (payload === null || isValidMeta(payload)) return false;
+    await deleteAudioCacheEntriesUnlocked(cache, baseKey);
+    return true;
   });
 }

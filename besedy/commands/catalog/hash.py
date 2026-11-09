@@ -18,8 +18,8 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
-from besedy.commands.catalog.system import detect_logical_cpus
 from besedy.core.paths import resolve_catalogs_root
+from besedy.core.system import detect_logical_cpus
 from besedy.lib.catalog.manager import (
     audio_content_sha256sum,
     check_ffmpeg,

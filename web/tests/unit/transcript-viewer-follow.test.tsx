@@ -103,7 +103,7 @@ describe("TranscriptViewer follow mode and layers", () => {
 
     act(() => props().onFollowChange?.(false));
     expect(followButton()).toHaveAttribute("aria-pressed", "false");
-    expect(localStorage.setItem).not.toHaveBeenCalled();
+    expect(localStorage.setItem).not.toHaveBeenCalledWith("besedy-transcript-autoscroll", expect.anything());
 
     act(() => props().onSeek?.(12));
     expect(onSeek).toHaveBeenCalledWith(12);
@@ -121,23 +121,24 @@ describe("TranscriptViewer follow mode and layers", () => {
     expect(props().follow).toBe(false);
   });
 
-  it("keeps the timestamps choice made with the old switch", async () => {
+  it("resets the retired timestamp switch to the current default", async () => {
     stored({ "besedy-timestamps": "false" });
     renderViewer();
     const props = await contentProps();
 
-    await waitFor(() => expect(props().showTimestamps).toBe(false));
+    await waitFor(() => expect(props().showTimestamps).toBe(true));
+    expect(localStorage.removeItem).toHaveBeenCalledWith("besedy-timestamps");
   });
 
-  it("prefers the View menu's stored layers over the old switch", async () => {
+  it("uses the current View menu preference", async () => {
     stored({
-      "besedy-timestamps": "false",
-      "besedy-transcript-layers": JSON.stringify({ timestamps: true }),
+      "besedy-timestamps": "true",
+      "besedy-transcript-layers": JSON.stringify({ timestamps: false }),
     });
     renderViewer();
     const props = await contentProps();
 
-    await waitFor(() => expect(props().showTimestamps).toBe(true));
+    await waitFor(() => expect(props().showTimestamps).toBe(false));
   });
 
   it("does not list speakers for an account that cannot see them", async () => {

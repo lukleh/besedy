@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Accepted:** 2026-10-03, once the schema, domain API, publication and index-sync job, and the reading-surface gate were merged (#206-#208, #253, #255)
 - **Date:** 2026-09-15
-- **Revised:** 2026-09-22
+- **Revised:** 2026-11-08
 - **Amended by:** [ADR 0012](0012-correction-data-contract.md) (proposed)
 - **Canonical references:** [Data model](../data-model.md), [RAG system](../rag-system.md), [ADR 0002](0002-artifact-generations.md), [ADR 0003](0003-web-catalog-projection.md), [ADR 0004](0004-system-boundaries.md), [ADR 0005](0005-catalog-permission-model.md)
 
@@ -59,10 +59,10 @@ correction whatever its event assignment becomes afterwards. Otherwise
 detaching a recording, or promoting a different one, would silently replace a
 published corrected transcript with the machine text underneath it — an
 editorial action undoing an editorial statement nobody retracted. The
-alternative, refusing the reassignment until an administrator unpublishes,
-withdraws from search and archives, couples ordinary event editing to a
-three-step teardown; the workspace is already the unit of correction, so it is
-the thing the gate follows. A recording that never started correction is
+alternative, refusing the reassignment until an administrator unpublishes and
+archives, couples ordinary event editing to a teardown; the workspace is
+already the unit of correction, so it is the thing the gate follows. A recording
+that never started correction is
 governed by its assignment as above: demoting it returns it to the machine
 reader, and promoting it puts it behind the gate at once, so its readers see
 "correction has not started" instead of the machine text they had. That loss
@@ -82,8 +82,8 @@ an explicit rule:
 
 | Consumer | Resolution |
 | --- | --- |
-| Reader and ordinary download | For a recording in correction scope, the active reader publication; with none, return no transcript text. For a recording outside correction scope, the search backend's machine transcript. |
-| Search and MCP | The active search publication, otherwise the search backend's machine transcript. |
+| Reader and ordinary download | For a recording in correction scope, the current publication; with none, return no transcript text. For a recording outside correction scope, the search backend's machine transcript. |
+| Search and MCP | The current publication, otherwise the search backend's machine transcript. Unpublish waits for the index to confirm that fallback. |
 | Correction UI | The live database workspace for a recording in correction scope; starting one additionally requires that the recording is primary now. |
 | Privileged original access | Before a workspace exists, the search backend's current machine transcript. Once correction starts, the frozen machine source. `see_transcript_variants` may additionally expose other machine variants. |
 
@@ -135,7 +135,7 @@ document. It replaces the machine text under the same logical recording and
 backend identity. Search keeps one set of chunks for the audio hash.
 
 Every full or incremental index build uses one indexing input resolver. For an
-audio hash it chooses an `activating` publication first, then the active search
+audio hash it chooses an `activating` publication first, then the current
 publication, and otherwise the machine transcript of the backend scope being
 indexed. Considering the activation intent prevents a routine sync in the crash
 window from reverting the new text before its database pointer is committed.
@@ -146,7 +146,7 @@ resolved source then reuses the existing content-derived
 atomic bundle switch. The resolver is scope-agnostic: whenever any backend
 scope is built, the corrected transcript replaces that scope's machine chunks
 for the same audio hash, and a recording whose machine transcript is absent
-from the scope is still indexed there once it has a search publication.
+from the scope is still indexed there once it has a publication.
 Corrected and machine chunks of one recording never coexist in a bundle.
 
 Publication itself, however, proves replacement in exactly one scope: the
@@ -199,11 +199,11 @@ like any other span; two approvals confirm that nothing was said there.
 There is no normal restart or rebase operation. If the wrong source was selected,
 a catalog administrator (`manage_catalog_config`) may exceptionally archive the
 workspace and start a new one. Archiving is refused while the workspace still
-backs a reader or search publication, or while a publication or search
-withdrawal is in flight: taking a transcript away from readers or search is a
-deliberate act of its own, so the administrator unpublishes and withdraws from
-search first. An archived workspace is invisible to every resolver; its rows,
-source copy and publication artifacts remain for audit. There is no fuzzy
+backs a publication, or while a publication or unpublish is in flight: taking
+a transcript away from readers or search is a
+deliberate act of its own, so the administrator unpublishes and waits for the
+index confirmation first. An archived workspace is invisible to every resolver;
+its rows, source copy and publication artifacts remain for audit. There is no fuzzy
 relocation of corrections to new machine segments.
 
 ### Current state and immutable history coexist
@@ -413,7 +413,7 @@ deferred.
 
 ### Readers see two progress measures before first publication
 
-For a recording in correction scope with no reader publication, the
+For a recording in correction scope with no current publication, the
 reader page shows no transcript text and no corrector identities or
 disputed-span detail. It shows:
 
@@ -427,7 +427,7 @@ If no workspace exists, the page says correction has not started. Recordings
 outside correction scope do not show this permanent progress state; they retain
 their existing machine-transcript reader.
 
-Once a reader publication exists, readers keep seeing that immutable snapshot
+Once a publication exists, readers keep seeing that immutable snapshot
 while later work proceeds. Draft progress is no longer shown on the reader page.
 
 ### Publication authority remains separate from correction
@@ -472,31 +472,25 @@ directory names. The tree is separate from the immutable transcript generation,
 as required by [ADR 0002](0002-artifact-generations.md). Database pointers choose
 active artifacts; file existence alone never means a transcript is published.
 
-### Reader and search publication pointers are separate
+### One publication serves readers and search
 
-One `published` boolean cannot represent the chosen unpublish behavior. A
-workspace therefore has two nullable active pointers:
+A workspace has one logical current publication. A successful publication makes
+the same immutable snapshot current for the reader, ordinary download, bulk
+export, search and MCP. The existing database keeps its two pointer columns;
+publication writes both together, and ordinary Unpublish clears both. The
+workspace API exposes one publication ID and whether unpublishing is pending,
+rather than separate reader and search choices. Historical search-only state
+can also be unpublished without making it readable again.
 
-- **Reader publication:** used by the reader, ordinary download and bulk export.
-- **Search publication:** used to resolve text for search indexing and MCP.
+Unpublish belongs to `publish_transcript`, just like publish and republish. It
+withholds the reader transcript and asks the search index to replace corrected
+chunks with the configured machine transcript. It never deletes correction
+work or immutable publication artifacts. There is no reader-only Unpublish or
+separate administrative withdrawal action.
 
-The first successful publication sets both to the new snapshot. A normal
-unpublish clears only the reader pointer. Search and MCP keep the last corrected
-snapshot, and the immutable artifacts remain. Republishing text unchanged since
-the active search publication restores the reader pointer without rendering or
-indexing again.
-
-If text changed, republishing creates a new publication and moves both pointers
-only after the job succeeds. Exceptional removal of corrected text from search
-or MCP is a separate administrator operation that clears or replaces the search
-pointer and refreshes the index. It is intentionally not part of ordinary
-unpublish and need not have a first-version UI.
-
-Withdrawal from search also clears the reader pointer, because a reader newer
-than search is the one direction this design never allows. A later publish,
-even of unchanged text, is a new publication: it renders and indexes again and
-returns the corrected text to search. Withdrawal is therefore not permanent; it
-holds until the next deliberate publish.
+A later publish, even of unchanged text, creates a new publication: it renders
+and indexes again before making the snapshot current. Corrected text returns
+to search only through that deliberate publish.
 
 ### Publication is one durable, retryable job
 
@@ -546,11 +540,21 @@ reactivates an old whole bundle and therefore does not discard unrelated index
 updates. Job attempts and their errors are recorded separately from the logical
 publication.
 
-Unpublishing starts no indexing job and clears the reader pointer immediately,
-but it is rejected while any publication for the workspace is `pending` or
-`activating`. This simple serialization prevents a finishing publication from
-silently reversing a curator's unpublish. The curator may unpublish immediately
-after the publication completes.
+Unpublishing is also durable and retryable. It commits a unique withdrawal token
+and clears both database pointers before removing the filesystem index-source
+pointer. It then requests the existing index-sync job with operation `withdraw`.
+The token stays committed until the worker confirms that the active bundle
+holds machine text again. A failed request or index update leaves the operation
+pending; repeating Unpublish resumes the same generation. A delayed report
+cannot clear a newer generation. During this interval search may still contain
+the corrected snapshot while the reader withholds it, the same safe ordering
+used during publication.
+
+Unpublish is rejected while a publication is `pending`, `activating` or
+`rolling_back`. New publication and workspace archiving are blocked while
+unpublishing is pending. These checks prevent a finishing operation from
+silently reversing another publisher's action. Administrative recovery remains
+limited to reconciling or rolling back a publication.
 
 ### The canonical JSON carries minimal provenance
 
@@ -637,7 +641,7 @@ recording. Stored action counts and timestamps support that review; direct
 conversation supplies the interpretation.
 
 No existing machine transcript in correction scope is grandfathered
-into reader publication. Recordings outside correction scope remain outside
+into corrected publication. Recordings outside correction scope remain outside
 that gate.
 
 ## Consequences
@@ -707,8 +711,9 @@ that gate.
   regions inside one decoded chunk, not source segments.
 - Correctors cannot publish. Curators and catalog administrators can.
 - A publication is an immutable snapshot while the workspace stays live.
-- Reader and search publication pointers are separate; ordinary unpublish clears
-  only the reader pointer and is rejected during publication activation.
+- One logical publication serves readers and search; ordinary Unpublish clears
+  both stored pointers and durably restores machine search through index sync.
+  It is rejected during an in-flight publication and can be retried while pending.
 - Search and MCP treat corrected text as a newer version of the same transcript.
 - The JSON carries minimal `meta.correction` provenance; detailed audit remains
   in PostgreSQL.

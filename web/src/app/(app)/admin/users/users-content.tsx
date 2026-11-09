@@ -71,7 +71,7 @@ export default function UsersPageContent() {
     admission: PendingPortalAdmission;
   } | null>(null);
   const [editAdmissionForm, setEditAdmissionForm] = useState({
-    role: "" as CatalogRole | "",
+    role: "listener" as CatalogRole,
     notes: "",
   });
 
@@ -544,21 +544,22 @@ export default function UsersPageContent() {
   };
 
   const openEditAdmissionDialog = (admission: PendingPortalAdmission) => {
+    if (!admission.role) return;
     setEditAdmissionForm({
-      role: admission.role || "",
+      role: admission.role,
       notes: admission.notes || "",
     });
     setEditAdmissionDialog({ open: true, admission });
   };
 
   const handleEditAdmissionSubmit = () => {
-    if (editAdmissionDialog) {
+    if (editAdmissionDialog?.admission.role) {
       const admission = editAdmissionDialog.admission;
-      const roleChanged = editAdmissionForm.role !== (admission.role || "");
+      const roleChanged = editAdmissionForm.role !== admission.role;
       if (roleChanged && !archive) return;
       updatePendingAdmission.mutate({
         admission,
-        role: roleChanged ? editAdmissionForm.role || undefined : undefined,
+        role: roleChanged ? editAdmissionForm.role : undefined,
         notes: editAdmissionForm.notes || null,
       });
     }

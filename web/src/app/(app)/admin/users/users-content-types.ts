@@ -13,16 +13,6 @@ export interface CatalogAccess {
   extraPermissions: string[];
 }
 
-export interface PendingPortalAdmissionGrant {
-  catalogId: string;
-  catalogLabel: string;
-  role: CatalogRole;
-  extraPermissions: string[];
-  grantedAt: string;
-  grantedBy: { id: string; name: string | null; email: string } | null;
-  notes: string | null;
-}
-
 export interface User {
   id: string;
   type?: "user";
@@ -46,13 +36,10 @@ export interface PendingPortalAdmission {
   type: "portal_admission";
   email: string;
   invitedAt: string;
-  pendingGrants: PendingPortalAdmissionGrant[];
-  catalogNames: string[];
-  pendingGrantCount: number;
   catalogId: string | null;
   catalogLabel: string | null;
-  /** The single pending grant's role; null when the admission has none or several. */
   role: CatalogRole | null;
+  extraPermissions: string[];
   invitedBy: { id: string; name: string | null; email: string } | null;
   notes: string | null;
 }

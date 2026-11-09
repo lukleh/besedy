@@ -160,7 +160,6 @@ async function main() {
   const {
     publishTranscript,
     unpublishTranscript,
-    withdrawFromSearch,
     reconcilePublication,
     rollbackPublication,
     completeIndexSync,
@@ -870,7 +869,7 @@ async function main() {
     );
     // Return to a machine source so the rollback checks below always exercise
     // a machine transcript that belongs to the active search backend.
-    await withdrawFromSearch(CATALOG_ID, AUDIO_HASH, deps);
+    await unpublishTranscript({ catalogId: CATALOG_ID, audioHash: AUDIO_HASH }, deps);
     const withdrawal = await prisma.transcriptWorkspace.findUniqueOrThrow({
       where: { id: workspace.id },
       select: { searchWithdrawalId: true },
@@ -1046,7 +1045,7 @@ async function main() {
     },
     deps
   );
-  check("publication waits for the search index", published.status === "ACTIVATING" && !published.reused, published);
+  check("publication waits for the search index", published.status === "ACTIVATING", published);
   check(
     "the index sync was requested for this publication",
     indexSyncRequests.some(
@@ -1382,25 +1381,97 @@ async function main() {
   });
 
   // --- republishing an unchanged snapshot ----------------------------------
-  await unpublishTranscript({ catalogId: CATALOG_ID, audioHash: AUDIO_HASH });
+  await unpublishTranscript({ catalogId: CATALOG_ID, audioHash: AUDIO_HASH }, deps);
   check(
     "unpublishing takes the reader off the transcript",
     (await resolveReaderTranscriptSource(CATALOG_ID, AUDIO_HASH)).kind === "withheld"
   );
   check(
-    "unpublishing deliberately leaves search alone",
-    (await resolveSearchTranscriptSource(CATALOG_ID, AUDIO_HASH)).kind === "publication"
+    "unpublishing restores the machine search source and removes the correction pointer",
+    (await resolveSearchTranscriptSource(CATALOG_ID, AUDIO_HASH)).kind === "machine" &&
+      (await readIndexPointer(CATALOG_ID, AUDIO_HASH)) === null
   );
+  const ordinaryWithdrawal = await prisma.transcriptWorkspace.findUniqueOrThrow({
+    where: { id: workspace.id },
+    select: { readerPublicationId: true, searchPublicationId: true, searchWithdrawalId: true, searchWithdrawalJobId: true },
+  });
+  check(
+    "ordinary unpublish clears both stored pointers and waits for its search job",
+    ordinaryWithdrawal.readerPublicationId === null &&
+      ordinaryWithdrawal.searchPublicationId === null &&
+      ordinaryWithdrawal.searchWithdrawalId !== null &&
+      ordinaryWithdrawal.searchWithdrawalJobId !== null &&
+      indexSyncRequests.some(
+        (request) => request.operation === "withdraw" && request.operationToken === ordinaryWithdrawal.searchWithdrawalId
+      ),
+    ordinaryWithdrawal
+  );
+  const ordinaryWithdrawalResult = await completeIndexSync(
+    {
+      catalogId: CATALOG_ID,
+      audioHash: AUDIO_HASH,
+      operation: "withdraw",
+      operationToken: ordinaryWithdrawal.searchWithdrawalId!,
+      status: "SUCCEEDED",
+      transcriptFingerprint: "m".repeat(64),
+      transcriptPath: machineIndexedPath,
+    },
+    deps
+  );
+  check("ordinary unpublish completes after search confirms machine text", ordinaryWithdrawalResult.outcome === "withdrawn", ordinaryWithdrawalResult);
 
+  const requestsBeforeRepublish = indexSyncRequests.length;
   const republished = await publishTranscript({
     catalogId: CATALOG_ID,
     audioHash: AUDIO_HASH,
     userId: alice.id,
   }, deps);
   check(
-    "republishing unchanged text reuses the snapshot",
-    republished.reused && republished.publicationId === published.publicationId,
+    "republishing unchanged text creates and indexes a new snapshot",
+    republished.publicationId !== published.publicationId &&
+      republished.status === "ACTIVATING" &&
+      indexSyncRequests.slice(requestsBeforeRepublish).some(
+        (request) => request.operation === "publish" && request.operationToken === republished.publicationId
+      ),
     republished
+  );
+  const republishedResult = await completeIndexSync(
+    {
+      catalogId: CATALOG_ID,
+      audioHash: AUDIO_HASH,
+      operation: "publish",
+      operationToken: republished.publicationId,
+      status: "SUCCEEDED",
+      transcriptFingerprint: "c".repeat(64),
+      transcriptPath: indexedPathFor(workspace.id, republished.publicationId),
+    },
+    deps
+  );
+  const republishedReader = await resolveReaderTranscriptSource(CATALOG_ID, AUDIO_HASH);
+  const republishedSearch = await resolveSearchTranscriptSource(CATALOG_ID, AUDIO_HASH);
+  check(
+    "republishing makes the new snapshot current for readers and search together",
+    republishedResult.outcome === "published" &&
+      republishedReader.kind === "publication" && republishedReader.publicationId === republished.publicationId &&
+      republishedSearch.kind === "publication" && republishedSearch.publicationId === republished.publicationId,
+    republishedResult
+  );
+  const delayedUnpublishReport = await completeIndexSync(
+    {
+      catalogId: CATALOG_ID,
+      audioHash: AUDIO_HASH,
+      operation: "withdraw",
+      operationToken: ordinaryWithdrawal.searchWithdrawalId!,
+      status: "SUCCEEDED",
+      transcriptPath: machineIndexedPath,
+    },
+    deps
+  );
+  check(
+    "a delayed completed unpublish report cannot withdraw the new publication",
+    delayedUnpublishReport.outcome === "ignored" &&
+      (await readIndexPointer(CATALOG_ID, AUDIO_HASH))?.publication_id === republished.publicationId,
+    delayedUnpublishReport
   );
 
   // --- archive and recreate ------------------------------------------------
@@ -1475,8 +1546,8 @@ async function main() {
   // Concurrent retries join the same generation; neither can outlive it and
   // delete a pointer written after that generation completed.
   await Promise.all([
-    withdrawFromSearch(CATALOG_ID, AUDIO_HASH, deps),
-    withdrawFromSearch(CATALOG_ID, AUDIO_HASH, deps),
+    unpublishTranscript({ catalogId: CATALOG_ID, audioHash: AUDIO_HASH }, deps),
+    unpublishTranscript({ catalogId: CATALOG_ID, audioHash: AUDIO_HASH }, deps),
   ]);
   const pendingWithdrawal = await prisma.transcriptWorkspace.findUniqueOrThrow({
     where: { id: workspace.id },
@@ -1531,7 +1602,7 @@ async function main() {
     ).searchWithdrawalId === null
   );
   check(
-    "withdrawing from search returns both sides to the machine transcript",
+    "unpublishing restores machine search and withholds the corrected reader transcript",
     (await resolveSearchTranscriptSource(CATALOG_ID, AUDIO_HASH)).kind === "machine" &&
       (await resolveReaderTranscriptSource(CATALOG_ID, AUDIO_HASH)).kind === "withheld"
   );

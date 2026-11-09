@@ -9,8 +9,9 @@ import { getRagBackendKey } from "@/lib/runtime-config";
  * readers see the text. The index is built by the Python pipeline on the host
  * worker, so the web application submits a job through the jobs API and waits
  * for the worker to report what the bundle holds; `completeIndexSync` in the
- * publication service consumes that report. Withdrawal from search and
- * rollback change what the index should hold too, so they use the same job.
+ * publication service consumes that report. Unpublish and rollback change
+ * what the index should hold too, so they use the same job. The `withdraw`
+ * operation name stays stable for existing queued jobs and callbacks.
  */
 export type IndexSyncOperation = "publish" | "withdraw" | "rollback";
 

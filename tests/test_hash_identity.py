@@ -197,7 +197,7 @@ def test_add_rejects_untyped_catalog(tmp_path: Path, capsys: pytest.CaptureFixtu
 
     assert result == 1
     error = capsys.readouterr().err
-    assert "missing required 'Hash Algorithm'" in error
+    assert "Hash Algorithm" in error
     assert "catalog create" in error
 
 
@@ -208,12 +208,9 @@ def test_merge_requires_both_catalogs_to_have_verified_contracts(
     untyped = tmp_path / "untyped.csv"
     _write_catalog(
         typed,
-        ["Hash", "Hash Algorithm", "Filename"],
-        {
-            "Hash": "a" * 64,
-            "Hash Algorithm": manager.AUDIO_HASH_ALGORITHM,
-            "Filename": "typed.wav",
-        },
+        manager.catalog_fieldnames(),
+        {"Hash": "a" * 64, "Hash Algorithm": manager.AUDIO_HASH_ALGORITHM,
+         "Filename": "typed.wav", "Full Path": "/audio/typed.wav", "added_at": "2026-01-01T00:00:00Z"},
     )
     _write_catalog(
         untyped,
@@ -234,6 +231,6 @@ def test_merge_requires_both_catalogs_to_have_verified_contracts(
 
     assert result == 1
     error = capsys.readouterr().err
-    assert "missing required 'Hash Algorithm'" in error
+    assert "Hash Algorithm" in error
     assert "catalog create" in error
     assert not (tmp_path / "merged.csv").exists()

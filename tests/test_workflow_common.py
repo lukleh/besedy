@@ -18,72 +18,48 @@ from besedy.lib.workflow.common import (
 class TestParseDurationToSeconds:
     """Tests for parse_duration_to_seconds()."""
 
-    # Valid formats
-    def test_mm_ss_format(self):
-        assert parse_duration_to_seconds("01:30") == 90.0
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("00:01:30", 90),
+            ("00:00:45", 45),
+            ("01:30:00", 5400),
+            ("01:02:03", 3723),
+            ("100:00:00", 360000),
+            ("  00:01:30  ", 90),
+        ],
+    )
+    def test_canonical_duration(self, value, expected):
+        assert parse_duration_to_seconds(value) == expected
 
-    def test_mm_ss_zero_minutes(self):
-        assert parse_duration_to_seconds("00:45") == 45.0
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "01:30",
+            "00:45",
+            "1:30:00",
+            "00:30.5",
+            "00:00:30.5",
+            "90",
+            "1:2:3:4",
+            "ab:cd",
+            "-1:00:00",
+            "01:75:00",
+            "00:00:60",
+        ],
+    )
+    def test_rejects_noncanonical_duration(self, value):
+        with pytest.raises(ValueError, match="HH:MM:SS"):
+            parse_duration_to_seconds(value)
 
-    def test_hh_mm_ss_format(self):
-        assert parse_duration_to_seconds("1:30:00") == 5400.0
-
-    def test_hh_mm_ss_with_leading_zeros(self):
-        assert parse_duration_to_seconds("01:02:03") == 3723.0
-
-    def test_fractional_seconds(self):
-        result = parse_duration_to_seconds("00:30.5")
-        assert result == pytest.approx(30.5)
-
-    def test_large_duration(self):
-        # 10 hours
-        result = parse_duration_to_seconds("10:00:00")
-        assert result == 36000.0
-
-    def test_whitespace_stripped(self):
-        result = parse_duration_to_seconds("  01:30  ")
-        assert result == 90.0
-
-    # Error cases
-    def test_empty_string_raises(self):
+    @pytest.mark.parametrize("value", ["", "   "])
+    def test_empty_duration(self, value):
         with pytest.raises(ValueError, match="empty"):
-            parse_duration_to_seconds("")
+            parse_duration_to_seconds(value)
 
-    def test_whitespace_only_raises(self):
-        with pytest.raises(ValueError, match="empty"):
-            parse_duration_to_seconds("   ")
-
-    def test_no_colon_raises(self):
-        with pytest.raises(ValueError, match="MM:SS or HH:MM:SS"):
-            parse_duration_to_seconds("90")
-
-    def test_too_many_colons_raises(self):
-        with pytest.raises(ValueError, match="MM:SS or HH:MM:SS"):
-            parse_duration_to_seconds("1:2:3:4")
-
-    def test_non_numeric_raises(self):
-        with pytest.raises(ValueError, match="non-numeric"):
-            parse_duration_to_seconds("ab:cd")
-
-    def test_negative_hours_raises(self):
-        with pytest.raises(ValueError, match="negative"):
-            parse_duration_to_seconds("-1:00:00")
-
-    def test_negative_minutes_raises(self):
-        with pytest.raises(ValueError, match="negative"):
-            parse_duration_to_seconds("-01:30")
-
-    def test_seconds_over_60_raises(self):
-        with pytest.raises(ValueError, match="out of range"):
-            parse_duration_to_seconds("01:75")
-
-    def test_minutes_over_60_with_hours_raises(self):
-        with pytest.raises(ValueError, match="out of range"):
-            parse_duration_to_seconds("1:75:00")
-
-    def test_zero_duration_raises(self):
+    def test_zero_duration(self):
         with pytest.raises(ValueError, match="positive"):
-            parse_duration_to_seconds("00:00")
+            parse_duration_to_seconds("00:00:00")
 
 
 class TestResolveUnicodePath:
@@ -122,14 +98,14 @@ class TestCsvAudioRow:
     """Tests for CsvAudioRow dataclass."""
 
     def test_basic_creation(self):
-        row = CsvAudioRow(sha256="abc123", full_path="/path/to/audio.wav")
-        assert row.sha256 == "abc123"
+        row = CsvAudioRow(audio_hash="abc123", full_path="/path/to/audio.wav")
+        assert row.audio_hash == "abc123"
         assert row.full_path == "/path/to/audio.wav"
         assert row.duration_seconds is None
 
     def test_with_duration(self):
         row = CsvAudioRow(
-            sha256="abc123",
+            audio_hash="abc123",
             full_path="/path/to/audio.wav",
             duration_seconds=90.5,
         )
@@ -137,7 +113,7 @@ class TestCsvAudioRow:
 
     def test_with_loudness_params(self):
         row = CsvAudioRow(
-            sha256="abc123",
+            audio_hash="abc123",
             full_path="/path/to/audio.wav",
             integrated_loudness_lufs="-16.0",
             true_peak_db="-1.5",
@@ -146,9 +122,9 @@ class TestCsvAudioRow:
         assert row.true_peak_db == "-1.5"
 
     def test_is_frozen(self):
-        row = CsvAudioRow(sha256="abc", full_path="/test")
+        row = CsvAudioRow(audio_hash="abc", full_path="/test")
         with pytest.raises(AttributeError):
-            row.sha256 = "changed"
+            row.audio_hash = "changed"
 
 
 class TestIterAudioCsvRowsScanRoot:
@@ -157,7 +133,7 @@ class TestIterAudioCsvRowsScanRoot:
     def test_reads_scan_root_per_row(self, tmp_path):
         csv_path = tmp_path / "catalog.csv"
         csv_path.write_text(
-            "Hash,Full Path,Scan Root\naaa,/data/a.mp3,/data\nbbb,/uploads/b.m4a,\n",
+            "Hash,Full Path,Scan Root,added_at\naaa,/data/a.mp3,/data,2026-01-01T00:00:00Z\nbbb,/uploads/b.m4a,,2026-01-01T00:00:00Z\n",
             encoding="utf-8",
         )
         rows = list(iter_audio_csv_rows(csv_path))
@@ -165,7 +141,7 @@ class TestIterAudioCsvRowsScanRoot:
 
     def test_missing_column_gives_none(self, tmp_path):
         csv_path = tmp_path / "catalog.csv"
-        csv_path.write_text("Hash,Full Path\naaa,/data/a.mp3\n", encoding="utf-8")
+        csv_path.write_text("Hash,Full Path,added_at\naaa,/data/a.mp3,2026-01-01T00:00:00Z\n", encoding="utf-8")
         rows = list(iter_audio_csv_rows(csv_path))
         assert rows[0].scan_root is None
 

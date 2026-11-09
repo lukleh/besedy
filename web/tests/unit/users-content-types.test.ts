@@ -32,26 +32,10 @@ const basePendingAdmission: PendingPortalAdmission = {
   type: "portal_admission",
   email: "invitee@example.com",
   invitedAt: "2026-03-10T00:00:00.000Z",
-  pendingGrants: [
-    {
-      catalogId: "catalog-1",
-      catalogLabel: "Catalog One",
-      role: CatalogRole.reader,
-      extraPermissions: [],
-      grantedAt: "2026-03-10T00:00:00.000Z",
-      grantedBy: {
-        id: "admin-1",
-        name: "Admin User",
-        email: "admin@example.com",
-      },
-      notes: null,
-    },
-  ],
-  catalogNames: ["Catalog One"],
-  pendingGrantCount: 1,
   catalogId: "catalog-1",
   catalogLabel: "Catalog One",
   role: CatalogRole.reader,
+  extraPermissions: [],
   invitedBy: {
     id: "admin-1",
     name: "Admin User",

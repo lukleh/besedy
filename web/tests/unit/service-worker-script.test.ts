@@ -233,7 +233,8 @@ async function seedAudio(
         chunkSizes: chunks.map((chunk) => chunk.byteLength),
         contentType: 'audio/webm',
         complete: options.complete ?? true,
-        ...(options.generation ? { generation: options.generation } : {}),
+        schemaVersion: 1,
+        generation: options.generation ?? 'test-generation',
       }),
     ),
   );
@@ -283,10 +284,9 @@ describe('service worker constants', () => {
     for (const url of [
       `/api/catalogs/cat/recordings/${HASH}/audio`,
       `/api/catalogs/cat/recordings/${HASH}/audio?source=archived`,
-      `/api/catalogs/cat/recordings/${HASH}/audio?source=listening&variant=loud`,
       `/api/catalogs/cat/recordings/${HASH}/audio?format=aac`,
       `/api/catalogs/cat/recordings/${HASH}/audio?format=webm`,
-      `/api/catalogs/cat/recordings/${HASH}/audio?source=listening&variant=loud&format=aac&local=1`,
+      `/api/catalogs/cat/recordings/${HASH}/audio?format=aac&local=1`,
     ]) {
       const key = getAudioCacheKey(url, ORIGIN);
       expect(internals.getCacheKey(url)).toBe(key);
@@ -294,6 +294,15 @@ describe('service worker constants', () => {
       expect(internals.getMetaKey(key)).toBe(getAudioMetaKey(key));
     }
   });
+
+  it.each(['source=', 'format=', 'source=listening', 'variant=mobile', 'group=old', 'unknown=1', 'local=no', 'download=maybe', 'format=webm&format=aac', 'source=archived&source=original'])(
+    'rejects the same non-current audio query as the page: %s', (query) => {
+      const { internals } = loadScript();
+      const url = `/api/catalogs/cat/recordings/${HASH}/audio?${query}`;
+      expect(internals.getCacheKey(url)).toBeNull();
+      expect(() => getAudioCacheKey(url, ORIGIN)).toThrow();
+    },
+  );
 
   it('only recognizes the dedicated Downloads pathname as an offline shell', () => {
     const { internals } = loadScript();
@@ -601,8 +610,7 @@ describe('downloaded audio', () => {
     async (damage) => {
       const { fetchHandler, cacheStorage, locks } = loadScript();
       vi.stubGlobal('navigator', { locks });
-      // Legacy downloads have no generation marker. Their replacement does,
-      // even when its sizes and bytes are otherwise identical.
+      // A replacement has a new generation even when its sizes and bytes match.
       const chunks = [new Uint8Array([0, 1, 2]), new Uint8Array([3, 4, 5])];
       const { url, baseKey, cache } = await seedAudio(cacheStorage, chunks);
       const event = createEvent(url, { headers: { Range: 'bytes=0-' } });

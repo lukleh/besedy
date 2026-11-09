@@ -15,7 +15,7 @@ from besedy.core.paths import (
     resolve_transcripts_root,
     sanitize_component,
 )
-from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.data.encoding import load_json_utf8
 from besedy.lib.rag_correction_sources import (
     EffectiveTranscriptSource,
     resolve_effective_transcript_sources,
@@ -242,7 +242,7 @@ def build_transcript_source(
         chunk_tokenizer_model=chunk_tokenizer_model,
     )
 
-    data = load_json_with_fallback(transcript_path)
+    data = load_json_utf8(transcript_path)
     if not isinstance(data, dict):
         raise ValueError(f"Invalid transcript JSON: {transcript_path}")
 
@@ -380,7 +380,7 @@ def build_chunks_for_transcript(
         chunk_tokenizer_model=chunk_tokenizer_model,
     )
 
-    data = load_json_with_fallback(transcript_path)
+    data = load_json_utf8(transcript_path)
     if not isinstance(data, dict):
         raise ValueError(f"Invalid transcript JSON: {transcript_path}")
 

@@ -18,17 +18,22 @@ from pathlib import Path
 
 from besedy.commands.catalog.merge import handle_merge
 from besedy.lib.catalog import remover
-from besedy.lib.catalog.manager import append_csv
+from besedy.lib.catalog.manager import append_csv, catalog_fieldnames
 
 HASH_CONTRACT = "pcm-s16le-16000hz-mono-sha256-v1"
-COLUMNS = ["Hash", "Hash Algorithm", "Full Path"]
+COLUMNS = catalog_fieldnames()
 KEEP = "a" * 64
 GONE = "b" * 64
 NEW = "c" * 64
 
 
 def _row(value: str) -> dict[str, str]:
-    return {"Hash": value, "Hash Algorithm": HASH_CONTRACT, "Full Path": f"/audio/{value[:4]}.wav"}
+    return {
+        "Hash": value,
+        "Hash Algorithm": HASH_CONTRACT,
+        "Full Path": f"/audio/{value[:4]}.wav",
+        "added_at": "2026-01-01T00:00:00Z",
+    }
 
 
 def _write_csv(path: Path, hashes: list[str]) -> None:

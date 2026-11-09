@@ -179,7 +179,7 @@ def build_workflows(
         for job in nemo_jobs:
             cfg = job.config
             nemo_entries = [
-                entry for entry in prepared if hash_component_from_sha(entry.sha256) in job.hashes
+                entry for entry in prepared if hash_component_from_sha(entry.audio_hash) in job.hashes
             ]
             has_align = cfg.decode_strategy == "beam" and bool(job.align_hashes)
             if not nemo_entries and not has_align:
@@ -286,7 +286,7 @@ def build_workflows(
                 align_entries = [
                     entry
                     for entry in prepared
-                    if hash_component_from_sha(entry.sha256) in job.align_hashes
+                    if hash_component_from_sha(entry.audio_hash) in job.align_hashes
                 ]
                 segments_paths = [
                     output_root
@@ -345,7 +345,7 @@ def build_workflows(
         for job in faster_jobs:
             cfg = job.config
             faster_entries = [
-                entry for entry in prepared if hash_component_from_sha(entry.sha256) in job.hashes
+                entry for entry in prepared if hash_component_from_sha(entry.audio_hash) in job.hashes
             ]
             if not faster_entries:
                 continue
@@ -391,7 +391,7 @@ def build_workflows(
         for job in qwen_jobs:
             cfg = job.config
             qwen_entries = [
-                entry for entry in prepared if hash_component_from_sha(entry.sha256) in job.hashes
+                entry for entry in prepared if hash_component_from_sha(entry.audio_hash) in job.hashes
             ]
             if not qwen_entries:
                 continue
@@ -444,7 +444,7 @@ def build_workflows(
         for job in whisperx_jobs:
             cfg = job.config
             whisperx_entries = [
-                entry for entry in prepared if hash_component_from_sha(entry.sha256) in job.hashes
+                entry for entry in prepared if hash_component_from_sha(entry.audio_hash) in job.hashes
             ]
             if not whisperx_entries:
                 continue
@@ -509,7 +509,7 @@ def build_workflows(
         pyannote_entries = [
             entry
             for entry in prepared
-            if hash_component_from_sha(entry.sha256) in hashes_for_pyannote_diarization
+            if hash_component_from_sha(entry.audio_hash) in hashes_for_pyannote_diarization
         ]
         if pyannote_entries:
             workflow_root = output_root / base_label

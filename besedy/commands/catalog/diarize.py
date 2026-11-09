@@ -197,7 +197,7 @@ def handle_diarize(
     candidates: list[tuple[CsvAudioRow, str]] = []
 
     for row in rows:
-        hash_component = hash_component_from_sha(row.sha256)
+        hash_component = hash_component_from_sha(row.audio_hash)
         need_pyannote = request.overwrite or not artifact_exists(
             "pyannote", output_root, hash_component
         )
