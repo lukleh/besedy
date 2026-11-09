@@ -1,3 +1,4 @@
+import { normalizeWebVersion } from "@/lib/service-worker/version";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SECURE_COOKIE_PREFIX } from "better-auth/cookies";
@@ -386,10 +387,9 @@ function addSecurityHeaders(
     response.headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
   }
 
-  response.headers.set("X-App-Commit", process.env.GIT_COMMIT ?? "unknown");
   response.headers.set(
     "X-Web-Version",
-    process.env.WEB_VERSION ?? process.env.GIT_COMMIT ?? "unknown"
+    normalizeWebVersion(process.env.WEB_VERSION) ?? "unknown"
   );
   const allowSameOriginFrame = isDownloadsShellWarmRequest(req);
   response.headers.set(

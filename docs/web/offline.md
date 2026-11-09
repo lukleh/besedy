@@ -86,31 +86,22 @@ uncapped `bytes=0-` for a multi-hour recording pushed that process past its
 memory limit and WebKit terminated the page. A suffix range keeps its tail; a
 request without `Range` still gets the whole body as a `200`.
 
-Each package is keyed by the URL's `source`, `variant` and `format`
+Each package is keyed by the current URL's `source` and `format`
 (`getAudioCacheKey` and the worker's `getCacheKey`, which must agree), with the
-defaults `archived` and `webm` dropped. WebKit browsers (`prefersAacAudio` in
-`web/src/lib/audio-format.ts`: every iOS browser and Safari on macOS) download
-and play the AAC-in-MP4 copy (`format=aac`) when `/audio/sources` lists one for
-the chosen source, because Safari loads a WebM audio file whole into its GPU
-process instead of streaming it (#291). That copy has its own key, so a WebM
-package downloaded earlier on the same device is not touched by the AAC one's
-cleanup, and it still counts as the download of that source: the page keeps
-playing it rather than streaming the copy.
-On WebKit the player waits for `/audio/sources` before it starts, so it never
-begins on the WebM of a recording that has a copy; the wait is skipped when a
-complete download will play, and ends after 3 s, when the player starts on the
-WebM. A WebM download that was paused before the copy
-existed restarts from the beginning as the copy when it is resumed (the key
-differs), on purpose: finishing it would leave a package Safari cannot stream.
+defaults `archived` and `webm` dropped. Retired `listening`, `variant` and `group`
+selectors are rejected. WebKit browsers download and play the AAC-in-MP4 copy
+(`format=aac`) when `/audio/sources` lists it. WebM and AAC remain current browser
+formats; online playback follows the selected codec, while offline playback
+uses the complete local package.
 
-On WebKit a WebM package downloaded before the copy existed still plays through
-the worker only up to Safari's first capped response, so the Downloads page
-flags it while online once `/audio/sources` lists the copy for that package's
-own source (`useAacUpgradeAvailable`), with a **Download again** action
-(`downloadManager.redownload`). That re-queues the package in place, keeping
-its event, transcript and artwork; the job builds the URL as a new download
-would, so it fetches the copy, and the WebM chunks are deleted when it starts
-because the key changes with the format.
+Audio metadata has one current schema (`schemaVersion: 1`) and a required
+per-download generation. On hydration, readable metadata outside that contract
+is discarded under the shared cache lock and its Downloads row becomes retryable.
+Retry requests current source metadata and chooses the browser's current codec;
+there is no separate historical-format upgrade flow. Unreadable storage stays
+intact and is marked retryable. Destructive migration is also skipped when Web
+Locks are unavailable, so a stale read cannot delete another tab's replacement;
+unsupported packages still become retryable. Playback progress remains separate.
 
 The remaining caches are intentionally small:
 
@@ -151,8 +142,9 @@ artwork, reconstruct page data from snapshots, backfill missing payloads, or
 recover retired inline-audio formats. Unsupported packages become retryable
 Downloads rows: their identity and display snapshots remain, while their bundle
 and cached audio are discarded. Retry fetches the current metadata and downloads
-the recording again. Existing version-6 packages that already satisfy the shape
-remain unchanged; an application update does not reset all downloads.
+the recording again. Only packages whose payloads and audio metadata both satisfy the current
+contracts remain complete. The audio metadata cutover requires earlier saved
+recordings to be downloaded again.
 
 The same verification checks the audio metadata and every cached chunk. Missing,
 incomplete or unreadable audio becomes a retryable error; Retry resumes from the

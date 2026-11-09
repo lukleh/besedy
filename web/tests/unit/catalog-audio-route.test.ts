@@ -623,32 +623,10 @@ describe("catalog audio route", () => {
     }
   });
 
-  it("serves the retired listening source as the archived recording", async () => {
-    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
-
-    try {
-      const request = new NextRequest(
-        `http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=enhanced-default`
-      );
-      const response = await getAudio(request, {
-        params: Promise.resolve({ id: CATALOG_ID, hash: HASH }),
-      });
-
-      expect(response.status).toBe(200);
-      expect(mockValidatePathAsync).toHaveBeenCalledWith(audioPath);
-
-      const event = findStructuredEvent(infoSpy.mock.calls as unknown[][], "audio_route_response");
-      expect(event).toMatchObject({
-        status: 200,
-        reason: "full_stream",
-        requestedSource: "archived",
-        servedSource: "archived",
-      });
-      expect(event).not.toHaveProperty("variant");
-      await response.arrayBuffer();
-    } finally {
-      infoSpy.mockRestore();
-    }
+  it.each(["source=listening", "variant=enhanced-default", "group=20260101_000000", "format=webm&format=aac", "source=archived&source=original", "unknown=1", "local=no", "download=maybe"])("rejects retired audio selectors before resolving files: %s", async (query) => {
+    const response = await getAudio(new NextRequest(`http://localhost/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?${query}`), { params: Promise.resolve({ id: CATALOG_ID, hash: HASH }) });
+    expect(response.status).toBe(400);
+    expect(mockValidatePathAsync).not.toHaveBeenCalled();
   });
 
   describe("format=aac", () => {
@@ -788,26 +766,12 @@ describe("catalog audio route", () => {
       expect(response.status).toBe(400);
     });
 
-    it("serves the archived AAC copy for the retired listening source", async () => {
-      const response = await request("source=listening&format=aac");
-
-      expect(response.status).toBe(200);
-      expect(mockValidatePathAsync).toHaveBeenCalledWith(aacPath);
-      await response.arrayBuffer();
+    it.each(["source=listening&format=aac", "source=listening&format=aac&download=true"])("rejects retired AAC requests without an audit success: %s", async (query) => {
+      const response = await request(query);
+      expect(response.status).toBe(400);
+      expect(mockLogAudioDownloaded).not.toHaveBeenCalled();
+      expect(mockValidatePathAsync).not.toHaveBeenCalled();
     });
 
-    it("audits the archived source for a retired listening download", async () => {
-      const response = await request("source=listening&format=aac&download=true");
-
-      expect(response.status).toBe(200);
-      expect(mockLogAudioDownloaded).toHaveBeenCalledWith(
-        "user-1",
-        HASH,
-        CATALOG_ID,
-        "archived",
-        "aac"
-      );
-      await response.arrayBuffer();
-    });
   });
 });

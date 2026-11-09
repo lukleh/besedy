@@ -1977,8 +1977,6 @@
     "eventLabel": "Událost",
     "recordingLabel": "Nahrávka",
     "errorIncompletePackage": "Stažené audio je v tomto zařízení neúplné. Stáhněte je znovu.",
-    "formatUpgrade": "Uloženo ve starším formátu, který tento prohlížeč offline nepřehraje celý. Stáhněte je znovu.",
-    "redownload": "Stáhnout znovu",
     "unavailableOffline": "Offline nedostupné",
     "unavailableOfflineDescription": "Tato stránka potřebuje připojení. Stažené události se otevřou i bez něj."
   },
