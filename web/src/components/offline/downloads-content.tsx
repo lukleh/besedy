@@ -258,7 +258,7 @@ export function sortDownloadRecords(
 export function recordPageUrl(record: DownloadRecord): string {
   const eventId = record.eventKey
     ? Number(record.eventKey.slice(record.catalogId.length + 1))
-    : record.event?.id;
+    : undefined;
   const pageUrl =
     eventId !== undefined && Number.isSafeInteger(eventId) && eventId >= 0
       ? `/catalog/${record.catalogId}/event/${eventId}`
@@ -414,7 +414,11 @@ function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <EventPlaybackProgress playback={playback} layout="inline" showLabel />
+          <EventPlaybackProgress
+            playback={playback}
+            layout="inline"
+            showLabel
+          />
           {record.status === 'complete' && (
             // A document navigation: Downloads lives in its own root layout,
             // and the worker serves the target from local packages offline.

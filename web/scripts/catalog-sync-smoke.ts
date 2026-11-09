@@ -10,6 +10,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@/generated/prisma/client';
+import { CATALOG_CSV_VALIDATION } from '@/lib/catalog-sync/csv-contract';
+
+function catalogCsv(kind: keyof typeof CATALOG_CSV_VALIDATION, rows: Record<string, string>[]) {
+  const headers = CATALOG_CSV_VALIDATION[kind].requiredHeaders;
+  return [headers.join(','), ...rows.map(row => headers.map(header =>
+    `"${(row[header] ?? '').replaceAll('"', '""')}"`
+  ).join(',')), ''].join('\n');
+}
 
 async function main() {
   const connectionString = process.env.DATABASE_URL;
@@ -53,16 +61,19 @@ async function main() {
   let createdCatalog = false;
 
   async function writeSources(hashes: string[], title: string, withAac: boolean) {
-    await fs.writeFile(metadataPath, [
-      'Hash,Hash Algorithm,Full Path,title',
-      ...hashes.map((audioHash) => `${audioHash},pcm-s16le-16000hz-mono-sha256-v1,/audio/${audioHash}.wav,${title}`),
-      '',
-    ].join('\n'));
-    await fs.writeFile(archivedPath, [
-      'Hash,Original Path,Compressed Path,Compressed AAC Path',
-      ...hashes.map((audioHash) => `${audioHash},/audio/${audioHash}.wav,/audio/${audioHash}.webm,${withAac ? `/audio/${audioHash}.m4a` : ''}`),
-      '',
-    ].join('\n'));
+    await fs.writeFile(metadataPath, catalogCsv('metadata', hashes.map(audioHash => ({
+      Hash: audioHash,
+      'Hash Algorithm': 'pcm-s16le-16000hz-mono-sha256-v1',
+      'Full Path': `/audio/${audioHash}.wav`,
+      Duration: '00:00:01', added_at: '2026-01-01T00:00:00Z', title,
+    }))));
+    await fs.writeFile(archivedPath, catalogCsv('archived', hashes.map(audioHash => ({
+      Hash: audioHash,
+      'Original Path': `/audio/${audioHash}.wav`,
+      'Compressed Path': `/audio/${audioHash}.webm`,
+      'Compressed AAC Path': withAac ? `/audio/${audioHash}.m4a` : '',
+      Duration: '00:00:01', added_at: '2026-01-01T00:00:00Z',
+    }))));
   }
 
   try {
@@ -113,12 +124,10 @@ async function main() {
 
     // Python keeps duplicate discoveries even when the original path is
     // unknown. Those rows are valid CSV but cannot enter the web projection.
-    await fs.writeFile(duplicatesPath, [
-      'Hash,Original Path,Duplicate Path',
-      `${retainedHash},/audio/original.wav,/audio/known-duplicate.wav`,
-      `${retainedHash},,/audio/unknown-original.wav`,
-      '',
-    ].join('\n'));
+    await fs.writeFile(duplicatesPath, catalogCsv('duplicates', [
+      { Hash: retainedHash, 'Original Path': '/audio/original.wav', 'Duplicate Path': '/audio/known-duplicate.wav' },
+      { Hash: retainedHash, 'Original Path': '', 'Duplicate Path': '/audio/unknown-original.wav' },
+    ]));
     await client.workflowGroup.update({
       where: { id: catalogId }, data: { duplicatesCatalogPath: duplicatesPath },
     });
@@ -160,7 +169,7 @@ async function main() {
     });
     await writeSources([retainedHash, addedHash], 'Rejected title', true);
     await fs.writeFile(archivedPath,
-      `Hash,Original Path,Compressed Path\n${retainedHash},/audio/original.wav,"unfinished`,
+      `${catalogCsv('archived', [])}${retainedHash},/audio/original.wav,"unfinished`,
     );
     const rejected = await syncCatalogGroup(catalogId, { force: true, allowRowCountDrop: true });
     assert.equal(rejected.status, 'error');
@@ -196,7 +205,7 @@ async function main() {
 
     // Clearing an explicitly allowed empty catalog still removes every row.
     await writeSources([], '', false);
-    await fs.writeFile(duplicatesPath, 'Hash,Original Path,Duplicate Path\n');
+    await fs.writeFile(duplicatesPath, catalogCsv('duplicates', []));
     assert.equal((await syncCatalogGroup(catalogId, { allowRowCountDrop: true })).status, 'success');
     assert.equal(await client.catalogEntry.count({ where: { workflowGroupId: catalogId } }), 0);
     const recoveredArchive = await client.catalogSyncState.findUniqueOrThrow({

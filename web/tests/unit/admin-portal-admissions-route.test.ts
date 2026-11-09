@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth/permissions", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/permissions")>(
-    "@/lib/auth/permissions"
+    "@/lib/auth/permissions",
   );
   return {
     ...actual,
@@ -40,18 +40,22 @@ describe("admin portal admissions route", () => {
     mocks.requireAuthMock.mockResolvedValue("admin-1");
     mocks.getAdminCapabilityMock.mockResolvedValue({ canAccessAdmin: true });
     mocks.listPendingAdminAdmissionsMock.mockResolvedValue([]);
-    mocks.createPortalAdmissionMock.mockResolvedValue(NextResponse.json({ ok: true }));
+    mocks.createPortalAdmissionMock.mockResolvedValue(
+      NextResponse.json({ ok: true }),
+    );
   });
 
   it("returns pending portal admissions directly and preserves search", async () => {
     const request = new NextRequest(
-      "http://localhost/api/admin/portal-admissions?search=pending"
+      "http://localhost/api/admin/portal-admissions?search=pending",
     );
 
     const response = await listPortalAdmissions(request);
 
     expect(response.status).toBe(200);
-    expect(mocks.listPendingAdminAdmissionsMock).toHaveBeenCalledWith("pending");
+    expect(mocks.listPendingAdminAdmissionsMock).toHaveBeenCalledWith(
+      "pending",
+    );
     await expect(response.json()).resolves.toEqual([]);
   });
 
@@ -62,9 +66,7 @@ describe("admin portal admissions route", () => {
         email: "pending@example.com",
         status: "PENDING",
         invitedAt: "2026-03-10T10:00:00.000Z",
-        pendingGrants: [],
-        catalogNames: [],
-        pendingGrantCount: 0,
+        extraPermissions: [],
         catalogId: null,
         catalogLabel: null,
         role: null,
@@ -74,7 +76,7 @@ describe("admin portal admissions route", () => {
     ]);
 
     const response = await listPortalAdmissions(
-      new NextRequest("http://localhost/api/admin/portal-admissions")
+      new NextRequest("http://localhost/api/admin/portal-admissions"),
     );
 
     expect(response.status).toBe(200);
@@ -84,9 +86,7 @@ describe("admin portal admissions route", () => {
         email: "pending@example.com",
         status: "PENDING",
         invitedAt: "2026-03-10T10:00:00.000Z",
-        pendingGrants: [],
-        catalogNames: [],
-        pendingGrantCount: 0,
+        extraPermissions: [],
         catalogId: null,
         catalogLabel: null,
         role: null,
@@ -101,7 +101,7 @@ describe("admin portal admissions route", () => {
     mocks.getAdminCapabilityMock.mockResolvedValue({ canAccessAdmin: false });
 
     const response = await listPortalAdmissions(
-      new NextRequest("http://localhost/api/admin/portal-admissions")
+      new NextRequest("http://localhost/api/admin/portal-admissions"),
     );
 
     expect(response.status).toBe(403);
@@ -113,13 +113,16 @@ describe("admin portal admissions route", () => {
         id: "pending@example.com",
         email: "pending@example.com",
         status: "PENDING",
-      })
+      }),
     );
 
-    const request = new NextRequest("http://localhost/api/admin/portal-admissions", {
-      method: "POST",
-      body: JSON.stringify({ email: "pending@example.com" }),
-    });
+    const request = new NextRequest(
+      "http://localhost/api/admin/portal-admissions",
+      {
+        method: "POST",
+        body: JSON.stringify({ email: "pending@example.com" }),
+      },
+    );
 
     const response = await createPortalAdmission(request);
 

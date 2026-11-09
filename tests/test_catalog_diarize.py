@@ -14,7 +14,7 @@ def test_handle_diarize_reports_already_complete_rows(
 ) -> None:
     """Rows with diarization output are counted without being validated again."""
     output_root = tmp_path / "transcripts"
-    row = CsvAudioRow(sha256="a" * 64, full_path=str(tmp_path / "source.wav"))
+    row = CsvAudioRow(audio_hash="a" * 64, full_path=str(tmp_path / "source.wav"))
     summaries: list[dict[str, int]] = []
 
     def fail_validation(_rows) -> None:

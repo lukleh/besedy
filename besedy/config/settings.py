@@ -41,10 +41,9 @@ class PathsConfig:
             after joining. If empty, originals are left in place. If relative,
             resolves under audio_artifacts_dir.
         text_data_dir: Base directory for text artifacts (catalog CSVs,
-            transcripts, parquet exports, speaker clusters). Required; an
+            transcripts and speaker clusters). Required; an
             empty value is an error unless BESEDY_TEXT_DATA_ROOT is set.
-            Creates catalogs/, transcripts/, and transcripts_parquet/
-            subdirectories.
+            Creates catalogs/ and transcripts/ subdirectories.
             Each transcript generation contains
             {workflow}/{output_component}/{audio_hash}/transcript.json.
         sources_dir: Directory for recording sources (URLs/files) managed by
@@ -339,17 +338,13 @@ def _load_config() -> Config:
 
     transcription_workflows = _load_transcription_workflows(data)
 
-    # Existing operator configurations may retain this retired setting.
-    web_settings = dict(data.get("web", {}))
-    web_settings.pop("deep_search_default_instructions", None)
-
     return Config(
         paths=PathsConfig(**data["paths"]),
         audio=AudioConfig(**data["audio"]),
         transcription_workflows=transcription_workflows,
         vad=VadConfig(**data["vad"]),
         nemo=NemoConfig(**data["nemo"]),
-        web=WebConfig(**web_settings),
+        web=WebConfig(**data.get("web", {})),
         rag=RagConfig(**data.get("rag", {})),
     )
 

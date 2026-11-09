@@ -1,9 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  LocalModeShell,
-  legacyRedirectTarget,
-} from '@/components/offline/local-mode-shell';
+import { LocalModeShell } from '@/components/offline/local-mode-shell';
 import { resolveLocalRoute } from '@/lib/offline/local-route';
 
 const mocks = vi.hoisted(() => ({
@@ -23,9 +20,13 @@ vi.mock('next-intl', () => ({
 }));
 
 vi.mock('next/link', () => ({
-  default: ({ href, children }: { href: string; children: React.ReactNode }) => (
-    <a href={href}>{children}</a>
-  ),
+  default: ({
+    href,
+    children,
+  }: {
+    href: string;
+    children: React.ReactNode;
+  }) => <a href={href}>{children}</a>,
 }));
 
 vi.mock('@/components/offline/downloads-content', () => ({
@@ -71,9 +72,15 @@ describe('resolveLocalRoute', () => {
 
   it('treats everything else as unavailable offline', () => {
     expect(resolveLocalRoute('/settings').kind).toBe('unavailable');
-    expect(resolveLocalRoute('/catalog/cat-1/event/abc').kind).toBe('unavailable');
-    expect(resolveLocalRoute('/catalog/cat-1/event/7/edit').kind).toBe('unavailable');
-    expect(resolveLocalRoute('/catalog/cat-1/recording/short').kind).toBe('unavailable');
+    expect(resolveLocalRoute('/catalog/cat-1/event/abc').kind).toBe(
+      'unavailable',
+    );
+    expect(resolveLocalRoute('/catalog/cat-1/event/7/edit').kind).toBe(
+      'unavailable',
+    );
+    expect(resolveLocalRoute('/catalog/cat-1/recording/short').kind).toBe(
+      'unavailable',
+    );
   });
 });
 
@@ -82,49 +89,6 @@ describe('LocalModeShell', () => {
     mocks.search = '';
     mocks.eventDetail.mockClear();
     mocks.recordingContent.mockClear();
-  });
-
-  it("honours a legacy worker's ?from= redirect, restoring path and search before routing", () => {
-    mocks.pathname = '/downloads';
-    mocks.search = `from=${encodeURIComponent(`/catalog/cat-1/recording/${HASH}?seek=10&end=20`)}`;
-    const replaceState = vi.spyOn(window.history, 'replaceState');
-    const { rerender } = render(<LocalModeShell />);
-
-    // Nothing is routed until the router reflects the restored URL, so the
-    // recording page sees its query parameters at first render.
-    expect(screen.queryByTestId('recording-content')).not.toBeInTheDocument();
-    expect(replaceState).toHaveBeenCalledWith(
-      null,
-      '',
-      `/catalog/cat-1/recording/${HASH}?seek=10&end=20`,
-    );
-
-    mocks.pathname = `/catalog/cat-1/recording/${HASH}`;
-    mocks.search = 'seek=10&end=20';
-    rerender(<LocalModeShell />);
-    expect(screen.getByTestId('recording-content')).toBeInTheDocument();
-    replaceState.mockRestore();
-  });
-
-  it('ignores a ?from= that does not stay on this origin', () => {
-    const replaceState = vi.spyOn(window.history, 'replaceState');
-    for (const from of ['//evil.example/x', '/\\evil.example/x', 'https://evil.example/x']) {
-      mocks.pathname = '/downloads';
-      mocks.search = `from=${encodeURIComponent(from)}`;
-      const { unmount } = render(<LocalModeShell />);
-      expect(screen.getByTestId('downloads-content')).toBeInTheDocument();
-      unmount();
-    }
-    expect(replaceState).not.toHaveBeenCalled();
-    replaceState.mockRestore();
-  });
-
-  it('resolves legacy redirect targets as same-origin URLs with their search', () => {
-    expect(legacyRedirectTarget('/catalog/c/event/7?seek=3')).toBe('/catalog/c/event/7?seek=3');
-    expect(legacyRedirectTarget('/\\evil.example/x')).toBeNull();
-    expect(legacyRedirectTarget('//evil.example/x')).toBeNull();
-    expect(legacyRedirectTarget('http://evil.example/x')).toBeNull();
-    expect(legacyRedirectTarget(null)).toBeNull();
   });
 
   it('renders the Downloads library at its own URL', () => {

@@ -3,7 +3,6 @@
 import { use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
-import { useHydratedBoolean } from "@/hooks/use-hydrated-state";
 import { useAacUpgradeAvailable } from "@/hooks/use-aac-upgrade-available";
 import { useDownloadRecord } from "@/hooks/use-downloads";
 import { useLocalAudioSrc } from "@/hooks/use-local-package";
@@ -89,13 +88,6 @@ export default function RecordingContent({
   // playback behavior and view sections live in sibling modules.
   const resolvedParams: { catalogId: string; hash: string } = isPromiseParams(params) ? use(params) : params;
   const { catalogId, hash } = resolvedParams;
-  // Keep the legacy key so existing users keep their saved transcript view preference.
-  // Reading is the default view. The stream is the administrative one, and is
-  // only reachable by an account that may see the transcripts behind it.
-  const [showTranscriptStream, setShowTranscriptStream] = useHydratedBoolean(
-    "besedy-transcript-enabled",
-    false
-  );
   const { catalogNotFound, catalogValidationLoading } = useCatalogContext(catalogId, {
     skipCatalogValidation,
   });
@@ -106,7 +98,6 @@ export default function RecordingContent({
     handlePlayingChange,
     handlePlayerSeek,
     handleSeek,
-    isPlaying,
     seekRequest,
     setCurrentTime,
   } = useRecordingPlayback(catalogId, hash);
@@ -288,11 +279,8 @@ export default function RecordingContent({
           catalogId={catalogId}
           clock={clock}
           hash={hash}
-          isPlaying={isPlaying}
           onSeek={handleSeek}
-          onToggleTranscriptStream={setShowTranscriptStream}
           onTranscriptChange={handleTranscriptChange}
-          showTranscriptStream={showTranscriptStream}
         />
       )}
     </div>

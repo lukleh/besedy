@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.data.encoding import load_json_utf8
 from besedy.lib.validation.schema import validate_canonical_schema
 from besedy.lib.workflow.paths import get_transcript_backend_paths
 
@@ -13,7 +13,7 @@ from besedy.lib.workflow.paths import get_transcript_backend_paths
 def load_json(path: Path) -> dict | None:
     """Load a UTF-8 JSON file, returning None if it is missing or unreadable."""
     try:
-        return load_json_with_fallback(path)
+        return load_json_utf8(path)
     except (ValueError, FileNotFoundError):
         return None
 
@@ -54,12 +54,20 @@ def quick_validate(path: Path) -> tuple[bool, dict[str, object]]:
         return False, {"error": "failed to load"}
 
     issues = validate_canonical_schema(data)
+    if not isinstance(data, dict):
+        return False, {"issues": len(issues), "issue_samples": issues[:3]}
     meta = data.get("meta", {}) if isinstance(data.get("meta"), dict) else {}
-    segments = data.get("segments", []) or []
+    segments = data.get("segments")
+    if not isinstance(segments, list):
+        segments = []
     info = {
         "backend": meta.get("backend", "unknown"),
         "segments": len(segments),
-        "words": sum(len(seg.get("words", [])) for seg in segments),
+        "words": sum(
+            len(seg["words"])
+            for seg in segments
+            if isinstance(seg, dict) and isinstance(seg.get("words"), list)
+        ),
         "duration": meta.get("duration"),
         "issues": len(issues),
     }

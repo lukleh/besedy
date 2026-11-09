@@ -28,7 +28,7 @@ from besedy.core.paths import (
     resolve_catalogs_root,
     resolve_transcripts_parent,
 )
-from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.data.encoding import load_json_utf8
 
 # Default tolerance in seconds for duration comparisons
 DEFAULT_TOLERANCE_SECONDS = 2.0
@@ -38,7 +38,7 @@ DEFAULT_TOLERANCE_SECONDS = 2.0
 class DurationRecord:
     """Duration data for a single hash across all sources."""
 
-    sha256: str
+    audio_hash: str
     filename: str = ""
     # CSV durations (in seconds, parsed from HH:MM:SS)
     csv_main: float | None = None
@@ -89,14 +89,14 @@ def load_csv_durations(
     with csv_path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            sha256 = row.get("Hash", "")
-            if not sha256:
+            audio_hash = row.get("Hash", "")
+            if not audio_hash:
                 continue
 
-            if sha256 not in records:
-                records[sha256] = DurationRecord(sha256=sha256)
+            if audio_hash not in records:
+                records[audio_hash] = DurationRecord(audio_hash=audio_hash)
 
-            record = records[sha256]
+            record = records[audio_hash]
 
             # Set filename if not set
             if not record.filename:
@@ -119,7 +119,7 @@ def load_csv_durations(
 
 def find_transcript_durations(
     transcripts_root: Path,
-    sha256: str,
+    audio_hash: str,
 ) -> dict[str, float]:
     """Find transcript durations from meta.duration field across all workflows."""
     durations: dict[str, float] = {}
@@ -135,10 +135,10 @@ def find_transcript_durations(
             if not model_dir.is_dir():
                 continue
 
-            transcript_path = model_dir / sha256 / "transcript.json"
+            transcript_path = model_dir / audio_hash / "transcript.json"
             if transcript_path.exists():
                 try:
-                    data = load_json_with_fallback(transcript_path)
+                    data = load_json_utf8(transcript_path)
                     duration = data.get("meta", {}).get("duration")
                     if duration is not None:
                         key = f"{workflow_dir.name}/{model_dir.name}"
@@ -396,14 +396,14 @@ def handle_check_durations(args: argparse.Namespace) -> int:
             reader = csv.DictReader(f)
             archived_count = 0
             for row in reader:
-                sha256 = row.get("Hash", "")
-                if not sha256:
+                audio_hash = row.get("Hash", "")
+                if not audio_hash:
                     continue
 
-                if sha256 not in records:
-                    records[sha256] = DurationRecord(sha256=sha256)
+                if audio_hash not in records:
+                    records[audio_hash] = DurationRecord(audio_hash=audio_hash)
 
-                record = records[sha256]
+                record = records[audio_hash]
                 record.csv_archived = parse_duration_hhmmss(row.get("Duration"))
 
                 # Archived files use "Compressed Path" column
@@ -425,15 +425,15 @@ def handle_check_durations(args: argparse.Namespace) -> int:
     # Probe audio files (unless skipped)
     if not skip_audio_probe:
         # Collect files to probe
-        files_to_probe: list[tuple[str, str, Path]] = []  # (sha256, attr, path)
+        files_to_probe: list[tuple[str, str, Path]] = []  # (audio_hash, attr, path)
 
-        for sha256, record in records.items():
+        for audio_hash, record in records.items():
             if record.path_original and record.path_original.exists():
-                files_to_probe.append((sha256, "audio_original", record.path_original))
+                files_to_probe.append((audio_hash, "audio_original", record.path_original))
             if record.path_staged and record.path_staged.exists():
-                files_to_probe.append((sha256, "audio_staged", record.path_staged))
+                files_to_probe.append((audio_hash, "audio_staged", record.path_staged))
             if record.path_archived and record.path_archived.exists():
-                files_to_probe.append((sha256, "audio_archived", record.path_archived))
+                files_to_probe.append((audio_hash, "audio_archived", record.path_archived))
 
         if files_to_probe and output_format == "text":
             console.print(f"\nProbing {len(files_to_probe)} audio files...")
@@ -449,17 +449,17 @@ def handle_check_durations(args: argparse.Namespace) -> int:
                 task = progress.add_task("Probing audio durations", total=len(files_to_probe))
 
                 def probe_one(item: tuple[str, str, Path]) -> tuple[str, str, float | None]:
-                    sha256, attr, path = item
+                    audio_hash, attr, path = item
                     duration = probe_audio_duration(path, ffprobe)
-                    return (sha256, attr, duration)
+                    return (audio_hash, attr, duration)
 
                 with ThreadPoolExecutor(max_workers=8) as executor:
                     futures = {executor.submit(probe_one, item): item for item in files_to_probe}
 
                     for future in as_completed(futures):
-                        sha256, attr, duration = future.result()
-                        if sha256 in records:
-                            setattr(records[sha256], attr, duration)
+                        audio_hash, attr, duration = future.result()
+                        if audio_hash in records:
+                            setattr(records[audio_hash], attr, duration)
                         progress.advance(task)
 
             # Count probed files by type
@@ -483,8 +483,8 @@ def handle_check_durations(args: argparse.Namespace) -> int:
         transcript_count = 0
         workflows_found: set[str] = set()
 
-        for sha256, record in records.items():
-            durations = find_transcript_durations(transcripts_root, sha256)
+        for audio_hash, record in records.items():
+            durations = find_transcript_durations(transcripts_root, audio_hash)
             record.transcript_durations = durations
             transcript_count += len(durations)
             workflows_found.update(durations.keys())
@@ -502,7 +502,7 @@ def handle_check_durations(args: argparse.Namespace) -> int:
     # Compare durations and find issues
     issues: list[tuple[str, DurationRecord, float]] = []
 
-    for sha256, record in records.items():
+    for audio_hash, record in records.items():
         durations = get_all_durations(record)
         if len(durations) < 2:
             continue  # Need at least 2 sources to compare
@@ -512,7 +512,7 @@ def handle_check_durations(args: argparse.Namespace) -> int:
         diff = max_d - min_d
 
         if diff > tolerance:
-            issues.append((sha256, record, diff))
+            issues.append((audio_hash, record, diff))
 
     # Sort issues by difference (largest first)
     issues.sort(key=lambda x: x[2], reverse=True)
@@ -528,12 +528,12 @@ def handle_check_durations(args: argparse.Namespace) -> int:
             "issues_count": len(issues),
             "issues": [
                 {
-                    "hash": sha256,
+                    "hash": audio_hash,
                     "filename": record.filename,
                     "max_diff_seconds": diff,
                     "durations": {src: dur for src, dur in get_all_durations(record)},
                 }
-                for sha256, record, diff in issues
+                for audio_hash, record, diff in issues
             ],
         }
         print_json_result(
@@ -559,14 +559,14 @@ def handle_check_durations(args: argparse.Namespace) -> int:
             table.add_column("Transcript", justify="right")
             table.add_column("Max Diff", justify="right", style="red")
 
-            for sha256, record, diff in issues[:20]:  # Limit to 20 rows
+            for audio_hash, record, diff in issues[:20]:  # Limit to 20 rows
                 # Get representative transcript duration
                 transcript_dur = None
                 if record.transcript_durations:
                     transcript_dur = next(iter(record.transcript_durations.values()))
 
                 table.add_row(
-                    sha256[:8],
+                    audio_hash[:8],
                     record.filename[:30] if record.filename else "",
                     format_duration(record.csv_main) if record.csv_main else "-",
                     format_duration(record.audio_original) if record.audio_original else "-",
@@ -597,12 +597,12 @@ def handle_check_durations(args: argparse.Namespace) -> int:
             table.add_column("Duration", justify="right")
             table.add_column("Sources", justify="right")
 
-            for sha256, record in list(records.items())[:50]:
+            for audio_hash, record in list(records.items())[:50]:
                 durations = get_all_durations(record)
                 if durations:
                     avg_dur = sum(d[1] for d in durations) / len(durations)
                     table.add_row(
-                        sha256[:8],
+                        audio_hash[:8],
                         record.filename[:30] if record.filename else "",
                         format_duration(avg_dur),
                         str(len(durations)),

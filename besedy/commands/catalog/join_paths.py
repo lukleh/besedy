@@ -107,7 +107,7 @@ def _check_duplicate_join_in_catalog(
     try:
         _, rows = load_joined_manifest(joined_path)
     except Exception as exc:
-        return False, f"failed to read joined catalog {joined_path}: {exc}"
+        raise ValueError(f"failed to read joined catalog {joined_path}: {exc}") from exc
     groups = group_joined_rows(rows)
     duplicate = find_duplicate_join(groups, source_hashes)
     if not duplicate:

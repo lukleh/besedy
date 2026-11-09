@@ -250,16 +250,6 @@ export default function CatalogSettingsContent({
         return;
       }
 
-      if (result?.unrecognizedHashAlgorithmRows) {
-        toast({
-          title: t("toasts.catalogSynced"),
-          description: t("toasts.catalogSyncedHashAlgorithmDesc", {
-            count: result.unrecognizedHashAlgorithmRows,
-          }),
-        });
-        return;
-      }
-
       toast({
         title: t("toasts.catalogSynced"),
         description: t("toasts.catalogSyncedDesc"),

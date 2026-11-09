@@ -825,8 +825,7 @@
       "noName": "Bez jména",
       "never": "Nikdy",
       "pendingUser": "Čekající uživatel",
-      "addedAt": "Přidán {time}",
-      "multipleCatalogRoles": "Role v {count} katalozích"
+      "addedAt": "Přidán {time}"
     },
     "userDetail": {
       "backToUsers": "Zpět na uživatele",
@@ -1387,11 +1386,6 @@
     "filename": "Název souboru",
     "originalPath": "Původní cesta",
     "transcript": "Přepis",
-    "transcriptStream": "Přepisový stream",
-    "transcriptStreamViewportSeconds": "Okno (s)",
-    "transcriptStreamModels": "Modely",
-    "transcriptStreamUnavailable": "Přepisový stream není k dispozici",
-    "transcriptStreamUnavailableDescription": "Pro tuto nahrávku není k dispozici časová osa přepisů.",
     "showTranscript": "Zobrazit",
     "sourcesTitle": "Zdroje",
     "sourcesDescription": "Odkazy a soubory související s touto nahrávkou.",
@@ -1923,7 +1917,6 @@
       "pendingAccessUpdatedDesc": "Úroveň přístupu čekajícího uživatele byla aktualizována.",
       "catalogSynced": "Katalog byl synchronizován",
       "catalogSyncedDesc": "Data katalogu byla obnovena ze zdrojových CSV souborů.",
-      "catalogSyncedHashAlgorithmDesc": "Data katalogu byla obnovena, ale {count, plural, one {# řádek má} few {# řádky mají} other {# řádků má}} chybějící nebo neznámý algoritmus hashe. Jejich hashe nemusí označovat stejný zvuk jako zbytek katalogu.",
       "catalogSyncSkipped": "Katalog je aktuální",
       "catalogSyncSkippedDesc": "Nebyly zjištěny žádné změny v CSV souborech.",
       "validationError": "Chybí povinná pole",

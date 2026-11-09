@@ -43,11 +43,8 @@ class AudioQualityMetrics:
     input_thresh: str = ""
     target_offset: str = ""
     sample_rate: str = ""
-    bit_depth: str = ""
     channels: str = ""
     bitrate_kbps: str = ""
-    mean_volume_db: str = ""
-    max_volume_db: str = ""
     needs_normalization: str = ""
     codec_profile: str = ""
 
@@ -151,58 +148,6 @@ def analyze_loudness(
         temp_path.unlink(missing_ok=True)
 
 
-def analyze_volume(
-    file_path: Path,
-    *,
-    ffmpeg_binary: str = "ffmpeg",
-    timeout: int | None = None,
-) -> dict[str, str | None]:
-    metrics = {
-        "mean_volume_db": None,
-        "max_volume_db": None,
-    }
-
-    cmd = [
-        ffmpeg_binary,
-        "-nostdin",
-        "-hide_banner",
-        "-nostats",
-        "-i",
-        str(file_path),
-        "-af",
-        "volumedetect",
-        "-f",
-        "null",
-        "-",
-    ]
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            timeout=timeout,
-            check=True,
-        )
-    except subprocess.TimeoutExpired:
-        return metrics
-    except Exception:
-        return metrics
-
-    # Decode stderr with error handling for bad UTF-8 sequences
-    stderr = result.stderr.decode("utf-8", errors="replace")
-    for line in stderr.split("\n"):
-        if "mean_volume:" in line:
-            parts = line.split("mean_volume:")
-            if len(parts) > 1:
-                metrics["mean_volume_db"] = parts[1].strip().split()[0]
-        elif "max_volume:" in line:
-            parts = line.split("max_volume:")
-            if len(parts) > 1:
-                metrics["max_volume_db"] = parts[1].strip().split()[0]
-
-    return metrics
-
-
 def analyze_technical_properties(
     file_path: Path,
     *,
@@ -211,7 +156,6 @@ def analyze_technical_properties(
 ) -> dict[str, str | None]:
     metrics = {
         "sample_rate": None,
-        "bit_depth": None,
         "channels": None,
         "bitrate_kbps": None,
         "codec_profile": None,
@@ -257,13 +201,6 @@ def analyze_technical_properties(
                 sample_rate = stream.get("sample_rate")
                 if sample_rate:
                     metrics["sample_rate"] = str(int(float(sample_rate)))
-
-                bits_per_sample = stream.get("bits_per_sample")
-                bits_per_raw_sample = stream.get("bits_per_raw_sample")
-                if bits_per_raw_sample and int(bits_per_raw_sample) > 0:
-                    metrics["bit_depth"] = str(bits_per_raw_sample)
-                elif bits_per_sample and int(bits_per_sample) > 0:
-                    metrics["bit_depth"] = str(bits_per_sample)
 
                 channels = stream.get("channels")
                 if channels:
@@ -347,7 +284,6 @@ def analyze_audio_file(
         timeout=10,
     )
     metrics.sample_rate = tech_props.get("sample_rate") or ""
-    metrics.bit_depth = tech_props.get("bit_depth") or ""
     metrics.channels = tech_props.get("channels") or ""
     metrics.bitrate_kbps = tech_props.get("bitrate_kbps") or ""
     metrics.codec_profile = tech_props.get("codec_profile") or ""
@@ -373,9 +309,6 @@ def analyze_audio_file(
     if loudness_error or any(not field for field in loudness_fields):
         reason = loudness_error or "missing loudnorm metrics"
         raise RuntimeError(f"loudnorm analysis failed for {file_path}: {reason}")
-
-    # Skip volumedetect - mean_volume_db and max_volume_db are not used for
-    # normalization decisions (which use LUFS) and would double processing time
 
     metrics.needs_normalization = determine_needs_normalization(metrics.integrated_loudness_lufs)
 

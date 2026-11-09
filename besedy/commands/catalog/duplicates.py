@@ -15,6 +15,7 @@ from besedy.commands.catalog.default_paths import get_default_catalog_symlink
 from besedy.core.cli_output import print_json_result
 from besedy.core.paths import derive_common_root
 from besedy.lib.audio.types import format_size
+from besedy.lib.catalog.manager import read_fresh_audio_hash_sidecar
 
 
 def load_catalog_hashes(catalog_path: Path) -> dict[str, str]:
@@ -45,34 +46,15 @@ def find_hash_sidecar_files(root_dir: Path) -> list[Path]:
 
 
 def parse_hash_sidecar_file(sidecar_path: Path) -> tuple[str, Path] | None:
-    """Parse a .audiohash file and return (hash, media_file_path) or None on error."""
+    """Read only a fresh sidecar under the current decoded-audio identity contract."""
+    media_path = sidecar_path.with_suffix("")
     try:
-        with open(sidecar_path, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            if not content:
-                return None
-
-            # Format: "[hash]  [filename]" (two spaces separator)
-            parts = content.split("  ", 1)
-            if len(parts) != 2:
-                # Try single space as fallback
-                parts = content.split(" ", 1)
-                if len(parts) != 2:
-                    return None
-
-            hash_value = parts[0].strip()
-            # Validate hash format (64 hex chars)
-            if len(hash_value) != 64 or not all(
-                c in "0123456789abcdef" for c in hash_value.lower()
-            ):
-                return None
-
-            # Media file path is the sidecar file path without the extension
-            media_path = sidecar_path.with_suffix("")
-            return (hash_value.lower(), media_path)
-
+        hash_value = read_fresh_audio_hash_sidecar(
+            sidecar_path, source_path=media_path, source_mtime=media_path.stat().st_mtime
+        )
     except (OSError, UnicodeDecodeError):
         return None
+    return (hash_value, media_path) if hash_value is not None else None
 
 
 def get_file_size(path: Path) -> int:

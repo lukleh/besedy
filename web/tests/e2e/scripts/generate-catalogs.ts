@@ -9,9 +9,11 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { TEST_AUDIO_FILES } from "../../../prisma/test-data";
+import catalogContract from "../../../../contracts/catalog-csv.json";
 
 // The identity contract of the Hash column; the CLI refuses a catalog without it.
-export const TEST_HASH_ALGORITHM = "pcm-s16le-16000hz-mono-sha256-v1";
+export const TEST_HASH_ALGORITHM = catalogContract.hashAlgorithm;
+const TEST_ADDED_AT = "2026-01-01T00:00:00Z";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -52,22 +54,22 @@ function toCSV(headers: string[], rows: Record<string, string | number | undefin
  * Generate archived catalog CSV
  */
 export async function generateArchivedCatalog(fixturesDir: string): Promise<string> {
-  const headers = [
-    "Hash",
-    "Original Path",
-    "Compressed Path",
-    "Compressed AAC Path",
-    "Duration",
-    "File Size",
-  ];
+  const headers = catalogContract.validation.archived.requiredHeaders;
 
   const rows = TEST_AUDIO_FILES.map((file) => ({
     Hash: file.hash,
     "Original Path": `/data/audio/${file.filename}`,
     "Compressed Path": `/data/audio/compressed/${file.hash}.webm`,
     "Compressed AAC Path": `/data/audio/compressed/${file.hash}.m4a`,
+    Format: "opus",
+    "Bitrate (kbps)": "64",
+    "Original Size (bytes)": String(file.duration * 32000),
+    "Compressed Size (bytes)": String(file.duration * 8000),
+    "Compressed AAC Size (bytes)": String(file.duration * 12000),
+    "Compressed AAC Bitrate (kbps)": "96",
+    "Compression Ratio": "4",
     Duration: formatDuration(file.duration),
-    "File Size": String(file.duration * 32000), // Approximate size for 16kHz mono
+    added_at: TEST_ADDED_AT,
   }));
 
   const csv = toCSV(headers, rows);
@@ -81,23 +83,7 @@ export async function generateArchivedCatalog(fixturesDir: string): Promise<stri
  */
 export async function generateMetadataCatalog(fixturesDir: string): Promise<string> {
   const headers = [
-    "Hash",
-    "Hash Algorithm",
-    "Filename",
-    "Size (bytes)",
-    "Size (human)",
-    "Full Path",
-    "Status",
-    "Duration",
-    "album",
-    "artist",
-    "comment",
-    "date",
-    "encoded_by",
-    "encoder",
-    "genre",
-    "title",
-    "track",
+    ...catalogContract.validation.metadata.requiredHeaders,
     "sample_rate",
     "bit_depth",
     "channels",
@@ -126,8 +112,10 @@ export async function generateMetadataCatalog(fixturesDir: string): Promise<stri
     "Size (bytes)": String(file.duration * 32000),
     "Size (human)": `${Math.round(file.duration * 32000 / 1024)} KB`,
     "Full Path": `/data/audio/${file.filename}`,
+    "Scan Root": "/data/audio",
     Status: "Ready",
     Duration: formatDuration(file.duration),
+    added_at: TEST_ADDED_AT,
     ...testMetadata[i],
     sample_rate: "16000",
     bit_depth: "16",
@@ -152,23 +140,7 @@ export async function generateMetadataCatalog(fixturesDir: string): Promise<stri
  * Generate duplicates catalog CSV
  */
 export async function generateDuplicatesCatalog(fixturesDir: string): Promise<string> {
-  const headers = [
-    "Hash",
-    "Original Path",
-    "Duplicate Path",
-    "Size (bytes)",
-    "Size (human)",
-    "Duration",
-    "album",
-    "artist",
-    "comment",
-    "date",
-    "encoded_by",
-    "encoder",
-    "genre",
-    "title",
-    "track",
-  ];
+  const headers = catalogContract.validation.duplicates.requiredHeaders;
 
   // Create 2 duplicates for the second test file
   const duplicateFile = TEST_AUDIO_FILES[1];
@@ -177,9 +149,11 @@ export async function generateDuplicatesCatalog(fixturesDir: string): Promise<st
       Hash: duplicateFile.hash,
       "Original Path": `/data/audio/${duplicateFile.filename}`,
       "Duplicate Path": `/data/audio/backup/${duplicateFile.filename}`,
+      "Scan Root": "/data/audio",
       "Size (bytes)": String(duplicateFile.duration * 32000),
       "Size (human)": `${Math.round(duplicateFile.duration * 32000 / 1024)} KB`,
       Duration: formatDuration(duplicateFile.duration),
+      added_at: TEST_ADDED_AT,
       album: "Test Album",
       artist: "Recorder B",
       title: "Long Recording",
@@ -190,9 +164,11 @@ export async function generateDuplicatesCatalog(fixturesDir: string): Promise<st
       Hash: duplicateFile.hash,
       "Original Path": `/data/audio/${duplicateFile.filename}`,
       "Duplicate Path": `/data/audio/archive/${duplicateFile.filename}`,
+      "Scan Root": "/data/audio",
       "Size (bytes)": String(duplicateFile.duration * 32000),
       "Size (human)": `${Math.round(duplicateFile.duration * 32000 / 1024)} KB`,
       Duration: formatDuration(duplicateFile.duration),
+      added_at: TEST_ADDED_AT,
       album: "Test Album",
       artist: "Recorder B",
       title: "Long Recording",

@@ -314,7 +314,6 @@ call it. Endpoints not listed above:
 | GET/PUT | `/api/catalogs/:id/recordings/:hash/progress` | Playback progress |
 | PATCH | `/api/catalogs/:id/recordings/:hash/ready` | Manual publication toggle (`publish_recording`) |
 | POST | `/api/catalogs/:id/events/from-recording` | Create an event from a recording |
-| GET | `/api/catalogs/:id/recordings/:hash/transcript/compare` | All transcript lanes for timeline comparison |
 | GET | `/api/catalogs/:id/events/:eventId/artwork` | The event's published artwork (WebP copy; the stored original when no copy exists) |
 | GET/POST | `/api/catalogs/:id/events/:eventId/artworks` | List and add artwork candidates; `…/artworks/:artworkId` (DELETE) and `…/image` (GET; `?size=original` for the stored original) sit below it |
 | PUT/DELETE | `/api/catalogs/:id/events/:eventId/artwork-publication` | Publish or unpublish artwork |
