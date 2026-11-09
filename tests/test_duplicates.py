@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from besedy.commands.catalog.duplicates import (
     derive_common_root,
     find_hash_sidecar_files,
@@ -10,6 +12,7 @@ from besedy.commands.catalog.duplicates import (
     load_catalog_hashes,
     parse_hash_sidecar_file,
 )
+from besedy.lib.catalog.manager import write_audio_hash_sidecar
 
 
 class TestLoadCatalogHashes:
@@ -60,19 +63,20 @@ class TestParseHashSidecarFile:
         """Standard format with two-space separator."""
         sidecar_file = tmp_path / "file.wav.audiohash"
         valid_hash = "a" * 64
-        sidecar_file.write_text(f"{valid_hash}  file.wav")
+        source = sidecar_file.with_suffix("")
+        source.write_bytes(b"audio")
+        write_audio_hash_sidecar(sidecar_file, hash_value=valid_hash, filename=source.name, source_file_sha256=hashlib.sha256(source.read_bytes()).hexdigest())
         result = parse_hash_sidecar_file(sidecar_file)
         assert result is not None
         assert result[0] == valid_hash
 
-    def test_parses_single_space_fallback(self, tmp_path):
-        """Falls back to single-space separator."""
+    def test_rejects_markerless_single_space_format(self, tmp_path):
+        """A bare checksum is not evidence of decoded-audio identity."""
         sidecar_file = tmp_path / "file.wav.audiohash"
         valid_hash = "b" * 64
         sidecar_file.write_text(f"{valid_hash} file.wav")
         result = parse_hash_sidecar_file(sidecar_file)
-        assert result is not None
-        assert result[0] == valid_hash
+        assert result is None
 
     def test_rejects_invalid_hash_too_short(self, tmp_path):
         """Hash shorter than 64 characters is rejected."""
@@ -100,7 +104,9 @@ class TestParseHashSidecarFile:
         """Hash is lowercased for consistency."""
         sidecar_file = tmp_path / "file.wav.audiohash"
         mixed_case_hash = "AbCdEf" + "1" * 58
-        sidecar_file.write_text(f"{mixed_case_hash}  file.wav")
+        source = sidecar_file.with_suffix("")
+        source.write_bytes(b"audio")
+        write_audio_hash_sidecar(sidecar_file, hash_value=mixed_case_hash, filename=source.name, source_file_sha256=hashlib.sha256(source.read_bytes()).hexdigest())
         result = parse_hash_sidecar_file(sidecar_file)
         assert result is not None
         assert result[0] == mixed_case_hash.lower()
@@ -109,7 +115,9 @@ class TestParseHashSidecarFile:
         """Media path is the .audiohash file path without extension."""
         sidecar_file = tmp_path / "myaudio.mp3.audiohash"
         valid_hash = "c" * 64
-        sidecar_file.write_text(f"{valid_hash}  myaudio.mp3")
+        source = sidecar_file.with_suffix("")
+        source.write_bytes(b"audio")
+        write_audio_hash_sidecar(sidecar_file, hash_value=valid_hash, filename=source.name, source_file_sha256=hashlib.sha256(source.read_bytes()).hexdigest())
         result = parse_hash_sidecar_file(sidecar_file)
         assert result is not None
         assert result[1] == tmp_path / "myaudio.mp3"

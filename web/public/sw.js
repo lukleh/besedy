@@ -315,17 +315,22 @@ async function handleAppAssetRequest(request) {
 // AAC-in-MP4 copy (`format=aac`, #291) is a different file from the WebM.
 function getCacheKey(url) {
   const parsed = new URL(url, self.location.origin);
-  const source = parsed.searchParams.get('source') || 'archived';
-  const variant = parsed.searchParams.get('variant') || '';
-  const format = parsed.searchParams.get('format') || 'webm';
+  const source = parsed.searchParams.get('source') ?? 'archived';
+  const queryKeys = [...parsed.searchParams.keys()];
+  const download = parsed.searchParams.get('download');
+  const local = parsed.searchParams.get('local');
+  const format = parsed.searchParams.get('format') ?? 'webm';
 
+  if (!['archived', 'original'].includes(source) ||
+      new Set(queryKeys).size !== queryKeys.length ||
+      queryKeys.some((key) => !['source', 'format', 'download', 'local'].includes(key)) ||
+      (download !== null && !['true', 'false'].includes(download)) ||
+      (local !== null && local !== '1') ||
+      !['webm', 'aac'].includes(format)) return null;
   parsed.search = '';
   parsed.hash = '';
   if (source !== 'archived') {
     parsed.searchParams.set('source', source);
-  }
-  if (variant) {
-    parsed.searchParams.set('variant', variant);
   }
   if (format !== 'webm') {
     parsed.searchParams.set('format', format);
@@ -391,7 +396,10 @@ function isWellFormedAudioMeta(meta) {
   return (
     meta &&
     typeof meta === 'object' &&
+    meta.schemaVersion === 1 &&
+    typeof meta.generation === 'string' && meta.generation.length > 0 &&
     typeof meta.complete === 'boolean' &&
+    Number.isInteger(meta.chunkCount) && meta.chunkCount === meta.chunkSizes?.length &&
     Number.isFinite(meta.totalSize) &&
     meta.totalSize > 0 &&
     typeof meta.contentType === 'string' &&
@@ -404,6 +412,7 @@ function isWellFormedAudioMeta(meta) {
 async function handleAudioRequest(request) {
   const cache = await caches.open(AUDIO_CACHE_NAME);
   const cacheKey = getCacheKey(request.url);
+  if (!cacheKey) return fetch(request);
   const metaResponse = await cache.match(getMetaKey(cacheKey));
   if (!metaResponse) return fetch(request);
 

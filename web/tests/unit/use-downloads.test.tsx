@@ -80,24 +80,9 @@ describe('useDownloadedEvents', () => {
     expect(result.current.get(42)).toBe('complete');
   });
 
-  it('continues to recognize older records that have only an event snapshot', () => {
-    records.push(
-      record({
-        event: {
-          id: 42,
-          title: null,
-          locationName: null,
-          dateYear: 2026,
-          dateMonth: null,
-          dateDay: null,
-          sessionIndex: 1,
-          publishedArtwork: null,
-        },
-      }),
-    );
-
+  it('does not infer an event association from an unsupported snapshot-only record', () => {
+    records.push(record({ event: { id: 42 } as DownloadRecord['event'] }));
     const { result } = renderHook(() => useDownloadedEvents(CATALOG));
-
-    expect(result.current.get(42)).toBe('complete');
+    expect(result.current.has(42)).toBe(false);
   });
 });

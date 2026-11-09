@@ -17,6 +17,7 @@ from besedy.config.settings import config
 from besedy.lib.audio.decode import decode_to_temp_wav
 from besedy.lib.audio.probe import probe_media_duration_seconds
 from besedy.lib.audio.processing import (
+    DECLIP_THRESHOLD_DBTP,
     LoudnessMeasurement,
     duration_tolerance_seconds,
     normalization_filter,
@@ -32,7 +33,6 @@ from besedy.lib.audio.quality import (
     needs_declipping,
 )
 from besedy.lib.audio.types import (
-    DECLIP_THRESHOLD_DBTP,
     FILESIZE_MISMATCH_DRIFT_TOLERANCE,
     NON_MONOTONIC_MAX_RATIO,
     NON_MONOTONIC_MIN_RATIO,
@@ -72,7 +72,7 @@ def reuse_existing_staged_entry(
     staged_path: Path,
     duration_seconds: float,
 ) -> tuple[PreparedEntry, int]:
-    entry = PreparedEntry(row.sha256, source, staged_path, "existing", duration_seconds)
+    entry = PreparedEntry(row.audio_hash, source, staged_path, "existing", duration_seconds)
 
     existing_size_bytes = 0
     try:
@@ -130,7 +130,7 @@ def run_stage_conversion(
     except (OSError, ValueError, wave.Error, EOFError) as exc:
         return ConversionResult(
             None,
-            SkippedEntry(row.sha256, source, f"staged audio publication failed: {exc}"),
+            SkippedEntry(row.audio_hash, source, f"staged audio publication failed: {exc}"),
             (ConversionLogMessage(str(exc), is_error=True),),
             (),
         )
@@ -172,7 +172,7 @@ def _convert_stage_audio(
         )
         return ConversionResult(
             None,
-            SkippedEntry(row.sha256, source, f"decode failed: {decode_error}"),
+            SkippedEntry(row.audio_hash, source, f"decode failed: {decode_error}"),
             tuple(messages),
             (),
         )
@@ -287,7 +287,7 @@ def _convert_stage_audio(
                     )
                 )
                 failure_sections = [
-                    f"FAILURE {row.sha256}",
+                    f"FAILURE {row.audio_hash}",
                     f"Source: {source}",
                     f"Command: {shlex.join(ffmpeg_cmd)}",
                     f"Reason: {log_excerpt}",
@@ -300,7 +300,7 @@ def _convert_stage_audio(
                     messages.append(ConversionLogMessage(notice, is_error=True))
                 return ConversionResult(
                     None,
-                    SkippedEntry(row.sha256, source, f"ffmpeg failed: {log_excerpt}"),
+                    SkippedEntry(row.audio_hash, source, f"ffmpeg failed: {log_excerpt}"),
                     tuple(messages),
                     tuple(failure_sections),
                 )
@@ -344,7 +344,7 @@ def _convert_stage_audio(
                     )
                 )
                 failure_lines = [
-                    f"FAILURE {row.sha256}",
+                    f"FAILURE {row.audio_hash}",
                     f"Source: {source}",
                     f"Expected output: {staged_path}",
                     f"Command: {shlex.join(ffmpeg_cmd)}",
@@ -356,7 +356,7 @@ def _convert_stage_audio(
                 return ConversionResult(
                     None,
                     SkippedEntry(
-                        row.sha256, source, f"conversion produced invalid output ({detail})"
+                        row.audio_hash, source, f"conversion produced invalid output ({detail})"
                     ),
                     tuple(messages),
                     tuple(failure_lines),
@@ -494,7 +494,7 @@ def _convert_stage_audio(
                     )
                 )
                 failure_lines = [
-                    f"FAILURE {row.sha256}",
+                    f"FAILURE {row.audio_hash}",
                     f"Source: {source}",
                     f"Expected output: {staged_path}",
                     f"Command: {shlex.join(ffmpeg_cmd)}",
@@ -506,7 +506,7 @@ def _convert_stage_audio(
                 return ConversionResult(
                     None,
                     SkippedEntry(
-                        row.sha256,
+                        row.audio_hash,
                         source,
                         f"conversion produced invalid output ({duration_error})",
                     ),
@@ -518,7 +518,7 @@ def _convert_stage_audio(
                 ConversionLogMessage(f"[stage_audio_files] converted {source} -> {staged_path}")
             )
             log_lines = [
-                f"SUCCESS {row.sha256}",
+                f"SUCCESS {row.audio_hash}",
                 f"Source: {source}",
                 f"Output: {staged_path}",
                 f"Command: {shlex.join(ffmpeg_cmd)}",
@@ -665,7 +665,7 @@ def _convert_stage_audio(
                         return ConversionResult(
                             None,
                             SkippedEntry(
-                                row.sha256, source, f"audio analysis failed: {analysis_exc}"
+                                row.audio_hash, source, f"audio analysis failed: {analysis_exc}"
                             ),
                             tuple(messages),
                             tuple(log_lines),
@@ -673,7 +673,7 @@ def _convert_stage_audio(
 
             return ConversionResult(
                 PreparedEntry(
-                    row.sha256,
+                    row.audio_hash,
                     source,
                     staged_path,
                     "convert",
@@ -688,13 +688,13 @@ def _convert_stage_audio(
             )
 
         failure_lines = [
-            f"FAILURE {row.sha256}",
+            f"FAILURE {row.audio_hash}",
             f"Source: {source}",
             "Reason: conversion failed after async fallback",
         ]
         return ConversionResult(
             None,
-            SkippedEntry(row.sha256, source, "conversion failed after async fallback"),
+            SkippedEntry(row.audio_hash, source, "conversion failed after async fallback"),
             tuple(messages),
             tuple(failure_lines),
         )

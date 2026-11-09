@@ -155,7 +155,7 @@ def test_a_broken_manifest_in_another_catalog_stops_the_command(tmp_path: Path, 
     plan = CleanupPlan(
         targets=[
             CleanupTarget(
-                sha256=OTHER,
+                audio_hash=OTHER,
                 original_path="/gone/b.wav",
                 staged_path=other_file,
                 staged_exists=True,
@@ -176,13 +176,13 @@ def test_clean_keeps_protected_staged_audio(tmp_path: Path, staged) -> None:
     plan = CleanupPlan(
         targets=[
             CleanupTarget(
-                sha256=HASH,
+                audio_hash=HASH,
                 original_path="/gone/a.wav",
                 staged_path=protected_file,
                 staged_exists=True,
             ),
             CleanupTarget(
-                sha256=OTHER,
+                audio_hash=OTHER,
                 original_path="/gone/b.wav",
                 staged_path=other_file,
                 staged_exists=True,
@@ -205,7 +205,7 @@ def test_remove_keeps_protected_staged_audio(tmp_path: Path, staged) -> None:
     corrections = tmp_path / "corrections"
     write_manifest(corrections, "ws-live", protected_file)
     plan = RemovalPlan(
-        sha256=HASH, catalog_csv=tmp_path / "catalog.csv", staged_files=[protected_file, other_file]
+        audio_hash=HASH, catalog_csv=tmp_path / "catalog.csv", staged_files=[protected_file, other_file]
     )
 
     result = execute_removal(plan, load_protected_staged_audio(corrections))
@@ -224,7 +224,7 @@ def test_overwrite_staging_reuses_protected_audio(tmp_path: Path, staged) -> Non
 
     prepared, skipped = stage_audio_files(
         rows=[
-            CsvAudioRow(sha256=HASH, full_path=str(tmp_path / "source.mp3"), duration_seconds=1.0)
+            CsvAudioRow(audio_hash=HASH, full_path=str(tmp_path / "source.mp3"), duration_seconds=1.0)
         ],
         staging_dir=staging,
         manifest_writer=manifest,
@@ -255,7 +255,7 @@ def test_overwrite_staging_warns_when_protected_audio_is_missing(
         prepared, skipped = stage_audio_files(
             rows=[
                 CsvAudioRow(
-                    sha256=HASH, full_path=str(tmp_path / "source.mp3"), duration_seconds=1.0
+                    audio_hash=HASH, full_path=str(tmp_path / "source.mp3"), duration_seconds=1.0
                 )
             ],
             staging_dir=staging,

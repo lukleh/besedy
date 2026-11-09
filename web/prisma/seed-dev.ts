@@ -5,14 +5,12 @@
  *
  * Creates:
  * 1. The superadmin user (required for creating pending admissions)
- * 2. The admin user (with isAdmin: true, can't be set via pending admission)
- * 3. Pending admissions for all other test users (so they can sign up via OAuth)
+ * 2. Direct admin, no-access, mutation, pending and blocked user fixtures
+ * 3. Content-backed invitations for the remaining users
  *
  * When users log in via mock OAuth:
- * - Superadmin/Admin: Account linking (already exist) → immediate access
- * - Other users: User creation via Better Auth -> pending admission claimed
- *
- * This maintains the "real" flow where users go through Better Auth.
+ * - Existing fixtures: Account linking, with their status and access checks
+ * - Invited users: User creation via Better Auth -> pending invitation claimed
  *
  * Usage:
  *   DATABASE_URL=postgresql://besedy:besedy@localhost:5433/besedy npx tsx prisma/seed-dev.ts
@@ -21,31 +19,36 @@
  *   just dev-seed
  */
 
-import { PrismaClient, UserStatus, CatalogRole } from "../src/generated/prisma/client";
+import {
+  PrismaClient,
+  type UserStatus,
+  type CatalogRole,
+} from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { TEST_USERS } from "./test-data";
 import { syncSeedPendingAdmissions } from "./seed-pending-admissions";
-import { ArchiveConfigurationError, requireArchiveId } from "../src/lib/archive";
+import {
+  ArchiveConfigurationError,
+  requireArchiveId,
+} from "../src/lib/archive";
 
-// Superadmin is created directly (needed as actor for seeded admissions)
-const SUPERADMIN = {
-  email: TEST_USERS.superadmin.email,
-  name: TEST_USERS.superadmin.name,
-  isSuperadmin: true,
-  isAdmin: false,
-  status: "ACTIVE" as UserStatus,
-};
+// Identity/status fixtures do not imply permission to enter the archive.
+const DIRECT_USERS: Array<{
+  email: string;
+  name: string;
+  status: UserStatus;
+  isSuperadmin?: boolean;
+  isAdmin?: boolean;
+}> = [
+  { ...TEST_USERS.superadmin, status: "ACTIVE", isSuperadmin: true },
+  { ...TEST_USERS.admin, status: "ACTIVE", isAdmin: true },
+  { ...TEST_USERS.noaccess, status: "ACTIVE" },
+  { ...TEST_USERS.mutation, status: "ACTIVE" },
+  { ...TEST_USERS.pending, status: "PENDING" },
+  { ...TEST_USERS.blocked, status: "BLOCKED" },
+];
 
-// Admin is created directly (needs isAdmin: true which cannot be set via pending admission)
-const ADMIN = {
-  email: TEST_USERS.admin.email,
-  name: TEST_USERS.admin.name,
-  isSuperadmin: false,
-  isAdmin: true,
-  status: "ACTIVE" as UserStatus,
-};
-
-// Other users get pending admissions (they will be created via Better Auth when they log in)
+// Content-backed invitations exercise first-login creation and claim.
 const INVITED_USERS = [
   {
     email: TEST_USERS.owner.email,
@@ -53,14 +56,26 @@ const INVITED_USERS = [
     role: "host" as CatalogRole,
     extraPermissions: ["download_transcripts"],
   },
-  { email: TEST_USERS.editor.email, name: TEST_USERS.editor.name, role: "curator" as CatalogRole },
-  { email: TEST_USERS.member.email, name: TEST_USERS.member.name, role: "reader" as CatalogRole },
-  { email: TEST_USERS.viewer.email, name: TEST_USERS.viewer.name, role: "reader" as CatalogRole },
-  { email: TEST_USERS.listener.email, name: TEST_USERS.listener.name, role: "listener" as CatalogRole },
-  { email: TEST_USERS.noaccess.email, name: TEST_USERS.noaccess.name },
-  { email: TEST_USERS.mutation.email, name: TEST_USERS.mutation.name },
-  { email: TEST_USERS.pending.email, name: TEST_USERS.pending.name },
-  { email: TEST_USERS.blocked.email, name: TEST_USERS.blocked.name },
+  {
+    email: TEST_USERS.editor.email,
+    name: TEST_USERS.editor.name,
+    role: "curator" as CatalogRole,
+  },
+  {
+    email: TEST_USERS.member.email,
+    name: TEST_USERS.member.name,
+    role: "reader" as CatalogRole,
+  },
+  {
+    email: TEST_USERS.viewer.email,
+    name: TEST_USERS.viewer.name,
+    role: "reader" as CatalogRole,
+  },
+  {
+    email: TEST_USERS.listener.email,
+    name: TEST_USERS.listener.name,
+    role: "listener" as CatalogRole,
+  },
 ];
 
 async function main() {
@@ -80,85 +95,71 @@ async function main() {
       where: { id: requireArchiveId() },
     });
     if (!archive?.isActive) {
-      throw new ArchiveConfigurationError("BESEDY_ARCHIVE_ID must name an existing active source before seeding users");
+      throw new ArchiveConfigurationError(
+        "BESEDY_ARCHIVE_ID must name an existing active source before seeding users",
+      );
     }
     console.log(`[i] Using archive: ${archive.id}`);
 
-    // 1. Create superadmin user (required as inviter for other users)
-    console.log("\n[1/3] Creating superadmin user...");
-    const superadmin = await prisma.user.upsert({
-      where: { email: SUPERADMIN.email },
-      update: {
-        name: SUPERADMIN.name,
-        isSuperadmin: SUPERADMIN.isSuperadmin,
-        isAdmin: SUPERADMIN.isAdmin,
-        status: SUPERADMIN.status,
-      },
-      create: {
-        email: SUPERADMIN.email,
-        name: SUPERADMIN.name,
-        emailVerified: true,
-        isSuperadmin: SUPERADMIN.isSuperadmin,
-        isAdmin: SUPERADMIN.isAdmin,
-        status: SUPERADMIN.status,
-        activatedAt: new Date(),
-      },
-    });
-    console.log(`  ✓ ${SUPERADMIN.email} (superadmin, ID: ${superadmin.id})`);
+    console.log("\n[1/2] Creating direct user fixtures...");
+    const createdUsers = new Map<string, string>();
+    for (const userData of DIRECT_USERS) {
+      const data = {
+        name: userData.name,
+        isSuperadmin: userData.isSuperadmin ?? false,
+        isAdmin: userData.isAdmin ?? false,
+        status: userData.status,
+      };
+      const user = await prisma.user.upsert({
+        where: { email: userData.email },
+        update: data,
+        create: {
+          ...data,
+          email: userData.email,
+          emailVerified: true,
+          activatedAt: userData.status === "ACTIVE" ? new Date() : null,
+        },
+      });
+      createdUsers.set(userData.email, user.id);
+      console.log(`  ✓ ${userData.email} (${userData.status})`);
+    }
+    const superadminId = createdUsers.get(TEST_USERS.superadmin.email)!;
 
-    // 2. Create admin user (needs isAdmin: true which cannot be set via pending admission)
-    console.log("\n[2/3] Creating admin user...");
-    const admin = await prisma.user.upsert({
-      where: { email: ADMIN.email },
-      update: {
-        name: ADMIN.name,
-        isSuperadmin: ADMIN.isSuperadmin,
-        isAdmin: ADMIN.isAdmin,
-        status: ADMIN.status,
-      },
-      create: {
-        email: ADMIN.email,
-        name: ADMIN.name,
-        emailVerified: true,
-        isSuperadmin: ADMIN.isSuperadmin,
-        isAdmin: ADMIN.isAdmin,
-        status: ADMIN.status,
-        activatedAt: new Date(),
-      },
-    });
-    console.log(`  ✓ ${ADMIN.email} (admin, ID: ${admin.id})`);
-
-    // 3. Create pending admissions for other test users
-    console.log("\n[3/3] Creating pending admissions for test users...");
+    console.log("\n[2/2] Creating content-backed invitations...");
     for (const userData of INVITED_USERS) {
       // Skip if user already exists (they may have logged in already)
       const existingUser = await prisma.user.findUnique({
         where: { email: userData.email },
       });
       if (existingUser) {
-        console.log(`  - ${userData.email} (user already exists, skipping pending admission)`);
+        console.log(
+          `  - ${userData.email} (user already exists, skipping pending admission)`,
+        );
         continue;
       }
 
       await syncSeedPendingAdmissions(prisma, {
         email: userData.email,
-        createdById: superadmin.id,
+        createdById: superadminId,
         createdAt: new Date(),
-        catalogId: userData.role ? archive.id : null,
-        role: userData.role ?? null,
+        catalogId: archive.id,
+        role: userData.role,
         extraPermissions: userData.extraPermissions,
         notes: `Test user: ${userData.name}`,
       });
-      console.log(`  ✓ ${userData.email}${userData.role ? ` (${userData.role})` : ""}`);
+      console.log(`  ✓ ${userData.email} (${userData.role})`);
     }
 
     console.log("\n=== Seed Complete ===\n");
     console.log("Summary:");
-    console.log("  - Superadmin created directly (for pending admissions)");
-    console.log("  - Admin created directly (with isAdmin: true)");
+    console.log(`  - ${DIRECT_USERS.length} direct identity/status fixtures`);
     console.log(`  - ${INVITED_USERS.length} pending admissions/grants seeded`);
-    console.log("\nUsers will be created via Better Auth when they log in with mock OAuth.");
-    console.log("The superadmin and admin users are already active and can log in immediately.");
+    console.log(
+      "\nInvited users will be created via Better Auth on first mock OAuth login.",
+    );
+    console.log(
+      "Direct fixtures retain their seeded status and archive access checks.",
+    );
   } finally {
     await prisma.$disconnect();
   }

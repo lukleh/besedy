@@ -15,8 +15,8 @@ from besedy.core.paths import (
     iter_transcript_paths,
     parse_transcript_components,
 )
-from besedy.lib.validation.core import validate_shared_schema, validate_single_file
-from tests.helpers.transcript import SAMPLE_AUDIO_HASH
+from besedy.lib.validation.core import validate_canonical_schema, validate_single_file
+from tests.helpers.transcript import SAMPLE_AUDIO_HASH, canonical_transcript
 
 
 @pytest.fixture
@@ -63,6 +63,8 @@ def synthetic_transcripts_dir(tmp_path):
             },
         ]
     }
+    fw_transcript["segments"][1]["words"] = []
+    fw_transcript = canonical_transcript(fw_transcript["segments"])
     (fw_dir / "transcript.json").write_text(json.dumps(fw_transcript, indent=2))
 
     # NeMo/Canary transcript
@@ -84,6 +86,9 @@ def synthetic_transcripts_dir(tmp_path):
             {"start": 3.0, "end": 5.0, "text": "How are you", "confidence": 0.88},
         ],
     }
+    for segment in nemo_transcript["segments"]:
+        segment["words"] = []
+    nemo_transcript = canonical_transcript(nemo_transcript["segments"], backend="canary-nemo")
     (nemo_dir / "transcript.json").write_text(json.dumps(nemo_transcript, indent=2))
 
     # Diarization output
@@ -157,7 +162,7 @@ class TestSchemaValidation:
         fw_path = next(p for p in paths if "faster-whisper" in str(p))
 
         data = json.loads(fw_path.read_text())
-        issues = validate_shared_schema(data)
+        issues = validate_canonical_schema(data)
         assert issues == []
 
     def test_nemo_transcript_valid(self, synthetic_transcripts_dir):
@@ -166,7 +171,7 @@ class TestSchemaValidation:
         nemo_path = next(p for p in paths if "canary-nemo" in str(p))
 
         data = json.loads(nemo_path.read_text())
-        issues = validate_shared_schema(data)
+        issues = validate_canonical_schema(data)
         assert issues == []
 
     def test_validate_single_file_passes(self, synthetic_transcripts_dir):

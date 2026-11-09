@@ -36,7 +36,7 @@ def plan_transcription(
     )
     plans: list[RecordingTranscriptionPlan] = []
     for row in rows:
-        audio_hash = hash_component_from_sha(row.sha256)
+        audio_hash = hash_component_from_sha(row.audio_hash)
         directory = workflow_dir / audio_hash
         transcript_missing = overwrite or not (directory / config.output_filename).exists()
         transcribe = (

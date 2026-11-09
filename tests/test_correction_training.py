@@ -144,8 +144,8 @@ def test_a_chunk_is_rebuilt_as_the_model_heard_it(tree) -> None:
 
 def test_test_recordings_and_fillers_follow_the_export_options(tree, tmp_path: Path) -> None:
     export, root, output = tree
-    test_file = tmp_path / "test.txt"
-    test_file.write_text(f"{HASH}\n", encoding="utf-8")
+    test_file = tmp_path / "test.json"
+    test_file.write_text(json.dumps({"version": 1, "audio_hashes": [HASH]}), encoding="utf-8")
     build_dataset(
         export,
         root,
@@ -181,7 +181,7 @@ def test_a_catalog_lists_its_test_recordings_next_to_its_corrections(tmp_path: P
     listed.write_text(json.dumps({"version": 2, "audio_hashes": []}), encoding="utf-8")
     with pytest.raises(TrainingExportError, match="version"):
         load_test_recordings(listed)
-    listed.write_text(json.dumps(["ABC"]), encoding="utf-8")
+    listed.write_text(json.dumps({"version": 1, "audio_hashes": ["ABC"]}), encoding="utf-8")
     with pytest.raises(TrainingExportError, match="64-character"):
         load_test_recordings(listed)
 

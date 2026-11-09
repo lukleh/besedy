@@ -9,10 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useDownloadRecord, useEventDownload } from "@/hooks/use-downloads";
 import { useOnlineStatus } from "@/hooks/use-online-status";
-import {
-  getAudioCacheKey,
-  withoutAudioFormat,
-} from "@/lib/offline/audio-cache-format";
+import { getAudioCacheKey } from "@/lib/offline/audio-cache-format";
 import { getDownloadBundle } from "@/lib/offline/downloads-db";
 
 /**
@@ -73,14 +70,7 @@ export function useLocalAudioSrc(
     if (!complete || !recordCacheKey || typeof window === "undefined") {
       return false;
     }
-    // A download of the same source in the other format still matches: a
-    // WebM package made before the AAC copy existed keeps playing as it did,
-    // rather than the page streaming the copy while a service worker from the
-    // previous release answers that request with the WebM package.
-    return (
-      withoutAudioFormat(getAudioCacheKey(selectedUrl, window.location.origin)) ===
-      withoutAudioFormat(recordCacheKey)
-    );
+    return getAudioCacheKey(selectedUrl, window.location.origin) === recordCacheKey;
   }, [complete, recordCacheKey, selectedUrl]);
   const useLocal = complete && (matchesSelection || !sourcesKnown || !isOnline);
   return useLocal && record?.audioUrl ? localAudioSrc(record.audioUrl) : null;
@@ -111,7 +101,7 @@ export function useLocalArtworkUrl(
       const bundle = key ? await getDownloadBundle(key) : undefined;
       const artwork = bundle?.artwork;
       if (!artwork) return null;
-      if (artwork.artworkId && artwork.artworkId !== artworkId) return null;
+      if (artwork.artworkId !== artworkId) return null;
       return artwork.blob;
     },
   });
