@@ -12,7 +12,7 @@
  *
  *   docker run -d --name besedy-correction-smoke \
  *     -e POSTGRES_PASSWORD=test -e POSTGRES_DB=besedy_check \
- *     -p 55432:5432 postgres:18
+ *     -p 55432:5432 postgres:18-bookworm
  *   DATABASE_URL=postgresql://postgres:test@localhost:55432/besedy_check \
  *     npx prisma migrate deploy
  *   DATABASE_URL=postgresql://postgres:test@localhost:55432/besedy_check \

@@ -102,7 +102,7 @@ def test_shared_production_env_refuses_mismatched_public_settings(tmp_path, fiel
 def test_postgres_18_uses_its_parent_data_volume_in_every_environment() -> None:
     compose = WEB_COMPOSE.read_text(encoding="utf-8")
 
-    assert "image: postgres:18" in compose
+    assert "image: postgres:18-bookworm" in compose
     assert "image: postgres:18-alpine" in compose
     assert "- postgres_data:/var/lib/postgresql\n" in compose
     assert "/var/lib/postgresql/data" not in compose
