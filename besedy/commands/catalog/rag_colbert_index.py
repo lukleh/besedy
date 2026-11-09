@@ -125,7 +125,6 @@ def register_parser(
         default=None,
         help=(
             "Backend key in '{workflow}/{model_component}' format "
-            "(three-part '{workflow}/{model}/{vad}' is normalized). "
             "Default: RAG_BACKEND_KEY, else derived from the configured "
             "faster-whisper workflow."
         ),

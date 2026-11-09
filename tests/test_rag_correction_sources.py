@@ -272,7 +272,7 @@ def test_discovery_and_chunking_use_the_corrected_text(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, corrections_root: Path
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120000"
@@ -323,7 +323,7 @@ def test_targeted_discovery_still_refuses_an_unrelated_broken_publication(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, corrections_root: Path
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
     transcripts_root = tmp_path / "transcripts_20260206_120008"
     _write_transcript(
@@ -346,7 +346,7 @@ def test_fingerprint_changes_when_correction_replaces_machine_text(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, corrections_root: Path
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120000"
@@ -388,7 +388,7 @@ def test_legacy_short_directory_still_matches_its_pointer(
     and the correction would both be indexed and the scope build would abort on
     the duplicate hash."""
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
     transcripts_root = tmp_path / "transcripts_20260206_120000"
     workflow, model = BACKEND.split("/")
@@ -429,7 +429,7 @@ def test_malformed_legacy_transcript_is_skipped_not_fatal(
     """One unreadable file under a short directory must not abort the scope;
     it stays on the per-file path, where the builders count it as skipped."""
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
     transcripts_root = tmp_path / "transcripts_20260206_120000"
     workflow, model = BACKEND.split("/")

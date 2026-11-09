@@ -10,6 +10,7 @@ from typing import Any
 from besedy.core.paths import resolve_rag_colbert_root
 from besedy.lib import rag_pylate
 from besedy.lib.rag_chunk_corpus import slugify_backend_key, slugify_model_name
+from besedy.lib.rag_retrieval_chunking import CHUNK_VERSION
 
 DEFAULT_COLBERT_BUNDLE_ROOT = resolve_rag_colbert_root()
 ACTIVE_POINTER_PREFIX = "active_"
@@ -68,8 +69,8 @@ def default_colbert_bundle_root(
 ) -> Path:
     """Return the bundle root for one workflow/backend/model scope.
 
-    The current on-disk layout keeps `chunk_version` in the path so the existing
-    web route path contract remains stable until the route cutover happens.
+    The version component identifies the current chunk contract. Older versions
+    must be rebuilt before they can be selected.
     """
 
     return (
@@ -134,6 +135,12 @@ def colbert_bundle_metadata_error_message(
             "ColBERT bundle uses an unsupported index format at "
             f"{index_meta_path}: expected index_format_version={rag_pylate.PYLATE_INDEX_FORMAT_VERSION!r}, "
             f"found {index_format_version!r}. Rebuild it with `rag-colbert-index --rebuild`."
+        )
+    if payload.get("chunk_version") != CHUNK_VERSION:
+        return (
+            f"ColBERT bundle uses an unsupported chunk version at {index_meta_path}: "
+            f"expected {CHUNK_VERSION!r}, found {payload.get('chunk_version')!r}. "
+            "Rebuild it with `rag-colbert-index --rebuild`."
         )
     if not isinstance(plaid_backend, str) or not plaid_backend.strip():
         return (
@@ -231,11 +238,13 @@ def resolve_colbert_scope_bundle(
     )
     model_slug = slugify_model_name(colbert_model)
 
-    if chunk_version is not None and chunk_version.strip():
+    if chunk_version is not None and chunk_version != CHUNK_VERSION:
+        raise ValueError(f"Unsupported chunk version {chunk_version!r}; expected {CHUNK_VERSION!r}")
+    if chunk_version is not None:
         return _resolve_known_chunk_version_bundle(
             backend_root=backend_root,
             model_slug=model_slug,
-            chunk_version=chunk_version.strip(),
+            chunk_version=CHUNK_VERSION,
             require_compatible_engine=require_compatible_engine,
         )
 
@@ -252,9 +261,10 @@ def resolve_colbert_scope_bundle(
     if pointed_bundle is not None:
         return pointed_bundle
 
-    return _resolve_latest_valid_bundle(
+    return _resolve_known_chunk_version_bundle(
         backend_root=backend_root,
         model_slug=model_slug,
+        chunk_version=CHUNK_VERSION,
         require_compatible_engine=require_compatible_engine,
     )
 
@@ -299,6 +309,13 @@ def _resolve_pointed_bundle(
         return None
     if not isinstance(chunk_version, str) or not chunk_version.strip():
         return None
+    if chunk_version != CHUNK_VERSION:
+        if not require_compatible_engine:
+            return None
+        raise RuntimeError(
+            f"Active ColBERT pointer {pointer_path} uses unsupported chunk version "
+            f"{chunk_version!r}; rebuild with `rag-colbert-index --rebuild`."
+        )
 
     try:
         artifacts = validate_colbert_bundle(
@@ -312,58 +329,6 @@ def _resolve_pointed_bundle(
         chunk_version=chunk_version,
         built_at=_read_built_at(artifacts.index_meta_path),
     )
-
-
-def _resolve_latest_valid_bundle(
-    *,
-    backend_root: Path,
-    model_slug: str,
-    require_compatible_engine: bool,
-) -> ResolvedColbertBundle | None:
-    try:
-        entries = list(backend_root.iterdir())
-    except FileNotFoundError:
-        return None
-
-    candidates: list[ResolvedColbertBundle] = []
-    first_incompatible_error: RuntimeError | None = None
-    for entry in entries:
-        if not entry.is_dir():
-            continue
-        chunk_version = entry.name
-        bundle_link = entry / model_slug / "index"
-        try:
-            artifacts = validate_colbert_bundle(
-                bundle_link, require_compatible_engine=require_compatible_engine
-            )
-        except FileNotFoundError:
-            continue
-        except RuntimeError as exc:
-            if first_incompatible_error is None:
-                first_incompatible_error = exc
-            continue
-        candidates.append(
-            ResolvedColbertBundle(
-                artifacts=artifacts,
-                chunk_version=chunk_version,
-                built_at=_read_built_at(artifacts.index_meta_path),
-            )
-        )
-
-    if not candidates:
-        if first_incompatible_error is not None:
-            raise first_incompatible_error
-        return None
-
-    candidates.sort(
-        key=lambda candidate: (
-            candidate.built_at or "",
-            candidate.chunk_version,
-            str(candidate.artifacts.bundle_dir),
-        ),
-        reverse=True,
-    )
-    return candidates[0]
 
 
 def _read_built_at(index_meta_path: Path) -> str | None:
