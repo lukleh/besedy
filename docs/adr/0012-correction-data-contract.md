@@ -341,6 +341,15 @@ From then on, the correction UI may change freely: layout, controls and
 shortcuts. Export and training code may change. The data this record defines
 may only be extended.
 
+The current-contract cutover retires only archived pre-contract workspaces
+containing imported machine snapshots: no authored or successor revisions,
+decisions, comments, flags, publication records, or active publication/withdrawal
+pointers may exist. The migration locks the affected tables and refuses to
+remove a workspace when any of those records exists. Current-contract history
+and every human contribution remain protected by the append-only rule.
+Workspace segmentation/audio identity, span chunk/region data, revision origin
+and guide are then required for every retained workspace.
+
 ## Consequences
 
 - Correctors hear all speech the model heard. Dropped speech appears as spans

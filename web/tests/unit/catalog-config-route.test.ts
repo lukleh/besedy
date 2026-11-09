@@ -68,7 +68,6 @@ const storedCatalog = {
   metadataCatalogPath: "/data/a/metadata.csv",
   duplicatesCatalogPath: null,
   transcriptsPath: "/data/a/transcripts",
-  isDefault: false,
   isActive: true,
 };
 

@@ -229,7 +229,6 @@ async function fetchRelatedEntity(
           select: {
             id: true,
             label: true,
-            isDefault: true,
             isActive: true,
             createdAt: true,
           },

@@ -27,11 +27,6 @@ export interface SpanAudioRegion {
   wordCount: number;
 }
 
-/** A response from a server older than ADR 0012 carries no words. */
-function wordsOf(span: SpanView): SpanView["machineWords"] {
-  return span.machineWords ?? [];
-}
-
 /**
  * The span's regions in seconds, each with how many machine words it holds.
  * A word belongs to the region holding its midpoint, else the nearest one,
@@ -40,7 +35,7 @@ function wordsOf(span: SpanView): SpanView["machineWords"] {
 export function spanAudioRegions(span: SpanView): SpanAudioRegion[] {
   const regions = speechRegionsInSeconds(span);
   const counts = regions.map(() => 0);
-  for (const word of wordsOf(span)) {
+  for (const word of span.machineWords) {
     const index = regionIndexForMidpoint(regions, (word.start + word.end) / 2);
     if (index >= 0) counts[index] += 1;
   }
@@ -206,7 +201,7 @@ export function CorrectionSpanAudio({
   );
 
   const regions = useMemo(() => spanAudioRegions(span), [span]);
-  const words = wordsOf(span);
+  const words = span.machineWords;
   const playbackAction = spanPlaybackAction(playRequested, resumable);
   const speechWithoutText = regions.filter((region) => region.wordCount === 0).length;
   const rateLabel = rate === 1 ? "1×" : `${rate.toLocaleString()}×`;

@@ -76,8 +76,8 @@ export interface SpanView {
   commentCount: number;
   lastEditedById: string | null;
   lastEditedAt: Date | null;
-  /** Speech regions in samples (ADR 0012); null on spans from before the contract */
-  speechRegions: number[][] | null;
+  /** Speech regions in samples (ADR 0012) */
+  speechRegions: number[][];
   /** Current flags on the span's audio */
   flags: SpanFlag[];
   /** Machine words with their times, for following the audio */

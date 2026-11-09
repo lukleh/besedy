@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -12,6 +13,10 @@ import { describe, expect, it } from 'vitest';
 
 const MIGRATIONS_DIR = path.resolve(__dirname, '../../prisma/migrations');
 const CONTRACT_MIGRATION = '20261108000000_current_schema';
+// ADR 0012 permits only this reviewed, guarded retirement of unused machine snapshots.
+// The digest pins the exception: any SQL change needs a new review of its guards.
+const RETIREMENT_MIGRATION = '20261108224155_require_current_correction_contract';
+const RETIREMENT_SHA256 = 'f7d5fa6d9519e3a6603e93929e2c740e7bc2e30f0f394e9d59a7c8aa7bc01538';
 
 const PROTECTED_TABLES = [
   'transcript_workspace',
@@ -149,7 +154,7 @@ describe('correction data contract migrations', () => {
 
   it.each(
     migrations
-      .filter((name) => name > CONTRACT_MIGRATION)
+      .filter((name) => name > CONTRACT_MIGRATION && name !== RETIREMENT_MIGRATION)
       .map((name) => [name]),
   )('%s only extends the correction tables', (name) => {
     const sql = readFileSync(
@@ -157,6 +162,12 @@ describe('correction data contract migrations', () => {
       'utf-8',
     );
     expect(contractViolations(sql)).toEqual([]);
+  });
+
+  it('pins the narrowly guarded retirement allowed by ADR 0012', () => {
+    const sql = readFileSync(path.join(MIGRATIONS_DIR, RETIREMENT_MIGRATION, 'migration.sql'), 'utf8');
+    expect(createHash('sha256').update(sql).digest('hex')).toBe(RETIREMENT_SHA256);
+    expect(contractViolations(sql)).toHaveLength(4);
   });
 
   it('recognizes destructive statements', () => {

@@ -136,7 +136,7 @@ describe("buildTrainingExport", () => {
     await buildTrainingExport(CATALOG_ID);
     expect(prisma.transcriptWorkspace.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { workflowGroupId: CATALOG_ID, status: "ACTIVE", segmentationVersion: { not: null } },
+        where: { workflowGroupId: CATALOG_ID, status: "ACTIVE" },
       })
     );
   });
@@ -284,17 +284,10 @@ describe("buildTrainingExport", () => {
     expect(result.workspaces[0].chunks[0].eligible).toBe(true);
   });
 
-  it("passes a pre-contract revision's missing origin through as null", async () => {
-    spans([{ id: "s0", ordinal: 0, chunk: 0, regions: [0, 0], origin: null }]);
-    const [workspace] = (await buildTrainingExport(CATALOG_ID)).workspaces;
-    expect(workspace.chunks[0].spans[0].origin).toBeNull();
-  });
-
-  it("leaves out spans from before the contract and spans without a revision", async () => {
+  it("leaves out spans without a revision", async () => {
     spans([
-      { id: "pre", ordinal: 0, chunk: null },
-      { id: "bare", ordinal: 1, chunk: 0, regions: [0, 0], revision: null },
-      { id: "s2", ordinal: 2, chunk: 1, regions: [1, 1] },
+      { id: "bare", ordinal: 0, chunk: 0, regions: [0, 0], revision: null },
+      { id: "s2", ordinal: 1, chunk: 1, regions: [1, 1] },
     ]);
     const [workspace] = (await buildTrainingExport(CATALOG_ID)).workspaces;
     expect(workspace.chunks.map((chunk) => chunk.chunk)).toEqual([1]);

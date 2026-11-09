@@ -285,7 +285,6 @@ export function CatalogEntityCard({ catalog }: { catalog: RelatedCatalog }) {
         <div className="flex items-center justify-between">
           <span className="font-medium">{catalog.label || catalog.id}</span>
           <div className="flex gap-2">
-            {catalog.isDefault && <Badge variant="default">{t("default")}</Badge>}
             <Badge variant={catalog.isActive ? "default" : "secondary"}>
               {catalog.isActive ? t("active") : t("inactive")}
             </Badge>

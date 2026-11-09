@@ -252,6 +252,27 @@ jobs:
           POSTGRES_DB: besedy_correction_ci
           MIGRATE_PASSWORD: migrator
           APP_PASSWORD: app
+      # Upgrade regressions need the schema immediately before this migration,
+      # independently of the fully migrated correction smoke database below.
+      - name: Prepare the correction contract upgrade database
+        run: |
+          contract_migration=prisma/migrations/20261108224155_require_current_correction_contract/migration.sql
+          test -f "$contract_migration"
+          createdb --owner=besedy_migrator "$PGDATABASE"
+          for migration in prisma/migrations/*/migration.sql; do
+            [[ "$migration" < "$contract_migration" ]] || break
+            PGUSER=besedy_migrator PGPASSWORD=migrator psql -X -v ON_ERROR_STOP=1 -f "$migration"
+          done
+        env:
+          LC_ALL: C
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: besedy_contract_migration_test
+      - name: Check guarded correction contract upgrades
+        run: npm run test:correction-contract-migration
+        env:
+          TEST_DATABASE_URL: postgresql://besedy_migrator:migrator@localhost:5432/besedy_contract_migration_test
       - name: Apply migrations as besedy_migrator
         run: npx prisma migrate deploy
         env:

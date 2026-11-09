@@ -121,13 +121,10 @@ export class PlaybackTracker {
   }
 }
 
-/** A span's speech regions in seconds, from samples, or its whole window. */
+/** A span's recorded speech regions in seconds, converted from samples. */
 export function speechRegionsInSeconds(
-  span: { startSeconds: number; endSeconds: number; speechRegions?: number[][] | null },
+  span: { speechRegions: number[][] },
   sampleRate = 16000
 ): [number, number][] {
-  if (span.speechRegions && span.speechRegions.length > 0) {
-    return span.speechRegions.map(([start, end]) => [start / sampleRate, end / sampleRate]);
-  }
-  return [[span.startSeconds, span.endSeconds]];
+  return span.speechRegions.map(([start, end]) => [start / sampleRate, end / sampleRate]);
 }
