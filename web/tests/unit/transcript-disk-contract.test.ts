@@ -108,27 +108,58 @@ describe('current transcript disk contract', () => {
     });
   });
 
-  it("uses each current backend's generation language field", async () => {
-    for (const backend of [
-      'canary-nemo',
-      'canary-nemo-beam',
-      'faster-whisper',
-      'whisperx',
-      'qwen3-asr',
-    ]) {
-      await store({
+  it.each([
+    {
+      backend: 'canary-nemo',
+      generationParams: { source_lang: 'sk', target_lang: 'sk' },
+      expectedLanguage: 'sk',
+    },
+    {
+      // Beam output passes through the WhisperX canonical converter.
+      backend: 'canary-nemo-beam',
+      generationParams: { language: 'cs' },
+      expectedLanguage: 'cs',
+    },
+    {
+      backend: 'faster-whisper',
+      generationParams: { language: 'cs' },
+      expectedLanguage: 'cs',
+    },
+    {
+      backend: 'whisperx',
+      generationParams: { language: 'cs' },
+      expectedLanguage: 'cs',
+    },
+    {
+      backend: 'qwen3-asr',
+      generationParams: { language: 'cs', requested_language: 'cs' },
+      expectedLanguage: 'cs',
+    },
+  ])(
+    'reads the current $backend language in machine and published transcripts',
+    async ({ backend, generationParams, expectedLanguage }) => {
+      const data = {
         ...currentTranscript(),
         meta: {
           ...currentTranscript().meta,
           backend,
-          generation_params: { language: 'cs', target_lang: 'sk' },
+          generation_params: generationParams,
         },
-      });
-      expect((await loadTranscript(root, HASH, BACKEND))?.language).toBe(
-        backend.startsWith('canary-') ? 'sk' : 'cs',
+      };
+      const backendKey = `${backend}/model@lang-${expectedLanguage}`;
+      const backendFile = path.join(root, backendKey, HASH, 'transcript.json');
+      await mkdir(path.dirname(backendFile), { recursive: true });
+      await writeFile(backendFile, JSON.stringify(data));
+      vi.mocked(readJsonFile).mockResolvedValue(data);
+
+      expect((await loadTranscript(root, HASH, backendKey))?.language).toBe(
+        expectedLanguage,
       );
-    }
-  });
+      expect(
+        (await loadPublishedTranscript('catalog', HASH, publication))?.language,
+      ).toBe(expectedLanguage);
+    },
+  );
 
   it('leaves unknown output language absent instead of reading obsolete flat fields', async () => {
     await store({

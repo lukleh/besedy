@@ -50,11 +50,8 @@ export type CanonicalTranscript = z.infer<typeof canonicalTranscriptSchema>;
 export function canonicalTranscriptLanguage(
   data: CanonicalTranscript,
 ): string | undefined {
-  const field =
-    data.meta.backend === 'canary-nemo' ||
-    data.meta.backend === 'canary-nemo-beam'
-      ? 'target_lang'
-      : 'language';
+  // Beam output uses the WhisperX canonical converter's language field.
+  const field = data.meta.backend === 'canary-nemo' ? 'target_lang' : 'language';
   const language = data.meta.generation_params[field];
   return typeof language === 'string' ? language : undefined;
 }
