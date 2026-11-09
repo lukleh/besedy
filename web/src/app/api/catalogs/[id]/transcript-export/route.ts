@@ -256,7 +256,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       !capability.canBulkExportTranscripts
     ) {
       await logAccessDenied(userId, "transcript", catalogId, {
-        groupId: catalogId,
+        catalogId: catalogId,
         reason: "Bulk export requires bulk_export_transcripts",
       });
       return NextResponse.json(

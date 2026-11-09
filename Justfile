@@ -526,14 +526,9 @@ prod-up:
     #!/usr/bin/env bash
     set -euo pipefail
     cd web
-    env_file="$(bash ../scripts/resolve_web_env_file.sh production)"
-    set -a
-    . "$env_file"
-    set +a
-    export GIT_COMMIT=$(git rev-parse HEAD)
-    WEB_VERSION="$(bash ../scripts/resolve_web_version.sh)"
-    export WEB_VERSION
-    export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+    . ../scripts/production_web_env.sh
+    load_production_web_env
+    set_production_web_version
     {{ prod_compose }} up -d --no-recreate --remove-orphans
 
 # Stop prod environment (keeps data)
@@ -548,56 +543,21 @@ prod-down-clean:
 prod-restart:
     cd web && {{ prod_compose }} restart web
 
-# Rebuild with version tracking
+# Rebuild without the layer cache, then use the normal backup/migration/apply flow.
 prod-rebuild:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    bash scripts/validate_web_config_mount.sh production
-    echo "Running web checks..."
-    just web-check
-    cd web
-    env_file="$(bash ../scripts/resolve_web_env_file.sh production)"
-    if [ ! -f "$env_file" ]; then
-        echo "Missing production env file: $env_file"
-        exit 1
-    fi
-    set -a
-    . "$env_file"
-    set +a
-    require_env() {
-        if [ -z "${!1:-}" ]; then
-            echo "Missing required env: $1 ($env_file)"
-            exit 1
-        fi
-    }
-    require_env AUTH_URL
-    require_env NEXT_PUBLIC_APP_URL
-    require_env AUTH_SECRET
-    require_env AUTH_GOOGLE_ID
-    require_env AUTH_GOOGLE_SECRET
-    require_env DATABASE_URL
-    require_env VAPID_PUBLIC_KEY
-    require_env NEXT_PUBLIC_VAPID_PUBLIC_KEY
-    require_env VAPID_PRIVATE_KEY
-    if [ "$NEXT_PUBLIC_APP_URL" != "$AUTH_URL" ]; then
-        echo "NEXT_PUBLIC_APP_URL must match AUTH_URL for production"
-        exit 1
-    fi
-    if [ "$NEXT_PUBLIC_VAPID_PUBLIC_KEY" != "$VAPID_PUBLIC_KEY" ]; then
-        echo "NEXT_PUBLIC_VAPID_PUBLIC_KEY must match VAPID_PUBLIC_KEY for production"
-        exit 1
-    fi
-    export GIT_COMMIT=$(git rev-parse HEAD)
-    WEB_VERSION="$(bash ../scripts/resolve_web_version.sh)"
-    export WEB_VERSION
-    export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
-    {{ prod_compose }} build --pull --no-cache web
-    {{ prod_compose }} up -d --no-deps web
+    just prod-build --no-cache
+    just prod-apply
 
 # Build the production web image and run its checks without changing runtime.
-prod-build:
+prod-build *args:
     #!/usr/bin/env bash
     set -euo pipefail
+    if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "$1" != "--no-cache" ]; }; then
+        echo "Usage: just prod-build [--no-cache]" >&2
+        exit 2
+    fi
+    build_options=(--pull)
+    if [ "$#" -eq 1 ]; then build_options+=("$1"); fi
     if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
         echo "Refusing to build a production web image from a dirty worktree." >&2
         exit 1
@@ -615,43 +575,12 @@ prod-build:
     echo "Running web checks..."
     just web-check
     cd web
-    env_file="$(bash ../scripts/resolve_web_env_file.sh production)"
-    if [ ! -f "$env_file" ]; then
-        echo "Missing production env file: $env_file"
-        exit 1
-    fi
-    set -a
-    . "$env_file"
-    set +a
-    require_env() {
-        if [ -z "${!1:-}" ]; then
-            echo "Missing required env: $1 ($env_file)"
-            exit 1
-        fi
-    }
-    require_env AUTH_URL
-    require_env NEXT_PUBLIC_APP_URL
-    require_env AUTH_SECRET
-    require_env AUTH_GOOGLE_ID
-    require_env AUTH_GOOGLE_SECRET
-    require_env DATABASE_URL
-    require_env VAPID_PUBLIC_KEY
-    require_env NEXT_PUBLIC_VAPID_PUBLIC_KEY
-    require_env VAPID_PRIVATE_KEY
-    if [ "$NEXT_PUBLIC_APP_URL" != "$AUTH_URL" ]; then
-        echo "NEXT_PUBLIC_APP_URL must match AUTH_URL for production"
-        exit 1
-    fi
-    if [ "$NEXT_PUBLIC_VAPID_PUBLIC_KEY" != "$VAPID_PUBLIC_KEY" ]; then
-        echo "NEXT_PUBLIC_VAPID_PUBLIC_KEY must match VAPID_PUBLIC_KEY for production"
-        exit 1
-    fi
+    . ../scripts/production_web_env.sh
+    load_production_web_env
+    validate_production_web_env
     echo "Building production with version tracking..."
-    export GIT_COMMIT=$(git rev-parse HEAD)
-    WEB_VERSION="$(bash ../scripts/resolve_web_version.sh)"
-    export WEB_VERSION
-    export BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
-    {{ prod_compose }} build --pull web
+    set_production_web_version
+    {{ prod_compose }} build "${build_options[@]}" web
     docker image tag "${BESEDY_WEB_IMAGE:-besedy-web:prod}" "besedy-web:$GIT_COMMIT"
     echo "Retained production web image: besedy-web:$GIT_COMMIT"
     if docker image inspect "$jobs_image" >/dev/null 2>&1; then
@@ -669,10 +598,8 @@ prod-apply:
     #!/usr/bin/env bash
     set -euo pipefail
     cd web
-    env_file="$(bash ../scripts/resolve_web_env_file.sh production)"
-    set -a
-    . "$env_file"
-    set +a
+    . ../scripts/production_web_env.sh
+    load_production_web_env
     git_commit=$(git rev-parse HEAD)
     web_image="${BESEDY_WEB_IMAGE:-besedy-web:prod}"
     image_commit="$(docker image inspect "$web_image" | jq -er '.[0].Config.Labels["org.opencontainers.image.revision"] // empty')" || {

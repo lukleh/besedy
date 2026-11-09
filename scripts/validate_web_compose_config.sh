@@ -125,8 +125,8 @@ db_volume_target="$(
 )"
 db_image="$(jq -r '.services.db.image // empty' <<<"$config")"
 
-[[ "$db_image" == "postgres:18" ]] \
-  || fail "database image is '$db_image', expected 'postgres:18'"
+[[ "$db_image" == "postgres:18-bookworm" ]] \
+  || fail "database image is '$db_image', expected 'postgres:18-bookworm'"
 [[ "$db_volume_key" == "postgres_data" ]] \
   || fail "database volume key is '$db_volume_key', expected 'postgres_data'"
 [[ "$db_volume_target" == "/var/lib/postgresql" ]] \

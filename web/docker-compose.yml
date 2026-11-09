@@ -22,7 +22,9 @@ services:
   db:
     # Keep the database major version and its storage layout coupled in source.
     # PostgreSQL 18 stores versioned clusters below /var/lib/postgresql.
-    image: postgres:18
+    # Retain Debian bookworm's glibc/locales for the existing physical volume;
+    # changing distributions can invalidate collation-dependent indexes.
+    image: postgres:18-bookworm
     container_name: besedy-${BESEDY_COMPOSE_INSTANCE:-unmanaged}-db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-besedy}

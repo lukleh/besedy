@@ -96,7 +96,7 @@ describe("transcript route access", () => {
       "user-1",
       "transcript",
       "a".repeat(64),
-      { groupId: "catalog-1" }
+      { catalogId: "catalog-1" }
     );
   });
 

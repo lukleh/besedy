@@ -36,7 +36,7 @@ catalog picker. Source IDs remain in existing URLs and download snapshots;
 unknown IDs are not rewritten onto the archive. Display settings still use
 `/api/preferences`, whose API no longer accepts an active-catalog selection.
 The old catalog list/create/discover and source deactivation APIs are removed.
-Source settings retain label and path updates with their existing permission
+Source settings retain label and CSV path updates with their existing permission
 checks; `isDefault` and `isActive` are no longer accepted update fields. Their
 stored values and source foreign keys remain available for historical records.
 
@@ -53,12 +53,10 @@ cd web
 BESEDY_ARCHIVE_ID=YYYYMMDD_HHMMSS npm run archive:register -- \
   --archived-catalog-path /data/text/catalogs/audio_catalog_YYYYMMDD_HHMMSS_loudness_archived.csv \
   --metadata-catalog-path /data/text/catalogs/audio_catalog_YYYYMMDD_HHMMSS.csv \
-  --transcripts-path /data/text/transcripts/transcripts_YYYYMMDD_HHMMSS \
   --label Archive
 ```
 
-Optional flags are `--label`, `--transcripts-path` and
-`--duplicates-catalog-path`. The required metadata and archived paths use the
+Optional flags are `--label` and `--duplicates-catalog-path`. The required metadata and archived paths use the
 same field validation as source settings. The source ID comes exclusively from
 `BESEDY_ARCHIVE_ID`. Registration performs a create, so an existing ID fails
 without rewriting its paths, state, grants or authored data. Use the settings
@@ -145,3 +143,30 @@ Only the deployment's web/job entry points are bound here. The host jobs API
 and worker validate the configured ID and request match; database existence and
 active state are validated by the web application, so their environment must
 match the web binding before activation.
+
+## Transcript generation paths
+
+Transcript paths are derived, not stored overrides. The pipeline, host worker
+and web reader use `<text_data_dir>/<transcripts_dir>/transcripts_<source-id>` in
+their own mount namespace. `[paths].transcripts_dir` is the shared TOML parent,
+defaulting to `transcripts` when omitted or empty. Keep the same relative parent
+in host and container configuration; their text-data roots may differ by mount.
+For Python paths using `BESEDY_TEXT_DATA_ROOT`, set `BESEDY_CONFIG` explicitly to
+use a custom parent. Without an explicit config, that environment override uses
+the default parent without loading a discovered host config.
+Settings show that effective directory read-only;
+`transcriptsPath` is rejected in source updates and registration. The old
+`workflow_group.transcripts_path` value remains historical data and is unused;
+no database migration is required. Existing custom TOML parents remain active.
+Before deployment, verify that the configured parent contains the intended
+generation: older Python code always used the default parent even when the web
+reader used a custom one. If both trees contain material, review their contents
+explicitly before aligning configuration; this change never moves or merges them.
+
+Python uses `catalog_transcripts_dirname()` for generation names; the web
+resolver implements the same ID contract. Both suites check
+`contracts/catalog-transcript-paths.json`, including custom parents and invalid
+IDs. Catalog-bound paths never follow the latest-generation symlink; the general
+CLI's current-generation resolver retains its existing latest-symlink behavior.
+CSV source bindings remain explicit because they
+are input files, and changing them retains the existing system-admin checks.

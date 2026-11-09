@@ -55,7 +55,7 @@ export async function resolveTranscriptRouteAccess(
   if (!capability.canAccessRecording) {
     if (options.auditResource) {
       await logAccessDenied(userId, options.auditResource, options.hash, {
-        groupId: group.id,
+        catalogId: group.id,
       });
     }
 
@@ -71,7 +71,7 @@ export async function resolveTranscriptRouteAccess(
   if (!capability.canViewRecordingTranscripts) {
     if (options.auditResource) {
       await logAccessDenied(userId, options.auditResource, options.hash, {
-        groupId: group.id,
+        catalogId: group.id,
         reason: TRANSCRIPT_ACCESS_DENIED_MESSAGE,
       });
     }
@@ -90,7 +90,7 @@ export async function resolveTranscriptRouteAccess(
   if (options.requireDownload && !capability.canDownloadTranscripts) {
     if (options.auditResource) {
       await logAccessDenied(userId, options.auditResource, options.hash, {
-        groupId: group.id,
+        catalogId: group.id,
         reason: "Download not permitted",
       });
     }
