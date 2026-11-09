@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from besedy.core.paths import iter_transcript_paths, parse_transcript_components
-from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.data.encoding import load_json_utf8
 
 
 def load_transcript_json(path: Path) -> dict | None:
@@ -15,7 +15,7 @@ def load_transcript_json(path: Path) -> dict | None:
     Files that are not valid UTF-8 count as parse errors.
     """
     try:
-        return load_json_with_fallback(path)
+        return load_json_utf8(path)
     except (FileNotFoundError, ValueError):
         return None
 

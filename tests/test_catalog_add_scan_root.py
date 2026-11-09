@@ -356,10 +356,10 @@ class TestScanRootStoredResolved:
         (library / "talk.wav").write_bytes(b"x")
         catalog = tmp_path / "audio_catalog_20260101_120000.csv"
         with catalog.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=["Hash", "Hash Algorithm", "Full Path"])
+            writer = csv.DictWriter(handle, fieldnames=catalog_fieldnames())
             writer.writeheader()
             writer.writerow(
-                {"Hash": "a" * 64, "Hash Algorithm": AUDIO_HASH_ALGORITHM, "Full Path": "/a.wav"}
+                {"Hash": "a" * 64, "Hash Algorithm": AUDIO_HASH_ALGORITHM, "Full Path": "/a.wav", "added_at": "2026-01-01T00:00:00Z"}
             )
         seen = self._capture_scan_root(monkeypatch, add_command)
         monkeypatch.chdir(tmp_path)

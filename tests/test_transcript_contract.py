@@ -1,4 +1,4 @@
-"""Converters and both validation entry points share one transcript contract."""
+"""Converters and explicit validation policies share one transcript contract."""
 
 from __future__ import annotations
 
@@ -8,8 +8,7 @@ import pytest
 
 from besedy.cli.convert_stable_ts import StableTsConversionError, convert_stable_ts
 from besedy.lib.data.whisperx_conversion import WhisperXConversionError, convert_whisperx
-from besedy.lib.validation.core import validate_shared_schema
-from besedy.lib.validation.schema import validate_canonical_schema
+from besedy.lib.validation.schema import validate_canonical_schema, validate_transcript_schema
 
 CONVERTERS = [
     (convert_whisperx, WhisperXConversionError, "score"),
@@ -52,7 +51,7 @@ def test_converters_produce_the_same_valid_timing_and_unknown_confidence(
     assert result["segments"][1]["start"] == result["segments"][1]["end"] == 1
     assert result["meta"]["transcript_text"] == "first second"
     assert result["meta"]["num_words"] == 2
-    assert validate_shared_schema(result) == validate_canonical_schema(result) == []
+    assert validate_transcript_schema(result) == validate_canonical_schema(result) == []
 
 
 @pytest.mark.parametrize("converter,error_type,score_field", CONVERTERS)
@@ -99,7 +98,7 @@ def test_bad_converter_shapes_raise_conversion_errors(converter, error_type, sco
         )
 
 
-@pytest.mark.parametrize("validator", [validate_shared_schema, validate_canonical_schema])
+@pytest.mark.parametrize("validator", [validate_transcript_schema, validate_canonical_schema])
 @pytest.mark.parametrize(
     "payload",
     [
@@ -115,7 +114,7 @@ def test_bad_validation_shapes_are_issues_not_exceptions(validator, payload):
     assert validator(payload)
 
 
-@pytest.mark.parametrize("validator", [validate_shared_schema, validate_canonical_schema])
+@pytest.mark.parametrize("validator", [validate_transcript_schema, validate_canonical_schema])
 @pytest.mark.parametrize(
     "field,value",
     [
@@ -134,13 +133,13 @@ def test_both_validators_reject_nonfinite_numbers_and_invalid_confidence(validat
 
 def test_field_policies_remain_explicit_without_conflicting_value_rules():
     minimal = {"segments": [{"start": 0, "end": 1, "text": "a"}]}
-    assert validate_shared_schema(minimal) == []
+    assert validate_transcript_schema(minimal) == []
     assert validate_canonical_schema(minimal)
     silent = convert(convert_whisperx, [])
     assert validate_canonical_schema(silent) == []
-    assert validate_shared_schema(silent)
+    assert validate_transcript_schema(silent)
     minimal["segments"][0]["words"] = [{"word": "a", "start": 2, "end": 3}]
-    assert any("bounds" in issue for issue in validate_shared_schema(minimal))
+    assert any("bounds" in issue for issue in validate_transcript_schema(minimal))
 
 
 def test_backend_metadata_options_stay_with_the_format_adapter():

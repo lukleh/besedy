@@ -221,14 +221,10 @@ class TestWorkflowConfigPatterns:
     def test_workflow_label_format(self):
         """Workflow labels follow expected format."""
         from besedy.core.paths import (
-            NEMO_VAD_WORKFLOW_LABEL,
             PYANNOTE_DIARIZATION_WORKFLOW_LABEL,
         )
 
         # Labels should be non-empty strings
-        assert isinstance(NEMO_VAD_WORKFLOW_LABEL, str)
-        assert len(NEMO_VAD_WORKFLOW_LABEL) > 0
-
         assert isinstance(PYANNOTE_DIARIZATION_WORKFLOW_LABEL, str)
         assert len(PYANNOTE_DIARIZATION_WORKFLOW_LABEL) > 0
 

@@ -59,7 +59,7 @@ export interface UsersDialogsProps {
     open: boolean;
     admission: PendingPortalAdmission;
   } | null;
-  editAdmissionForm: { role: CatalogRole | ""; notes: string };
+  editAdmissionForm: { role: CatalogRole; notes: string };
   getCatalogRoleLabel: (role: CatalogRole) => string;
   isLoadingAccess: boolean;
   newCatalogRole: CatalogRole;
@@ -74,7 +74,7 @@ export interface UsersDialogsProps {
   onDeleteUser: () => void;
   onEditAdmissionDialogOpenChange: (open: boolean) => void;
   onEditAdmissionFormChange: (value: {
-    role?: CatalogRole | "";
+    role?: CatalogRole;
     notes?: string;
   }) => void;
   onEditAdmissionSubmit: () => void;
@@ -412,11 +412,11 @@ export function UsersDialogs({
                 {t("dialogs.editPendingAdmission.role")}
               </Label>
               <ResponsiveSelect
-                value={editAdmissionForm.role || "none"}
+                value={editAdmissionForm.role}
                 disabled={!archive}
                 onValueChange={(value) =>
                   onEditAdmissionFormChange({
-                    role: value === "none" ? "" : (value as CatalogRole),
+                    role: value as CatalogRole,
                   })
                 }
               >
@@ -426,11 +426,7 @@ export function UsersDialogs({
                   aria-labelledby="edit-pending-admission-role-label"
                 >
                   <ResponsiveSelectValue
-                    displayValue={
-                      editAdmissionForm.role
-                        ? getCatalogRoleLabel(editAdmissionForm.role)
-                        : undefined
-                    }
+                    displayValue={getCatalogRoleLabel(editAdmissionForm.role)}
                   />
                 </ResponsiveSelectTrigger>
                 <ResponsiveSelectContent
@@ -472,7 +468,7 @@ export function UsersDialogs({
                 updateAdmissionPending ||
                 (!archive &&
                   editAdmissionForm.role !==
-                    (editAdmissionDialog?.admission.role || ""))
+                    editAdmissionDialog?.admission.role)
               }
             >
               {updateAdmissionPending && (

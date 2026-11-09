@@ -29,10 +29,6 @@ vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a>,
 }));
 
-vi.mock("@/components/transcript/transcript-stream-viewer", () => ({
-  TranscriptStreamViewer: () => null,
-}));
-
 vi.mock("@/components/transcript/transcript-viewer", () => ({
   TranscriptViewer: () => null,
 }));

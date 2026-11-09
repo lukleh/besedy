@@ -182,47 +182,13 @@ class TestLoadCsv:
 
 
 class TestResolveHashColumn:
-    """Tests for resolve_hash_column()."""
+    def test_requires_canonical_hash_header(self, tmp_path):
+        assert resolve_hash_column(["Hash", "Filename"], tmp_path / "catalog.csv") == "Hash"
 
-    def test_finds_hash_column(self, tmp_path):
-        """Finds 'hash' column."""
-        columns = ["name", "hash", "size"]
-        path = tmp_path / "test.csv"
-
-        result = resolve_hash_column(columns, path, preferred=None)
-        assert result == "hash"
-
-    def test_rejects_sha256_column(self, tmp_path):
-        """Rejects 'sha256' column - only 'Hash' is accepted now."""
-        columns = ["name", "sha256", "size"]
-        path = tmp_path / "test.csv"
-
-        with pytest.raises(ValueError, match="missing required hash column"):
-            resolve_hash_column(columns, path, preferred=None)
-
-    def test_preferred_column_takes_priority(self, tmp_path):
-        """Preferred column takes priority."""
-        columns = ["name", "hash", "Hash", "custom_hash"]
-        path = tmp_path / "test.csv"
-
-        result = resolve_hash_column(columns, path, preferred="custom_hash")
-        assert result == "custom_hash"
-
-    def test_case_insensitive_lookup(self, tmp_path):
-        """Case-insensitive column lookup."""
-        columns = ["name", "HASH", "size"]
-        path = tmp_path / "test.csv"
-
-        result = resolve_hash_column(columns, path, preferred=None)
-        assert result == "HASH"
-
-    def test_raises_when_not_found(self, tmp_path):
-        """Raises ValueError when hash column not found."""
-        columns = ["name", "size", "status"]
-        path = tmp_path / "test.csv"
-
-        with pytest.raises(ValueError, match="missing required hash column"):
-            resolve_hash_column(columns, path, preferred=None)
+    @pytest.mark.parametrize("name", ["hash", "HASH", "sha256", "custom_hash"])
+    def test_rejects_old_hash_aliases(self, tmp_path, name):
+        with pytest.raises(ValueError, match="required 'Hash'"):
+            resolve_hash_column([name, "Filename"], tmp_path / "catalog.csv")
 
 
 class TestCollectHashes:
@@ -277,8 +243,6 @@ class TestMergeCatalogs:
             source,
             target,
             columns=columns,
-            source_hash_column="Hash",
-            target_hash_column="Hash",
         )
 
         assert len(merged) == 2
@@ -295,8 +259,6 @@ class TestMergeCatalogs:
             source,
             target,
             columns=columns,
-            source_hash_column="Hash",
-            target_hash_column="Hash",
         )
 
         assert len(merged) == 1
@@ -312,8 +274,6 @@ class TestMergeCatalogs:
             source,
             target,
             columns=columns,
-            source_hash_column="Hash",
-            target_hash_column="Hash",
         )
 
         assert len(merged) == 1

@@ -19,7 +19,7 @@ import {
 } from "@/lib/correction/storage";
 import { IN_FLIGHT_PUBLICATION_STATUSES } from "@/lib/correction/publication-status";
 import { REQUIRED_APPROVALS } from "@/lib/correction/span-state";
-import { evaluateWorkspace, type ManifestEntry } from "@/lib/correction/publication-eligibility";
+import { evaluateWorkspace } from "@/lib/correction/publication-eligibility";
 import { fingerprintContent } from "@/lib/correction/text";
 import { getActiveGuideRevisionId } from "@/lib/correction/guide";
 import { lockWorkspace } from "@/lib/correction/workspace-lock";
@@ -45,22 +45,6 @@ function errorText(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, MAX_ERROR_MESSAGE_LENGTH);
 }
 
-async function manifestMatchesPublication(
-  publicationId: string,
-  manifest: readonly ManifestEntry[],
-  client: Prisma.TransactionClient = prisma
-): Promise<boolean> {
-  const rows = await client.transcriptPublicationSpan.findMany({
-    where: { publicationId },
-    select: { spanId: true, revisionId: true },
-  });
-
-  if (rows.length !== manifest.length) return false;
-
-  const published = new Map(rows.map((row) => [row.spanId, row.revisionId]));
-  return manifest.every((entry) => published.get(entry.spanId) === entry.revisionId);
-}
-
 export interface PublishInput {
   catalogId: string;
   audioHash: string;
@@ -75,8 +59,6 @@ export interface PublicationError {
 export interface PublishResult {
   publicationId: string;
   status: "SUCCEEDED" | "ACTIVATING" | "FAILED";
-  /** The reader pointer was restored over a snapshot search already carries */
-  reused: boolean;
   /** An earlier publication of this workspace was picked up rather than a new one made */
   resumed: boolean;
   /** Why the publication is not SUCCEEDED, when the service knows */
@@ -208,7 +190,13 @@ export async function publishTranscript(
         // withdrawal removes when it resumes.
         throw new CorrectionError(
           "PUBLICATION_IN_FLIGHT",
-          "A withdrawal from search is unfinished; complete it before publishing"
+          "Unpublish is unfinished; retry Unpublish before publishing"
+        );
+      }
+      if (workspace.readerPublicationId !== workspace.searchPublicationId) {
+        throw new CorrectionError(
+          "PUBLICATION_REQUIRES_UNPUBLISH",
+          "Unpublish first to reconcile the previous publication"
         );
       }
 
@@ -223,22 +211,6 @@ export async function publishTranscript(
             blockedSpanCount: evaluation.blockedSpanCount,
           }
         );
-      }
-
-      // Restoring a reader pointer over text that has not moved renders and
-      // indexes nothing: the snapshot search already carries is the same one.
-      if (
-        workspace.searchPublicationId &&
-        (await manifestMatchesPublication(workspace.searchPublicationId, evaluation.manifest, tx))
-      ) {
-        await tx.transcriptWorkspace.update({
-          where: { id: workspace.id },
-          data: { readerPublicationId: workspace.searchPublicationId },
-        });
-        return {
-          kind: "reused" as const,
-          publicationId: workspace.searchPublicationId,
-        };
       }
 
       const publication = await tx.transcriptPublication.create({
@@ -272,16 +244,6 @@ export async function publishTranscript(
     { maxWait: 10_000, timeout: 30_000 }
   );
 
-  if (prepared.kind === "reused") {
-    return {
-      publicationId: prepared.publicationId,
-      status: "SUCCEEDED",
-      reused: true,
-      resumed: false,
-      error: null,
-    };
-  }
-
   const status =
     prepared.kind === "reconcile"
       ? await reconcilePublication(prepared.publicationId, existing.id, deps)
@@ -289,7 +251,6 @@ export async function publishTranscript(
   return {
     publicationId: prepared.publicationId,
     status,
-    reused: false,
     resumed: prepared.kind !== "prepared",
     error: status === "SUCCEEDED" ? null : await publicationError(prepared.publicationId),
   };
@@ -697,7 +658,7 @@ export async function completeIndexSync(
     }
     if (report.status === "FAILED") {
       // The intent stays committed, so search still holds the correction the
-      // reader has already released; the administrator reruns the withdrawal.
+      // reader has already released; the publisher retries Unpublish.
       return { outcome: "failure_recorded", detail: report.errorMessage ?? report.errorCode ?? undefined };
     }
     if (indexedPathIsCorrection(report.transcriptPath, report.catalogId)) {
@@ -706,14 +667,16 @@ export async function completeIndexSync(
         detail: `Search still holds a correction artifact: ${report.transcriptPath}`,
       };
     }
-    await prisma.$transaction(async (tx) => {
+    const completed = await prisma.$transaction(async (tx) => {
       await lockWorkspace(tx, workspace.id);
-      await tx.transcriptWorkspace.updateMany({
+      return tx.transcriptWorkspace.updateMany({
         where: { id: workspace.id, status: "ACTIVE", searchWithdrawalId: report.operationToken },
         data: { searchWithdrawalId: null, searchWithdrawalJobId: null },
       });
     });
-    return { outcome: "withdrawn" };
+    return completed.count > 0
+      ? { outcome: "withdrawn" }
+      : { outcome: "ignored", detail: "The unpublish operation already completed or changed" };
   }
 
   const publication = await prisma.transcriptPublication.findUnique({
@@ -958,81 +921,28 @@ async function materializeArtifacts(
 export interface UnpublishInput {
   catalogId: string;
   audioHash: string;
+  userId?: string;
+}
+
+export interface UnpublishResult {
+  unpublished: true;
+  pendingIndexSync: boolean;
 }
 
 /**
- * Take the transcript off the reading surfaces without taking the corrections
- * out of search.
+ * Retract one corrected snapshot from readers, downloads, search and MCP.
  *
- * One boolean could not express this, which is why the workspace carries two
- * pointers. Removing corrected text from search as well is a separate
- * administrative operation.
+ * Database consumers stop preferring the correction immediately. The durable
+ * intent blocks publication until the worker confirms search has returned to
+ * the machine source; a repeated request resumes that same generation. The
+ * stored withdrawal fields and job operation retain their names so callbacks
+ * from jobs queued before this change still complete safely.
  */
-export async function unpublishTranscript(input: UnpublishInput): Promise<{ unpublished: boolean }> {
-  const existing = await prisma.transcriptWorkspace.findFirst({
-    where: {
-      workflowGroupId: input.catalogId,
-      audioHash: input.audioHash,
-      status: "ACTIVE",
-    },
-    select: { id: true },
-  });
-
-  if (!existing) {
-    throw new CorrectionError("NO_WORKSPACE", "Correction has not been started for this recording");
-  }
-
-  await prisma.$transaction(async (tx) => {
-    await lockWorkspace(tx, existing.id);
-
-    const workspace = await tx.transcriptWorkspace.findUniqueOrThrow({
-      where: { id: existing.id },
-      select: {
-        readerPublicationId: true,
-        publications: {
-          where: { status: { in: IN_FLIGHT_PUBLICATION_STATUSES } },
-          select: { id: true },
-          take: 1,
-        },
-      },
-    });
-
-    if (!workspace.readerPublicationId) {
-      throw new CorrectionError("NOT_PUBLISHED", "This transcript is not published");
-    }
-
-    // Serialized rather than cancelling: a publication finishing afterwards
-    // would otherwise move the reader pointer back and silently reverse this.
-    if (workspace.publications.length > 0) {
-      throw new CorrectionError("PUBLICATION_IN_FLIGHT", "A publication for this workspace is already running", {
-        publicationId: workspace.publications[0].id,
-      });
-    }
-
-    await tx.transcriptWorkspace.update({
-      where: { id: existing.id },
-      data: { readerPublicationId: null },
-    });
-  });
-
-  return { unpublished: true };
-}
-
-/**
- * Remove corrected text from search as well.
- *
- * Deliberately not part of unpublish, and deliberately administrative: it
- * makes the machine transcript the effective search source again. It clears
- * the reader pointer too, because the one direction this system never allows
- * is a reader newer than search. The intent stays committed until the host
- * worker reports that the index holds the machine text again; a repeated call
- * resumes the same generation.
- */
-export async function withdrawFromSearch(
-  catalogId: string,
-  audioHash: string,
+export async function unpublishTranscript(
+  input: UnpublishInput,
   deps: PublicationDeps = {}
-): Promise<void> {
+): Promise<UnpublishResult> {
+  const { catalogId, audioHash } = input;
   const workspace = await prisma.transcriptWorkspace.findFirst({
     where: { workflowGroupId: catalogId, audioHash, status: "ACTIVE" },
     select: { id: true },
@@ -1050,7 +960,12 @@ export async function withdrawFromSearch(
 
     const current = await tx.transcriptWorkspace.findUniqueOrThrow({
       where: { id: workspace.id },
-      select: { status: true, searchWithdrawalId: true },
+      select: {
+        status: true,
+        readerPublicationId: true,
+        searchPublicationId: true,
+        searchWithdrawalId: true,
+      },
     });
     if (current.status !== "ACTIVE") {
       throw new CorrectionError("WORKSPACE_ARCHIVED", "This correction workspace has been archived");
@@ -1058,6 +973,7 @@ export async function withdrawFromSearch(
     if (current.searchWithdrawalId) return current.searchWithdrawalId;
 
     await assertNoPublicationInFlight(workspace.id, tx);
+    if (!current.readerPublicationId && !current.searchPublicationId) return null;
     const id = randomUUID();
     await tx.transcriptWorkspace.update({
       where: { id: workspace.id },
@@ -1069,6 +985,7 @@ export async function withdrawFromSearch(
     });
     return id;
   });
+  if (!withdrawalId) return { unpublished: true, pendingIndexSync: false };
 
   // Step two: remove the pointer only if this exact generation still owns the
   // intent. Another caller may already have completed it and allowed a new
@@ -1087,7 +1004,7 @@ export async function withdrawFromSearch(
     await removeIndexPointer(catalogId, audioHash);
     return true;
   });
-  if (!removed) return;
+  if (!removed) return { unpublished: true, pendingIndexSync: false };
 
   // Step three: ask the search side to drop the corrected chunks. The intent
   // is spent by `completeIndexSync` when the worker reports that the bundle
@@ -1102,18 +1019,20 @@ export async function withdrawFromSearch(
       audioHash,
       operation: "withdraw",
       operationToken: withdrawalId,
+      requestedById: input.userId ?? null,
       attempt: Math.floor(Date.now() / 1000),
     }));
   } catch (error) {
     throw new CorrectionError(
       "INDEX_SYNC_UNAVAILABLE",
-      `The withdrawal is recorded, but the search index could not be asked to follow: ${errorText(error)}. Run it again to resubmit.`
+      `Unpublish is recorded, but the search index could not be asked to follow: ${errorText(error)}. Run Unpublish again to retry.`
     );
   }
-  await prisma.transcriptWorkspace.updateMany({
+  const queued = await prisma.transcriptWorkspace.updateMany({
     where: { id: workspace.id, status: "ACTIVE", searchWithdrawalId: withdrawalId },
     data: { searchWithdrawalJobId: jobId },
   });
+  return { unpublished: true, pendingIndexSync: queued.count > 0 };
 }
 
 export async function rollbackPublication(
@@ -1277,15 +1196,14 @@ export interface PublicationView {
   errorMessage: string | null;
   indexJobId: string | null;
   searchSourceFingerprint: string | null;
-  isReaderPublication: boolean;
-  isSearchPublication: boolean;
+  isActivePublication: boolean;
 }
 
 export async function listPublications(workspaceId: string, limit = 20): Promise<PublicationView[]> {
   const [workspace, publications] = await Promise.all([
     prisma.transcriptWorkspace.findUniqueOrThrow({
       where: { id: workspaceId },
-      select: { readerPublicationId: true, searchPublicationId: true },
+      select: { readerPublicationId: true },
     }),
     prisma.transcriptPublication.findMany({
       where: { workspaceId },
@@ -1310,7 +1228,6 @@ export async function listPublications(workspaceId: string, limit = 20): Promise
 
   return publications.map((publication) => ({
     ...publication,
-    isReaderPublication: publication.id === workspace.readerPublicationId,
-    isSearchPublication: publication.id === workspace.searchPublicationId,
+    isActivePublication: publication.id === workspace.readerPublicationId,
   }));
 }

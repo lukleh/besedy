@@ -21,7 +21,7 @@ def validate_staged_audio(
     for row in rows:
         source_path, _resolved, exists = resolve_unicode_path(row.full_path)
         if not exists:
-            errors.append((row.sha256, source_path, "file not found"))
+            errors.append((row.audio_hash, source_path, "file not found"))
             continue
         if not audio_is_wav_mono_16k(source_path):
             metadata = probe_primary_audio_stream(source_path)
@@ -30,12 +30,12 @@ def validate_staged_audio(
             else:
                 sample_rate, channels = metadata
                 reason = f"expected 16kHz mono WAV, got {sample_rate}Hz {channels}ch"
-            errors.append((row.sha256, source_path, reason))
+            errors.append((row.audio_hash, source_path, reason))
             continue
 
         prepared.append(
             PreparedEntry(
-                sha256=row.sha256,
+                audio_hash=row.audio_hash,
                 source=source_path,
                 staged=source_path,
                 action="existing",
@@ -59,8 +59,8 @@ def print_validation_errors(errors: Sequence[tuple[str, Path, str]], mode_label:
         f"Run 'just catalog stage-audio --csv <catalog>' before '{mode_label}'.\n", file=sys.stderr
     )
     print("Invalid files (showing first 10):", file=sys.stderr)
-    for sha256, path, reason in errors[:10]:
-        print(f"  - {sha256}: {reason}", file=sys.stderr)
+    for audio_hash, path, reason in errors[:10]:
+        print(f"  - {audio_hash}: {reason}", file=sys.stderr)
         print(f"    Path: {path}", file=sys.stderr)
     remaining = len(errors) - 10
     if remaining > 0:

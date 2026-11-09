@@ -58,6 +58,11 @@ from besedy.lib.audio.join import (
     probe_audio_file,
     resolve_join_metadata,
 )
+from besedy.lib.catalog.joined_manifest import (
+    JOINED_CSV_COLUMNS,
+    load_joined_manifest,
+    validate_joined_row,
+)
 from besedy.lib.catalog.manager import audio_content_sha256sum
 
 # Normalize format names for comparison (aac and m4a are the same container)
@@ -69,45 +74,6 @@ def _normalize_format(fmt: str | None) -> str | None:
     if fmt is None:
         return None
     return _FORMAT_CANONICAL.get(fmt.lower(), fmt.lower())
-
-
-# CSV column names for joined catalog
-JOINED_CSV_COLUMNS = [
-    # Source columns
-    "Source Order",
-    "Source Hash",
-    "Source Filename",
-    "Source Path",
-    "Source Duration",
-    "Source Duration (s)",
-    "Source Format",
-    "Source Sample Rate",
-    "Source Channels",
-    "Source Bitrate (kbps)",
-    "Source Title",
-    "Source Artist",
-    "Source Album",
-    "Source Date",
-    # Output columns
-    "Output Hash",
-    "Output Filename",
-    "Output Path",
-    "Output Duration",
-    "Output Duration (s)",
-    "Output Format",
-    "Output Sample Rate",
-    "Output Channels",
-    "Output Bitrate (kbps)",
-    "Output Title",
-    "Output Artist",
-    "Output Album",
-    "Output Comment",
-    # Join metadata
-    "Source Count",
-    "Strategy",
-    "Fades",
-    "added_at",
-]
 
 
 def _get_catalog_timestamp() -> str:
@@ -144,12 +110,14 @@ class JoinedManifestWriter:
         self.csv_path = csv_path
         self._file: TextIO | None = None
         self._writer: csv.DictWriter | None = None
-        self._is_new_file = not csv_path.exists()
 
     def __enter__(self) -> "JoinedManifestWriter":
+        is_new_file = not self.csv_path.exists()
+        if not is_new_file:
+            load_joined_manifest(self.csv_path)
         self._file = open(self.csv_path, "a", newline="", encoding="utf-8")
         self._writer = csv.DictWriter(self._file, fieldnames=JOINED_CSV_COLUMNS)
-        if self._is_new_file:
+        if is_new_file:
             self._writer.writeheader()
         return self
 
@@ -209,6 +177,7 @@ class JoinedManifestWriter:
             "Fades": "1s" if strategy.use_fades else "none",
             "added_at": datetime.now().isoformat(),
         }
+        validate_joined_row(row, str(self.csv_path))
         self._writer.writerow(row)
         if self._file:
             self._file.flush()
@@ -596,6 +565,15 @@ def handle_join(args: argparse.Namespace) -> int:
             print("Aborted.")
             return 1
 
+    timestamp = _get_catalog_timestamp()
+    csv_path = resolve_catalogs_root() / f"audio_catalog_{timestamp}_joined.csv"
+    if csv_path.exists():
+        try:
+            load_joined_manifest(csv_path)
+        except (OSError, ValueError) as exc:
+            print(f"Error: Cannot append to joined catalog: {exc}", file=sys.stderr)
+            return 1
+
     # Create output directory
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -613,7 +591,11 @@ def handle_join(args: argparse.Namespace) -> int:
             return 1
         source_hashes.append(h)
 
-    is_duplicate, message = _check_duplicate_join_in_catalog(source_hashes, args.joined_catalog)
+    try:
+        is_duplicate, message = _check_duplicate_join_in_catalog(source_hashes, args.joined_catalog)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     if is_duplicate and not args.force_join:
         print(f"Error: {message}", file=sys.stderr)
         return 1
@@ -682,7 +664,11 @@ def handle_join(args: argparse.Namespace) -> int:
     print("Computing output audio hash...")
     output_hash = audio_content_sha256sum(output_path, ffmpeg_binary=args.ffmpeg_binary) or ""
     if not output_hash:
-        print("Warning: Could not compute output hash", file=sys.stderr)
+        print(
+            "Error: Could not compute output hash; originals and manifest were preserved",
+            file=sys.stderr,
+        )
+        return 1
 
     # Get output duration
     total_duration = sum(f.duration_seconds for f in files)
@@ -797,9 +783,6 @@ def handle_join(args: argparse.Namespace) -> int:
                     )
 
     # Write to joined catalog
-    timestamp = _get_catalog_timestamp()
-    csv_path = resolve_catalogs_root() / f"audio_catalog_{timestamp}_joined.csv"
-
     print(f"Writing to catalog: {csv_path}")
     with JoinedManifestWriter(csv_path) as writer:
         for i, (source, source_hash) in enumerate(zip(files, source_hashes), start=1):

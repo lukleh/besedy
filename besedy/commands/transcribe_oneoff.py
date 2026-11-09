@@ -25,7 +25,7 @@ from typing import Any
 from besedy.lib.analysis.stats import extract_transcript_text
 from besedy.lib.analysis.subtitles import render_srt, render_vtt
 from besedy.lib.analysis.timeline import Segment, extract_segments
-from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.data.encoding import load_json_utf8
 from besedy.lib.workflow.language import (
     DEFAULT_TRANSCRIPTION_LANGUAGE,
     resolve_inference_language,
@@ -516,7 +516,7 @@ def handle_transcribe_oneoff(args: argparse.Namespace) -> int:
             logging.info("Reusing existing transcript JSON: %s", paths.json)
             if not args.json_only:
                 try:
-                    payload = load_json_with_fallback(paths.json)
+                    payload = load_json_utf8(paths.json)
                     written = write_sidecars(payload, paths, overwrite=False)
                 except Exception as exc:
                     print(

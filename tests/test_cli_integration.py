@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from besedy.lib.catalog.manager import AUDIO_HASH_ALGORITHM
+from besedy.lib.catalog.manager import AUDIO_HASH_ALGORITHM, catalog_fieldnames
 from tests.helpers.audio import create_silent_wav, create_tone_wav
 from tests.helpers.transcript import SAMPLE_AUDIO_HASH
 
@@ -113,23 +113,14 @@ class TestCatalogMergeIntegration:
     @pytest.mark.integration
     def test_merge_two_catalogs(self, tmp_path):
         """Merge two CSV catalogs."""
-        # Create first catalog
         csv1 = tmp_path / "catalog1.csv"
-        csv1.write_text(
-            "Hash,Hash Algorithm,Filename,Status\n"
-            f"abc123,{AUDIO_HASH_ALGORITHM},file1.wav,EXISTS\n"
-            f"def456,{AUDIO_HASH_ALGORITHM},file2.wav,EXISTS\n",
-            encoding="utf-8",
-        )
-
-        # Create second catalog with one new file
         csv2 = tmp_path / "catalog2.csv"
-        csv2.write_text(
-            "Hash,Hash Algorithm,Filename,Status\n"
-            f"def456,{AUDIO_HASH_ALGORITHM},file2.wav,EXISTS\n"
-            f"ghi789,{AUDIO_HASH_ALGORITHM},file3.wav,EXISTS\n",
-            encoding="utf-8",
-        )
+        for path, hashes in [(csv1, ["a" * 64, "b" * 64]), (csv2, ["b" * 64, "c" * 64])]:
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=catalog_fieldnames())
+                writer.writeheader()
+                for audio_hash in hashes:
+                    writer.writerow({"Hash": audio_hash, "Hash Algorithm": AUDIO_HASH_ALGORITHM, "Full Path": f"/audio/{audio_hash}.wav", "added_at": "2026-01-01T00:00:00Z"})
 
         output_csv = tmp_path / "merged.csv"
 
@@ -161,7 +152,7 @@ class TestCatalogMergeIntegration:
 
         # Should have 3 unique files (def456 deduplicated)
         hashes = {row["Hash"] for row in rows}
-        assert hashes == {"abc123", "def456", "ghi789"}
+        assert hashes == {"a" * 64, "b" * 64, "c" * 64}
 
 
 class TestCatalogCheckIntegration:

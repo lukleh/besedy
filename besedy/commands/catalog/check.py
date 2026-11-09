@@ -502,14 +502,7 @@ def _resolve_timestamped_inputs(
     ts_catalog: str,
 ) -> _CheckInputs | _IncompletePipeline:
     catalog_dir = csv_path.resolve().parent
-    normalized_candidates = [
-        catalog_dir / f"audio_catalog_{ts_catalog}_loudness_normalized.csv",
-        catalog_dir / f"audio_catalog_{ts_catalog}_normalized.csv",
-    ]
-    expected_normalized = next(
-        (candidate for candidate in normalized_candidates if candidate.exists()),
-        normalized_candidates[-1],
-    )
+    expected_normalized = catalog_dir / f"audio_catalog_{ts_catalog}_loudness_normalized.csv"
     transcripts_parent = resolve_transcripts_parent()
     expected_transcripts = transcripts_parent / catalog_transcripts_dirname(ts_catalog)
     expected_loudness = catalog_dir / f"audio_catalog_{ts_catalog}_loudness.csv"
@@ -587,7 +580,7 @@ def _missing_artifact_line(label: str, symlink: Path, extract_timestamp) -> str:
 
 def _build_incomplete_report(pipeline: _IncompletePipeline) -> _IncompleteReport:
     # Load catalog to show expected counts
-    catalog_hashes = {entry.sha256 for entry in load_catalog_csv(pipeline.csv_path)}
+    catalog_hashes = {entry.audio_hash for entry in load_catalog_csv(pipeline.csv_path)}
 
     missing: list[str] = []
     missing_lines: list[str] = []
@@ -797,7 +790,7 @@ class CheckReport:
 
 
 def _load_catalog(report: CheckReport) -> None:
-    report.catalog_hashes = {entry.sha256 for entry in load_catalog_csv(report.inputs.csv_path)}
+    report.catalog_hashes = {entry.audio_hash for entry in load_catalog_csv(report.inputs.csv_path)}
     report.catalog_count = len(report.catalog_hashes)
 
 

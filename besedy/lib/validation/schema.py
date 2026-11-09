@@ -76,7 +76,7 @@ def _validate_item(
 def validate_transcript_schema(data: Any, *, canonical: bool = False) -> list[str]:
     """Check shared types, confidence and timing invariants without raising.
 
-    Import/CLI validation permits omitted metadata, words and confidence and
+    Import validation permits omitted metadata, words and confidence and
     requires nonempty segments. Canonical validation requires those fields and
     canonical backend metadata, but accepts an empty transcript (silent audio).
     Unknown confidence is null in both policies.
@@ -97,6 +97,15 @@ def validate_transcript_schema(data: Any, *, canonical: bool = False) -> list[st
                 or meta["backend"] not in TRANSCRIPT_META_BACKENDS
             ):
                 issues.append(f"meta.backend has unexpected value: {meta['backend']}")
+            for field in ("model", "audio_filepath"):
+                if field in meta and not isinstance(meta[field], str):
+                    issues.append(f"meta.{field} must be a string")
+            if "duration" in meta and (
+                not is_finite_number(meta["duration"]) or meta["duration"] < 0
+            ):
+                issues.append("meta.duration must be a nonnegative finite number")
+            if "generation_params" in meta and not isinstance(meta["generation_params"], dict):
+                issues.append("meta.generation_params must be an object")
     elif canonical:
         issues.append("Top-level 'meta' object is required")
     segments = data.get("segments")

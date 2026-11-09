@@ -40,14 +40,14 @@ def _load_catalog_entries(csv_path: Path) -> tuple[list[str], list[dict], list[t
         Tuple of (columns, rows, entries) where entries is [(sha256, full_path), ...].
     """
     columns, rows = load_csv(csv_path, encoding="utf-8")
-    hash_column = resolve_hash_column(columns, csv_path, preferred="Hash")
+    hash_column = resolve_hash_column(columns, csv_path)
 
     entries: list[tuple[str, str]] = []
     for row in rows:
-        sha256 = (row.get(hash_column, "") or "").strip()
+        audio_hash = (row.get(hash_column, "") or "").strip()
         full_path = (row.get("Full Path", "") or "").strip()
-        if sha256:
-            entries.append((sha256, full_path))
+        if audio_hash:
+            entries.append((audio_hash, full_path))
 
     return list(columns), rows, entries
 
@@ -105,11 +105,8 @@ def _resolve_normalized_csv(
                 ),
             }
         return resolved, None
-    candidates = (
-        generation.derived_csv("_loudness_normalized"),
-        generation.derived_csv("_normalized"),
-    )
-    return next((path for path in candidates if path.is_file()), None), None
+    path = generation.derived_csv("_loudness_normalized")
+    return (path if path.is_file() else None), None
 
 
 def _emit_error(output_format: str, result: dict) -> None:
@@ -170,12 +167,12 @@ def _format_dry_run_report(
         # Show detailed list
         max_hash_display = 12
         for target in plan.targets:
-            hash_display = target.sha256[:max_hash_display] + "..."
+            hash_display = target.audio_hash[:max_hash_display] + "..."
             lines.append(f"  {hash_display}  {target.original_path}")
     else:
         # Show summary with first few
         for target in plan.targets[:5]:
-            hash_display = target.sha256[:12] + "..."
+            hash_display = target.audio_hash[:12] + "..."
             lines.append(f"  {hash_display}  {target.original_path}")
         if len(plan.targets) > 5:
             lines.append(f"  ... and {len(plan.targets) - 5} more")
@@ -340,7 +337,7 @@ def _prune_orphans(
                 print(msg)
         return 1, "error", result
 
-    catalog_hashes = {sha256 for sha256, _ in entries}
+    catalog_hashes = {audio_hash for audio_hash, _ in entries}
 
     # Find stale transcript sidecar files
     stale_files = _find_stale_sidecar_files(transcripts_root, catalog_hashes)
@@ -657,13 +654,13 @@ def _clean_missing_entries(
 
         # Staged WAVs another catalog still lists stay, like `catalog remove`.
         references = find_other_catalog_references_for(
-            csv_path, [sha256 for sha256, _ in missing_entries]
+            csv_path, [audio_hash for audio_hash, _ in missing_entries]
         )
 
         shared = shared_derived_paths_for(references)
 
-        def shared_files_for(sha256: str) -> set[Path]:
-            return shared.get(sha256.strip().lower(), set())
+        def shared_files_for(audio_hash: str) -> set[Path]:
+            return shared.get(audio_hash.strip().lower(), set())
 
         # Build cleanup plan
         plan = build_cleanup_plan(
@@ -685,7 +682,7 @@ def _clean_missing_entries(
                     "catalog_entries": catalog_count,
                     "normalized_entries": normalized_count,
                     "missing_count": len(plan.targets),
-                    "missing_hashes": [t.sha256 for t in plan.targets],
+                    "missing_hashes": [t.audio_hash for t in plan.targets],
                     "staged_to_remove": plan.total_staged,
                     "transcript_dirs_to_remove": plan.total_transcript_dirs,
                     "diarization_dirs_to_remove": plan.total_diarization_dirs,

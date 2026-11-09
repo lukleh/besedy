@@ -79,7 +79,7 @@ async function seed(status: "PENDING" | "BLOCKED" = "PENDING") {
   const user = await db.user.create({ data: { email, status } });
   userIds.push(user.id);
   await db.$transaction((tx) =>
-    lifecycle.syncPendingAdmissionState(invitation(email), {}, tx)
+    lifecycle.syncPendingAdmissionState(invitation(email), {}, tx),
   );
   return user;
 }
@@ -96,7 +96,7 @@ async function beginSignup() {
   const email = `signup-${randomUUID()}@example.com`;
   emails.push(email);
   await db.$transaction((tx) =>
-    lifecycle.syncPendingAdmissionState(invitation(email), {}, tx)
+    lifecycle.syncPendingAdmissionState(invitation(email), {}, tx),
   );
   return createSignupUser(email);
 }
@@ -105,7 +105,7 @@ async function seedLegacyAdmission(status: "REVOKED" | "CONSUMED") {
   const email = `legacy-${randomUUID()}@example.com`;
   emails.push(email);
   await db.$transaction((tx) =>
-    lifecycle.syncPendingAdmissionState(invitation(email), {}, tx)
+    lifecycle.syncPendingAdmissionState(invitation(email), {}, tx),
   );
   await db.portalAdmission.update({
     where: { email },
@@ -127,11 +127,14 @@ async function seedLegacyAdmission(status: "REVOKED" | "CONSUMED") {
 function pendingPatch(email: string, body: unknown) {
   return adminPendingRecord.patchAdminPendingRecord(
     email,
-    new NextRequest(`http://localhost:3002/api/admin/portal-admissions/${email}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
+    new NextRequest(
+      `http://localhost:3002/api/admin/portal-admissions/${email}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    ),
   );
 }
 
@@ -142,7 +145,7 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
       const connection = process.env.BESEDY_INVITATION_TEST_DATABASE_URL;
       if (!connection || new URL(connection).pathname !== "/besedy_test") {
         throw new Error(
-          "Invitation transaction tests require the explicit disposable BESEDY_INVITATION_TEST_DATABASE_URL"
+          "Invitation transaction tests require the explicit disposable BESEDY_INVITATION_TEST_DATABASE_URL",
         );
       }
       process.env.DATABASE_URL = connection;
@@ -154,15 +157,12 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
       lifecycle =
         await import("../../src/lib/admission/pending-admission-sync");
       reset = await import("../../src/lib/admission/admin-reset");
-      ({ PATCH: adminPatch } = await import(
-        "../../src/app/api/admin/users/[id]/route"
-      ));
-      ({ POST: inviteByEmail } = await import(
-        "../../src/app/api/catalogs/[id]/pending-catalog-grants/route"
-      ));
-      adminPendingRecord = await import(
-        "../../src/lib/admission/admin-pending-record-route"
-      );
+      ({ PATCH: adminPatch } =
+        await import("../../src/app/api/admin/users/[id]/route"));
+      ({ POST: inviteByEmail } =
+        await import("../../src/app/api/catalogs/[id]/pending-catalog-grants/route"));
+      adminPendingRecord =
+        await import("../../src/lib/admission/admin-pending-record-route");
       policy = await import("../../src/lib/policy/actor");
       await import("../../src/lib/auth/index");
       userCreateHooks = (
@@ -214,7 +214,7 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
         where: { email: user.email! },
       });
       expect(
-        await claims.findPendingPortalAdmission(user.email!)
+        await claims.findPendingPortalAdmission(user.email!),
       ).not.toBeNull();
       const result = await claims.consumePortalAdmissionForUser(user);
       expect(result?.grants).toHaveLength(1);
@@ -224,10 +224,10 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
         extraPermissions: ["download_audio"],
       });
       expect(
-        await db.pendingCatalogGrant.findUnique({ where: { id: foreign.id } })
+        await db.pendingCatalogGrant.findUnique({ where: { id: foreign.id } }),
       ).toEqual(foreign);
       expect(
-        await db.catalogAccess.findMany({ where: { userId: user.id } })
+        await db.catalogAccess.findMany({ where: { userId: user.id } }),
       ).toMatchObject([
         {
           catalogId: TEST_CATALOG_ID,
@@ -236,12 +236,12 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
         },
       ]);
       expect(
-        await db.user.findUnique({ where: { id: user.id } })
+        await db.user.findUnique({ where: { id: user.id } }),
       ).toMatchObject({
         status: "ACTIVE",
       });
       expect(
-        await db.portalAdmission.findUnique({ where: { email: user.email! } })
+        await db.portalAdmission.findUnique({ where: { email: user.email! } }),
       ).toMatchObject({
         id: admissionBefore.id,
         source: admissionBefore.source,
@@ -272,15 +272,15 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
       expect(await claims.findPendingPortalAdmission(user.email!)).toBeNull();
       expect(await claims.consumePortalAdmissionForUser(user)).toBeNull();
       expect(
-        await db.portalAdmission.findUnique({ where: { email: user.email! } })
+        await db.portalAdmission.findUnique({ where: { email: user.email! } }),
       ).toMatchObject({ status: "PENDING", claimedById: null });
       expect(
-        await db.user.findUnique({ where: { id: user.id } })
+        await db.user.findUnique({ where: { id: user.id } }),
       ).toMatchObject({
         status: "PENDING",
       });
       expect(
-        await db.pendingCatalogGrant.findUnique({ where: { id: foreign.id } })
+        await db.pendingCatalogGrant.findUnique({ where: { id: foreign.id } }),
       ).toEqual(foreign);
     });
 
@@ -288,17 +288,17 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
       const user = await seed("BLOCKED");
       expect(await claims.consumePortalAdmissionForUser(user)).toBeNull();
       expect(
-        await db.portalAdmission.findUnique({ where: { email: user.email! } })
+        await db.portalAdmission.findUnique({ where: { email: user.email! } }),
       ).toMatchObject({ status: "PENDING", claimedById: null });
       expect(
         await db.pendingCatalogGrant.findUnique({
           where: {
             email_catalogId: { email: user.email!, catalogId: TEST_CATALOG_ID },
           },
-        })
+        }),
       ).toMatchObject({ status: "PENDING", consumedById: null });
       expect(await db.catalogAccess.count({ where: { userId: user.id } })).toBe(
-        0
+        0,
       );
     });
 
@@ -310,7 +310,7 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
       ]);
       expect(results.filter(Boolean)).toHaveLength(1);
       expect(await db.catalogAccess.count({ where: { userId: user.id } })).toBe(
-        1
+        1,
       );
     });
 
@@ -324,7 +324,7 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ status }),
           }),
-          { params: Promise.resolve({ id: user.id }) }
+          { params: Promise.resolve({ id: user.id }) },
         );
         expect(response.status).toBe(200);
         const updatedUser = await db.user.findUniqueOrThrow({
@@ -345,29 +345,35 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
         });
 
         expect(await db.user.findUnique({ where: { id: user.id } })).toEqual(
-          updatedUser
+          updatedUser,
         );
         expect(
-          await db.portalAdmission.findUnique({ where: { id: admission.id } })
+          await db.portalAdmission.findUnique({ where: { id: admission.id } }),
         ).toEqual(admission);
         expect(
           await db.pendingCatalogGrant.findUnique({
             where: { id: pendingGrant.id },
-          })
+          }),
         ).toEqual(pendingGrant);
-        expect(await db.catalogAccess.count({ where: { userId: user.id } })).toBe(
-          0
-        );
-        expect(await claims.findPendingPortalAdmission(user.email!)).not.toBeNull();
+        expect(
+          await db.catalogAccess.count({ where: { userId: user.id } }),
+        ).toBe(0);
+        expect(
+          await claims.findPendingPortalAdmission(user.email!),
+        ).not.toBeNull();
         await expect(createSignupUser(user.email!)).rejects.toMatchObject({
           code: "P2002",
         });
-      }
+      },
     );
 
     test.each([
       { role: "listener", extras: ["browse_recordings"], revoked: false },
-      { role: "catalog_admin", extras: ["bulk_export_transcripts"], revoked: false },
+      {
+        role: "catalog_admin",
+        extras: ["bulk_export_transcripts"],
+        revoked: false,
+      },
       { role: "reader", extras: ["download_transcripts"], revoked: true },
     ])(
       "claim preserves independently granted $role access (revoked: $revoked)",
@@ -385,9 +391,9 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
                 extraPermissions: extras,
                 message: "Granted independently during signup",
               }),
-            }
+            },
           ),
-          { params: Promise.resolve({ id: TEST_CATALOG_ID }) }
+          { params: Promise.resolve({ id: TEST_CATALOG_ID }) },
         );
         expect(response.status).toBe(200);
         expect(await response.json()).toMatchObject({
@@ -408,7 +414,9 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
             },
           });
         }
-        const existingAccess = await db.catalogAccess.findUniqueOrThrow({ where });
+        const existingAccess = await db.catalogAccess.findUniqueOrThrow({
+          where,
+        });
         expect(existingAccess).toMatchObject({
           role,
           extraPermissions: extras,
@@ -421,23 +429,34 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
 
         await expect(userCreateHooks.after(user)).resolves.toBeUndefined();
 
-        expect(await db.catalogAccess.findUnique({ where })).toEqual(existingAccess);
-        expect(await db.catalogAccess.count({ where: { userId: user.id } })).toBe(1);
-        expect(await db.user.findUnique({ where: { id: user.id } })).toMatchObject({
+        expect(await db.catalogAccess.findUnique({ where })).toEqual(
+          existingAccess,
+        );
+        expect(
+          await db.catalogAccess.count({ where: { userId: user.id } }),
+        ).toBe(1);
+        expect(
+          await db.user.findUnique({ where: { id: user.id } }),
+        ).toMatchObject({
           status: "ACTIVE",
           activatedAt: expect.any(Date),
           invitedById: user.invitedById,
           invitedAt: user.invitedAt,
         });
         expect(
-          await db.portalAdmission.findUnique({ where: { email: user.email! } })
+          await db.portalAdmission.findUnique({
+            where: { email: user.email! },
+          }),
         ).toMatchObject({ status: "CLAIMED", claimedById: user.id });
         expect(
           await db.pendingCatalogGrant.findUnique({
             where: {
-              email_catalogId: { email: user.email!, catalogId: TEST_CATALOG_ID },
+              email_catalogId: {
+                email: user.email!,
+                catalogId: TEST_CATALOG_ID,
+              },
             },
-          })
+          }),
         ).toMatchObject({
           status: "CONSUMED",
           consumedById: user.id,
@@ -448,11 +467,11 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
           userStatus: "ACTIVE",
           canEnterPortal: !revoked,
         });
-      }
+      },
     );
 
     test.each(["REVOKED", "CONSUMED"] as const)(
-      "legacy %s grant stays historical until an explicit role assignment repairs it",
+      "retired roleless invitations with a %s grant stay read-only and revocable",
       async (status) => {
         const { email, where } = await seedLegacyAdmission(status);
         const historical = await db.pendingCatalogGrant.findUniqueOrThrow({
@@ -463,66 +482,53 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
         });
         const view = await adminPendingRecord.getAdminPendingRecord(email);
         expect(view.status).toBe(200);
-        expect(await view.json()).toMatchObject({ role: null, pendingGrants: [] });
-
-        const notes = await pendingPatch(email, {
-          notes: "Reviewed legacy invitation",
-        });
-        expect(notes.status).toBe(200);
-        expect(await db.pendingCatalogGrant.findUnique({ where })).toEqual(historical);
-        const extras = await pendingPatch(email, {
-          extraPermissions: ["download_original_audio"],
-        });
-        expect(extras.status).toBe(400);
-        expect(await db.pendingCatalogGrant.findUnique({ where })).toEqual(historical);
-
-        const response = await pendingPatch(email, { role: "corrector" });
-        expect(response.status).toBe(200);
-        expect(await response.json()).toMatchObject({
-          role: "corrector",
-          pendingGrantCount: 1,
-        });
-        expect(
-          await db.pendingCatalogGrant.count({
-            where: { email, catalogId: TEST_CATALOG_ID },
-          })
-        ).toBe(1);
-        expect(await db.pendingCatalogGrant.findUnique({ where })).toMatchObject({
-          id: historical.id,
-          status: "PENDING",
-          role: "corrector",
+        expect(await view.json()).toMatchObject({
+          role: null,
           extraPermissions: [],
-          revokedAt: null,
-          revokedById: null,
-          consumedAt: null,
-          consumedById: null,
         });
+        for (const body of [
+          { notes: "old invitation" },
+          { role: "corrector" },
+          { extraPermissions: ["download_original_audio"] },
+        ]) {
+          expect((await pendingPatch(email, body)).status).toBe(409);
+          expect(await db.pendingCatalogGrant.findUnique({ where })).toEqual(
+            historical,
+          );
+          expect(
+            await db.portalAdmission.findUnique({ where: { email } }),
+          ).toEqual(admission);
+        }
         expect(
-          await db.portalAdmission.findUnique({ where: { email } })
+          (await adminPendingRecord.deleteAdminPendingRecord(email)).status,
+        ).toBe(200);
+        expect(
+          await db.portalAdmission.findUnique({ where: { email } }),
         ).toMatchObject({
           id: admission.id,
-          status: "PENDING",
+          status: "REVOKED",
           source: "STANDALONE",
-          admittedAt: admission.admittedAt,
-          admittedById: admission.admittedById,
+          revocationReason: "ADMIN_DENIED",
         });
-      }
+        expect(await db.pendingCatalogGrant.findUnique({ where })).toEqual(
+          historical,
+        );
+      },
     );
 
-    test("legacy repair preserves a fresh pending grant reopened after its read model was loaded", async () => {
+    test("retired editing preserves a grant reopened after its roleless snapshot was loaded", async () => {
       const { email, where } = await seedLegacyAdmission("REVOKED");
       const admission = await db.portalAdmission.findUniqueOrThrow({
         where: { email },
       });
-      const shared = await import(
-        "../../src/lib/admission/admin-pending-record-shared"
-      );
+      const shared =
+        await import("../../src/lib/admission/admin-pending-record-shared");
       const load = shared.loadPendingAdmissionState;
       const snapshot = vi.spyOn(shared, "loadPendingAdmissionState");
       let independentGrant: unknown;
       snapshot.mockImplementationOnce(async (canonicalEmail) => {
         const state = await load(canonicalEmail);
-        expect(state.pendingGrants).toEqual([]);
+        expect(state.grant).toBeNull();
         independentGrant = await db.pendingCatalogGrant.update({
           where,
           data: {
@@ -547,10 +553,10 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
         snapshot.mockRestore();
       }
       expect(await db.pendingCatalogGrant.findUnique({ where })).toEqual(
-        independentGrant
+        independentGrant,
       );
       expect(await db.portalAdmission.findUnique({ where: { email } })).toEqual(
-        admission
+        admission,
       );
     });
 
@@ -582,20 +588,22 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
                 requirePending: true,
                 expectedGrant,
               },
-              tx
-            )
-          )
+              tx,
+            ),
+          ),
         ).rejects.toBeInstanceOf(lifecycle.PendingAdmissionUnavailableError);
-        expect(await db.pendingCatalogGrant.findUnique({ where })).toMatchObject({
+        expect(
+          await db.pendingCatalogGrant.findUnique({ where }),
+        ).toMatchObject({
           status: "REVOKED",
           role: "catalog_admin",
           extraPermissions: ["bulk_export_transcripts"],
           notes: "Independent administrator decision",
         });
-        expect(await db.portalAdmission.findUnique({ where: { email } })).toEqual(
-          admission
-        );
-      }
+        expect(
+          await db.portalAdmission.findUnique({ where: { email } }),
+        ).toEqual(admission);
+      },
     );
 
     test("role-only pending edits preserve current extras rather than an older dialog's snapshot", async () => {
@@ -608,9 +616,9 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
         data: { extraPermissions: ["bulk_export_transcripts"] },
       });
 
-      expect((await pendingPatch(user.email!, { role: "corrector" })).status).toBe(
-        200
-      );
+      expect(
+        (await pendingPatch(user.email!, { role: "corrector" })).status,
+      ).toBe(200);
       expect(await db.pendingCatalogGrant.findUnique({ where })).toMatchObject({
         role: "corrector",
         extraPermissions: ["bulk_export_transcripts"],
@@ -632,7 +640,7 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
         await lifecycle.revokePendingAdmissionState(
           invitation(user.email!),
           { actorId: user.id, reason: "ADMIN_DENIED" },
-          tx
+          tx,
         );
         locked();
         await mayCommit;
@@ -643,10 +651,10 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
       await revocation;
       expect(await claim).toBeNull();
       expect(
-        await db.portalAdmission.findUnique({ where: { email: user.email! } })
+        await db.portalAdmission.findUnique({ where: { email: user.email! } }),
       ).toMatchObject({ status: "REVOKED", revocationReason: "ADMIN_DENIED" });
       expect(await db.catalogAccess.count({ where: { userId: user.id } })).toBe(
-        0
+        0,
       );
     });
 
@@ -662,8 +670,8 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
         lifecycle.revokePendingAdmissionState(
           original,
           { actorId: user.id, reason: "ADMIN_DENIED" },
-          tx
-        )
+          tx,
+        ),
       );
       await expect(
         db.$transaction((tx) =>
@@ -674,44 +682,44 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
               requirePending: true,
               expectedGrant,
             },
-            tx
-          )
-        )
+            tx,
+          ),
+        ),
       ).rejects.toBeInstanceOf(lifecycle.PendingAdmissionUnavailableError);
       await db.$transaction((tx) =>
         lifecycle.syncPendingAdmissionState(
           { ...original, role: "catalog_admin" },
           { allowAdminDeniedReopen: true },
-          tx
-        )
+          tx,
+        ),
       );
       await expect(
         db.$transaction((tx) =>
           lifecycle.syncPendingAdmissionState(
             original,
             { requirePending: true, expectedGrant },
-            tx
-          )
-        )
+            tx,
+          ),
+        ),
       ).rejects.toBeInstanceOf(lifecycle.PendingAdmissionUnavailableError);
       await expect(
         db.$transaction((tx) =>
           lifecycle.revokePendingAdmissionState(
             original,
             { actorId: user.id, reason: "LAST_SPONSOR_REMOVED", expectedGrant },
-            tx
-          )
-        )
+            tx,
+          ),
+        ),
       ).rejects.toBeInstanceOf(lifecycle.PendingAdmissionUnavailableError);
       expect(
-        await db.portalAdmission.findUnique({ where: { email: user.email! } })
+        await db.portalAdmission.findUnique({ where: { email: user.email! } }),
       ).toMatchObject({ status: "PENDING" });
       expect(
         await db.pendingCatalogGrant.findUnique({
           where: {
             email_catalogId: { email: user.email!, catalogId: TEST_CATALOG_ID },
           },
-        })
+        }),
       ).toMatchObject({ role: "catalog_admin", status: "PENDING" });
     });
 
@@ -730,14 +738,14 @@ describe.skipIf(!process.env.BESEDY_INVITATION_TEST_DATABASE_URL)(
       await db.user.delete({ where: { id: user.id } });
       const result = await reset.resetClaimedPortalAdmission(
         user.email!,
-        "unused-actor-id"
+        "unused-actor-id",
       );
       expect(result.reopenedGrants).toEqual([
         { catalogId: TEST_CATALOG_ID, role: "reader" },
       ]);
       expect(
-        await db.pendingCatalogGrant.findUnique({ where: { id: foreign.id } })
+        await db.pendingCatalogGrant.findUnique({ where: { id: foreign.id } }),
       ).toEqual(foreign);
     });
-  }
+  },
 );

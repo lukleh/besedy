@@ -300,7 +300,7 @@ than taken, which is what makes the role name worth reading.
 | Permission                | Covers                                                                                                                                                                                      |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `read_transcripts`        | Reading a transcript in correction scope once its reader publication is active; before then the reader sees progress, not text. Recordings outside correction scope retain the configured default machine transcript. |
-| `see_transcript_variants` | That more than one machine backend exists: the per-recording picker and the multi-backend stream view. Administrative only; every other role reads the default backend.                     |
+| `see_transcript_variants` | That more than one machine backend exists: the per-recording picker. Administrative only; every other role reads the default backend.                                                        |
 | `see_speakers`            | The diarization overlay. Administrative for the same reason as the line above: it is unevaluated machine output, it names nobody, and it currently tells an ordinary reader nothing useful. |
 
 ### Correction
@@ -558,7 +558,7 @@ start empty.
 - **Machine-output views are administrative.** Two permissions sit with
   `catalogAdmin` alone for the same reason: they expose raw model output that
   has not been evaluated and that tells an ordinary user nothing useful yet.
-  `see_transcript_variants` covers the backend picker and the stream view, so
+  `see_transcript_variants` covers the backend picker, so
   every other role reads the one default, the search backend named by
   `RAG_BACKEND_KEY`; `TranscriptBackendPriority` only orders that picker.
   `see_speakers` covers the diarization overlay, which distinguishes turns

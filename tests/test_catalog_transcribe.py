@@ -28,7 +28,7 @@ def test_unavailable_whisperx_runtime_fails_transcription(
     output_root = tmp_path / "transcripts"
     audio_hash = "a" * 64
     audio = tmp_path / "staged.wav"
-    row = CsvAudioRow(sha256=audio_hash, full_path=str(audio))
+    row = CsvAudioRow(audio_hash=audio_hash, full_path=str(audio))
     if workflow_id == "canary-nemo-beam":
         # NeMo already finished; WhisperX alone must produce transcript.json.
         output = transcribe_module.path_builder(config).workflow_dir(output_root) / audio_hash
@@ -218,7 +218,7 @@ def test_handle_transcribe_reports_already_complete_rows(
     transcript.mkdir(parents=True)
     (transcript / "transcript.json").write_text("{}", encoding="utf-8")
 
-    row = CsvAudioRow(sha256=audio_hash, full_path=str(tmp_path / "source.wav"))
+    row = CsvAudioRow(audio_hash=audio_hash, full_path=str(tmp_path / "source.wav"))
     summaries: list[dict[str, int]] = []
 
     def fail_validation(_rows) -> None:
@@ -272,14 +272,14 @@ def _capture_transcription_jobs(
         "validate_staged_audio",
         lambda selected: (
             [
-                PreparedEntry(row.sha256, Path(row.full_path), Path(row.full_path), "existing", 1)
+                PreparedEntry(row.audio_hash, Path(row.full_path), Path(row.full_path), "existing", 1)
                 for row in selected
-                if row.sha256 not in invalid_hashes
+                if row.audio_hash not in invalid_hashes
             ],
             [
-                (row.sha256, Path(row.full_path), "invalid staged audio")
+                (row.audio_hash, Path(row.full_path), "invalid staged audio")
                 for row in selected
-                if row.sha256 in invalid_hashes
+                if row.audio_hash in invalid_hashes
             ],
         ),
     )
@@ -331,33 +331,33 @@ def test_beam_limit_selects_recordings_with_all_their_required_stages(monkeypatc
         workflow_id="canary-nemo-beam", workflow_label="canary-nemo-beam", decode_strategy="beam"
     )
     rows = [CsvAudioRow(char * 64, f"{char}.wav") for char in "ab"]
-    first = transcribe_module.path_builder(beam).workflow_dir(tmp_path) / rows[0].sha256
+    first = transcribe_module.path_builder(beam).workflow_dir(tmp_path) / rows[0].audio_hash
     first.mkdir(parents=True)
     (first / "transcript.json").write_text("{}", encoding="utf-8")
     jobs = _capture_transcription_jobs(monkeypatch, tmp_path, [beam], rows, limit=1)
-    assert jobs[0].hashes == {rows[0].sha256}
+    assert jobs[0].hashes == {rows[0].audio_hash}
     assert jobs[0].align_hashes == set()
     # Once the first row's missing stage is done, the next batch carries both
     # stages for b, instead of aligning b while only a is transcribed.
     (first / "nemo_beam_segments.json").write_text("{}", encoding="utf-8")
     jobs = _capture_transcription_jobs(monkeypatch, tmp_path, [beam], rows, limit=1)
-    assert jobs[0].hashes == jobs[0].align_hashes == {rows[1].sha256}
+    assert jobs[0].hashes == jobs[0].align_hashes == {rows[1].audio_hash}
 
 
 def test_each_exact_variant_keeps_its_own_recording_limit(monkeypatch, tmp_path):
     configs = [make_workflow_config(vad_model=name) for name in ("first", "second")]
     rows = [CsvAudioRow(char * 64, f"{char}.wav") for char in "ab"]
-    completed = transcribe_module.path_builder(configs[0]).workflow_dir(tmp_path) / rows[0].sha256
+    completed = transcribe_module.path_builder(configs[0]).workflow_dir(tmp_path) / rows[0].audio_hash
     completed.mkdir(parents=True)
     (completed / "transcript.json").write_text("{}", encoding="utf-8")
     jobs = _capture_transcription_jobs(monkeypatch, tmp_path, configs, rows, limit=1)
-    assert [job.hashes for job in jobs] == [{rows[1].sha256}, {rows[0].sha256}]
+    assert [job.hashes for job in jobs] == [{rows[1].audio_hash}, {rows[0].audio_hash}]
 
 
 def test_alignment_jobs_exclude_rows_that_failed_staged_validation(monkeypatch, tmp_path):
     beam = make_workflow_config(workflow_id="canary-nemo-beam", decode_strategy="beam")
     rows = [CsvAudioRow(char * 64, f"{char}.wav") for char in "ab"]
     jobs = _capture_transcription_jobs(
-        monkeypatch, tmp_path, [beam], rows, invalid_hashes={rows[1].sha256}, continue_on_error=True
+        monkeypatch, tmp_path, [beam], rows, invalid_hashes={rows[1].audio_hash}, continue_on_error=True
     )
-    assert jobs[0].hashes == jobs[0].align_hashes == {rows[0].sha256}
+    assert jobs[0].hashes == jobs[0].align_hashes == {rows[0].audio_hash}
