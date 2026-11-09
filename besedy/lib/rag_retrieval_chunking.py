@@ -115,15 +115,7 @@ def normalize_backend_key(value: str) -> str:
         workflow, model_component = parts
         if workflow and model_component:
             return candidate
-    if len(parts) == 3:
-        workflow, model, vad = parts
-        if workflow and model and vad:
-            return f"{workflow}/{model}@{vad}"
-    raise ValueError(
-        "Backend key must be '{workflow}/{model_component}' "
-        "or '{workflow}/{model}/{vad}' (normalized to model@vad). "
-        f"Got: {value!r}"
-    )
+    raise ValueError(f"Backend key must be '{{workflow}}/{{model_component}}'. Got: {value!r}")
 
 
 def _is_full_sha256(value: str) -> bool:

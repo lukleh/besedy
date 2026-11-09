@@ -105,7 +105,7 @@ def test_build_colbert_index_writes_meta_and_manifest(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     def fake_run_colbert_worker(*, command: str, payload: dict[str, object]) -> dict[str, object]:
@@ -253,7 +253,7 @@ def test_token_audit_is_recorded(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     def fake_run_colbert_worker(*, command: str, payload: dict[str, object]) -> dict[str, object]:
@@ -305,7 +305,7 @@ def test_build_colbert_index_passes_runtime_override_to_worker(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     seen_runtime_override: list[str | None] = []
@@ -362,7 +362,7 @@ def test_build_colbert_index_uses_index_bsize_in_payload_and_bundle_fingerprint(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     seen_index_bsizes: list[int] = []
@@ -866,7 +866,7 @@ def test_build_colbert_index_emits_phase_progress(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     seen_live_output: list[bool] = []
@@ -950,7 +950,7 @@ def test_build_colbert_index_skips_worker_for_empty_corpus(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
     monkeypatch.setattr(
         rag_colbert,
