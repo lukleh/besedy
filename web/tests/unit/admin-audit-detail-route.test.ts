@@ -59,20 +59,19 @@ describe("admin audit detail route", () => {
     getAdminCapability.mockResolvedValue({ canAccessAdmin: true });
   });
 
-  it("does not expose pre-cutover audit rows through the detail route", async () => {
+  it("returns 404 for a missing audit record", async () => {
     prisma.auditLog.findFirst.mockResolvedValue(null);
 
     const response = await getAuditDetail(
-      new NextRequest("http://localhost/api/admin/audit/log-old-1?expand=true"),
-      { params: Promise.resolve({ id: "log-old-1" }) }
+      new NextRequest("http://localhost/api/admin/audit/log-missing-1?expand=true"),
+      { params: Promise.resolve({ id: "log-missing-1" }) }
     );
 
     expect(response.status).toBe(404);
     expect(prisma.auditLog.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          id: "log-old-1",
-          domain: { not: null },
+          id: "log-missing-1",
         },
       })
     );

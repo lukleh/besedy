@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { AuthError } from "@/lib/auth/permissions";
 import { AuditAction } from "@/generated/prisma/enums";
+import type { Prisma } from "@/generated/prisma/client";
 import { handlePrismaError } from "@/lib/api";
 import { requireAdminCapability } from "@/lib/access/require-admin";
 import { mapAuditLogToListItem } from "@/lib/audit/model";
@@ -43,8 +44,7 @@ export async function GET(request: NextRequest) {
       : null;
 
     // Build where clause
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = {};
+    const where: Prisma.AuditLogWhereInput = {};
 
     // Filter by user if specified
     if (filterUserId) {
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
 
     // Action filter
     if (actionFilter) {
-      const actions = actionFilter.split(",").filter((a) =>
+      const actions = actionFilter.split(",").filter((a): a is AuditAction =>
         Object.values(AuditAction).includes(a as AuditAction)
       );
       if (actions.length === 1) {
@@ -63,13 +63,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    where.AND = [
-      { domain: { not: null } },
-    ];
-
     // Resource filter
     if (resourceFilter) {
-      where.AND.push({ resource: resourceFilter });
+      where.resource = resourceFilter;
     }
 
     if (domainFilter) {
@@ -95,34 +91,24 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const canonicalFilterWhere = {
-      AND: [
-        { domain: { not: null } },
-      ],
-    };
-
     const [total, distinctResources, distinctDomains, distinctSubjectTypes, distinctOutcomes, logs] = await Promise.all([
       prisma.auditLog.count({ where }),
       prisma.auditLog.findMany({
-        where: canonicalFilterWhere,
         select: { resource: true },
         distinct: ["resource"],
         orderBy: { resource: "asc" },
       }),
       prisma.auditLog.findMany({
-        where: canonicalFilterWhere,
         select: { domain: true },
         distinct: ["domain"],
         orderBy: { domain: "asc" },
       }),
       prisma.auditLog.findMany({
-        where: canonicalFilterWhere,
         select: { subjectType: true },
         distinct: ["subjectType"],
         orderBy: { subjectType: "asc" },
       }),
       prisma.auditLog.findMany({
-        where: canonicalFilterWhere,
         select: { outcome: true },
         distinct: ["outcome"],
         orderBy: { outcome: "asc" },

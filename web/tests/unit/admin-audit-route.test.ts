@@ -91,7 +91,7 @@ describe("admin audit route", () => {
       ]);
   }
 
-  it("defaults to canonical rows and exposes canonical filter options", async () => {
+  it("lists current rows and exposes canonical filter options", async () => {
     mockCanonicalFindManySequence();
 
     const response = await GET(
@@ -99,20 +99,10 @@ describe("admin audit route", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(prisma.auditLog.count).toHaveBeenCalledWith({
-      where: {
-        AND: [
-          { domain: { not: null } }],
-      },
-    });
+    expect(prisma.auditLog.count).toHaveBeenCalledWith({ where: {} });
     expect(prisma.auditLog.findMany).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({
-        where: {
-          AND: [
-            { domain: { not: null } }],
-        },
-      })
+      expect.objectContaining({ select: { resource: true }, distinct: ["resource"] })
     );
 
     expect(await response.json()).toMatchObject({
