@@ -94,7 +94,6 @@ class FileRecord:
     title: str = ""
     track: str = ""
     sample_rate: str = ""
-    bit_depth: str = ""
     channels: str = ""
     bitrate_kbps: str = ""
     integrated_loudness_lufs: str = ""
@@ -102,11 +101,8 @@ class FileRecord:
     loudness_range_lu: str = ""
     input_thresh: str = ""
     target_offset: str = ""
-    mean_volume_db: str = ""
-    max_volume_db: str = ""
     needs_normalization: str = ""
     codec_profile: str = ""
-    audio_content_hash: str = ""
     added_at: str = ""  # ISO 8601 timestamp when record was added
     hash_algorithm: str = AUDIO_HASH_ALGORITHM
 
@@ -531,7 +527,7 @@ def catalog_fieldnames(include_quality: bool = False) -> list[str]:
 
 def file_record_to_row(record: FileRecord, columns: Sequence[str]) -> dict[str, str]:
     base: dict[str, object] = {
-        "Hash": record.hash,  # Content hash (audio_content_hash is now the primary)
+        "Hash": record.hash,
         HASH_ALGORITHM_COLUMN: record.hash_algorithm,
         "Filename": record.filename,
         "Size (bytes)": record.size_bytes if record.exists else 0,
@@ -551,7 +547,6 @@ def file_record_to_row(record: FileRecord, columns: Sequence[str]) -> dict[str, 
         "title": record.title,
         "track": record.track,
         "sample_rate": record.sample_rate,
-        "bit_depth": record.bit_depth,
         "channels": record.channels,
         "bitrate_kbps": record.bitrate_kbps,
         "integrated_loudness_lufs": record.integrated_loudness_lufs,
@@ -559,8 +554,6 @@ def file_record_to_row(record: FileRecord, columns: Sequence[str]) -> dict[str, 
         "loudness_range_lu": record.loudness_range_lu,
         "input_thresh": record.input_thresh,
         "target_offset": record.target_offset,
-        "mean_volume_db": record.mean_volume_db,
-        "max_volume_db": record.max_volume_db,
         "needs_normalization": record.needs_normalization,
         "codec_profile": record.codec_profile,
     }
@@ -617,22 +610,6 @@ def resolve_hash_column(columns: Sequence[str], path: Path) -> str:
     if DEFAULT_HASH_COLUMN not in columns:
         raise ValueError(f"{path} is missing required 'Hash' column")
     return DEFAULT_HASH_COLUMN
-
-
-def adapt_row(
-    row: dict[str, str],
-    columns: Sequence[str],
-    *,
-    source_hash_column: str,
-    target_hash_column: str,
-) -> dict[str, str]:
-    adapted: dict[str, str] = {}
-    for column in columns:
-        if column == target_hash_column:
-            adapted[column] = row.get(column, row.get(source_hash_column, ""))
-        else:
-            adapted[column] = row.get(column, "")
-    return adapted
 
 
 def collect_hashes(rows: Iterable[dict[str, str]], *, hash_column: str) -> set[str]:
@@ -692,63 +669,19 @@ def merge_catalogs(
     target_rows: list[dict[str, str]],
     *,
     columns: Sequence[str],
-    source_hash_column: str,
-    target_hash_column: str,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-    """Merge source catalog rows into target catalog, deduplicating by hash.
-
-    This function appends rows from a source catalog to an existing target catalog,
-    skipping any rows whose hash already exists in the target. It handles column
-    name differences between catalogs via adapt_row().
-
-    Algorithm:
-        1. Collect all known hashes from target_rows into a set
-        2. Iterate source_rows, skip if hash missing or already in target
-        3. Adapt row columns to match target schema
-        4. Append new rows to merged result and track separately in appended_rows
-        5. Return both the full merged list and just the newly appended rows
-
-    Args:
-        source_rows: Iterable of row dicts from source catalog.
-        target_rows: List of row dicts from existing target catalog.
-        columns: Sequence of column names for the output schema.
-        source_hash_column: Column name containing hash in source rows.
-        target_hash_column: Column name containing hash in target rows.
-
-    Returns:
-        Tuple of (merged_rows, appended_rows):
-        - merged_rows: All target rows plus new unique rows from source
-        - appended_rows: Only the new rows that were added (subset of merged_rows)
-
-    Note:
-        - Rows with missing hash values are silently skipped
-        - The function does NOT modify target_rows in place; returns new lists
-        - Column adaptation handles cases where source uses different column names
-    """
-    known_hashes = collect_hashes(target_rows, hash_column=target_hash_column)
+    """Merge rows under the current Hash identity column without mutating inputs."""
+    known_hashes = collect_hashes(target_rows, hash_column="Hash")
     merged_rows = list(target_rows)
     appended_rows: list[dict[str, str]] = []
-    new_rows = 0
-    missing_hash = 0
-
     for row in source_rows:
-        hash_value = (row.get(source_hash_column) or row.get(target_hash_column) or "").strip()
-        if not hash_value:
-            missing_hash += 1
-            continue
-        if hash_value in known_hashes:
+        hash_value = (row.get("Hash") or "").strip()
+        if not hash_value or hash_value in known_hashes:
             continue
         known_hashes.add(hash_value)
-        adapted_row = adapt_row(
-            row,
-            columns,
-            source_hash_column=source_hash_column,
-            target_hash_column=target_hash_column,
-        )
-        merged_rows.append(adapted_row)
-        appended_rows.append(adapted_row)
-        new_rows += 1
-
+        current_row = {column: row.get(column, "") for column in columns}
+        merged_rows.append(current_row)
+        appended_rows.append(current_row)
     return merged_rows, appended_rows
 
 

@@ -89,8 +89,8 @@ class TestComputeOutputPath:
         """Output path should preserve source directory structure with hash suffix."""
         source = Path("/data/podcasts/2024/episode1.mp3")
         output_dir = Path("/archive")
-        sha256 = "abc12345def67890"
-        result = compute_output_path(source, "/data", output_dir, ".webm", sha256)
+        audio_hash = "abc12345def67890"
+        result = compute_output_path(source, "/data", output_dir, ".webm", audio_hash)
 
         # Hash suffix (first 8 chars) is added to filename
         assert result == Path("/archive/podcasts/2024/episode1_abc12345.webm")
@@ -99,20 +99,20 @@ class TestComputeOutputPath:
         """Output should have the new extension."""
         source = Path("/audio/file.mp3")
         output_dir = Path("/out")
-        sha256 = "abc12345def67890"
+        audio_hash = "abc12345def67890"
 
-        webm_result = compute_output_path(source, "/audio", output_dir, ".webm", sha256)
+        webm_result = compute_output_path(source, "/audio", output_dir, ".webm", audio_hash)
         assert webm_result.suffix == ".webm"
 
-        m4a_result = compute_output_path(source, "/audio", output_dir, ".m4a", sha256)
+        m4a_result = compute_output_path(source, "/audio", output_dir, ".m4a", audio_hash)
         assert m4a_result.suffix == ".m4a"
 
     def test_handles_deep_paths(self):
         """Should handle deeply nested paths."""
         source = Path("/a/b/c/d/e/f/file.wav")
         output_dir = Path("/out")
-        sha256 = "abc12345def67890"
-        result = compute_output_path(source, "/a", output_dir, ".webm", sha256)
+        audio_hash = "abc12345def67890"
+        result = compute_output_path(source, "/a", output_dir, ".webm", audio_hash)
 
         assert result == Path("/out/b/c/d/e/f/file_abc12345.webm")
 
@@ -120,8 +120,8 @@ class TestComputeOutputPath:
         """Should handle paths with spaces."""
         source = Path("/my files/podcast episodes/episode 1.mp3")
         output_dir = Path("/archive")
-        sha256 = "abc12345def67890"
-        result = compute_output_path(source, "/my files", output_dir, ".webm", sha256)
+        audio_hash = "abc12345def67890"
+        result = compute_output_path(source, "/my files", output_dir, ".webm", audio_hash)
 
         assert result == Path("/archive/podcast episodes/episode 1_abc12345.webm")
         assert "podcast episodes" in str(result)
@@ -212,7 +212,7 @@ class TestArchivedManifestWriter:
             writer = ArchivedManifestWriter(path)
 
             entry = CompressedEntry(
-                sha256="abc123",
+                audio_hash="abc123",
                 source=Path("/src/file.mp3"),
                 compressed=Path("/out/file.webm"),
                 format="opus",
@@ -316,7 +316,7 @@ class TestDataclasses:
     def test_compressed_entry_immutable(self):
         """CompressedEntry should be immutable (frozen)."""
         entry = CompressedEntry(
-            sha256="abc",
+            audio_hash="abc",
             source=Path("/a"),
             compressed=Path("/b"),
             format="opus",
@@ -327,12 +327,12 @@ class TestDataclasses:
             duration_seconds=60,
         )
         with pytest.raises(AttributeError):
-            entry.sha256 = "xyz"
+            entry.audio_hash = "xyz"
 
     def test_skipped_entry_immutable(self):
         """ArchiveSkippedEntry should be immutable (frozen)."""
         entry = ArchiveSkippedEntry(
-            sha256="abc",
+            audio_hash="abc",
             source=Path("/a"),
             reason="test reason",
         )
@@ -393,11 +393,11 @@ def _read_rows(path: Path) -> tuple[list[str], list[dict[str, str]]]:
         return list(reader.fieldnames or []), list(reader)
 
 
-def _entry(sha256: str, **aac: object) -> CompressedEntry:
+def _entry(audio_hash: str, **aac: object) -> CompressedEntry:
     return CompressedEntry(
-        sha256=sha256,
-        source=Path(f"/src/{sha256}.mp3"),
-        compressed=Path(f"/out/{sha256}.webm"),
+        audio_hash=audio_hash,
+        source=Path(f"/src/{audio_hash}.mp3"),
+        compressed=Path(f"/out/{audio_hash}.webm"),
         format="opus",
         bitrate_kbps=48,
         source_size_bytes=1000,
@@ -500,7 +500,7 @@ class TestAacCopyEncoding:
     """Real ffmpeg: the copy is AAC in MP4 and lines up with the Opus archive."""
 
     def _row(self, source: Path) -> CsvAudioRow:
-        return CsvAudioRow(sha256="c" * 64, full_path=str(source), duration_seconds=6.0)
+        return CsvAudioRow(audio_hash="c" * 64, full_path=str(source), duration_seconds=6.0)
 
     def test_writes_opus_and_aac_with_matching_durations(self, tmp_path, require_ffmpeg):
         source = _tone(tmp_path / "talk.mp3")
@@ -550,7 +550,7 @@ class TestAacCopyEncoding:
             check=True,
         )
         catalog_duration = round(float(_probe(source)["duration"]))
-        row = CsvAudioRow(sha256="c" * 64, full_path=str(source), duration_seconds=catalog_duration)
+        row = CsvAudioRow(audio_hash="c" * 64, full_path=str(source), duration_seconds=catalog_duration)
         output = tmp_path / "out" / "talk.webm"
         aac = output.with_suffix(".m4a")
 
@@ -673,7 +673,7 @@ class TestAtomicArchivePublication:
     @pytest.fixture
     def archived_pair(self, tmp_path, require_ffmpeg):
         source = _tone(tmp_path / "talk.mp3", seconds=2)
-        row = CsvAudioRow(sha256="f" * 64, full_path=str(source), duration_seconds=2.0)
+        row = CsvAudioRow(audio_hash="f" * 64, full_path=str(source), duration_seconds=2.0)
         output = tmp_path / "out" / "talk.webm"
         kwargs = dict(
             format="opus",
@@ -821,7 +821,7 @@ class TestAtomicArchivePublication:
         aac = output.with_suffix(".m4a")
         before = (output.read_bytes(), aac.read_bytes())
         source = _tone(tmp_path / "changed.mp3", seconds=1)
-        row = CsvAudioRow(sha256="f" * 64, full_path=str(source), duration_seconds=1.0)
+        row = CsvAudioRow(audio_hash="f" * 64, full_path=str(source), duration_seconds=1.0)
 
         result = archive_module.backfill_aac_copy(
             row,
@@ -842,7 +842,7 @@ class TestAtomicArchivePublication:
         self, tmp_path, require_ffmpeg, monkeypatch, format
     ):
         source = _tone(tmp_path / "talk.mp3", seconds=1)
-        row = CsvAudioRow(sha256="f" * 64, full_path=str(source), duration_seconds=1.0)
+        row = CsvAudioRow(audio_hash="f" * 64, full_path=str(source), duration_seconds=1.0)
         output = tmp_path / "out" / ("talk.webm" if format == "opus" else "talk.m4a")
 
         def fail(_cmd, candidate):
@@ -1029,7 +1029,7 @@ class TestBackfillSafety:
             path,
             ["Hash", "Full Path", "Duration"],
             [
-                {"Hash": row.sha256, "Full Path": row.full_path, "Duration": "00:00:01"}
+                {"Hash": row.audio_hash, "Full Path": row.full_path, "Duration": "00:00:01"}
                 for row in rows
             ],
         )
@@ -1041,8 +1041,8 @@ class TestBackfillSafety:
         m4a_archive = tmp_path / "b.m4a"
         m4a_archive.write_bytes(b"x")
         rows = [
-            CsvAudioRow(sha256="a" * 64, full_path=str(tmp_path / "a.mp3")),
-            CsvAudioRow(sha256="b" * 64, full_path=str(tmp_path / "b.mp3")),
+            CsvAudioRow(audio_hash="a" * 64, full_path=str(tmp_path / "a.mp3")),
+            CsvAudioRow(audio_hash="b" * 64, full_path=str(tmp_path / "b.mp3")),
         ]
         manifest_rows = [
             # A resumed --overwrite run can list a hash twice.
@@ -1054,7 +1054,7 @@ class TestBackfillSafety:
 
         jobs, skipped = archive_module._select_backfill_jobs(ArchiveRequest(), rows, manifest_rows)
 
-        assert [(row.sha256, path) for row, path in jobs] == [("a" * 64, webm)]
+        assert [(row.audio_hash, path) for row, path in jobs] == [("a" * 64, webm)]
         assert skipped == []
 
     @pytest.mark.parametrize(
@@ -1076,7 +1076,7 @@ class TestBackfillSafety:
         if missing == "archive":
             (tmp_path / "a.webm").unlink()
         elif missing == "catalog row":
-            rows = [CsvAudioRow(sha256="b" * 64, full_path=str(tmp_path / "b.mp3"))]
+            rows = [CsvAudioRow(audio_hash="b" * 64, full_path=str(tmp_path / "b.mp3"))]
         elif missing == "empty catalog":
             rows = []
         catalog = self._source_catalog(manifest, rows)
@@ -1146,7 +1146,7 @@ class TestBackfillSafety:
             copy = path.with_suffix(".m4a")
             copy.write_bytes(b"AAC copy")
             return archive_module.AacBackfillResult(
-                row.sha256, {"Compressed AAC Path": str(copy)}, None
+                row.audio_hash, {"Compressed AAC Path": str(copy)}, None
             )
 
         monkeypatch.setattr(archive_module, "backfill_aac_copy", successful_copy)
@@ -1182,7 +1182,7 @@ class TestBackfillSafety:
             webm = tmp_path / f"{name}.webm"
             webm.write_bytes(b"x")
             webms.append(webm)
-        rows = [CsvAudioRow(sha256=n * 64, full_path=str(tmp_path / f"{n}.mp3")) for n in "ab"]
+        rows = [CsvAudioRow(audio_hash=n * 64, full_path=str(tmp_path / f"{n}.mp3")) for n in "ab"]
         manifest = self._manifest(
             tmp_path,
             [{"Hash": n * 64, "Compressed Path": str(w), "Format": "opus"} for n, w in zip("ab", webms)],
@@ -1191,7 +1191,7 @@ class TestBackfillSafety:
             archive_module,
             "backfill_aac_copy",
             lambda row, path, **kwargs: archive_module.AacBackfillResult(
-                row.sha256, {"Compressed AAC Path": str(path.with_suffix(".m4a"))}, None
+                row.audio_hash, {"Compressed AAC Path": str(path.with_suffix(".m4a"))}, None
             ),
         )
         writes: list[set[str]] = []
@@ -1214,12 +1214,12 @@ class TestBackfillSafety:
 
         def fake(row, path, **kwargs):
             if calls is not None:
-                calls.append(row.sha256)
+                calls.append(row.audio_hash)
             time.sleep(delay)
-            if row.sha256 in fail:
+            if row.audio_hash in fail:
                 raise RuntimeError("encoder vanished")
             return archive_module.AacBackfillResult(
-                row.sha256, {"Compressed AAC Path": str(path.with_suffix(".m4a"))}, None
+                row.audio_hash, {"Compressed AAC Path": str(path.with_suffix(".m4a"))}, None
             )
 
         return fake
@@ -1230,7 +1230,7 @@ class TestBackfillSafety:
             webm = tmp_path / f"{h[0]}.webm"
             webm.write_bytes(b"x")
             manifest_rows.append({"Hash": h, "Compressed Path": str(webm), "Format": "opus"})
-        rows = [CsvAudioRow(sha256=h, full_path=str(tmp_path / f"{h[0]}.mp3")) for h in hashes]
+        rows = [CsvAudioRow(audio_hash=h, full_path=str(tmp_path / f"{h[0]}.mp3")) for h in hashes]
         return self._manifest(tmp_path, manifest_rows), rows
 
     @pytest.mark.integration
@@ -1267,7 +1267,7 @@ class TestBackfillSafety:
         update_manifest_rows(manifest, {"a" * 64: {"Compressed AAC Path": "/out/a.m4a"}})
         writer.write_entry(
             CompressedEntry(
-                sha256="b" * 64,
+                audio_hash="b" * 64,
                 source=Path("/src/b.mp3"),
                 compressed=Path("/out/b.webm"),
                 format="opus",
@@ -1371,7 +1371,7 @@ class TestBackfillSafety:
             # `catalog remove` drops the row while the copy is encoding.
             _write_rows(manifest, ArchivedManifestWriter.FIELDNAMES, [])
             return archive_module.AacBackfillResult(
-                row.sha256, {"Compressed AAC Path": str(copy)}, None
+                row.audio_hash, {"Compressed AAC Path": str(copy)}, None
             )
 
         monkeypatch.setattr(archive_module, "backfill_aac_copy", copy_while_removed)

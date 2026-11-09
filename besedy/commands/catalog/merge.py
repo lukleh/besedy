@@ -106,8 +106,6 @@ def _merge_into(args: argparse.Namespace, output_path: Path, LOGGER: logging.Log
         source_rows=source_rows,
         target_rows=target_rows,
         columns=all_columns,
-        source_hash_column="Hash",
-        target_hash_column="Hash",
     )
 
     write_merged_csv(output_path, merged_rows, columns=all_columns, encoding=args.encoding)

@@ -351,7 +351,7 @@ def test_migrated_reordered_manifest_accepts_new_archive_entries(tmp_path: Path)
     _write_csv(path, columns, [old_row])
     migration.migrate_archive_manifest(path, apply=True)
     entry = CompressedEntry(
-        sha256="b" * 64,
+        audio_hash="b" * 64,
         source=tmp_path / "nová, nahrávka.wav",
         compressed=tmp_path / "nová.webm",
         format="opus",
@@ -379,7 +379,7 @@ def test_migrated_legacy_manifest_runs_real_aac_backfill(tmp_path: Path, require
     if not shutil.which("ffprobe"):
         pytest.skip("ffprobe not available")
     source = create_tone_wav(tmp_path / "talk.wav", duration_seconds=2)
-    row = CsvAudioRow(sha256="a" * 64, full_path=str(source), duration_seconds=2)
+    row = CsvAudioRow(audio_hash="a" * 64, full_path=str(source), duration_seconds=2)
     webm = tmp_path / "talk.webm"
     compressed = compress_audio_file(
         row,

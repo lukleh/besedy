@@ -31,10 +31,10 @@ class TestCleanupTarget:
     def test_basic_creation(self):
         """Test creating a CleanupTarget."""
         target = CleanupTarget(
-            sha256="abc123",
+            audio_hash="abc123",
             original_path="/path/to/original.wav",
         )
-        assert target.sha256 == "abc123"
+        assert target.audio_hash == "abc123"
         assert target.original_path == "/path/to/original.wav"
         assert target.staged_path is None
         assert target.staged_exists is False
@@ -49,7 +49,7 @@ class TestCleanupTarget:
         diarization_dir = tmp_path / "diarization"
 
         target = CleanupTarget(
-            sha256="abc123",
+            audio_hash="abc123",
             original_path="/path/to/original.wav",
             staged_path=staged,
             staged_exists=True,

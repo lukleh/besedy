@@ -580,7 +580,7 @@ def _missing_artifact_line(label: str, symlink: Path, extract_timestamp) -> str:
 
 def _build_incomplete_report(pipeline: _IncompletePipeline) -> _IncompleteReport:
     # Load catalog to show expected counts
-    catalog_hashes = {entry.sha256 for entry in load_catalog_csv(pipeline.csv_path)}
+    catalog_hashes = {entry.audio_hash for entry in load_catalog_csv(pipeline.csv_path)}
 
     missing: list[str] = []
     missing_lines: list[str] = []
@@ -790,7 +790,7 @@ class CheckReport:
 
 
 def _load_catalog(report: CheckReport) -> None:
-    report.catalog_hashes = {entry.sha256 for entry in load_catalog_csv(report.inputs.csv_path)}
+    report.catalog_hashes = {entry.audio_hash for entry in load_catalog_csv(report.inputs.csv_path)}
     report.catalog_count = len(report.catalog_hashes)
 
 

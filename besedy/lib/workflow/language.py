@@ -22,7 +22,7 @@ from collections.abc import Callable
 
 AUTO_LANGUAGE = "auto"
 
-# A missing `language` key keeps the historical forced-Czech inference mode.
+# Czech is the current default when language is not configured.
 DEFAULT_TRANSCRIPTION_LANGUAGE = "cs"
 
 # Canary prompts require explicit source/target languages.

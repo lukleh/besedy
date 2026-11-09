@@ -34,6 +34,7 @@ from rich.progress import (
 )
 
 from besedy.core.paths import hash_component_from_sha
+from besedy.core.system import detect_logical_cpus
 from besedy.lib.audio.normalize_stage_helpers import (
     ConversionLogNoticeState,
     reuse_existing_staged_entry,
@@ -46,7 +47,6 @@ from besedy.lib.audio.types import (
     ManifestWriter,
     PreparedEntry,
     SkippedEntry,
-    detect_logical_cpus,
 )
 from besedy.lib.correction_guard import (
     ProtectedStagedAudio,
@@ -98,15 +98,15 @@ def stage_audio_files(
     for index, row in enumerate(rows, start=1):
         duration_seconds = row.duration_seconds
         if duration_seconds is None:
-            raise RuntimeError(f"Duration missing for SHA {row.sha256} at row {index}")
+            raise RuntimeError(f"Duration missing for SHA {row.audio_hash} at row {index}")
         source, resolved_str, exists = resolve_unicode_path(row.full_path)
-        hash_component = hash_component_from_sha(row.sha256)
+        hash_component = hash_component_from_sha(row.audio_hash)
         staged_path = staging_dir / f"{hash_component}{STAGED_AUDIO_EXTENSION}"
 
         if hash_component in seen_hashes:
-            skipped.append(SkippedEntry(row.sha256, source, "duplicate hash in CSV"))
+            skipped.append(SkippedEntry(row.audio_hash, source, "duplicate hash in CSV"))
             if not continue_on_error:
-                raise RuntimeError(f"Duplicate hash encountered: {row.sha256}")
+                raise RuntimeError(f"Duplicate hash encountered: {row.audio_hash}")
             continue
 
         # A live correction workspace depends on this exact file (ADR 0012), so
@@ -157,7 +157,7 @@ def stage_audio_files(
             continue
 
         if not exists:
-            skipped.append(SkippedEntry(row.sha256, source, "file not found"))
+            skipped.append(SkippedEntry(row.audio_hash, source, "file not found"))
             if not continue_on_error:
                 raise RuntimeError(f"Audio file not found: {resolved_str}")
             continue
@@ -172,7 +172,7 @@ def stage_audio_files(
                 f"missing loudness measurements: {', '.join(missing_measurements)}; "
                 "run 'catalog loudness --overwrite' before staging"
             )
-            skipped.append(SkippedEntry(row.sha256, source, reason))
+            skipped.append(SkippedEntry(row.audio_hash, source, reason))
             continue
 
         conversions.append((index, row, source, staged_path, duration_seconds))

@@ -15,14 +15,14 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
-from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.data.encoding import load_json_utf8
 from besedy.lib.validation.schema import is_finite_number as _is_number
 from besedy.lib.validation.schema import validate_canonical_schema
 
 
 def load_json(path: Path) -> dict[str, Any]:
     """Load a UTF-8 JSON file; raises ValueError if it is undecodable or malformed."""
-    return load_json_with_fallback(path)
+    return load_json_utf8(path)
 
 
 def _summarize_counts(data: dict[str, Any]) -> tuple[int, int]:

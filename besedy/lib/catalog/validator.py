@@ -18,7 +18,7 @@ from besedy.lib.workflow.common import parse_duration_to_seconds
 class CatalogEntry:
     """Represents a single entry from the audio catalog CSV."""
 
-    sha256: str
+    audio_hash: str
     filename: str
     full_path: str
     duration_str: str
@@ -29,7 +29,7 @@ class CatalogEntry:
 class StagedFile:
     """Represents a staged WAV file."""
 
-    sha256: str
+    audio_hash: str
     path: Path
     exists: bool
     size_bytes: int | None = None
@@ -39,7 +39,7 @@ class StagedFile:
 class TranscriptSet:
     """Represents transcripts for a single audio hash."""
 
-    sha256: str
+    audio_hash: str
     backends: list[
         str
     ]  # e.g., ["canary-nemo/nvidia_canary-1b-v2@...", "faster-whisper/large-v3@..."]
@@ -50,7 +50,7 @@ class TranscriptSet:
 class DiarizationSet:
     """Represents diarization outputs for a single audio hash."""
 
-    sha256: str
+    audio_hash: str
     backends: list[str]  # e.g., ["speaker_diarization/pyannote_speaker-diarization-community-1"]
     paths: list[Path]
 
@@ -97,8 +97,8 @@ def load_catalog_csv(csv_path: Path) -> list[CatalogEntry]:
         if reader.fieldnames is not None and "Duration" not in reader.fieldnames:
             raise ValueError(f"{csv_path} is missing required 'Duration' column")
         for row in reader:
-            sha256 = row.get("Hash", "").strip()
-            if not sha256:
+            audio_hash = row.get("Hash", "").strip()
+            if not audio_hash:
                 continue
 
             duration_str = (row.get("Duration") or "").strip()
@@ -106,7 +106,7 @@ def load_catalog_csv(csv_path: Path) -> list[CatalogEntry]:
             duration_seconds = parse_duration_to_seconds(duration_str) if duration_str else 0.0
 
             entry = CatalogEntry(
-                sha256=sha256,
+                audio_hash=audio_hash,
                 filename=row.get("Filename", "").strip(),
                 full_path=row.get("Full Path", "").strip(),
                 duration_str=duration_str,
@@ -141,15 +141,15 @@ def check_staged_files(
             exists = staged_path.exists()
 
         staged = StagedFile(
-            sha256=entry.sha256,
+            audio_hash=entry.audio_hash,
             path=staged_path,
             exists=exists,
             size_bytes=staged_path.stat().st_size if exists else None,
         )
-        staged_files[entry.sha256] = staged
+        staged_files[entry.audio_hash] = staged
 
         if not exists:
-            missing.append(entry.sha256)
+            missing.append(entry.audio_hash)
 
     return staged_files, missing
 
@@ -235,7 +235,7 @@ def collect_transcripts_by_hash(
 
         if audio_hash not in transcripts_by_hash:
             transcripts_by_hash[audio_hash] = TranscriptSet(
-                sha256=audio_hash,
+                audio_hash=audio_hash,
                 backends=[],
                 paths=[],
             )
@@ -271,7 +271,7 @@ def collect_diarizations_by_hash(
             audio_hash = speakers_path.parent.name
             if audio_hash not in diarization_by_hash:
                 diarization_by_hash[audio_hash] = DiarizationSet(
-                    sha256=audio_hash,
+                    audio_hash=audio_hash,
                     backends=[],
                     paths=[],
                 )
@@ -305,17 +305,17 @@ def validate_catalog(
     catalog_entries = load_catalog_csv(csv_path)
     normalized_entries = load_catalog_csv(csv_normalized_path)
 
-    catalog_hashes = {entry.sha256 for entry in catalog_entries}
-    normalized_hashes = {entry.sha256 for entry in normalized_entries}
-    normalized_lookup = {entry.sha256: entry for entry in normalized_entries}
+    catalog_hashes = {entry.audio_hash for entry in catalog_entries}
+    normalized_hashes = {entry.audio_hash for entry in normalized_entries}
+    normalized_lookup = {entry.audio_hash: entry for entry in normalized_entries}
 
     # Check staged/normalized WAVs
     staged_records: list[CatalogEntry] = []
     missing_normalized_hashes: list[str] = []
     for entry in catalog_entries:
-        normalized_entry = normalized_lookup.get(entry.sha256)
+        normalized_entry = normalized_lookup.get(entry.audio_hash)
         if normalized_entry is None:
-            missing_normalized_hashes.append(entry.sha256)
+            missing_normalized_hashes.append(entry.audio_hash)
         else:
             staged_records.append(normalized_entry)
 
@@ -369,10 +369,10 @@ def validate_catalog(
     for entry in catalog_entries:
         path_str = entry.full_path.strip()
         if not path_str:
-            missing_original_audio.append((entry.sha256, "(no path)"))
+            missing_original_audio.append((entry.audio_hash, "(no path)"))
             continue
         if not Path(path_str).exists():
-            missing_original_audio.append((entry.sha256, path_str))
+            missing_original_audio.append((entry.audio_hash, path_str))
 
     # Backend coverage
     entries_with_all_backends = 0

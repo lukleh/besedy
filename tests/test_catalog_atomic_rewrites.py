@@ -283,7 +283,7 @@ class TestStageAudioManifest:
     def _staging(*, error: BaseException | None):
         def stage_audio_files(_rows, _staging_dir, *, manifest_writer, **_kwargs):
             manifest_writer.write_entry(
-                SimpleNamespace(sha256=HASH_B, staged=Path("/staged/b.wav")), size_bytes=1
+                SimpleNamespace(audio_hash=HASH_B, staged=Path("/staged/b.wav")), size_bytes=1
             )
             if error is not None:
                 raise error

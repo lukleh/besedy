@@ -30,13 +30,12 @@ class CsvAudioRow:
     """Normalized representation of a CSV row from the audio catalog.
 
     Attributes:
-        sha256: Audio content hash (SHA-256 of decoded PCM at 16kHz mono).
-                Field name kept for backward compatibility.
+        audio_hash: Audio content hash (SHA-256 of decoded PCM at 16kHz mono).
         full_path: Full path to the audio file.
         scan_root: The catalog's ``Scan Root`` for this file, if the CSV has one.
     """
 
-    sha256: str  # Actually audio content hash (kept for backward compat)
+    audio_hash: str
     full_path: str
     duration_seconds: float | None = None
     added_at: str | None = None  # ISO 8601 timestamp when record was added
@@ -79,7 +78,7 @@ def iter_audio_csv_rows(
         require_duration: If True, Duration column is required and parsed.
 
     Yields:
-        CsvAudioRow with sha256, full_path, duration_seconds (if required),
+        CsvAudioRow with audio_hash, full_path, duration_seconds (if required),
         and optional loudness normalization parameters.
 
     Raises:
@@ -125,7 +124,7 @@ def iter_audio_csv_rows(
             }
 
             yield CsvAudioRow(
-                sha256=sha,
+                audio_hash=sha,
                 full_path=full_path,
                 duration_seconds=duration_value,
                 added_at=(row.get("added_at") or "").strip() or None,

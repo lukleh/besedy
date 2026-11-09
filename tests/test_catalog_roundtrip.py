@@ -243,8 +243,6 @@ class TestMergeCatalogs:
             source,
             target,
             columns=columns,
-            source_hash_column="Hash",
-            target_hash_column="Hash",
         )
 
         assert len(merged) == 2
@@ -261,8 +259,6 @@ class TestMergeCatalogs:
             source,
             target,
             columns=columns,
-            source_hash_column="Hash",
-            target_hash_column="Hash",
         )
 
         assert len(merged) == 1
@@ -278,8 +274,6 @@ class TestMergeCatalogs:
             source,
             target,
             columns=columns,
-            source_hash_column="Hash",
-            target_hash_column="Hash",
         )
 
         assert len(merged) == 1

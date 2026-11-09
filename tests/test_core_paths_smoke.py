@@ -31,7 +31,6 @@ from besedy.core.paths import (
     resolve_share_home,
     resolve_state_home,
     resolve_tmp_dir,
-    resolve_transcripts_parquet_parent,
     resolve_transcripts_root,
     resolve_web_env_path,
     sanitize_component,
@@ -287,48 +286,6 @@ class TestResolveTranscriptsRoot:
         assert result == PROJECT_ROOT / "transcripts_20251128_120000"
 
 
-class TestResolveTranscriptsParquetParent:
-    """Tests for resolve_transcripts_parquet_parent()."""
-
-    def test_raises_when_no_text_data_dir(self, monkeypatch):
-        """text_data_dir is required when resolving parquet outputs."""
-        monkeypatch.delenv("BESEDY_TEXT_DATA_ROOT", raising=False)
-        original = get_config()
-        try:
-            set_config(
-                replace(
-                    original,
-                    paths=replace(original.paths, text_data_dir=""),
-                )
-            )
-            with pytest.raises(RuntimeError):
-                resolve_transcripts_parquet_parent()
-        finally:
-            set_config(original)
-
-    def test_returns_transcripts_parquet_subdir_when_text_data_dir_configured(
-        self, monkeypatch, tmp_path
-    ):
-        """When text_data_dir is configured, returns text_data_dir/transcripts_parquet/."""
-        monkeypatch.delenv("BESEDY_TEXT_DATA_ROOT", raising=False)
-        original = get_config()
-        try:
-            set_config(
-                replace(
-                    original,
-                    paths=replace(original.paths, text_data_dir=str(tmp_path)),
-                )
-            )
-            result = resolve_transcripts_parquet_parent()
-            expected = tmp_path / "transcripts_parquet"
-            assert result == expected
-            # Should also create the directory
-            assert result.exists()
-            assert result.is_dir()
-        finally:
-            set_config(original)
-
-
 class TestHashComponentFromSha:
     """Tests for hash_component_from_sha()."""
 
@@ -434,7 +391,9 @@ class TestParseTranscriptComponents:
     """Tests for parse_transcript_components()."""
 
     def test_extracts_workflow_model_hash(self, tmp_path):
-        transcript_path = tmp_path / "faster-whisper" / "large-v3@lang-cs" / ("a" * 64) / "transcript.json"
+        transcript_path = (
+            tmp_path / "faster-whisper" / "large-v3@lang-cs" / ("a" * 64) / "transcript.json"
+        )
         transcript_path.parent.mkdir(parents=True)
         transcript_path.touch()
 
