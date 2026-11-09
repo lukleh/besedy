@@ -136,7 +136,7 @@ if [[ " $* " == *" config --format json "* ]]; then
     external=false
   fi
   volume_target="/var/lib/postgresql"
-  printf '{"name":"%s","services":{"db":{"container_name":"%s-db","image":"postgres:18","networks":{"default":null},"volumes":[{"type":"volume","source":"postgres_data","target":"%s"}]},"web":{"container_name":"%s-web","environment":{"APP_ENV":"%s"},"networks":{"besedy_internal":null,"default":null}}},"volumes":{"postgres_data":{"name":"%s","external":%s}},"networks":{"default":{"name":"%s_default","driver_opts":{"com.docker.network.bridge.name":"%s"},"enable_ipv6":false},"besedy_internal":{"name":"%s","external":true}}}\n' \
+  printf '{"name":"%s","services":{"db":{"container_name":"%s-db","image":"postgres:18-bookworm","networks":{"default":null},"volumes":[{"type":"volume","source":"postgres_data","target":"%s"}]},"web":{"container_name":"%s-web","environment":{"APP_ENV":"%s"},"networks":{"besedy_internal":null,"default":null}}},"volumes":{"postgres_data":{"name":"%s","external":%s}},"networks":{"default":{"name":"%s_default","driver_opts":{"com.docker.network.bridge.name":"%s"},"enable_ipv6":false},"besedy_internal":{"name":"%s","external":true}}}\n' \
     "$COMPOSE_PROJECT_NAME" "$COMPOSE_PROJECT_NAME" "$volume_target" \
     "$COMPOSE_PROJECT_NAME" "$APP_ENV" "$volume_source" "$external" \
     "$COMPOSE_PROJECT_NAME" "$BESEDY_WEB_BRIDGE_NAME" "$BESEDY_INTERNAL_NETWORK"
@@ -286,7 +286,7 @@ def compose_config(
         "services": {
             "db": {
                 "container_name": f"besedy-{instance}-db",
-                "image": "postgres:18",
+                "image": "postgres:18-bookworm",
                 "networks": db_networks or {"default": None},
                 "volumes": [
                     {
@@ -358,6 +358,21 @@ def test_compose_validator_allows_production_text_in_non_resource_paths() -> Non
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.parametrize("image", ["postgres:18", "postgres:18-trixie"])
+def test_compose_validator_rejects_a_different_database_distribution(image: str) -> None:
+    config = compose_config("production")
+    services = config["services"]
+    assert isinstance(services, dict)
+    database = services["db"]
+    assert isinstance(database, dict)
+    database["image"] = image
+
+    result = validate_compose_config(config, "production")
+
+    assert result.returncode == 1
+    assert "expected 'postgres:18-bookworm'" in result.stderr
+
+
 @pytest.mark.parametrize(
     ("mode", "config", "message"),
     [
@@ -425,7 +440,7 @@ def _bind_config(mode: str, root: Path) -> dict[str, object]:
         "services": {
             "db": {
                 "container_name": f"{project}-db",
-                "image": "postgres:18",
+                "image": "postgres:18-bookworm",
                 "networks": {"default": None},
                 "volumes": [
                     {"type": "volume", "source": "postgres_data", "target": "/var/lib/postgresql"}
