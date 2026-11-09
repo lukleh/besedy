@@ -105,7 +105,7 @@ def test_build_colbert_index_writes_meta_and_manifest(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     def fake_run_colbert_worker(*, command: str, payload: dict[str, object]) -> dict[str, object]:
@@ -253,7 +253,7 @@ def test_token_audit_is_recorded(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     def fake_run_colbert_worker(*, command: str, payload: dict[str, object]) -> dict[str, object]:
@@ -305,7 +305,7 @@ def test_build_colbert_index_passes_runtime_override_to_worker(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     seen_runtime_override: list[str | None] = []
@@ -362,7 +362,7 @@ def test_build_colbert_index_uses_index_bsize_in_payload_and_bundle_fingerprint(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     seen_index_bsizes: list[int] = []
@@ -506,9 +506,18 @@ def _capture_sync_backend_key(
     return observed
 
 
+@pytest.mark.parametrize("structured_records", [False, True])
 def test_handle_rag_colbert_index_defaults_to_docker_indexer_runtime(
     monkeypatch: pytest.MonkeyPatch,
+    capsys,
+    structured_records: bool,
 ) -> None:
+    from besedy.lib.job_records import JOB_RECORDS_ENV, parse_job_record
+
+    if structured_records:
+        monkeypatch.setenv(JOB_RECORDS_ENV, "1")
+    else:
+        monkeypatch.delenv(JOB_RECORDS_ENV, raising=False)
     monkeypatch.delenv("BESEDY_COLBERT_RUNTIME", raising=False)
     monkeypatch.setattr(
         "besedy.commands.catalog.rag_colbert_index.default_colbert_index_runtime",
@@ -570,6 +579,14 @@ def test_handle_rag_colbert_index_defaults_to_docker_indexer_runtime(
 
     assert handle_rag_colbert_index(args) == 0
     assert seen_runtime_override == ["docker-indexer"]
+    output = capsys.readouterr().out
+    if structured_records:
+        assert len(output.splitlines()) == 1
+        record = parse_job_record(output)
+        assert record is not None and record["kind"] == "result"
+        assert record["payload"]["index_dir"] == "/tmp/rag-colbert-index"
+    else:
+        assert json.loads(output)["index_dir"] == "/tmp/rag-colbert-index"
 
 
 def test_handle_rag_colbert_index_keeps_implicit_backend_key(
@@ -866,7 +883,7 @@ def test_build_colbert_index_emits_phase_progress(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     seen_live_output: list[bool] = []
@@ -950,7 +967,7 @@ def test_build_colbert_index_skips_worker_for_empty_corpus(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
     monkeypatch.setattr(
         rag_colbert,

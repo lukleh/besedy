@@ -79,11 +79,7 @@ def _get_chunk_token_counter(*, chunk_tokenizer_model: str | None):
     if not normalized_model:
         return get_chunk_token_counter()
 
-    # Some tests monkeypatch get_chunk_token_counter() with a zero-arg lambda.
-    try:
-        return get_chunk_token_counter(model_name=normalized_model)
-    except TypeError:
-        return get_chunk_token_counter()
+    return get_chunk_token_counter(model_name=normalized_model)
 
 
 def _register_unique_transcript_audio_hash(

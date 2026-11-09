@@ -78,16 +78,13 @@ Optional:
 bundle builds populate it automatically. SQLite triggers keep the index aligned
 with chunk inserts, updates, and deletes during incremental sync.
 
-A bundle created before the FTS5 schema was introduced has no such index, and
-lexical queries against it fail until it is added. The index is created when the
-chunk-store schema is initialized (the first staged chunk mutation, or an explicit
-`ensure_chunk_store_fts(path=...)` from `besedy/lib/rag_chunk_store.py`, which also
-backfills an existing store) and by a full `rag-colbert-index --rebuild`. The
-one-time backfill script was removed once every production bundle had its index.
+Every supported bundle includes FTS5 and its completion marker. Routine mutations
+validate this schema and never upgrade an older store. Rebuild unsupported stores
+with `rag-colbert-index --rebuild` before serving them.
 
 ### Active bundle selection
 
-Active bundle selection is model-scoped. The sidecar first checks the explicit `active_<model_slug>.json` pointer under the backend root, then falls back to the latest valid bundle for that scope. Incremental cutover updates both the model-scoped `index` symlink and the active-pointer file so `/resolve` and direct-path users converge on the same bundle.
+Active bundle selection is model-scoped. The sidecar first checks the explicit `active_<model_slug>.json` pointer under the backend root, then uses only the current chunk-version directory for that scope. Other chunk versions are rejected and never discovered as fallbacks. Incremental cutover updates both the model-scoped `index` symlink and the active-pointer file so `/resolve` and direct-path users converge on the same bundle.
 
 ## Indexing
 

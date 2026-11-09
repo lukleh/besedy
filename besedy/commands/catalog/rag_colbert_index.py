@@ -17,6 +17,7 @@ from besedy.commands.catalog.rag_options import (
     resolve_rag_index_options,
 )
 from besedy.core.paths import require_timestamped_transcripts_root, resolve_transcripts_root
+from besedy.lib.job_records import emit_job_record
 from besedy.lib.rag_colbert import (
     COLBERT_RUNTIME_ENV_VAR,
     DEFAULT_DOC_MAXLEN,
@@ -124,7 +125,6 @@ def register_parser(
         default=None,
         help=(
             "Backend key in '{workflow}/{model_component}' format "
-            "(three-part '{workflow}/{model}/{vad}' is normalized). "
             "Default: RAG_BACKEND_KEY, else derived from the configured "
             "faster-whisper workflow."
         ),
@@ -203,9 +203,12 @@ def handle_rag_colbert_index(
     elapsed_seconds = time.perf_counter() - command_started_at
 
     if request.json:
+        payload = {**asdict(result), "elapsed_seconds": elapsed_seconds}
+        if emit_job_record("result", payload):
+            return 0
         print(
             json.dumps(
-                {**asdict(result), "elapsed_seconds": elapsed_seconds},
+                payload,
                 ensure_ascii=False,
                 indent=2,
             )
