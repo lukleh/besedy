@@ -8,6 +8,17 @@ import pytest
 from besedy.lib.rag_eval_records import load_eval_records, parse_eval_targets, record_query
 
 
+@pytest.mark.parametrize("filename", [
+    "questions_20_audio.json",
+    "czech_stress_audio.json",
+    "questions_benchmark_audio.json",
+    "oblique_queries.example.json",
+])
+def test_committed_eval_examples_use_current_contract(filename: str) -> None:
+    fixtures = Path(__file__).parent / "fixtures" / "rag"
+    assert load_eval_records(fixtures / filename)
+
+
 def test_eval_record_parser_accepts_current_question_and_time_fields() -> None:
     record = {
         "id": "oblique-1",
