@@ -423,4 +423,47 @@ describe("catalog API routes (access gating)", () => {
       expect(body.entries).toHaveLength(3);
     }
   );
+
+  it.each(["title", "artist"])("sorts %s by the curated value shown to readers", async (field) => {
+    mockAccessibleCatalog([
+      createEntry({ hash: "a".repeat(64), title: "Alpha", curatedTitle: "Zulu",
+        artist: "Alpha", curatedArtist: "Zulu" }),
+      createEntry({ hash: "b".repeat(64), title: "Zulu", curatedTitle: "Alpha",
+        artist: "Zulu", curatedArtist: "Alpha" }),
+    ]);
+    const response = await getCatalog(new NextRequest(
+      `http://localhost/api/catalogs/${CATALOG}/recordings?sort=${field}&dir=asc`,
+    ));
+    expect(response.status).toBe(200);
+    expect((await response.json()).entries.map((entry: { hash: string }) => entry.hash))
+      .toEqual(["b".repeat(64), "a".repeat(64)]);
+  });
+
+  it("sorts untitled recordings by filename rather than their hash", async () => {
+    mockAccessibleCatalog([
+      createEntry({ hash: "a".repeat(64), title: undefined, filename: "Zulu.wav" }),
+      createEntry({ hash: "b".repeat(64), title: undefined, filename: "Alpha.wav" }),
+    ]);
+    const response = await getCatalog(new NextRequest(
+      `http://localhost/api/catalogs/${CATALOG}/recordings?sort=title&dir=asc`,
+    ));
+    expect(response.status).toBe(200);
+    expect((await response.json()).entries.map((entry: { filename: string }) => entry.filename))
+      .toEqual(["Alpha.wav", "Zulu.wav"]);
+  });
+
+  it("offers the same curated artists that the artist filter matches", async () => {
+    mockAccessibleCatalog([
+      createEntry({ artist: "Source", curatedArtist: "Corrected" }),
+      createEntry({ hash: "b".repeat(64), artist: "Removed", curatedArtist: "" }),
+    ]);
+    prisma.recorder.findMany.mockResolvedValue([]);
+    prisma.location.findMany.mockResolvedValue([]);
+    prisma.album.findMany.mockResolvedValue([]);
+    const response = await getFilterOptions(new NextRequest(
+      `http://localhost/api/catalogs/${CATALOG}/recordings/filter-options`,
+    ));
+    expect(response.status).toBe(200);
+    expect((await response.json()).options.artists).toEqual([{ value: "Corrected", count: 1 }]);
+  });
 });

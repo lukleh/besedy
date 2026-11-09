@@ -16,7 +16,6 @@ Ownership note:
 from __future__ import annotations
 
 import logging
-import shutil
 import threading
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -37,10 +36,10 @@ from rich.progress import (
 from besedy.core.paths import hash_component_from_sha
 from besedy.lib.audio.normalize_stage_helpers import (
     ConversionLogNoticeState,
-    resolve_analysis_binary,
     reuse_existing_staged_entry,
     run_stage_conversion,
 )
+from besedy.lib.audio.processing import resolve_audio_executable
 from besedy.lib.audio.types import (
     CONVERSION_LOG_DIR,
     STAGED_AUDIO_EXTENSION,
@@ -184,17 +183,12 @@ def stage_audio_files(
 
     if conversions:
         if include_audio_analysis:
-            analysis_ffmpeg_bin = resolve_analysis_binary(analysis_ffmpeg)
-            analysis_ffprobe_bin = resolve_analysis_binary(analysis_ffprobe)
+            analysis_ffmpeg_bin = resolve_audio_executable(analysis_ffmpeg)
+            analysis_ffprobe_bin = resolve_audio_executable(analysis_ffprobe)
         else:
             analysis_ffmpeg_bin = analysis_ffmpeg
             analysis_ffprobe_bin = analysis_ffprobe
-        ffmpeg_binary = shutil.which("ffmpeg")
-        if ffmpeg_binary is None:
-            raise RuntimeError(
-                "ffmpeg executable not found in PATH. Install ffmpeg to normalize/convert audio "
-                "or ensure it is accessible."
-            )
+        ffmpeg_binary = resolve_audio_executable("ffmpeg")
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_dir = CONVERSION_LOG_DIR

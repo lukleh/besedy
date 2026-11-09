@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/responsive-menu";
 import type { PlaybackClock } from "@/lib/playback-clock";
 import { formatRecordingDate } from "@/lib/date-format";
+import { resolveRecordingDisplay } from "@/lib/catalog-recordings/metadata";
 import type { CatalogEntryResponse } from "@/types/catalog";
 import type { RecordingSeekRequest } from "./use-recording-playback";
 
@@ -278,7 +279,7 @@ export function RecordingAudioSection({
         onBookmark={onBookmark}
         mediaMetadata={{
           title: headingText,
-          artist: recording.curatedArtist ?? recording.artist ?? undefined,
+          artist: resolveRecordingDisplay(recording).artist ?? undefined,
           album: recording.album?.name,
         }}
       />

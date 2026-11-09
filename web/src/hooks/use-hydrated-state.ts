@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { readStoredString, writeStoredString } from "@/lib/browser-storage";
 
 /**
  * Hook for state that needs localStorage persistence with proper SSR hydration.
@@ -48,7 +49,7 @@ export function useHydratedState<T>(
   useEffect(() => {
     if (!isHydrated) return;
     try {
-      const stored = localStorage.getItem(key);
+      const stored = readStoredString(key);
       if (stored !== null) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: syncing from localStorage
         setValue(deserialize(stored));
@@ -63,7 +64,7 @@ export function useHydratedState<T>(
     (newValue: T) => {
       setValue(newValue);
       try {
-        localStorage.setItem(key, serialize(newValue));
+        writeStoredString(key, serialize(newValue));
       } catch {
         // Ignore storage errors (quota exceeded, etc.)
       }

@@ -36,6 +36,7 @@ describe("explicit source bootstrap", () => {
     { ...paths, id: "20260101_120000" },
     { ...paths, isDefault: true },
     { ...paths, isActive: false },
+    { ...paths, transcriptsPath: "/ignored/transcripts" },
   ])("rejects incomplete or retired setup fields before writing: %j", async (input) => {
     await expect(registerArchiveSource(input)).rejects.toThrow();
     expect(prisma.workflowGroup.create).not.toHaveBeenCalled();

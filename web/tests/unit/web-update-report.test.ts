@@ -41,10 +41,12 @@ describe('web update email report', () => {
     expect(weeklyReport).not.toContain('CLIENT_VERSION_PER_USER');
   });
 
-  it('prefers the authoritative deploy log over the source-history guess for version ages', () => {
+  it('uses only deployment records for version ages', () => {
     expect(weeklyReport).toContain('FROM web_deploy_log');
     expect(weeklyReport).toContain('GROUP BY web_version');
     expect(weeklyReport).toContain('DEPLOY_LOG_DATE["$log_version"]=');
-    expect(weeklyReport).toContain('resolve_web_version_history.sh');
+    expect(weeklyReport).not.toContain('resolve_web_version_history.sh');
+    expect(weeklyReport).not.toContain('GIT_COMMIT');
+    expect(weeklyReport).not.toContain('2>/dev/null || true)\ndeclare -A DEPLOY_LOG_DATE');
   });
 });
