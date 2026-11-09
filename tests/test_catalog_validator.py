@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from besedy.lib.catalog.manager import FileRecord
 from besedy.lib.catalog.validator import (
     CatalogEntry,
     DiarizationSet,
@@ -33,7 +34,8 @@ from besedy.lib.catalog.validator import (
     load_catalog_csv,
     validate_catalog,
 )
-from besedy.lib.workflow.common import parse_duration_to_seconds
+from besedy.lib.workflow.common import iter_audio_csv_rows, parse_duration_to_seconds
+from tests.helpers.catalog_csv import write_catalog_csv
 
 
 class TestParseDuration:
@@ -181,10 +183,44 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,test1.wav,/path
     def test_missing_duration_is_rejected(self, tmp_path):
         csv_path = tmp_path / "catalog.csv"
         csv_path.write_text("Hash,Filename\n" + "a" * 64 + ",test.wav\n")
-        with pytest.raises(ValueError, match="empty duration"):
+        with pytest.raises(ValueError, match="missing required 'Duration' column"):
             load_catalog_csv(csv_path)
 
-    @pytest.mark.parametrize("duration", ["05:30", "330", "00:01:30.5", "invalid"])
+    @pytest.mark.parametrize("duration", ["", "   "])
+    def test_writer_blank_duration_can_be_checked(self, tmp_path, duration):
+        source = tmp_path / "test.wav"
+        source.touch()
+        record = FileRecord(
+            hash="a" * 64,
+            filename=source.name,
+            full_path=source,
+            hash_file=source.with_suffix(".audiohash"),
+            exists=True,
+            size_bytes=0,
+            size_human="0 B",
+            status="EXISTS",
+            extension="wav",
+            duration=duration,
+        )
+        csv_path = tmp_path / "catalog.csv"
+        normalized_path = tmp_path / "catalog_normalized.csv"
+        write_catalog_csv([record], csv_path)
+        write_catalog_csv([], normalized_path)
+
+        [entry] = load_catalog_csv(csv_path)
+        assert entry.sha256 == record.hash
+        assert entry.duration_str == ""
+        assert entry.duration_seconds == 0.0
+
+        result = validate_catalog(csv_path, normalized_path, tmp_path / "transcripts")
+        assert result.catalog_entries == 1
+        assert result.missing_normalized_hashes == [record.hash]
+        assert result.transcripts_missing == 1
+
+        with pytest.raises(ValueError, match="empty duration"):
+            list(iter_audio_csv_rows(csv_path, require_duration=True))
+
+    @pytest.mark.parametrize("duration", ["05:30", "330", "00:01:30.5", "invalid", "00:60:00"])
     def test_catalog_rejects_noncurrent_duration(self, tmp_path, duration):
         csv_path = tmp_path / "catalog.csv"
         csv_path.write_text(
