@@ -18,6 +18,7 @@ import {
 } from '@/lib/offline/audio-cache-format';
 import { MemoryLocks } from './helpers/memory-locks';
 import { OFFLINE_CACHE_NAMES } from '@/lib/offline/cache-names';
+import type { DownloadBundlePayload } from '@/lib/offline/downloads-db';
 
 const HASH = 'c'.repeat(64);
 const OTHER_HASH = 'd'.repeat(64);
@@ -26,6 +27,27 @@ const CATALOG = '20260101_000000';
 const TRANSCRIPT_PATH = new RegExp(`^/api/catalogs/${CATALOG}/recordings/[a-f0-9]{64}/transcript(/|$)`);
 const CHUNK = 2 * 1024 * 1024;
 const AUDIO_SIZE = CHUNK * 2 + 1234;
+
+function currentEntry(hash = HASH, options: { canViewTranscripts?: boolean; canDownloadTranscripts?: boolean } = {}) {
+  return {
+    entry: {
+      hash, title: 'Talk', artist: 'Speaker', duration: '01:00:00',
+      hasArchived: true, hasMetadata: true, isActionable: true,
+      isPublished: true, hasArchivedAudio: true, hasOriginalAudio: false,
+    },
+    canViewTranscripts: options.canViewTranscripts ?? true,
+    canDownloadTranscripts: options.canDownloadTranscripts ?? true,
+    canEditMetadata: false, canDownloadAudio: true,
+  };
+}
+
+function currentBundle(key: string, overrides: Partial<DownloadBundlePayload> = {}): DownloadBundlePayload {
+  return {
+    key, transcriptBackend: null, transcript: null, diarization: null,
+    artwork: null, entry: currentEntry(), eventDetail: null,
+    updatedAt: Date.now(), ...overrides,
+  };
+}
 
 /** Store a complete one-chunk recording so a seeded complete record verifies. */
 async function seedCompleteAudioCache(
@@ -144,18 +166,7 @@ function createFakeServer(options: FakeServerOptions = {}) {
         pathname === buildRecordingEntryUrl(CATALOG, HASH) ||
         pathname === buildRecordingEntryUrl(CATALOG, OTHER_HASH)
       ) {
-        return json({
-          entry: {
-            hash: HASH,
-            title: 'Talk',
-            artist: 'Speaker',
-            duration: '01:00:00',
-          },
-          canViewTranscripts: options.canViewTranscripts ?? true,
-          canDownloadTranscripts: options.canDownloadTranscripts ?? true,
-          canEditMetadata: false,
-          canDownload: true,
-        });
+        return json(currentEntry(pathname.includes(OTHER_HASH) ? OTHER_HASH : HASH, options));
       }
       if (pathname.endsWith('/audio/sources')) {
         return json({
@@ -221,6 +232,9 @@ function createFakeServer(options: FakeServerOptions = {}) {
           id: 7,
           workflowGroupId: CATALOG,
           title: 'Evening talk',
+          description: null,
+          sessionOrdinal: 1,
+          sessionCount: 1,
           location: { id: 1, name: 'Prague' },
           dateYear: 2026,
           dateMonth: 5,
@@ -488,13 +502,19 @@ describe('download manager', () => {
     expect(bundle?.transcript).toBeNull();
   });
 
-  it('stores the event and entry payloads on a package written before they were part of the bundle', async () => {
+  it('rejects an unsupported package and downloads a current package on explicit retry', async () => {
     const server = createFakeServer();
     vi.stubGlobal('fetch', server.fetchMock);
     const db = await import('@/lib/offline/downloads-db');
     const now = Date.now();
     const key = db.makeDownloadKey(CATALOG, HASH);
-    await seedCompleteAudioCache(cacheStorage, 'cached-audio');
+    const audioUrl = `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`;
+    const audioCacheKey = getAudioCacheKey(audioUrl, window.location.origin);
+    await seedCompleteAudioCache(cacheStorage, audioCacheKey);
+    const pending = await db.putPendingPlaybackProgress({
+      userId: 'user-1', catalogId: CATALOG, hash: HASH,
+      positionSec: 123, durationSec: 3600, completed: false,
+    });
     await db.putDownload({
       key,
       catalogId: CATALOG,
@@ -504,8 +524,8 @@ describe('download manager', () => {
       eventKey: `${CATALOG}:7`,
       event: null,
       recording: null,
-      audioUrl: `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`,
-      audioCacheKey: 'cached-audio',
+      audioUrl,
+      audioCacheKey,
       status: 'complete',
       progress: 100,
       bytesLoaded: AUDIO_SIZE,
@@ -525,21 +545,88 @@ describe('download manager', () => {
       diarization: null,
       artwork: null,
       updatedAt: now,
-    });
+    } as never);
 
     const { downloadManager } = await loadManager();
     downloadManager.setUserId('user-1');
     await downloadManager.hydrate();
-    await waitFor(async () => {
-      const bundle = await db.getDownloadBundle(key);
-      return bundle?.entry !== undefined && bundle?.eventDetail !== undefined;
-    });
+    expect(downloadManager.getSnapshot().records[0]).toMatchObject({ status: 'error', completedAt: null });
+    expect(await db.getDownloadBundle(key)).toBeUndefined();
+    expect(server.fetchMock).not.toHaveBeenCalled();
+    const cache = await cacheStorage.open(OFFLINE_CACHE_NAMES.audio);
+    expect(await cache.match(getAudioMetaKey(audioCacheKey))).toBeUndefined();
 
+    expect(await cache.match(getAudioChunkKey(audioCacheKey, 0))).toBeUndefined();
+    expect(await db.getPendingPlaybackProgress('user-1', CATALOG, HASH)).toEqual(pending);
+
+    await downloadManager.resume(key);
+    await waitFor(() => downloadManager.getSnapshot().records[0]?.status === 'complete');
     const bundle = await db.getDownloadBundle(key);
     expect(bundle?.entry?.entry.hash).toBe(HASH);
     expect(bundle?.eventDetail?.id).toBe(7);
     expect(bundle?.eventDetail?.recordings).toHaveLength(2);
+    expect(downloadManager.getSnapshot().records[0].event).toMatchObject({
+      id: 7, sessionOrdinal: 1, sessionCount: 1,
+    });
   });
+
+  it.each(['paused', 'error', 'queued'] as const)(
+    'finishes a version-4 %s download using fresh artwork metadata',
+    async (status) => {
+      const key = `${CATALOG}:${HASH}`;
+      await new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open('besedy-offline', 4);
+        open.onupgradeneeded = () => {
+          const database = open.result;
+          const downloads = database.createObjectStore('downloads', { keyPath: 'key' });
+          downloads.createIndex('byCatalog', 'catalogId');
+          downloads.createIndex('byEventKey', 'eventKey');
+          downloads.createIndex('byStatus', 'status');
+          database.createObjectStore('downloadBundles', { keyPath: 'key' });
+          database.createObjectStore('pendingPlaybackProgress', { keyPath: 'key' })
+            .createIndex('byUser', 'userId');
+        };
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const database = open.result;
+          const transaction = database.transaction('downloads', 'readwrite');
+          transaction.objectStore('downloads').put({
+            key, catalogId: CATALOG, catalogLabel: null, hash: HASH,
+            userId: null, eventKey: `${CATALOG}:7`,
+            event: { id: 7, sessionIndex: 1, publishedPoster: null },
+            recording: null, audioUrl: null, audioCacheKey: null,
+            status, progress: 0, bytesLoaded: 0, totalBytes: 0,
+            error: null, resumeOnReconnect: false, transcriptBackend: null,
+            hasPoster: false, createdAt: 0, updatedAt: 0, completedAt: null,
+          });
+          transaction.onerror = () => reject(transaction.error);
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+        };
+      });
+
+      const server = createFakeServer();
+      vi.stubGlobal('fetch', server.fetchMock);
+      const { downloadManager } = await loadManager();
+      await downloadManager.hydrate();
+      if (status !== 'queued') await downloadManager.resume(key);
+      await waitFor(() => {
+        const record = downloadManager.getSnapshot().records[0];
+        return server.audioRequests.length > 0 &&
+          (record?.status === 'complete' || record?.status === 'error');
+      });
+
+      const db = await import('@/lib/offline/downloads-db');
+      const record = await db.getDownload(key);
+      expect(record).toMatchObject({ status: 'complete', hasArtwork: true });
+      expect((await db.getDownloadsDB()).version).toBe(6);
+      const bundle = await db.getDownloadBundle(key);
+      expect(bundle?.artwork?.artworkId).toBeTruthy();
+      expect(db.isCurrentDownloadBundle(record!, bundle)).toBe(true);
+    },
+  );
 
   it('drops the stored speaker overlay once that permission is revoked', async () => {
     // The fake server's entry carries no canSeeSpeakers, i.e. revoked.
@@ -572,7 +659,7 @@ describe('download manager', () => {
       updatedAt: now,
       completedAt: now,
     });
-    await db.putDownloadBundle({
+    await db.putDownloadBundle(currentBundle(key, {
       key,
       transcriptBackend: 'whisperx/large',
       transcript: { backend: 'whisperx/large', segments: [] },
@@ -595,7 +682,7 @@ describe('download manager', () => {
         canSeeSpeakers: true,
       },
       updatedAt: now,
-    });
+    }));
 
     const { downloadManager } = await loadManager();
     downloadManager.setUserId('user-1');
@@ -610,6 +697,51 @@ describe('download manager', () => {
     // The transcript itself is still permitted and stays.
     expect(bundle?.transcript).not.toBeNull();
     expect(downloadManager.getSnapshot().records[0]?.transcriptBackend).toBe('whisperx/large');
+  });
+
+  it('releases the download lock before verifying a package completed by another tab', async () => {
+    const locks = new MemoryLocks();
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: (name: string, options: unknown, work?: (lock: unknown) => Promise<unknown>) =>
+          locks.request(name, typeof options === 'function'
+            ? options as () => Promise<unknown> : () => work!({ name })),
+      },
+      onLine: true,
+      serviceWorker: { controller: {}, ready: Promise.resolve({}) },
+    });
+    const server = createFakeServer();
+    vi.stubGlobal('fetch', server.fetchMock);
+    const { downloadManager } = await loadManager();
+    await downloadManager.hydrate();
+    const db = await import('@/lib/offline/downloads-db');
+    const key = db.makeDownloadKey(CATALOG, HASH);
+    const lockName = `besedy-download:${key}`;
+    let releaseExternal: (() => void) | undefined;
+    const external = locks.request(lockName, () => new Promise<void>((resolve) => {
+      releaseExternal = resolve;
+    }));
+    await waitFor(() => locks.isHeld(lockName));
+
+    const queued = await downloadManager.enqueueRecording({ catalogId: CATALOG, hash: HASH });
+    await waitFor(() => locks.isHeld('besedy-downloads-queue'));
+    const audioUrl = `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`;
+    const audioCacheKey = getAudioCacheKey(audioUrl, window.location.origin);
+    await seedCompleteAudioCache(cacheStorage, audioCacheKey);
+    await db.putDownloadBundle(currentBundle(key));
+    await db.putDownload({
+      ...queued, status: 'complete', progress: 100, bytesLoaded: 5, totalBytes: 5,
+      audioUrl, audioCacheKey, completedAt: Date.now(), updatedAt: queued.updatedAt + 1,
+    });
+    releaseExternal!();
+    await external;
+
+    await waitFor(() =>
+      downloadManager.getSnapshot().records[0]?.status === 'complete' &&
+      !locks.isHeld('besedy-downloads-queue')
+    );
+    expect(server.audioRequests).toHaveLength(0);
+    expect(locks.isHeld(lockName)).toBe(false);
   });
 
   it('locks cache commits together and keeps fetches outside the storage lock', async () => {
@@ -797,6 +929,7 @@ describe('download manager', () => {
       updatedAt: now,
       completedAt: now,
     });
+    await db.putDownloadBundle(currentBundle(key));
     vi.spyOn(cacheStorage, 'open').mockRejectedValue(new Error('storage unavailable'));
 
     const { downloadManager, INCOMPLETE_PACKAGE_ERROR } = await loadManager();
@@ -806,6 +939,38 @@ describe('download manager', () => {
     expect(snapshot.hydrated).toBe(true);
     expect(snapshot.supported).toBe(true);
     expect(snapshot.records[0]).toMatchObject({ status: 'error', error: INCOMPLETE_PACKAGE_ERROR });
+  });
+
+  it('keeps payloads and audio when IndexedDB temporarily cannot read a bundle', async () => {
+    const db = await import('@/lib/offline/downloads-db');
+    const key = db.makeDownloadKey(CATALOG, HASH);
+    const audioUrl = `/api/catalogs/${CATALOG}/recordings/${HASH}/audio`;
+    const audioCacheKey = getAudioCacheKey(audioUrl, window.location.origin);
+    await seedCompleteAudioCache(cacheStorage, audioCacheKey);
+    const bundle = currentBundle(key);
+    await db.putDownloadBundle(bundle);
+    await db.putDownload({
+      key, catalogId: CATALOG, catalogLabel: null, hash: HASH, userId: 'user-1',
+      eventKey: null, event: null, recording: null, audioUrl, audioCacheKey,
+      status: 'complete', progress: 100, bytesLoaded: 5, totalBytes: 5,
+      error: null, resumeOnReconnect: false, transcriptBackend: null,
+      hasArtwork: false, createdAt: 1, updatedAt: 1, completedAt: 1,
+    });
+    const readBundle = vi.spyOn(db, 'getDownloadBundle')
+      .mockRejectedValueOnce(new Error('temporary IndexedDB failure'));
+
+    const { downloadManager, INCOMPLETE_PACKAGE_ERROR } = await loadManager();
+    await downloadManager.hydrate();
+
+    expect(downloadManager.getSnapshot().records[0]).toMatchObject({
+      status: 'error', error: INCOMPLETE_PACKAGE_ERROR, audioUrl, audioCacheKey,
+      bytesLoaded: 5,
+    });
+    readBundle.mockRestore();
+    expect(await db.getDownloadBundle(key)).toEqual(bundle);
+    const cache = await cacheStorage.open(OFFLINE_CACHE_NAMES.audio);
+    expect(await cache.match(getAudioMetaKey(audioCacheKey))).toBeDefined();
+    expect(await cache.match(getAudioChunkKey(audioCacheKey, 0))).toBeDefined();
   });
 
   it('fails closed when the audio cache cannot be opened during verification', async () => {
@@ -838,6 +1003,7 @@ describe('download manager', () => {
       updatedAt: now,
       completedAt: now,
     });
+    await db.putDownloadBundle(currentBundle(key));
     vi.spyOn(cacheStorage, 'open').mockRejectedValue(new Error('storage unavailable'));
 
     const { downloadManager, INCOMPLETE_PACKAGE_ERROR } = await loadManager();
@@ -877,6 +1043,7 @@ describe('download manager', () => {
       updatedAt: now,
       completedAt: now,
     });
+    await db.putDownloadBundle(currentBundle(key));
 
     const { downloadManager, INCOMPLETE_PACKAGE_ERROR } = await loadManager();
     await downloadManager.hydrate();
@@ -1000,6 +1167,7 @@ describe('download manager', () => {
       updatedAt: now,
       completedAt: now,
     });
+    await db.putDownloadBundle(currentBundle(key));
 
     // Hold the audio cache open until the other tab's removal has landed, so
     // verification observes the registry after the removal.
@@ -1055,7 +1223,7 @@ describe('download manager', () => {
       updatedAt: now,
       completedAt: now,
     });
-    await db.putDownloadBundle({
+    await db.putDownloadBundle(currentBundle(key, {
       key,
       transcriptBackend: 'whisperx/large',
       transcript: { backend: 'whisperx/large', segments: [] },
@@ -1068,10 +1236,11 @@ describe('download manager', () => {
       artwork: {
         blob: new Blob(['artwork'], { type: 'image/jpeg' }),
         contentType: 'image/jpeg',
-        variant: 'portrait',
+        variant: 'square',
+        artworkId: '4b58cb81-ad10-4b7f-98ca-f05946711b37',
       },
       updatedAt: now,
-    });
+    }));
 
     const { downloadManager } = await loadManager();
     downloadManager.setUserId('user-1');
@@ -1085,7 +1254,7 @@ describe('download manager', () => {
       transcriptBackend: null,
       transcript: null,
       diarization: null,
-      artwork: { contentType: 'image/jpeg', variant: 'portrait' },
+      artwork: { contentType: 'image/jpeg', variant: 'square' },
     });
   });
 
