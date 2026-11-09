@@ -112,7 +112,7 @@ def test_archived_manifest_writer_emits_the_contract_columns(
     writer = ArchivedManifestWriter(path)
     writer.write_entry(
         CompressedEntry(
-            sha256="a" * 64,
+            audio_hash="a" * 64,
             source=tmp_path / "a.mp3",
             compressed=tmp_path / "a.webm",
             format="opus",

@@ -84,8 +84,8 @@ def test_validate_reports_warnings_for_bad_timing(tmp_path, monkeypatch):
     _write_transcript(
         tmp_path,
         backend="faster-whisper",
-        model="large-v3",
-        audio_hash="hash_a",
+        model="large-v3@lang-cs",
+        audio_hash="942815ecddb6105c3cfc1e22071be1aab143f396af987a9cbd4eec7c2472a64b",
         duration=5.0,
         segments=[
             {"start": 0.0, "end": 3.0, "text": "hello"},
@@ -115,16 +115,16 @@ def test_compare_finds_disagreement_between_models(tmp_path, monkeypatch):
     _write_transcript(
         tmp_path,
         backend="faster-whisper",
-        model="large-v3",
-        audio_hash="shared_hash",
+        model="large-v3@lang-cs",
+        audio_hash="81628363a899a2bfa866cb1487efeaca8d4b655e67c9f3e0b0bb998b6e741c94",
         duration=2.0,
         segments=segments_a,
     )
     _write_transcript(
         tmp_path,
         backend="whisperx",
-        model="large-v3@silero",
-        audio_hash="shared_hash",
+        model="large-v3@silero@lang-cs",
+        audio_hash="81628363a899a2bfa866cb1487efeaca8d4b655e67c9f3e0b0bb998b6e741c94",
         duration=2.0,
         segments=segments_b,
     )
@@ -142,8 +142,8 @@ def test_compare_with_min_models_one_handles_empty_pairwise(tmp_path, monkeypatc
     _write_transcript(
         tmp_path,
         backend="faster-whisper",
-        model="large-v3",
-        audio_hash="single_model_hash",
+        model="large-v3@lang-cs",
+        audio_hash="148e9480fb358eefc5b71df37eb0bb623b06655ced09a537d85dfb7fa2b760c0",
         duration=2.0,
         segments=[
             {"start": 0.0, "end": 1.0, "text": "hello"},
@@ -163,8 +163,8 @@ def test_repetition_flags_repeated_segments(tmp_path, monkeypatch):
     _write_transcript(
         tmp_path,
         backend="faster-whisper",
-        model="large-v3",
-        audio_hash="repeat_hash",
+        model="large-v3@lang-cs",
+        audio_hash="e8a4922ad04456f9ee37e6e705c8c37de728b23b34c9598e7276145d8b06dc16",
         duration=4.0,
         segments=[
             {"start": 0.0, "end": 1.0, "text": "ahoj ahoj ahoj ahoj"},
@@ -184,8 +184,8 @@ def test_repetition_defaults_char_detection_off(tmp_path, monkeypatch):
     _write_transcript(
         tmp_path,
         backend="faster-whisper",
-        model="large-v3",
-        audio_hash="chars_off_default",
+        model="large-v3@lang-cs",
+        audio_hash="ef1a46f90dc23c62aee324d318f305b4372b9b8d0f5eb42876696d3fe2dabf45",
         duration=2.0,
         segments=[
             {"start": 0.0, "end": 2.0, "text": "abababab"},
@@ -203,8 +203,8 @@ def test_repetition_can_enable_character_detection(tmp_path, monkeypatch):
     _write_transcript(
         tmp_path,
         backend="faster-whisper",
-        model="large-v3",
-        audio_hash="chars_on_enabled",
+        model="large-v3@lang-cs",
+        audio_hash="21487336f6e9526001419aaf4bdacedbc9e4d9b6f6be7f0dbee03ed4343db9a0",
         duration=2.0,
         segments=[
             {"start": 0.0, "end": 2.0, "text": "abababab"},
@@ -226,8 +226,8 @@ def test_repetition_skips_invalid_segments_container(tmp_path, monkeypatch):
     _write_raw_transcript(
         tmp_path,
         backend="faster-whisper",
-        model="large-v3",
-        audio_hash="invalid_segments_container",
+        model="large-v3@lang-cs",
+        audio_hash="6c43b431ba2f5d337b8903c2801f8bdc3c5990a892c42c9d46190ea634284995",
         payload={
             "meta": {"duration": 3.0, "audio_filepath": "/tmp/a.wav"},
             "segments": {"not": "a list"},
@@ -246,8 +246,8 @@ def test_repetition_ignores_non_numeric_repeat_span_times(tmp_path, monkeypatch)
     _write_raw_transcript(
         tmp_path,
         backend="faster-whisper",
-        model="large-v3",
-        audio_hash="invalid_repeat_times",
+        model="large-v3@lang-cs",
+        audio_hash="bb7f57b7dec3fa615516b3947ecc9a8e545fecd65aec7e6a8628984fb4dace2c",
         payload={
             "meta": {"duration": 3.0, "audio_filepath": "/tmp/a.wav"},
             "segments": [
@@ -268,8 +268,8 @@ def test_repetition_estimates_word_repeat_time_coverage(tmp_path, monkeypatch):
     _write_transcript(
         tmp_path,
         backend="faster-whisper",
-        model="large-v3",
-        audio_hash="word_repeat_coverage",
+        model="large-v3@lang-cs",
+        audio_hash="2a8a3e597a9acc717a6e0827d5eff49fb55c192b672146683466c4dbd75db263",
         duration=10.0,
         segments=[
             {"start": 0.0, "end": 10.0, "text": "ahoj ahoj ahoj ahoj"},
@@ -289,8 +289,8 @@ def test_repetition_detects_cross_model_shared_hotspots(tmp_path, monkeypatch):
     _write_transcript(
         tmp_path,
         backend="faster-whisper",
-        model="large-v3",
-        audio_hash="shared_repeat_hash",
+        model="large-v3@lang-cs",
+        audio_hash="a73a462bf1c058ddac84af13e336f9ff492018a87a7e371f3b255c5abaaab0a9",
         duration=6.0,
         segments=[
             {"start": 0.0, "end": 2.0, "text": "ahoj ahoj ahoj ahoj"},
@@ -300,8 +300,8 @@ def test_repetition_detects_cross_model_shared_hotspots(tmp_path, monkeypatch):
     _write_transcript(
         tmp_path,
         backend="whisperx",
-        model="large-v3@silero",
-        audio_hash="shared_repeat_hash",
+        model="large-v3@silero@lang-cs",
+        audio_hash="a73a462bf1c058ddac84af13e336f9ff492018a87a7e371f3b255c5abaaab0a9",
         duration=6.0,
         segments=[
             {"start": 0.2, "end": 2.2, "text": "Ahoj, ahoj ahoj ahoj"},
@@ -316,21 +316,21 @@ def test_repetition_detects_cross_model_shared_hotspots(tmp_path, monkeypatch):
     assert cross["summary"]["audio_hashes_compared"] == 1
     assert cross["summary"]["audio_hashes_with_shared_hotspots"] == 1
     assert cross["summary"]["total_hotspots"] >= 1
-    assert cross["by_audio_hash"][0]["audio_hash"] == "shared_repeat_hash"
+    assert cross["by_audio_hash"][0]["audio_hash"] == "a73a462bf1c058ddac84af13e336f9ff492018a87a7e371f3b255c5abaaab0a9"
     assert cross["by_audio_hash"][0]["hotspot_count"] >= 1
     assert cross["by_audio_hash"][0]["hotspots"][0]["model_count"] >= 2
     snippets = cross["by_audio_hash"][0]["top_hotspot_texts"]
-    assert "faster-whisper/large-v3" in snippets
-    assert "whisperx/large-v3@silero" in snippets
-    assert "ahoj" in snippets["faster-whisper/large-v3"].lower()
+    assert "faster-whisper/large-v3@lang-cs" in snippets
+    assert "whisperx/large-v3@silero@lang-cs" in snippets
+    assert "ahoj" in snippets["faster-whisper/large-v3@lang-cs"].lower()
 
 
 def test_repetition_cross_model_no_overlap_means_no_shared_hotspot(tmp_path, monkeypatch):
     _write_transcript(
         tmp_path,
         backend="faster-whisper",
-        model="large-v3",
-        audio_hash="separate_repeat_hash",
+        model="large-v3@lang-cs",
+        audio_hash="053ea94e8856ad0c8dd8df98a19a6c4b1cc9e1716499f459f5d731d2a34f1c47",
         duration=10.0,
         segments=[
             {"start": 0.0, "end": 2.0, "text": "ahoj ahoj ahoj ahoj"},
@@ -340,8 +340,8 @@ def test_repetition_cross_model_no_overlap_means_no_shared_hotspot(tmp_path, mon
     _write_transcript(
         tmp_path,
         backend="whisperx",
-        model="large-v3@silero",
-        audio_hash="separate_repeat_hash",
+        model="large-v3@silero@lang-cs",
+        audio_hash="053ea94e8856ad0c8dd8df98a19a6c4b1cc9e1716499f459f5d731d2a34f1c47",
         duration=10.0,
         segments=[
             {"start": 0.0, "end": 8.0, "text": "normal sentence"},
@@ -362,8 +362,8 @@ def test_repetition_reports_per_model_segment_repetition_rates(tmp_path, monkeyp
     _write_transcript(
         tmp_path,
         backend="faster-whisper",
-        model="large-v3",
-        audio_hash="model_ratio_hash",
+        model="large-v3@lang-cs",
+        audio_hash="507debf1b68baab0eea0112b9c0458b3a18d90c48a2b2c2c72765f3ccf196ada",
         duration=3.0,
         segments=[
             {"start": 0.0, "end": 1.0, "text": "opakuj"},
@@ -378,7 +378,7 @@ def test_repetition_reports_per_model_segment_repetition_rates(tmp_path, monkeyp
     model_rows = data["model_segment_repetition"]
     assert len(model_rows) == 1
     row = model_rows[0]
-    assert row["model_key"] == "faster-whisper/large-v3"
+    assert row["model_key"] == "faster-whisper/large-v3@lang-cs"
     assert row["files"] == 1
     assert row["total_segments"] == 3
     assert row["repeated_segments"] == 2
@@ -400,16 +400,16 @@ def test_patch_candidates_suggests_alternative_model(tmp_path, monkeypatch):
     _write_transcript(
         tmp_path,
         backend="faster-whisper",
-        model="large-v3",
-        audio_hash="patch_hash",
+        model="large-v3@lang-cs",
+        audio_hash="e669472dfd39c6e2798de3f7409db8538c5e9cfbb6614a744ff41dac89aae487",
         duration=3.0,
         segments=repetitive_segments,
     )
     _write_transcript(
         tmp_path,
         backend="whisperx",
-        model="large-v3@silero",
-        audio_hash="patch_hash",
+        model="large-v3@silero@lang-cs",
+        audio_hash="e669472dfd39c6e2798de3f7409db8538c5e9cfbb6614a744ff41dac89aae487",
         duration=3.0,
         segments=clean_segments,
     )

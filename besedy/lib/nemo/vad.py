@@ -14,7 +14,6 @@ from typing import Any
 
 from nemo.collections.asr.models import EncDecFrameClassificationModel
 from nemo.collections.asr.parts.utils.vad_utils import (
-    generate_overlap_vad_seq,
     generate_vad_segment_table,
 )
 
@@ -119,20 +118,6 @@ def run_vad_segmentation(
         logging.info("VAD frame predictions complete.")
 
         frame_length = shift_length if shift_length else 0.01
-        smoothing_cfg = (vad_cfg or {}).get("vad", {}).get("parameters", {})
-        if smoothing_cfg.get("smoothing"):
-            smoothing_dir = generate_overlap_vad_seq(
-                frame_pred_dir=str(frame_dir),
-                smoothing_method=smoothing_cfg.get("smoothing"),
-                overlap=smoothing_cfg.get("overlap", 0.875),
-                window_length_in_sec=window_length,
-                shift_length_in_sec=shift_length,
-                num_workers=_configured_num_workers(vad_cfg, default=0),
-                out_dir=(vad_cfg or {}).get("smoothing_out_dir"),
-            )
-            frame_dir = Path(smoothing_dir)
-            frame_length = 0.01
-
         frame_sequences = _load_frame_sequences(frame_dir)
         postprocessing_params = build_postprocessing_params(args, vad_cfg or {})
         chunk_params: ChunkingParams | None = build_chunking_params(

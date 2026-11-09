@@ -3,8 +3,8 @@
 This module contains:
 - Dataclasses for representing conversion results
 - ManifestWriter for thread-safe CSV output
-- Constants for audio processing (tolerances, normalization targets)
-- Utility functions (format_size, detect_logical_cpus)
+- Constants for staged formats and duration drift handling
+- Utility functions (format_size)
 """
 
 from __future__ import annotations
@@ -17,32 +17,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from besedy.core.paths import FFMPEG_LOG_DIR
-from besedy.core.system import detect_logical_cpus
-from besedy.lib.audio.processing import (
-    DECLIP_THRESHOLD_DBTP,
-    DURATION_TOLERANCE_MIN_SECONDS,
-    DURATION_TOLERANCE_PERCENTAGE,
-    LOUDNESS_ACCEPTABLE_MAX_LUFS,
-    LOUDNESS_ACCEPTABLE_MIN_LUFS,
-    LOUDNESS_RANGE_LU,
-    LOUDNESS_TARGET_LUFS,
-    TRUE_PEAK_TARGET_DBTP,
-)
 from besedy.lib.audio.quality import AUDIO_QUALITY_COLUMNS, AudioQualityMetrics
 
 __all__ = [
     "AUDIO_QUALITY_COLUMNS",
     "CONVERSION_LOG_DIR",
-    "DECLIP_THRESHOLD_DBTP",
     "ConversionLogMessage",
     "ConversionResult",
-    "DURATION_TOLERANCE_MIN_SECONDS",
-    "DURATION_TOLERANCE_PERCENTAGE",
     "FILESIZE_MISMATCH_DRIFT_TOLERANCE",
-    "LOUDNESS_ACCEPTABLE_MAX_LUFS",
-    "LOUDNESS_ACCEPTABLE_MIN_LUFS",
-    "LOUDNESS_RANGE_LU",
-    "LOUDNESS_TARGET_LUFS",
     "ManifestWriter",
     "NON_MONOTONIC_MAX_RATIO",
     "NON_MONOTONIC_MIN_RATIO",
@@ -52,8 +34,6 @@ __all__ = [
     "SYMLINK_ELIGIBLE_EXTENSION",
     "SkippedEntry",
     "TARGET_CHANNELS",
-    "TRUE_PEAK_TARGET_DBTP",
-    "detect_logical_cpus",
     "format_size",
 ]
 
@@ -96,8 +76,7 @@ class PreparedEntry:
     """Represents a successfully staged audio file.
 
     Attributes:
-        sha256: Audio content hash (SHA-256 of decoded PCM at 16kHz mono).
-                Field name kept for backward compatibility.
+        audio_hash: Audio content hash (SHA-256 of decoded PCM at 16kHz mono).
         source: Path to the original audio file.
         staged: Path to the staged/converted audio file.
         action: How the file was staged ("symlink", "convert", or "existing").
@@ -105,7 +84,7 @@ class PreparedEntry:
         normalized: Whether loudness normalization was applied.
     """
 
-    sha256: str  # Actually audio content hash (kept for backward compat)
+    audio_hash: str
     source: Path
     staged: Path
     action: str  # "symlink", "convert", or "existing"
@@ -118,13 +97,12 @@ class SkippedEntry:
     """Represents an audio file that was skipped during staging.
 
     Attributes:
-        sha256: Audio content hash (SHA-256 of decoded PCM at 16kHz mono).
-                Field name kept for backward compatibility.
+        audio_hash: Audio content hash (SHA-256 of decoded PCM at 16kHz mono).
         source: Path to the original audio file.
         reason: Why the file was skipped.
     """
 
-    sha256: str  # Actually audio content hash (kept for backward compat)
+    audio_hash: str
     source: Path
     reason: str
 
@@ -210,7 +188,7 @@ class ManifestWriter:
             added_at: ISO 8601 timestamp when entry was added. Defaults to current time.
         """
         row = {
-            "Hash": entry.sha256,
+            "Hash": entry.audio_hash,
             "Full Path": str(entry.staged),
             "Filename": entry.staged.name,
             "Size (bytes)": size_bytes,

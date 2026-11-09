@@ -16,7 +16,7 @@ import os
 import sys
 from pathlib import Path
 
-from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.data.encoding import load_json_utf8
 
 
 def round_time(value: float) -> float:
@@ -86,7 +86,7 @@ def load_diarization_json(json_path: Path) -> dict:
     Raises:
         ValueError: If required fields are missing or JSON is malformed.
     """
-    data = load_json_with_fallback(json_path)
+    data = load_json_utf8(json_path)
 
     # Validate required fields
     required_fields = ["audio_file", "segments"]

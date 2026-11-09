@@ -162,16 +162,18 @@ def test_select_rows_filters_by_split_and_recording() -> None:
     assert [r["chunk"] for r in ev.select_rows(rows, "train")] == [2]
 
 
-def test_recordings_lists_round_trip_and_accept_the_three_spellings(tmp_path: Path) -> None:
+def test_recordings_lists_round_trip_and_reject_unversioned_formats(tmp_path: Path) -> None:
     path = tmp_path / "dev-recordings.json"
     ev.write_recordings(path, [HASHES[1], HASHES[0], HASHES[1]])
     assert json.loads(path.read_text()) == {"version": 1, "audio_hashes": [HASHES[0], HASHES[1]]}
     assert ev.load_recordings(path) == {HASHES[0], HASHES[1]}
     (tmp_path / "list.json").write_text(json.dumps([HASHES[2]]))
-    assert ev.load_recordings(tmp_path / "list.json") == {HASHES[2]}
+    with pytest.raises(ValueError, match="versioned"):
+        ev.load_recordings(tmp_path / "list.json")
     (tmp_path / "lines.txt").write_text(f"{HASHES[3]}\n{HASHES[4]}\n")
-    assert ev.load_recordings(tmp_path / "lines.txt") == {HASHES[3], HASHES[4]}
-    (tmp_path / "bad.txt").write_text("abc\n")
+    with pytest.raises(ValueError):
+        ev.load_recordings(tmp_path / "lines.txt")
+    (tmp_path / "bad.txt").write_text(json.dumps({"version": 1, "audio_hashes": ["abc"]}))
     with pytest.raises(ValueError, match="64-character"):
         ev.load_recordings(tmp_path / "bad.txt")
     (tmp_path / "v2.json").write_text(json.dumps({"version": 2, "audio_hashes": []}))

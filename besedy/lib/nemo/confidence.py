@@ -19,13 +19,6 @@ from omegaconf import OmegaConf
 
 from besedy.lib.nemo.segments import CONTROL_TOKEN_PATTERN
 
-# Re-export for backwards compatibility
-try:
-    from nemo.collections.asr.models import ASRModel
-except ImportError:
-    ASRModel = None  # type: ignore[misc, assignment]
-
-
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------

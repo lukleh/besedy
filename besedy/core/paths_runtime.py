@@ -152,7 +152,6 @@ def iter_existing_web_env_paths(
 
 LOGS_DIR = resolve_logs_dir()
 FFMPEG_LOG_DIR = LOGS_DIR / "ffmpeg"
-DIARIZATION_FALLBACK_LOG_PATH = LOGS_DIR / "diarization_fallbacks.jsonl"
 FRAME_VAD_LOCAL_MODEL_PATH = resolve_models_dir() / "frame_vad_multilingual_marblenet_v2.0.nemo"
 
 
@@ -339,11 +338,3 @@ def resolve_transcripts_parent() -> Path:
     transcripts_dir = Path(os.path.normpath(str(text_root) + "/" + subdir))
     transcripts_dir.mkdir(parents=True, exist_ok=True)
     return transcripts_dir
-
-
-def resolve_transcripts_parquet_parent() -> Path:
-    """Resolve the parent directory for parquet timestamped directories."""
-    text_root = resolve_text_data_root()
-    parquet_dir = text_root / "transcripts_parquet"
-    parquet_dir.mkdir(parents=True, exist_ok=True)
-    return parquet_dir
