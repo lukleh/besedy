@@ -35,7 +35,6 @@ __all__ = [
     "select_rag_workflows",
     "should_run_rag_colbert_index",
     "_resolve_pipeline_colbert_runtime",
-    "_resolve_pipeline_rag_backend_key",
 ]
 
 
@@ -50,17 +49,11 @@ def backend_has_transcripts(transcripts_root: Path, workflow: WorkflowConfig) ->
     return any(path.is_file() for path in backend_dir.rglob("transcript.json"))
 
 
-def _resolve_pipeline_rag_backend_key(args: argparse.Namespace) -> str:
-    """Compatibility wrapper for callers importing the historical private helper."""
-
-    return resolve_pipeline_rag_backend_key(args)
-
-
 def select_rag_workflows(
     args: argparse.Namespace,
     workflows: list[WorkflowConfig],
     *,
-    resolve_backend_key: Callable[[argparse.Namespace], str] = _resolve_pipeline_rag_backend_key,
+    resolve_backend_key: Callable[[argparse.Namespace], str] = resolve_pipeline_rag_backend_key,
 ) -> tuple[list[WorkflowConfig], str | None]:
     """Return workflows that should be RAG-indexed for this pipeline run."""
 
