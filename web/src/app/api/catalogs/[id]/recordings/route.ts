@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveRecordingDisplay } from "@/lib/catalog-recordings/metadata";
 import {
   loadEnrichedCatalogEntries,
   parseDuration,
@@ -268,13 +269,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       let primaryCmp = 0;
       switch (sortKey) {
         case "title": {
-          const aValue = a.title || a.filename || a.hash;
-          const bValue = b.title || b.filename || b.hash;
+          const aValue = resolveRecordingDisplay(a).title;
+          const bValue = resolveRecordingDisplay(b).title;
           primaryCmp = compareStrings(aValue, bValue);
           break;
         }
         case "artist":
-          primaryCmp = compareStrings(a.artist, b.artist);
+          primaryCmp = compareStrings(resolveRecordingDisplay(a).artist, resolveRecordingDisplay(b).artist);
           break;
         case "album":
           primaryCmp = compareStrings(a.album?.name, b.album?.name);

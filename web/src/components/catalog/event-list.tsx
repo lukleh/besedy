@@ -7,7 +7,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { useTranslations } from "next-intl";
@@ -25,6 +24,7 @@ import {
 } from "lucide-react";
 import { fetchJson } from "@/lib/api/fetch-json";
 import { cn } from "@/lib/utils";
+import { useProgressiveList } from "@/hooks/use-progressive-list";
 import { useToast } from "@/hooks/use-toast";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { Button } from "@/components/ui/button";
@@ -124,16 +124,9 @@ export function EventList({
   const [pendingEventCreation, setPendingEventCreation] =
     useState<PendingEventCreation | null>(null);
 
-  const [isLoadMoreMode, setIsLoadMoreMode] = useState(false);
-  const [accumulatedEvents, setAccumulatedEvents] = useState<CatalogEventRow[]>(
-    [],
-  );
-  const [highestLoadedPage, setHighestLoadedPage] = useState(0);
-  const [isLoadingNext, setIsLoadingNext] = useState(false);
-  const [isLoadingAll, setIsLoadingAll] = useState(false);
-  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
-
   useEffect(() => {
+    // Restore persisted controls before enabling the initial list query.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFiltersReady(false);
     const stored = loadStoredEventListState(catalogId);
     if (stored) {
@@ -229,21 +222,6 @@ export function EventList({
     ],
   );
 
-  const listStateKey = useMemo(
-    () =>
-      `${catalogId}|${page}|${releasedFilter}|${locationFilter}|${dateYearFilter}|${effectiveSortKey}|${effectiveSortDir}`,
-    [
-      catalogId,
-      page,
-      releasedFilter,
-      locationFilter,
-      dateYearFilter,
-      effectiveSortKey,
-      effectiveSortDir,
-    ],
-  );
-  const listStateKeyRef = useRef(listStateKey);
-
   const listQueryKey = useMemo(
     () =>
       [
@@ -298,24 +276,56 @@ export function EventList({
     page,
   ]);
 
-  const { data, isLoading, isFetching, error } = useQuery<EventListResponse>({
+  const { data, isLoading, isFetching, error, dataUpdatedAt } = useQuery<EventListResponse>({
     queryKey: listQueryKey,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = buildEventListParams(page, 50, queryState);
       return fetchJson<EventListResponse>(
         `/api/catalogs/${catalogId}/events?${params.toString()}`,
         {
           schema: eventListResponseSchema,
+          signal,
         }
       );
     },
     enabled: filtersReady,
   });
 
+  const paginationInfo = data?.pagination ? toPaginationInfo(data.pagination) : undefined;
+  const {
+    displayEntries: events,
+    isLoadMoreMode,
+    isLoadingNext,
+    isLoadingAll,
+    error: loadMoreError,
+    hasMoreToLoad,
+    loadNextPage,
+    loadAllPages,
+    reset: resetProgressiveList,
+  } = useProgressiveList<CatalogEventRow>({
+    requestKey: JSON.stringify(listQueryKey),
+    currentPage: page,
+    currentEntries: data?.events ?? [],
+    pagination: paginationInfo,
+    baseDataUpdatedAt: dataUpdatedAt,
+    nextError: t("loadNextError"),
+    allError: t("loadAllError"),
+    fetchPage: async (nextPage, limit, signal) => {
+      const params = buildEventListParams(nextPage, limit, queryState);
+      const result = await fetchJson<EventListResponse>(
+        `/api/catalogs/${catalogId}/events?${params.toString()}`,
+        { schema: eventListResponseSchema, signal },
+      );
+      return result.events;
+    },
+  });
+
   useEffect(() => {
     const totalPages = data?.pagination?.totalPages;
     if (!totalPages) return;
     if (page > totalPages) {
+      // A saved page can disappear after recordings or events change.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPage(1);
     }
   }, [data?.pagination?.totalPages, page]);
@@ -356,6 +366,8 @@ export function EventList({
 
   useEffect(() => {
     if (isDesktop && searchOverlayOpen) {
+      // Moving to desktop closes the mobile-only overlay.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSearchOverlayOpen(false);
       return;
     }
@@ -364,16 +376,6 @@ export function EventList({
       setSearchOverlayOpen(true);
     }
   }, [isDesktop, rag.isRagMode, searchOverlayOpen]);
-
-  useEffect(() => {
-    listStateKeyRef.current = listStateKey;
-    setIsLoadMoreMode(false);
-    setAccumulatedEvents([]);
-    setHighestLoadedPage(0);
-    setIsLoadingNext(false);
-    setIsLoadingAll(false);
-    setLoadMoreError(null);
-  }, [listStateKey]);
 
   const createMutation = useMutation({
     mutationFn: async (payload: CreateEventPayload) => {
@@ -390,9 +392,7 @@ export function EventList({
       queryClient.invalidateQueries({
         queryKey: ["catalog-events-health", catalogId],
       });
-      setIsLoadMoreMode(false);
-      setAccumulatedEvents([]);
-      setHighestLoadedPage(0);
+      resetProgressiveList();
       setCreateOpen(false);
       setLocationId("");
       setDateYear("");
@@ -456,78 +456,6 @@ export function EventList({
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function loadNextPage() {
-    if (!data || isLoadingNext || isLoadingAll) return;
-
-    const nextPage = isLoadMoreMode ? highestLoadedPage + 1 : page + 1;
-    if (nextPage > data.pagination.totalPages) return;
-
-    const requestStateKey = listStateKeyRef.current;
-    setIsLoadingNext(true);
-    setLoadMoreError(null);
-
-    try {
-      const params = buildEventListParams(nextPage, 50, queryState);
-      const nextData = await fetchJson<EventListResponse>(
-        `/api/catalogs/${catalogId}/events?${params.toString()}`,
-        {
-          schema: eventListResponseSchema,
-        }
-      );
-
-      if (requestStateKey !== listStateKeyRef.current) return;
-
-      if (isLoadMoreMode) {
-        setAccumulatedEvents((current) => [...current, ...nextData.events]);
-      } else {
-        setAccumulatedEvents([...(data.events ?? []), ...nextData.events]);
-        setIsLoadMoreMode(true);
-      }
-      setHighestLoadedPage(nextPage);
-    } catch (err) {
-      if (requestStateKey !== listStateKeyRef.current) return;
-      const message = err instanceof Error ? err.message : t("loadNextError");
-      setLoadMoreError(message);
-    } finally {
-      if (requestStateKey === listStateKeyRef.current) {
-        setIsLoadingNext(false);
-      }
-    }
-  }
-
-  async function loadAllPages() {
-    if (!data || isLoadingNext || isLoadingAll) return;
-    if (data.pagination.totalPages <= 1) return;
-
-    const requestStateKey = listStateKeyRef.current;
-    setIsLoadingAll(true);
-    setLoadMoreError(null);
-
-    try {
-      const params = buildEventListParams(1, 0, queryState);
-      const allData = await fetchJson<EventListResponse>(
-        `/api/catalogs/${catalogId}/events?${params.toString()}`,
-        {
-          schema: eventListResponseSchema,
-        }
-      );
-
-      if (requestStateKey !== listStateKeyRef.current) return;
-
-      setAccumulatedEvents(allData.events);
-      setHighestLoadedPage(data.pagination.totalPages);
-      setIsLoadMoreMode(true);
-    } catch (err) {
-      if (requestStateKey !== listStateKeyRef.current) return;
-      const message = err instanceof Error ? err.message : t("loadAllError");
-      setLoadMoreError(message);
-    } finally {
-      if (requestStateKey === listStateKeyRef.current) {
-        setIsLoadingAll(false);
-      }
-    }
-  }
-
   function submitCreateEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -585,18 +513,10 @@ export function EventList({
     );
   }
 
-  const baseEvents = data?.events ?? [];
-  const events = isLoadMoreMode ? accumulatedEvents : baseEvents;
   const pagination = data?.pagination;
   const yearOptions = data?.filterOptions?.years ?? [];
   const locationOptions = data?.filterOptions?.locations ?? [];
 
-  const paginationInfo = pagination ? toPaginationInfo(pagination) : null;
-  const hasMoreToLoad = pagination
-    ? isLoadMoreMode
-      ? highestLoadedPage < pagination.totalPages
-      : pagination.page < pagination.totalPages
-    : false;
   const hasActiveFilters =
     (showReleaseState && releasedFilter !== "all") ||
     locationFilter !== "all" ||

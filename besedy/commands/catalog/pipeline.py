@@ -422,21 +422,9 @@ def handle_run_pipeline(args: argparse.Namespace) -> int:
 
         transcribe_args = TranscribeRequest(
             csv=workflow_csv,
-            output_root=None,  # Let handler resolve from text_data_dir
             no_symlink=no_symlink,
-            overwrite=False,
             continue_on_error=True,
-            limit=None,
-            hash_filter=None,
-            workflows=[workflow.workflow_id],
-            model=workflow.model_name,
-            language=workflow.language,
-            nemo_parallel=None,
-            nemo_decode_strategy=workflow.decode_strategy,
-            nemo_beam_size=2,
-            nemo_softmax_temperature=1.0,
-            nemo_beam_length_penalty=None,
-            nemo_beam_max_generation_delta=None,
+            workflow_configs=(workflow,),
         )
 
         result = _run_backend_step(handle_transcribe, transcribe_args)

@@ -40,7 +40,6 @@ from besedy.lib.nemo.segments import normalize_for_comparison
 from besedy.lib.nemo.vad import run_vad_segmentation
 from besedy.lib.workflow.config import (
     WorkflowConfig,
-    get_workflow_label,
     select_transcription_workflow,
 )
 from besedy.lib.workflow.language import (
@@ -85,6 +84,7 @@ def parse_arguments() -> argparse.Namespace:
         description="Transcribe audio with NeMo ASR while masking non-speech using a frame VAD model.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    parser.add_argument("--workflow-config", type=WorkflowConfig.from_json, help=argparse.SUPPRESS)
     parser.add_argument(
         "--audio",
         type=Path,
@@ -201,14 +201,13 @@ def parse_arguments() -> argparse.Namespace:
         default="auto",
         help="Device for inference: 'cuda', 'cpu', or 'auto'.",
     )
-    workflow_label = get_workflow_label("canary-nemo")
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
         help=(
             "Base directory for per-file transcripts; defaults to "
-            f"{config.paths.transcripts_dir}/{workflow_label}."
+            f"the configured workflow under {config.paths.transcripts_dir}."
         ),
     )
     parser.add_argument(
@@ -226,7 +225,20 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Log per-segment transcripts to stdout.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if exact := args.workflow_config:
+        if exact.workflow_type != "transcription" or exact.workflow_id not in (
+            "canary-nemo",
+            "canary-nemo-beam",
+        ):
+            parser.error("--workflow-config must name a NeMo transcription workflow")
+        # This internal argument is authoritative. Standalone CLI overrides
+        # keep their existing selection behavior when it is absent.
+        args.model = exact.model_name
+        args.vad_model = exact.vad_model
+        args.decode_strategy = exact.decode_strategy or "greedy"
+        args.source_lang = args.target_lang = exact.language
+    return args
 
 
 def _default_nemo_config(
@@ -322,7 +334,7 @@ def main() -> None:
     )
 
     device = resolve_device(args.device)
-    default_config = _default_nemo_config(
+    default_config = args.workflow_config or _default_nemo_config(
         args.decode_strategy,
         model_name=args.model,
         language=args.target_lang or args.source_lang,
@@ -346,7 +358,7 @@ def main() -> None:
         raise RuntimeError("No VAD model source could be resolved.")
     # Translation runs (source != target) must not share output paths with
     # native transcriptions of the target language.
-    workflow_config = replace(
+    workflow_config = args.workflow_config or replace(
         default_config,
         model_name=model_name,
         vad_model=vad_label,

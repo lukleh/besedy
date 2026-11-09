@@ -113,7 +113,6 @@ if [ -z "$DB_CONTAINER_ID" ]; then
 fi
 
 CURRENT_WEB_VERSION=""
-CURRENT_WEB_GIT_COMMIT=""
 WEB_CONTAINER_ID="$(compose_cmd ps -q web 2>/dev/null || true)"
 if [ -z "$WEB_CONTAINER_ID" ]; then
     logger -t "$TAG" "Production web container is unavailable; reporting deployed version as unknown." || true
@@ -124,33 +123,16 @@ else
     else
         logger -t "$TAG" "Production WEB_VERSION is unavailable or invalid; reporting deployed version as unknown." || true
     fi
-    # GIT_COMMIT is baked into the image at build time (see web/Dockerfile)
-    # alongside WEB_VERSION, and gives an exact commit for the deployed
-    # fingerprint -- no need to reverse-engineer it from source history.
-    DETECTED_GIT_COMMIT="$(docker exec "$WEB_CONTAINER_ID" printenv GIT_COMMIT 2>/dev/null || true)"
-    if [[ "$DETECTED_GIT_COMMIT" =~ ^[0-9a-f]{7,40}$ ]]; then
-        CURRENT_WEB_GIT_COMMIT="$DETECTED_GIT_COMMIT"
-    fi
 fi
 
-# Container env values that shape the web-v2-<hash> fingerprint (see
-# scripts/resolve_web_version.sh). Reading them from the live container is
-# the best available approximation for historical lookups too, since these
-# values rarely change.
-container_env() {
-    [ -n "$WEB_CONTAINER_ID" ] && docker exec "$WEB_CONTAINER_ID" printenv "$1" 2>/dev/null || true
-}
-
-# Best-effort "how old is this" annotation for a commit's ISO timestamp.
-# This is commit time, not deploy time -- a deploy can lag its commit by
-# days or weeks, so treat the result as a lower bound on a version's age.
-format_commit_age() {
-    local commit_date_iso="$1" commit_epoch now_epoch age_days
-    commit_epoch="$(date -d "$commit_date_iso" +%s 2>/dev/null || true)"
-    [ -z "$commit_epoch" ] && return 1
+# Format the age of a recorded deployment timestamp.
+format_deployment_age() {
+    local deployed_date_iso="$1" deployed_epoch now_epoch age_days
+    deployed_epoch="$(date -d "$deployed_date_iso" +%s 2>/dev/null || true)"
+    [ -z "$deployed_epoch" ] && return 1
     now_epoch="$(date +%s)"
-    age_days=$(( (now_epoch - commit_epoch) / 86400 ))
-    printf '%s (%s days ago)' "${commit_date_iso%%T*}" "$age_days"
+    age_days=$(( (now_epoch - deployed_epoch) / 86400 ))
+    printf '%s (%s days ago)' "${deployed_date_iso%%T*}" "$age_days"
 }
 
 # Function to run database query
@@ -480,59 +462,23 @@ ORDER BY ('$CURRENT_WEB_VERSION' <> ''
          COALESCE(client_version, '') ASC
 ")
 
-# Authoritative "when was this deployed" lookup: web_deploy_log is written
-# directly by `just prod-apply` at the moment each version actually went
-# live (see Justfile), so it's the definitive source -- unlike source-commit
-# time, it can't be thrown off by a deploy lagging its commit. Guarded like
-# the other optional lookups below: the table is new in the same change that
-# introduced this query, so an already-updated checkout can still hit a
-# database that hasn't run the migration yet.
+# Deployment records are the authoritative source for version ages.
 DEPLOY_LOG_RAW=$(db_query "
 SELECT web_version || '|' || to_char(MAX(deployed_at), 'YYYY-MM-DD\"T\"HH24:MI:SSOF')
 FROM web_deploy_log
 GROUP BY web_version
-" 2>/dev/null || true)
+")
 declare -A DEPLOY_LOG_DATE=()
 while IFS='|' read -r log_version log_deployed_at; do
     [ -z "$log_version" ] && continue
     DEPLOY_LOG_DATE["$log_version"]="$log_deployed_at"
 done <<< "$DEPLOY_LOG_RAW"
 
-VERSIONS_TO_RESOLVE=()
-while IFS='|' read -r dist_version _dist_count; do
-    [ -z "$dist_version" ] && continue
-    [ -n "${DEPLOY_LOG_DATE[$dist_version]+x}" ] && continue
-    VERSIONS_TO_RESOLVE+=("$dist_version")
-done <<< "$CLIENT_VERSION_DISTRIBUTION_RAW"
-
 declare -A VERSION_AGE_TEXT=()
 for version in "${!DEPLOY_LOG_DATE[@]}"; do
-    AGE_TEXT="$(format_commit_age "${DEPLOY_LOG_DATE[$version]}")" && \
+    AGE_TEXT="$(format_deployment_age "${DEPLOY_LOG_DATE[$version]}")" && \
         VERSION_AGE_TEXT["$version"]="deployed $AGE_TEXT"
 done
-
-# Best-effort fallback for versions deployed before web_deploy_log existed:
-# recompute the fingerprint for historical commits until it matches (see
-# resolve_web_version_history.sh). This is source-change time, not deploy
-# time, so treat these ages as a lower bound.
-if [ "${#VERSIONS_TO_RESOLVE[@]}" -gt 0 ]; then
-    HISTORY_OUTPUT="$(
-        APP_ENV="$(container_env APP_ENV)" \
-        NEXT_PUBLIC_APP_URL="$(container_env NEXT_PUBLIC_APP_URL)" \
-        VAPID_PUBLIC_KEY="$(container_env VAPID_PUBLIC_KEY)" \
-        NEXT_PUBLIC_SUPPORT_EMAIL="$(container_env NEXT_PUBLIC_SUPPORT_EMAIL)" \
-        NEXT_PUBLIC_SUPPORT_EMAIL_B64="$(container_env NEXT_PUBLIC_SUPPORT_EMAIL_B64)" \
-        OAUTH_MOCK_URL="$(container_env OAUTH_MOCK_URL)" \
-        REPO_ROOT="$PROJECT_DIR" \
-        "$PROJECT_DIR/scripts/resolve_web_version_history.sh" "${VERSIONS_TO_RESOLVE[@]}" 2>/dev/null || true
-    )"
-    while IFS='|' read -r hv status _commit commit_date; do
-        [ -z "$hv" ] && continue
-        if [ "$status" = "FOUND" ]; then
-            AGE_TEXT="$(format_commit_age "$commit_date")" && VERSION_AGE_TEXT["$hv"]="first seen $AGE_TEXT"
-        fi
-    done <<< "$HISTORY_OUTPUT"
-fi
 
 CLIENT_VERSION_DISTRIBUTION=""
 while IFS='|' read -r dist_version dist_count; do
@@ -558,18 +504,9 @@ while IFS='|' read -r dist_version dist_count; do
 done <<< "$CLIENT_VERSION_DISTRIBUTION_RAW"
 CLIENT_VERSION_DISTRIBUTION="${CLIENT_VERSION_DISTRIBUTION%$'\n'}"
 
-# Deployed-version age: prefer the authoritative web_deploy_log entry; then
-# the exact commit baked in as GIT_COMMIT; then the same source-history
-# guess used as a last resort for other observed versions.
+# A version without a deployment record has no known deployment age.
 CURRENT_WEB_VERSION_AGE=""
 if [ -n "$CURRENT_WEB_VERSION" ] && [ -n "${DEPLOY_LOG_DATE[$CURRENT_WEB_VERSION]+x}" ]; then
-    CURRENT_WEB_VERSION_AGE="  (${VERSION_AGE_TEXT[$CURRENT_WEB_VERSION]})"
-elif [ -n "$CURRENT_WEB_GIT_COMMIT" ] && git -C "$PROJECT_DIR" rev-parse --verify "${CURRENT_WEB_GIT_COMMIT}^{commit}" >/dev/null 2>&1; then
-    COMMIT_DATE_ISO="$(git -C "$PROJECT_DIR" show -s --format=%cI "$CURRENT_WEB_GIT_COMMIT")"
-    if AGE_TEXT="$(format_commit_age "$COMMIT_DATE_ISO")"; then
-        CURRENT_WEB_VERSION_AGE="  (commit ${CURRENT_WEB_GIT_COMMIT:0:12}, $AGE_TEXT)"
-    fi
-elif [ -n "$CURRENT_WEB_VERSION" ] && [ -n "${VERSION_AGE_TEXT[$CURRENT_WEB_VERSION]+x}" ]; then
     CURRENT_WEB_VERSION_AGE="  (${VERSION_AGE_TEXT[$CURRENT_WEB_VERSION]})"
 fi
 CURRENT_WEB_VERSION_DISPLAY="${CURRENT_WEB_VERSION:-unknown}${CURRENT_WEB_VERSION_AGE}"

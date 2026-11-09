@@ -1,12 +1,8 @@
-"""Characterization tests for word/segment timing in the clamping writers.
+"""Shared clamping writers retain text and produce bounded, monotonic timings.
 
-faster-whisper, the WhisperX converter and the stable-ts converter implement
-the same timing rules, duplicated in three places: overlapping segments are
-pushed forward, words are clamped to their segment and then made monotonic.
-These tests pin what each copy does today, including results that look wrong (a word after its segment's end
-comes out with end < start). They describe current behaviour, not a contract:
-model output is messy by nature, and any change here must be deliberate and
-backed by a study of real transcripts.
+Model output may contain missing, reversed, overlapping or out-of-segment word
+intervals. These cases pin the deliberate normalization policy shared by
+faster-whisper, WhisperX and stable-ts.
 """
 
 from __future__ import annotations
@@ -116,10 +112,9 @@ CASES = {
         [_seg(5.0, 10.0, _word("a", 9.0, 11.0))],
         [(5.0, 10.0, [("a", 9.0, 10.0)])],
     ),
-    # Pinned on purpose: the clamp yields end < start for this word.
     "word_after_segment_end": (
         [_seg(5.0, 10.0, _word("a", 12.0, 13.0))],
-        [(5.0, 10.0, [("a", 12.0, 10.0)])],
+        [(5.0, 10.0, [("a", 10.0, 10.0)])],
     ),
     "word_before_segment_start": (
         [_seg(5.0, 10.0, _word("a", 2.0, 3.0))],
@@ -133,11 +128,10 @@ CASES = {
         [_seg(0.0, 10.0, _word("a", 1.0, 3.0), _word("b", 2.0, 4.0))],
         [(0.0, 10.0, [("a", 1.0, 3.0), ("b", 3.0, 4.0)])],
     ),
-    # The out-of-segment word above becomes the previous word's end (10.0),
-    # so the next word is pushed to a zero-length span at 10.0.
+    # A word after the segment is clamped to its end; the next word stays monotonic.
     "word_after_out_of_segment_word": (
         [_seg(5.0, 10.0, _word("a", 12.0, 13.0), _word("b", 6.0, 7.0))],
-        [(5.0, 10.0, [("a", 12.0, 10.0), ("b", 10.0, 10.0)])],
+        [(5.0, 10.0, [("a", 10.0, 10.0), ("b", 10.0, 10.0)])],
     ),
     "word_without_timings": (
         [_seg(5.0, 10.0, _word("a", None, None))],
