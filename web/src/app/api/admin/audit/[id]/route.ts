@@ -429,7 +429,6 @@ export async function GET(
     const log = await prisma.auditLog.findFirst({
       where: {
         id,
-        domain: { not: null },
       },
       include: {
         user: {

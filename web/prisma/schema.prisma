@@ -1470,23 +1470,23 @@ model AuditLog {
   /// Type of action performed
   action         AuditAction
   /// Canonical audit domain for faceted filtering
-  domain         String?     @db.VarChar(50)
+  domain         String      @db.VarChar(50)
   /// Canonical subject type for faceted filtering
-  subjectType    String?     @map("subject_type") @db.VarChar(50)
+  subjectType    String      @map("subject_type") @db.VarChar(50)
   /// Canonical subject identifier for faceted filtering
   subjectId      String?     @map("subject_id") @db.VarChar(191)
   /// Associated catalog/workflow group when relevant
   catalogId      String?     @map("catalog_id") @db.VarChar(191)
   /// Canonical outcome/severity label
-  outcome        String?     @db.VarChar(20)
+  outcome        String      @db.VarChar(20)
   /// Canonical payload schema version
-  payloadVersion Int?        @map("payload_version")
+  payloadVersion Int         @map("payload_version")
   /// Resource type (e.g., "user", "catalog", "audio", "group")
   resource       String      @db.VarChar(50)
   /// Resource identifier (e.g., user ID, audio hash)
   resourceId     String?     @map("resource_id") @db.VarChar(64)
   /// Additional context as JSON (changed fields, old/new values, etc.)
-  details        Json?
+  details        Json
   /// Client IP address
   ipAddress      String?     @map("ip_address") @db.VarChar(45)
   /// User agent string

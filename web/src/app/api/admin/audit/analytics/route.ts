@@ -131,7 +131,6 @@ export async function GET(request: NextRequest) {
             LAG(resource_id) OVER (PARTITION BY user_id ORDER BY created_at) as prev_resource_id
           FROM audit_log
           WHERE action = 'AUDIO_STREAMED'
-            AND domain IS NOT NULL
             AND created_at >= ${periodStart}
             AND user_id IS NOT NULL
             AND resource_id IS NOT NULL
@@ -146,7 +145,6 @@ export async function GET(request: NextRequest) {
         by: ["userId"],
         where: {
           action: AuditAction.AUDIO_STREAMED,
-          domain: { not: null },
           createdAt: { gte: periodStart },
           userId: { not: null },
         },
@@ -157,7 +155,6 @@ export async function GET(request: NextRequest) {
         by: ["resourceId"],
         where: {
           action: AuditAction.AUDIO_STREAMED,
-          domain: { not: null },
           createdAt: { gte: periodStart },
           resourceId: { not: null },
         },
@@ -173,7 +170,6 @@ export async function GET(request: NextRequest) {
             LAG(resource_id) OVER (PARTITION BY user_id ORDER BY created_at) as prev_resource_id
           FROM audit_log
           WHERE action = 'AUDIO_STREAMED'
-            AND domain IS NOT NULL
             AND created_at >= ${periodStart}
             AND user_id IS NOT NULL
             AND resource_id IS NOT NULL
@@ -208,7 +204,6 @@ export async function GET(request: NextRequest) {
       prisma.auditLog.count({
         where: {
           action: AuditAction.LOGIN,
-          domain: { not: null },
           createdAt: { gte: periodStart },
         },
       }),
@@ -218,7 +213,6 @@ export async function GET(request: NextRequest) {
         by: ["userId"],
         where: {
           action: AuditAction.LOGIN,
-          domain: { not: null },
           createdAt: { gte: periodStart },
           userId: { not: null },
         },
@@ -228,7 +222,6 @@ export async function GET(request: NextRequest) {
       prisma.auditLog.count({
         where: {
           action: AuditAction.USER_ACTIVATED,
-          domain: { not: null },
           createdAt: { gte: periodStart },
         },
       }),
@@ -237,7 +230,6 @@ export async function GET(request: NextRequest) {
       prisma.auditLog.count({
         where: {
           action: AuditAction.LOGIN_FAILED,
-          domain: { not: null },
           createdAt: { gte: periodStart },
         },
       }),
@@ -246,7 +238,6 @@ export async function GET(request: NextRequest) {
       prisma.auditLog.count({
         where: {
           action: AuditAction.ACCESS_DENIED,
-          domain: { not: null },
           createdAt: { gte: periodStart },
         },
       }),
@@ -260,7 +251,6 @@ export async function GET(request: NextRequest) {
               AuditAction.ADMIN_ROLE_REVOKED,
             ],
           },
-          domain: { not: null },
           createdAt: { gte: periodStart },
         },
       }),
@@ -274,7 +264,6 @@ export async function GET(request: NextRequest) {
             LAG(resource_id) OVER (PARTITION BY user_id ORDER BY created_at) as prev_resource_id
           FROM audit_log
           WHERE action = 'AUDIO_STREAMED'
-            AND domain IS NOT NULL
             AND created_at >= ${previousPeriodStart}
             AND created_at < ${periodStart}
             AND user_id IS NOT NULL
@@ -288,7 +277,6 @@ export async function GET(request: NextRequest) {
         by: ["userId"],
         where: {
           action: AuditAction.AUDIO_STREAMED,
-          domain: { not: null },
           createdAt: { gte: previousPeriodStart, lt: periodStart },
           userId: { not: null },
         },
@@ -296,7 +284,6 @@ export async function GET(request: NextRequest) {
       prisma.auditLog.count({
         where: {
           action: AuditAction.LOGIN,
-          domain: { not: null },
           createdAt: { gte: previousPeriodStart, lt: periodStart },
         },
       }),
@@ -304,7 +291,6 @@ export async function GET(request: NextRequest) {
         by: ["userId"],
         where: {
           action: AuditAction.LOGIN,
-          domain: { not: null },
           createdAt: { gte: previousPeriodStart, lt: periodStart },
           userId: { not: null },
         },
@@ -312,21 +298,18 @@ export async function GET(request: NextRequest) {
       prisma.auditLog.count({
         where: {
           action: AuditAction.USER_ACTIVATED,
-          domain: { not: null },
           createdAt: { gte: previousPeriodStart, lt: periodStart },
         },
       }),
       prisma.auditLog.count({
         where: {
           action: AuditAction.LOGIN_FAILED,
-          domain: { not: null },
           createdAt: { gte: previousPeriodStart, lt: periodStart },
         },
       }),
       prisma.auditLog.count({
         where: {
           action: AuditAction.ACCESS_DENIED,
-          domain: { not: null },
           createdAt: { gte: previousPeriodStart, lt: periodStart },
         },
       }),
@@ -347,7 +330,6 @@ export async function GET(request: NextRequest) {
                 LAG(resource_id) OVER (PARTITION BY user_id ORDER BY created_at) as prev_resource_id
               FROM audit_log
               WHERE action = 'AUDIO_STREAMED'
-                AND domain IS NOT NULL
                 AND created_at >= ${periodStart}
                 AND user_id IS NOT NULL
                 AND resource_id IS NOT NULL
@@ -374,7 +356,6 @@ export async function GET(request: NextRequest) {
                 COUNT(DISTINCT user_id)::bigint as unique_users
               FROM audit_log
               WHERE created_at >= ${periodStart}
-                AND domain IS NOT NULL
                 AND action IN ('LOGIN', 'LOGIN_FAILED', 'ACCESS_DENIED',
                                'USER_ACTIVATED', 'ADMIN_ROLE_GRANTED', 'ADMIN_ROLE_REVOKED')
               GROUP BY bucket, action
@@ -396,7 +377,6 @@ export async function GET(request: NextRequest) {
                 LAG(resource_id) OVER (PARTITION BY user_id ORDER BY created_at) as prev_resource_id
               FROM audit_log
               WHERE action = 'AUDIO_STREAMED'
-                AND domain IS NOT NULL
                 AND created_at >= ${periodStart}
                 AND user_id IS NOT NULL
                 AND resource_id IS NOT NULL
@@ -423,7 +403,6 @@ export async function GET(request: NextRequest) {
                 COUNT(DISTINCT user_id)::bigint as unique_users
               FROM audit_log
               WHERE created_at >= ${periodStart}
-                AND domain IS NOT NULL
                 AND action IN ('LOGIN', 'LOGIN_FAILED', 'ACCESS_DENIED',
                                'USER_ACTIVATED', 'ADMIN_ROLE_GRANTED', 'ADMIN_ROLE_REVOKED')
               GROUP BY bucket, action
@@ -444,7 +423,6 @@ export async function GET(request: NextRequest) {
                 LAG(resource_id) OVER (PARTITION BY user_id ORDER BY created_at) as prev_resource_id
               FROM audit_log
               WHERE action = 'AUDIO_STREAMED'
-                AND domain IS NOT NULL
                 AND created_at >= ${periodStart}
                 AND user_id IS NOT NULL
                 AND resource_id IS NOT NULL
@@ -471,7 +449,6 @@ export async function GET(request: NextRequest) {
                 COUNT(DISTINCT user_id)::bigint as unique_users
               FROM audit_log
               WHERE created_at >= ${periodStart}
-                AND domain IS NOT NULL
                 AND action IN ('LOGIN', 'LOGIN_FAILED', 'ACCESS_DENIED',
                                'USER_ACTIVATED', 'ADMIN_ROLE_GRANTED', 'ADMIN_ROLE_REVOKED')
               GROUP BY bucket, action

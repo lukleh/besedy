@@ -334,6 +334,25 @@ Additional constraints:
 - If "relation does not exist" errors appear, run `npx prisma migrate deploy` against the target environment
 - Backups: daily `besedy_YYYYMMDD_HHMMSS.sql.gz` into `BACKUP_DIR` via the one-shot backup service, run by the host snapshot job (see `web/setup/backup/README.md`)
 
+### Current audit payload contract
+
+Every audit record stores the current `details.audit` envelope (version 1)
+and matching domain, subject type, outcome and version columns. The database
+requires the summary and actor/subject snapshots, including for global or
+anonymous events whose user, subject ID or catalog ID is legitimately absent.
+The canonical audit migration validates existing records and fails on missing
+or inconsistent metadata; it does not infer historical identities or rewrite
+history. Investigate invalid rows before applying the migration.
+
+The opt-in PostgreSQL upgrade tests run against a disposable database migrated
+to the version immediately before this constraint. Set
+`BESEDY_AUDIT_MIGRATION_TEST_DATABASE_URL` to the explicitly named
+`besedy_audit_migration_test` database and run
+`npx vitest run tests/unit/audit-postgres.test.ts --project=node` from `web/`.
+CI provisions that separate database from the preceding migrations and runs
+all upgrade cases in the correction integration job. Each scenario rolls its
+data and DDL back.
+
 ### Key Tables
 
 | Table                                | Purpose                                          |
