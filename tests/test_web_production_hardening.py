@@ -102,7 +102,7 @@ def test_shared_production_env_refuses_mismatched_public_settings(tmp_path, fiel
 def test_postgres_18_uses_its_parent_data_volume_in_every_environment() -> None:
     compose = WEB_COMPOSE.read_text(encoding="utf-8")
 
-    assert "image: pgvector/pgvector:pg18" in compose
+    assert "image: postgres:18-bookworm" in compose
     assert "image: postgres:18-alpine" in compose
     assert "- postgres_data:/var/lib/postgresql\n" in compose
     assert "/var/lib/postgresql/data" not in compose
@@ -114,13 +114,14 @@ def _sql_extensions(text: str) -> set[str]:
     return {name.lower() for name in CREATE_EXTENSION.findall(code)}
 
 
-def test_fresh_database_init_creates_extensions_the_migrator_cannot() -> None:
+def test_current_database_bootstrap_needs_no_extensions() -> None:
     migration_extensions: set[str] = set()
     for migration in sorted(WEB_MIGRATIONS.glob("*/migration.sql")):
         migration_extensions |= _sql_extensions(migration.read_text(encoding="utf-8"))
     init_extensions = _sql_extensions(WEB_DB_INIT_SCRIPT.read_text(encoding="utf-8"))
 
-    assert "vector" in migration_extensions
+    assert migration_extensions == set()
+    assert init_extensions == set()
     assert migration_extensions - TRUSTED_POSTGRES_EXTENSIONS <= init_extensions
 
 
