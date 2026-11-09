@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CorrectionWorkspace } from "@/components/correction/correction-workspace";
 import { fetchJson } from "@/lib/api/fetch-json";
@@ -57,8 +57,9 @@ function state(overrides: Record<string, unknown>) {
       spanCount: 2,
       spanDurationSeconds: 12,
       status: "ACTIVE",
-      readerPublicationId: "pub-0",
-      searchPublicationId: "pub-0",
+      publicationId: "pub-0" as string | null,
+      canUnpublish: true,
+      unpublishPending: false,
       lockedByPublicationId: null,
       startedById: "user-1",
       createdAt: "2026-09-20T12:00:00.000Z",
@@ -96,8 +97,11 @@ function renderWorkspace(
   eventId: number | null = 42,
   entryOverrides: Record<string, unknown> = {},
 ) {
-  fetchJsonMock.mockImplementation(async (input) => {
+  fetchJsonMock.mockImplementation(async (input, options) => {
     const url = String(input);
+    if (url.endsWith("/correction/publication") && options?.method === "DELETE") {
+      return { unpublished: true, pendingIndexSync: true };
+    }
     if (url.endsWith("/correction")) return correctionState;
     if (url.endsWith("/correction-consent")) {
       if (consent instanceof Error) throw consent;
@@ -237,6 +241,56 @@ describe("CorrectionWorkspace publication card", () => {
 
     expect(await screen.findByRole("button", { name: "republish" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "unpublish" })).toBeEnabled();
+  });
+
+  it("keeps Unpublish available for a retained search-only publication", async () => {
+    const current = state({});
+    current.workspace.publicationId = null;
+    renderWorkspace(current);
+
+    const unpublish = await screen.findByRole("button", { name: "unpublish" });
+    expect(unpublish).toBeEnabled();
+    expect(screen.getByRole("button", { name: "publish" })).toBeDisabled();
+    fireEvent.click(unpublish);
+    await waitFor(() => expect(fetchJsonMock).toHaveBeenCalledWith(
+      `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/correction/publication`,
+      { method: "DELETE" },
+    ));
+  });
+
+  it("offers an unpublish retry with no active publication while search catches up", async () => {
+    const current = state({});
+    current.workspace.publicationId = null;
+    current.workspace.unpublishPending = true;
+    renderWorkspace(current);
+
+    expect(await screen.findByTestId("unpublish-pending")).toHaveTextContent("unpublishPending");
+    expect(screen.getByRole("button", { name: "retryUnpublish" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "publish" })).toBeDisabled();
+    expect(screen.queryByText("published")).not.toBeInTheDocument();
+  });
+
+  it("refreshes the durable unpublish state when the search job cannot be submitted", async () => {
+    const current = state({});
+    renderWorkspace(current);
+    const unpublish = await screen.findByRole("button", { name: "unpublish" });
+    const fetchInitial = fetchJsonMock.getMockImplementation()!;
+    fetchJsonMock.mockImplementation(async (input, options) => {
+      if (String(input).endsWith("/correction/publication") && options?.method === "DELETE") {
+        current.workspace = {
+          ...current.workspace, publicationId: null, unpublishPending: true,
+        };
+        throw new Error("Unpublish is recorded; retry submitting the search job");
+      }
+      return fetchInitial(input, options);
+    });
+
+    fireEvent.click(unpublish);
+
+    expect(await screen.findByTestId("unpublish-pending")).toHaveTextContent("unpublishPending");
+    expect(screen.getByRole("button", { name: "retryUnpublish" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "publish" })).toBeDisabled();
+    expect(screen.queryByText("published")).not.toBeInTheDocument();
   });
 
   // A publication waiting for the search index locks the workspace on the

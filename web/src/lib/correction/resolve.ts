@@ -86,10 +86,10 @@ export async function resolveReaderTranscriptSource(
 /**
  * Search and MCP.
  *
- * They keep the machine transcript until the first publication and keep the
- * last corrected snapshot after an ordinary unpublish, because an agent uses
- * transcription as a fallible source rather than as a document to sit and
- * read.
+ * They use the machine transcript until publication. Unpublish withdraws the
+ * corrected snapshot and restores that original source through index sync.
+ * The stored search pointer is retained for existing publication history; new
+ * publication operations set or clear it with the reader pointer.
  */
 export async function resolveSearchTranscriptSource(
   catalogId: string,
