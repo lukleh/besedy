@@ -53,6 +53,17 @@ async function expectGeneratedTree(): Promise<void> {
 }
 
 describe("generateAllTranscripts", () => {
+  it("keeps the static MCP transcript fixture in the canonical disk contract", async () => {
+    const raw = await fs.readFile(path.resolve(
+      "tests/e2e/mcp-fixtures",
+      TEST_TRANSCRIPTS_SUBDIR,
+      "faster-whisper/large-v3@silero_vad_v6@lang-cs",
+      TEST_AUDIO_FILES[4].hash,
+      "transcript.json"
+    ), "utf-8");
+    expect(canonicalTranscriptLanguage(canonicalTranscriptSchema.parse(JSON.parse(raw)))).toBe("cs");
+  });
+
   it("writes the transcript fixtures into an empty fixtures directory", async () => {
     await generateAllTranscripts(fixturesDir);
 
