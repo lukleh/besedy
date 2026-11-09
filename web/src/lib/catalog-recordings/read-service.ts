@@ -1,4 +1,6 @@
 import prisma from '@/lib/db';
+import { projectRecordingMetadata, resolveRecordingMetadata } from './metadata';
+export { resolveCatalogRecordingTitle } from './metadata';
 
 export interface CatalogRecordingReadModel {
   audioHash: string;
@@ -20,18 +22,6 @@ export interface CatalogRecordingReadModel {
   tags: string[];
   ready: boolean;
   published: boolean;
-}
-
-interface RecordingTitleSources {
-  curatedTitle?: string | null;
-  sourceTitle?: string | null;
-}
-
-export function resolveCatalogRecordingTitle(
-  audioHash: string,
-  sources: RecordingTitleSources,
-): string {
-  return sources.curatedTitle ?? sources.sourceTitle ?? audioHash;
 }
 
 /**
@@ -87,32 +77,32 @@ export async function loadCatalogRecordingReadModels(
   return new Map(
     uniqueHashes.map((audioHash) => {
       const catalog = catalogByHash.get(audioHash);
-      const metadata = metadataByHash.get(audioHash);
+      const curated = projectRecordingMetadata(metadataByHash.get(audioHash));
+      const display = resolveRecordingMetadata({
+        hash: audioHash, title: catalog?.sourceTitle, artist: catalog?.sourceArtist, ...curated,
+      });
       const model: CatalogRecordingReadModel = {
         audioHash,
         catalogEntryExists: catalog !== undefined,
-        title: resolveCatalogRecordingTitle(audioHash, {
-          curatedTitle: metadata?.title,
-          sourceTitle: catalog?.sourceTitle,
-        }),
-        artist: metadata?.artist ?? catalog?.sourceArtist ?? null,
+        title: display.title ?? audioHash,
+        artist: display.artist,
         album:
-          metadata?.album ??
+          curated.album ??
           (catalog?.sourceAlbum
             ? { id: null, name: catalog.sourceAlbum }
             : null),
         durationHms: catalog?.durationHms ?? null,
         sourceDate: catalog?.sourceDate ?? null,
         date: {
-          year: metadata?.dateYear ?? null,
-          month: metadata?.dateMonth ?? null,
-          day: metadata?.dateDay ?? null,
+          year: curated.dateYear ?? null,
+          month: curated.dateMonth ?? null,
+          day: curated.dateDay ?? null,
         },
-        location: metadata?.location ?? null,
-        recorder: metadata?.recorder ?? null,
-        verified: metadata?.verified ?? false,
-        notes: metadata?.notes ?? null,
-        tags: metadata?.tags ?? [],
+        location: curated.location,
+        recorder: curated.recorder,
+        verified: curated.verified,
+        notes: curated.notes,
+        tags: curated.tags,
         ready: catalog?.isActionable ?? false,
         published: catalog?.isPublished ?? false,
       };

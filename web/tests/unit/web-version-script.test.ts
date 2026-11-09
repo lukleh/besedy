@@ -130,11 +130,18 @@ describe("resolve_web_version.sh", () => {
 
   it("does not mask resolver failures in production recipes", () => {
     const justfile = readFileSync(resolve(process.cwd(), "../Justfile"), "utf8");
+    const helper = readFileSync(resolve(process.cwd(), "../scripts/production_web_env.sh"), "utf8");
+    write("scripts/production_web_env.sh", helper);
+    write("scripts/resolve_web_version.sh", "printf 'resolver failed\\n' >&2\nexit 37\n");
+    const result = spawnSync("bash", [
+      "-euc", '. "$1"; set_production_web_version; printf "continued"',
+      "bash", resolve(repo, "scripts/production_web_env.sh"),
+    ], { cwd: repo, encoding: "utf8" });
 
-    expect(justfile).not.toContain("export WEB_VERSION=$(bash");
-    expect(
-      justfile.match(/WEB_VERSION="\$\(bash \.\.\/scripts\/resolve_web_version\.sh\)"/g)
-    ).toHaveLength(3);
+    expect(justfile).toContain("set_production_web_version");
+    expect(result.status).toBe(37);
+    expect(result.stderr).toContain("resolver failed");
+    expect(result.stdout).not.toContain("continued");
   });
 
   it("JSON-escapes the version embedded in the service worker", () => {

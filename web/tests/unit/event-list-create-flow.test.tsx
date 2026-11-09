@@ -2,9 +2,10 @@ import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { EventListResponse } from "@/components/catalog/event-list-types";
 import { EventList } from "@/components/catalog/event-list";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 
@@ -58,7 +59,22 @@ vi.mock("@/components/catalog/catalog-list/hooks", () => ({
 }));
 
 vi.mock("@/components/catalog/event-list-results", () => ({
-  EventListResults: () => <div data-testid="event-results" />,
+  EventListResults: ({
+    events,
+    onDateYearFilterChange,
+  }: {
+    events: { id: number; title: string }[];
+    onDateYearFilterChange: (year: string) => void;
+  }) => (
+    <div data-testid="event-results">
+      {events.map((event) => (
+        <span key={event.id}>{event.title}</span>
+      ))}
+      <button onClick={() => onDateYearFilterChange("2025")}>
+        Filter 2025
+      </button>
+    </div>
+  ),
 }));
 
 const catalogId = "20260201_120000";
@@ -86,7 +102,7 @@ function renderEventList() {
       mutations: { retry: false },
     },
   });
-  return render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
       <EventList
         catalogId={catalogId}
@@ -97,6 +113,7 @@ function renderEventList() {
       />
     </QueryClientProvider>
   );
+  return { ...view, queryClient };
 }
 
 describe("EventList create flow", () => {
@@ -104,6 +121,7 @@ describe("EventList create flow", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     fetchJsonMock.mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.startsWith(`/api/catalogs/${catalogId}/events?`)) {
@@ -165,5 +183,99 @@ describe("EventList create flow", () => {
         intent: "create_distinct",
       });
     });
+  });
+});
+
+function eventResponse(title: string, page = 1): EventListResponse {
+  return {
+    events: [
+      {
+        id: title === "First" ? 1 : title === "Next" ? 2 : 3,
+        title,
+        location: null,
+        dateYear: 2025,
+        dateMonth: null,
+        dateDay: null,
+        sessionIndex: 1,
+        sessionOrdinal: 1,
+        sessionCount: 1,
+        released: true,
+        recordingCount: 1,
+        sourceCount: 1,
+        artworkStatus: "none",
+        primaryAudioHash: null,
+        primaryTitle: null,
+        playback: null,
+      },
+    ],
+    filterOptions: { years: [2025], locations: [] },
+    pagination: { page, limit: 50, total: 2, totalAll: 2, totalPages: 2 },
+  };
+}
+
+describe("EventList progressive pagination", () => {
+  const fetchJsonMock = vi.mocked(fetchJson);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/metadata/locations")) return [];
+      if (url.endsWith("/health")) return { unassignedRecordings: 0 };
+      const params = new URL(url, "https://example.test").searchParams;
+      return eventResponse(
+        params.get("page") === "2" ? "Next" : "First",
+        Number(params.get("page")),
+      );
+    });
+  });
+
+  it("drops accumulated event rows when the base query refreshes", async () => {
+    const user = userEvent.setup();
+    const { queryClient } = renderEventList();
+    expect(await screen.findByText("First")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "pagination.loadNext" }),
+    );
+    expect(await screen.findByText("Next")).toBeInTheDocument();
+    fetchJsonMock.mockResolvedValueOnce(eventResponse("Refreshed"));
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["catalog-events", catalogId],
+      });
+    });
+    expect(await screen.findByText("Refreshed")).toBeInTheDocument();
+    expect(screen.queryByText("First")).not.toBeInTheDocument();
+    expect(screen.queryByText("Next")).not.toBeInTheDocument();
+  });
+
+  it("aborts a pending event page and ignores its late response after filtering", async () => {
+    const user = userEvent.setup();
+    let resolveNext: ((value: EventListResponse) => void) | undefined;
+    let signal: AbortSignal | undefined;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/metadata/locations")) return [];
+      if (url.endsWith("/health")) return { unassignedRecordings: 0 };
+      const params = new URL(url, "https://example.test").searchParams;
+      if (params.get("page") === "2") {
+        signal = init?.signal as AbortSignal;
+        return new Promise<EventListResponse>((resolve) => {
+          resolveNext = resolve;
+        });
+      }
+      return eventResponse(params.has("dateYear") ? "Filtered" : "First");
+    });
+    renderEventList();
+    expect(await screen.findByText("First")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "pagination.loadNext" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Filter 2025" }));
+    expect(await screen.findByText("Filtered")).toBeInTheDocument();
+    expect(signal?.aborted).toBe(true);
+    await act(async () => resolveNext?.(eventResponse("Next", 2)));
+    expect(screen.queryByText("Next")).not.toBeInTheDocument();
+    expect(screen.getByText("Filtered")).toBeInTheDocument();
   });
 });

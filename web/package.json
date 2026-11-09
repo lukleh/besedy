@@ -53,7 +53,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:dev": "tsx prisma/seed-dev.ts",
     "db:studio": "prisma studio",
-    "audit:dependencies": "node scripts/audit-dependencies.mjs"
+    "audit:dependencies": "node scripts/audit-dependencies.mjs",
+    "db:baseline": "tsx scripts/adopt-database-baseline.ts"
   },
   "dependencies": {
     "@better-auth/cimd": "1.7.12",

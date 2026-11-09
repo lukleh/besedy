@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { projectRecordingMetadata } from "@/lib/catalog-recordings/metadata";
 import { getCatalogEntry, countDuplicatesByHash } from "@/lib/catalog";
 import {
   resolveCatalogRecordingRouteAccess,
@@ -101,29 +102,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     // Build enriched entry
     const enrichedEntry = {
       ...entry,
-      curated: !!metadata,
-      curatedTitle: metadata?.title,
-      curatedArtist: metadata?.artist,
-      dateYear: metadata?.dateYear ?? null,
-      dateMonth: metadata?.dateMonth ?? null,
-      dateDay: metadata?.dateDay ?? null,
-      verified: metadata?.verified ?? false,
-      verifiedAt: metadata?.verifiedAt?.toISOString() ?? null,
-      tags: metadata?.tags ?? [],
-      notes: metadata?.notes ?? null,
-      recorderId: metadata?.recorderId ?? null,
-      recorder: metadata?.recorder
-        ? { id: metadata.recorder.id, name: metadata.recorder.name }
-        : null,
-      locationId: metadata?.locationId ?? null,
-      location: metadata?.location
-        ? { id: metadata.location.id, name: metadata.location.name }
-        : null,
-      albumId: metadata?.albumId ?? null,
-      album: metadata?.album
-        ? { id: metadata.album.id, name: metadata.album.name }
-        : null,
-      part: metadata?.part ?? null,
+      ...projectRecordingMetadata(metadata),
       duplicateCount,
     };
 

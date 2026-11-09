@@ -7,7 +7,7 @@ umask 077
 archive="$(realpath -e "$1")"
 [ -f "$archive" ] || { echo "Dump is not a regular file" >&2; exit 2; }
 gzip -t "$archive"
-image="${DB_RESTORE_TEST_IMAGE:-pgvector/pgvector:pg18}"
+image="${DB_RESTORE_TEST_IMAGE:-postgres:18-bookworm}"
 # Use an already installed image; do not fetch a new database version implicitly.
 docker image inspect "$image" >/dev/null
 container="besedy-db-restore-$(date -u +%Y%m%d%H%M%S)-$$"

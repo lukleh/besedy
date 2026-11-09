@@ -62,6 +62,13 @@ if issues:
         print(issue)
 ```
 
+The CLI's `validate_shared_schema()` uses the same timing, type and confidence
+checks, with metadata/word/confidence fields optional and a nonempty segment
+list required. Canonical validation requires those fields and permits silent
+(empty) transcripts. Both represent unknown confidence as `null` and reject
+non-finite timestamps. WhisperX, stable-ts and faster-whisper share the bounded,
+monotonic timing normalizer in `data/transcript_conversion.py`.
+
 ### Iterate catalog rows for workflow execution
 
 ```python
