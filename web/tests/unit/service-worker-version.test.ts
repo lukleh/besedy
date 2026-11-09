@@ -1,19 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { selectObservedWebVersion } from "@/lib/service-worker/version";
+import { normalizeWebVersion } from "@/lib/service-worker/version";
 
-describe("selectObservedWebVersion", () => {
-  it("does not compare a fingerprinted client with a legacy commit identity", () => {
-    expect(selectObservedWebVersion(null, "abc123", "web-v2-client")).toBeNull();
-    expect(selectObservedWebVersion("abc123", "abc123", "web-v2-client")).toBeNull();
+describe("current web fingerprint", () => {
+  it("accepts only the current fingerprint contract", () => {
+    const fingerprint = "web-v2-" + "a".repeat(40);
+    expect(normalizeWebVersion(fingerprint)).toBe(fingerprint);
   });
-
-  it("accepts a fingerprint from a fingerprinted server", () => {
-    expect(selectObservedWebVersion("web-v2-server", "abc123", "web-v2-client")).toBe(
-      "web-v2-server"
-    );
-  });
-
-  it("keeps the commit fallback for legacy clients", () => {
-    expect(selectObservedWebVersion(null, "abc123", "legacy-client")).toBe("abc123");
+  it.each([null, undefined, "unknown", "abc123", "web-v1-" + "a".repeat(40), "web-v2-short", "web-v2-" + "g".repeat(40)])("rejects unsupported identity %s", (version) => {
+    expect(normalizeWebVersion(version)).toBeNull();
   });
 });

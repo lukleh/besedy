@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 
@@ -31,7 +31,6 @@ const mockOptions: ComboboxOption[] = [
 describe("Combobox", () => {
   const defaultProps = {
     value: "",
-    onValueChange: vi.fn(),
     searchValue: "",
     onSearchChange: vi.fn(),
     options: mockOptions,

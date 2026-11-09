@@ -8,7 +8,7 @@ import {
 } from "@/lib/api/fetch-json";
 import { createClientLogger } from "@/lib/log/client";
 import { notifyWebVersionObserver } from "@/lib/service-worker/runtime";
-import { selectObservedWebVersion } from "@/lib/service-worker/version";
+import { normalizeWebVersion } from "@/lib/service-worker/version";
 import {
   type ChunkUploadResponse,
   chunkUploadResponseSchema,
@@ -83,10 +83,8 @@ function putChunk(
     xhr.onabort = () => reject(new TypeError("Network request aborted"));
     xhr.onload = () => {
       try {
-        const webVersion = selectObservedWebVersion(
-          xhr.getResponseHeader("X-Web-Version"),
-          xhr.getResponseHeader("X-App-Commit"),
-          process.env.NEXT_PUBLIC_WEB_VERSION
+        const webVersion = normalizeWebVersion(
+          xhr.getResponseHeader("X-Web-Version")
         );
         if (webVersion) {
           notifyWebVersionObserver(webVersion);
