@@ -823,8 +823,7 @@
       "noName": "Bez jména",
       "never": "Nikdy",
       "pendingUser": "Čekající uživatel",
-      "addedAt": "Přidán {time}",
-      "multipleCatalogRoles": "Role v {count} katalozích"
+      "addedAt": "Přidán {time}"
     },
     "userDetail": {
       "backToUsers": "Zpět na uživatele",
@@ -1385,11 +1384,6 @@
     "filename": "Název souboru",
     "originalPath": "Původní cesta",
     "transcript": "Přepis",
-    "transcriptStream": "Přepisový stream",
-    "transcriptStreamViewportSeconds": "Okno (s)",
-    "transcriptStreamModels": "Modely",
-    "transcriptStreamUnavailable": "Přepisový stream není k dispozici",
-    "transcriptStreamUnavailableDescription": "Pro tuto nahrávku není k dispozici časová osa přepisů.",
     "showTranscript": "Zobrazit",
     "sourcesTitle": "Zdroje",
     "sourcesDescription": "Odkazy a soubory související s touto nahrávkou.",

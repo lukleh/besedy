@@ -77,7 +77,14 @@ describe("seed pending admissions", () => {
     });
   });
 
-  it("mirrors a standalone pending admission and clears all pending grants for the email", async () => {
+  it.each([
+    { catalogId: null, role: null },
+    { catalogId: "20260101_000000", role: null },
+    { catalogId: null, role: "reader" },
+    { catalogId: undefined, role: "reader" },
+    { catalogId: "20260101_000000", role: undefined },
+    { catalogId: "", role: "reader" },
+  ])("rejects an unbacked invitation before writing: %j", async (grant) => {
     const invitedAt = new Date("2026-03-10T12:00:00.000Z");
     const db = {
       portalAdmission: {
@@ -89,36 +96,21 @@ describe("seed pending admissions", () => {
       },
     };
 
-    await syncSeedPendingAdmissions(db as never, {
-      email: "pending@example.com",
-      createdById: null,
-      createdAt: invitedAt,
-      catalogId: null,
-      role: null,
-      notes: "standalone allowlist",
-    });
+    await expect(
+      syncSeedPendingAdmissions(
+        db as never,
+        {
+          email: "pending@example.com",
+          createdById: null,
+          createdAt: invitedAt,
+          ...grant,
+          notes: "unbacked fixture",
+        } as never,
+      ),
+    ).rejects.toThrow("Seed invitations require a catalog and role");
 
-    expect(db.portalAdmission.upsert).toHaveBeenCalledWith({
-      where: { email: "pending@example.com" },
-      create: expect.objectContaining({
-        email: "pending@example.com",
-        source: "STANDALONE",
-        status: "PENDING",
-        admittedById: null,
-        admittedAt: invitedAt,
-        notes: "standalone allowlist",
-      }),
-      update: expect.objectContaining({
-        source: "STANDALONE",
-        status: "PENDING",
-        admittedById: null,
-        admittedAt: invitedAt,
-        notes: "standalone allowlist",
-      }),
-    });
-    expect(db.pendingCatalogGrant.deleteMany).toHaveBeenCalledWith({
-      where: { email: "pending@example.com" },
-    });
+    expect(db.portalAdmission.upsert).not.toHaveBeenCalled();
+    expect(db.pendingCatalogGrant.deleteMany).not.toHaveBeenCalled();
     expect(db.pendingCatalogGrant.upsert).not.toHaveBeenCalled();
   });
 });

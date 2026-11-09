@@ -114,12 +114,10 @@ describe("admin user archive invitations", () => {
       type: "portal_admission",
       email: "legacy@example.com",
       invitedAt: "2026-11-01T12:00:00Z",
-      pendingGrants: [],
-      catalogNames: [],
-      pendingGrantCount: 0,
       catalogId: null,
       catalogLabel: null,
       role: null,
+      extraPermissions: [],
       invitedBy: null,
       notes: "Original note",
     };
@@ -248,18 +246,8 @@ describe("admin user archive invitations", () => {
   it("omits cached extras on a pending role change so the server preserves current extras", async () => {
     admission.role = "reader";
     admission.catalogId = archive.id;
-    admission.pendingGrantCount = 1;
-    admission.pendingGrants = [
-      {
-        catalogId: archive.id,
-        catalogLabel: archive.label,
-        role: "reader",
-        extraPermissions: ["download_audio"],
-        grantedAt: admission.invitedAt,
-        grantedBy: null,
-        notes: admission.notes,
-      },
-    ];
+    admission.catalogLabel = archive.label;
+    admission.extraPermissions = ["download_audio"];
     Element.prototype.scrollIntoView = vi.fn();
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Edit invitation" }));
@@ -275,7 +263,20 @@ describe("admin user archive invitations", () => {
     });
   });
 
-  it("does not add a role or extras when saving legacy invitation notes", async () => {
+  it("does not open an editor for a retained invitation without a role", () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Edit invitation" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      mocks.fetchJson.mock.calls.some(([, init]) => init?.method === "PATCH")
+    ).toBe(false);
+  });
+
+  it("preserves the assigned role and extras when saving invitation notes", async () => {
+    admission.role = "reader";
+    admission.catalogId = archive.id;
+    admission.catalogLabel = archive.label;
+    admission.extraPermissions = ["download_audio"];
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Edit invitation" }));
     fireEvent.change(screen.getByLabelText("Notes"), {
@@ -288,7 +289,7 @@ describe("admin user archive invitations", () => {
     });
   });
 
-  it("leaves legacy notes editable when the archive cannot be loaded", async () => {
+  it("keeps a retained roleless invitation uneditable when the archive cannot be loaded", () => {
     mocks.useArchive.mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -296,14 +297,52 @@ describe("admin user archive invitations", () => {
     });
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Edit invitation" }));
-    expect(screen.getByRole("combobox", { name: "Role" })).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Notes"), {
-      target: { value: "Historical note" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await expectMutation("/api/admin/portal-admissions/invitation-1", "PATCH", {
-      notes: "Historical note",
-    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+
+  it.each([false, true])(
+    "keeps invitation revocation available and offers editing only with a role: %s",
+    async (hasRole) => {
+      if (hasRole) {
+        admission.role = "reader";
+        admission.catalogId = archive.id;
+        admission.catalogLabel = archive.label;
+        admission.extraPermissions = ["download_audio"];
+      }
+      const { UsersTable } = await vi.importActual<
+        typeof import("@/app/(app)/admin/users/users-content-table")
+      >("@/app/(app)/admin/users/users-content-table");
+      const revoke = vi.fn();
+      render(
+        <NextIntlClientProvider locale="en" messages={en}>
+          <UsersTable
+            adminStatusIsSuperadmin
+            getCatalogRoleLabel={(role) => role}
+            isLoading={false}
+            onDeleteUser={vi.fn()}
+            onEditAdmission={vi.fn()}
+            onManageAdminRole={vi.fn()}
+            onManageCatalogAccess={vi.fn()}
+            onRevokeAdmission={revoke}
+            onStatusChange={vi.fn()}
+            statusFilter="PENDING"
+            usersOrAdmissions={[admission]}
+          />
+        </NextIntlClientProvider>
+      );
+      expect(screen.getByText(admission.email)).toBeInTheDocument();
+      if (hasRole) expect(screen.getByText(archive.label)).toBeInTheDocument();
+      fireEvent.keyDown(screen.getAllByRole("button", { name: "Actions" })[0], {
+        key: "ArrowDown",
+      });
+      const revokeAction = await screen.findByRole("menuitem", {
+        name: "Revoke Pending Access",
+      });
+      expect(
+        screen.queryByRole("menuitem", { name: "Edit Pending Access" }) !== null
+      ).toBe(hasRole);
+      fireEvent.click(revokeAction);
+      expect(revoke).toHaveBeenCalledWith(admission);
+    }
+  );
 });
