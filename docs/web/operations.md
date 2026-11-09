@@ -449,18 +449,11 @@ Both identifiers are visible at `GET /api/version`; the admin sidebar continues
 to display the source commit. Update lifecycle telemetry is available under
 **Admin → Web Updates** and is retained for 30 days.
 
-**Fresh database caveat:** Older migrations create `vector` columns before later
-migrations remove them, and the migrator role cannot create the non-trusted
-`vector` extension. `web/init-db-users.sh` therefore creates it as superuser when a
-new production volume is initialized, so a brand-new DB migrates without manual
-steps. A volume initialized before that script created the extension needs it
-installed once before its first migration:
-
-```bash
-docker exec besedy-production-db psql -U besedy -d besedy -c 'CREATE EXTENSION IF NOT EXISTS vector;'
-```
-
-Existing databases that already passed that point need nothing.
+**Database baseline:** Fresh databases use standard PostgreSQL 18 and the current
+schema baseline. Existing installations must complete the
+[baseline cutover](data-and-database.md#current-schema-baseline-cutover) before
+switching images: verify and record the baseline, drop unused `vector` with
+RESTRICT as superuser, and verify a new backup. The old history is not replayed.
 
 **Required one-time cleanup for hosts with the retired LAN egress control:**
 
@@ -993,12 +986,11 @@ section. Then verify service status and the public version endpoint.
 Check `MIGRATE_PASSWORD` matches between env file and DB. Ensure DB container is
 healthy via `just prod-status`.
 
-**Migration fails with "permission denied to create extension":**
-The `besedy_migrator` role cannot create non-trusted extensions. New volumes get
-`vector` from `web/init-db-users.sh`; on an older volume, create the extension as
-superuser (`docker exec besedy-production-db psql -U besedy -d besedy -c 'CREATE EXTENSION IF NOT EXISTS vector;'`),
-then resolve the failed migration with `npx prisma migrate resolve --rolled-back <name>`,
-and rerun `just prod-migrate`.
+**Baseline adoption fails:**
+Stop the deployment and investigate the reported migration or structural drift.
+Do not replay the baseline over existing tables or mark it applied without the
+read-only verification. Keep the verified pre-cutover backup and prior image
+until the new backup has passed restoration testing.
 
 **OAuth callback error (index corruption):**
 If OAuth fails with `P2025` after unclean DB container shutdown, rebuild indexes:

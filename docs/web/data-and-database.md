@@ -252,7 +252,45 @@ SQL again under the new name: mark the new name applied with
 from `_prisma_migrations`. CI enforces this for directories a pull request adds
 (`scripts/check_migration_names.sh`). Migrations already on `main` must not be
 renamed or deleted, because production has applied them under those names; CI
-fails on that too.
+fails on that too. The reviewed current-schema baseline below is the one explicit
+history cutover; its manifest pins the complete retired set and SQL checksums.
+
+### Current-schema baseline cutover
+
+Fresh installations apply `20261108000000_current_schema` directly on standard
+PostgreSQL 18. The baseline includes the current consent triggers, usage view,
+partial indexes and correction CHECK constraints. Retired RAG tables and their
+pgvector bootstrap dependency are absent. The old SQL remains in Git history.
+
+Existing installations must adopt this baseline **before applying later
+migrations or switching the database image**. Use the existing stopped-writer,
+verified-backup maintenance procedure:
+
+1. Select the production migrator `DATABASE_URL` explicitly, as `just prod-migrate`
+   does. From `web/`, run `npm run db:baseline`. This is read-only and verifies
+   all 69 completed migration records plus a schema fingerprint covering columns,
+   constraints, indexes, functions, triggers (including internal foreign-key
+   enforcement), views, enum values and sequences.
+2. Run `npm run db:baseline -- --apply`. It repeats the checks and uses
+   `prisma migrate resolve --applied 20261108000000_current_schema`. It does not
+   replay DDL, rewrite application rows or delete prior migration history.
+3. As the database superuser, remove the unused extension before the database
+   image changes: `DROP EXTENSION IF EXISTS vector;`. Use RESTRICT (the default),
+   never CASCADE; unexpected dependencies must stop the cutover.
+4. Take and restore-test a post-cutover backup, then continue the normal
+   migration/deployment procedure. New backups restore with `postgres:18`.
+
+The manifest records the one observed empty historical checksum explicitly;
+all other retired records must match their source checksums. Owners/grants and
+extension-owned functions are excluded from the structural fingerprint because
+the normal role/bootstrap procedure manages them. Enum values are compared as
+sets; historical ordering of the same values differs between fresh and existing
+databases. Application data is never included in the fingerprint.
+
+An unfinished migration, unknown migration, changed checksum or structural drift
+fails the adoption check. Already-adopted databases are a no-op. Merge the
+baseline cutover before other pending schema changes so the retired schema is
+still the state being verified.
 
 **Apply migrations:**
 
