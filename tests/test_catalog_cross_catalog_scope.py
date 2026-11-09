@@ -192,7 +192,7 @@ def test_clean_through_the_latest_symlink_cleans_the_catalog_it_names(
 def test_clean_keeps_a_staged_file_another_catalog_still_lists(
     layout: Layout, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A shared staging dir (an older stage-audio reused `audio_staged`) keeps the WAV."""
+    """A shared staging directory keeps the WAV while another catalog references it."""
     shared = layout.new.staged[GONE]
     _write_csv(
         layout.old.csv("_loudness_normalized"),
@@ -408,7 +408,7 @@ def _capture_staging(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
     def stage_audio_files(_rows, staging_dir, *, manifest_writer, **_kwargs):  # type: ignore[no-untyped-def]
         staged_into.append(staging_dir)
         manifest_writer.write_entry(
-            SimpleNamespace(sha256=KEEP, staged=staging_dir / f"{KEEP}.wav"), size_bytes=1
+            SimpleNamespace(audio_hash=KEEP, staged=staging_dir / f"{KEEP}.wav"), size_bytes=1
         )
         return [], []
 

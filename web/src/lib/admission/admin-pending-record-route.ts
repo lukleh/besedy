@@ -12,7 +12,7 @@ import {
   logPortalAdmissionEvent,
 } from "@/lib/audit/logger";
 import {
-  buildPendingGrantPresentation,
+  buildPendingAdmissionPresentation,
   loadPendingAdmissionState,
 } from "@/lib/admission/admin-pending-record-shared";
 import {
@@ -39,32 +39,15 @@ const UpdatePortalAdmissionSchema = z.object({
 export async function getAdminPendingRecord(id: string) {
   try {
     await requireAdminCapability({ message: "Unauthorized" });
-    const canonicalEmail = canonicalizeEmail(id);
-    const { admission, pendingGrants } =
-      await loadPendingAdmissionState(canonicalEmail);
-    if (!admission) return notFound("portal admission");
-    const grant = pendingGrants[0] ?? null;
-    const presentation = await buildPendingGrantPresentation(
-      pendingGrants,
-      admission.admittedById ?? grant?.grantedById
+    const { admission, grant, archive } = await loadPendingAdmissionState(
+      canonicalizeEmail(id),
     );
+    if (!admission) return notFound("portal admission");
     return NextResponse.json({
-      id: canonicalEmail,
-      email: admission.email,
-      status: "PENDING",
+      ...(await buildPendingAdmissionPresentation(admission, grant, archive)),
       pendingResource: "portal_admission" as const,
-      pendingGrants: presentation.pendingGrantResponses,
-      pendingGrantCount: presentation.pendingGrantCount,
-      catalogNames: presentation.catalogNames,
-      catalogId: grant?.catalogId ?? null,
-      catalogLabel: presentation.singleCatalogLabel,
-      role: grant?.role ?? null,
-      extraPermissions: grant?.extraPermissions ?? [],
-      invitedAt: admission.admittedAt.toISOString(),
       consumedAt: null,
-      invitedBy: presentation.actor,
       consumedBy: null,
-      notes: admission.notes ?? grant?.notes ?? null,
     });
   } catch (error) {
     return handlePrismaError(error, "portal admission", "fetch");
@@ -77,10 +60,9 @@ export async function deleteAdminPendingRecord(id: string) {
       message: "Admin access required to revoke portal admissions",
     });
     const canonicalEmail = canonicalizeEmail(id);
-    const { admission, pendingGrants } =
+    const { admission, grant } =
       await loadPendingAdmissionState(canonicalEmail);
     if (!admission) return notFound("portal admission");
-    const grant = pendingGrants[0] ?? null;
     await prisma.$transaction(async (tx) => {
       await revokePendingAdmissionState(
         {
@@ -99,7 +81,7 @@ export async function deleteAdminPendingRecord(id: string) {
             ? { expectedGrant: { ...grant, status: "PENDING" as const } }
             : {}),
         },
-        tx
+        tx,
       );
     });
     await logPortalAdmissionEvent({
@@ -113,15 +95,17 @@ export async function deleteAdminPendingRecord(id: string) {
         catalogId: grant?.catalogId ?? null,
         role: grant?.role ?? null,
         extraPermissions: grant?.extraPermissions ?? [],
-        pendingGrantCount: pendingGrants.length,
+        pendingGrantCount: grant ? 1 : 0,
         revocationReason: "ADMIN_DENIED",
-        revokedGrants: pendingGrants.map(
-          ({ catalogId, role, extraPermissions }) => ({
-            catalogId,
-            role,
-            extraPermissions,
-          })
-        ),
+        revokedGrants: grant
+          ? [
+              {
+                catalogId: grant.catalogId,
+                role: grant.role,
+                extraPermissions: grant.extraPermissions,
+              },
+            ]
+          : [],
       },
     });
     return NextResponse.json({ success: true });
@@ -132,10 +116,10 @@ export async function deleteAdminPendingRecord(id: string) {
   }
 }
 
-/** Update the bound invitation, or edit legacy unbacked admission notes. */
+/** Only role-backed invitations can be edited; historical admissions remain revocable. */
 export async function patchAdminPendingRecord(
   id: string,
-  request: NextRequest
+  request: NextRequest,
 ) {
   try {
     const { userId } = await requireAdminCapability({
@@ -143,141 +127,78 @@ export async function patchAdminPendingRecord(
     });
     const bodyResult = await validateRequestBody(
       request,
-      UpdatePortalAdmissionSchema
+      UpdatePortalAdmissionSchema,
     );
     if (!bodyResult.success) return bodyResult.response;
     const { role, extraPermissions, catalogId, notes } = bodyResult.data;
     const archive = await requireArchive();
     if (catalogId && catalogId !== archive.id) return notFound("catalog");
+    if (catalogId === null)
+      return badRequest(
+        "Pending invitations must retain content access. Revoke the invitation instead.",
+      );
 
     const canonicalEmail = canonicalizeEmail(id);
-    const { admission, pendingGrants } =
+    const { admission, grant } =
       await loadPendingAdmissionState(canonicalEmail);
     if (!admission) return notFound("portal admission");
-    const grant = pendingGrants[0] ?? null;
-    if (catalogId === null) {
-      return badRequest(
-        "Pending invitations must retain content access. Revoke the invitation instead."
+    if (!grant)
+      return conflict(
+        "This invitation has no archive access. Revoke it and create a new invitation with a role.",
       );
-    }
-    const changesGrant =
-      role !== undefined ||
-      extraPermissions !== undefined ||
-      catalogId !== undefined;
-    // A legacy sign-in-only admission is not promoted by notes or extras edits.
-    if (!grant && changesGrant && !role) {
-      return badRequest("A role is required to assign archive access.");
-    }
-    const nextRole = role ?? grant?.role ?? null;
-    const nextExtras = extraPermissions ?? grant?.extraPermissions ?? [];
-    const previousNotes = admission.notes ?? grant?.notes ?? null;
+    const nextRole = role ?? grant.role;
+    const nextExtras = extraPermissions ?? grant.extraPermissions;
+    const previousNotes = admission.notes ?? grant.notes;
     const nextNotes = notes !== undefined ? notes : previousNotes;
 
-    // Legacy admissions can retain a revoked/consumed row hidden from the
-    // pending read model. Explicit role assignment must update that row with
-    // the same conditional guard as a pending grant, rather than insert again.
-    const expectedGrant = grant
-      ? { ...grant, status: "PENDING" as const }
-      : role
-        ? await prisma.pendingCatalogGrant.findUnique({
-            where: {
-              email_catalogId: { email: canonicalEmail, catalogId: archive.id },
-            },
-            select: { role: true, extraPermissions: true, status: true },
-          })
-        : null;
-    if (!grant && expectedGrant?.status === "PENDING") {
-      throw new PendingAdmissionUnavailableError();
-    }
-
     await prisma.$transaction(async (tx) => {
-      if (changesGrant && nextRole) {
-        await syncPendingAdmissionState(
-          {
-            email: canonicalEmail,
-            catalogId: archive.id,
-            role: nextRole,
-            extraPermissions: nextExtras,
-            createdById: grant?.grantedById ?? userId,
-            createdAt: grant?.grantedAt ?? new Date(),
-            notes: nextNotes,
-          },
-          {
-            allowAdminDeniedReopen: true,
-            requirePending: true,
-            expectedGrant,
-          },
-          tx
-        );
-      } else {
-        // Keep this conditional: a stale notes save must not reopen a claimed/revoked admission.
-        const updated = await tx.portalAdmission.updateMany({
-          where: { email: canonicalEmail, status: "PENDING" },
-          data: { notes: nextNotes },
-        });
-        if (updated.count !== 1) throw new PendingAdmissionUnavailableError();
-        if (grant) {
-          await tx.pendingCatalogGrant.updateMany({
-            where: {
-              email: canonicalEmail,
-              catalogId: archive.id,
-              status: "PENDING",
-            },
-            data: { notes: nextNotes },
-          });
-        }
-      }
-    });
-
-    if (changesGrant && nextRole) {
-      await logPendingCatalogGrantEvent({
-        actorId: userId,
-        action: "PENDING_CATALOG_GRANT_UPDATED",
-        resourceId: `${canonicalEmail}:${archive.id}`,
-        email: canonicalEmail,
-        catalogId: archive.id,
-        role: nextRole,
-        details: {
+      await syncPendingAdmissionState(
+        {
           email: canonicalEmail,
-          previousCatalogId: grant?.catalogId ?? null,
-          newCatalogId: archive.id,
-          previousRole: grant?.role ?? null,
-          newRole: nextRole,
-          previousExtraPermissions: grant?.extraPermissions ?? [],
-          newExtraPermissions: nextExtras,
-          previousNotes,
-          newNotes: nextNotes,
+          catalogId: archive.id,
+          role: nextRole,
+          extraPermissions: nextExtras,
+          createdById: grant.grantedById,
+          createdAt: grant.grantedAt,
+          notes: nextNotes,
         },
-      });
-    } else {
-      await logPortalAdmissionEvent({
-        actorId: userId,
-        action: "PORTAL_ADMISSION_UPDATED",
-        resourceId: canonicalEmail,
-        email: canonicalEmail,
-        catalogId: grant?.catalogId ?? null,
-        details: { email: canonicalEmail, previousNotes, newNotes: nextNotes },
-      });
-    }
-
-    // Use the same bound read model for GET and PATCH responses.
-    const updated = await loadPendingAdmissionState(canonicalEmail);
-    const presentation = await buildPendingGrantPresentation(
-      updated.pendingGrants
-    );
-    const updatedGrant = updated.pendingGrants[0] ?? null;
-    return NextResponse.json({
-      id: canonicalEmail,
+        {
+          allowAdminDeniedReopen: true,
+          requirePending: true,
+          expectedGrant: { ...grant, status: "PENDING" as const },
+        },
+        tx,
+      );
+    });
+    await logPendingCatalogGrantEvent({
+      actorId: userId,
+      action: "PENDING_CATALOG_GRANT_UPDATED",
+      resourceId: `${canonicalEmail}:${archive.id}`,
       email: canonicalEmail,
+      catalogId: archive.id,
+      role: nextRole,
+      details: {
+        email: canonicalEmail,
+        previousRole: grant.role,
+        newRole: nextRole,
+        previousExtraPermissions: grant.extraPermissions,
+        newExtraPermissions: nextExtras,
+        previousNotes,
+        newNotes: nextNotes,
+      },
+    });
+    return NextResponse.json({
+      ...(await buildPendingAdmissionPresentation(
+        { ...admission, notes: nextNotes },
+        {
+          ...grant,
+          role: nextRole,
+          extraPermissions: nextExtras,
+          notes: nextNotes,
+        },
+        archive,
+      )),
       pendingResource: "portal_admission" as const,
-      pendingGrants: presentation.pendingGrantResponses,
-      pendingGrantCount: presentation.pendingGrantCount,
-      catalogNames: presentation.catalogNames,
-      catalogId: updatedGrant?.catalogId ?? null,
-      catalogLabel: presentation.singleCatalogLabel,
-      role: updatedGrant?.role ?? null,
-      extraPermissions: updatedGrant?.extraPermissions ?? [],
-      notes: nextNotes,
     });
   } catch (error) {
     if (error instanceof PendingAdmissionUnavailableError)

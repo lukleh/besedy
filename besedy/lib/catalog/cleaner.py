@@ -60,7 +60,7 @@ def _get_transcript_search_roots(transcripts_root: Path) -> list[Path]:
 class CleanupTarget:
     """Represents a catalog entry to be cleaned."""
 
-    sha256: str
+    audio_hash: str
     original_path: str
     staged_path: Path | None = None
     staged_exists: bool = False
@@ -110,11 +110,11 @@ def detect_missing_originals(
     """Detect catalog entries whose original audio files are missing.
 
     Args:
-        entries: List of (sha256, full_path) tuples from catalog.
+        entries: List of (audio_hash, full_path) tuples from catalog.
 
     Returns:
         Tuple of:
-        - List of (sha256, full_path) for missing files
+        - List of (audio_hash, full_path) for missing files
         - Boolean indicating potential mount issue
         - List of suspect parent directories (that don't exist)
     """
@@ -122,10 +122,10 @@ def detect_missing_originals(
     suspect_parents: set[str] = set()
     missing_with_absent_parent = 0
 
-    for sha256, full_path in entries:
+    for audio_hash, full_path in entries:
         path = Path(full_path)
         if not path.exists():
-            missing.append((sha256, full_path))
+            missing.append((audio_hash, full_path))
             # Check if parent directory exists
             if not path.parent.exists():
                 missing_with_absent_parent += 1
@@ -139,7 +139,7 @@ def detect_missing_originals(
     return missing, potential_mount_issue, sorted(suspect_parents)
 
 
-def find_staged_file(staging_dir: Path, sha256: str) -> Path | None:
+def find_staged_file(staging_dir: Path, audio_hash: str) -> Path | None:
     """Find staged WAV file for a given hash.
 
     Pattern: <staging_dir>/<hash>.wav
@@ -148,11 +148,11 @@ def find_staged_file(staging_dir: Path, sha256: str) -> Path | None:
     directories, or broken symlinks at the expected path are treated as
     missing instead of crashing the caller.
     """
-    staged = staging_dir / f"{sha256}.wav"
+    staged = staging_dir / f"{audio_hash}.wav"
     return staged if staged.is_file() else None
 
 
-def find_transcript_dirs(transcripts_root: Path, sha256: str) -> list[Path]:
+def find_transcript_dirs(transcripts_root: Path, audio_hash: str) -> list[Path]:
     """Find all transcript directories for a given hash.
 
     Handles both:
@@ -174,14 +174,14 @@ def find_transcript_dirs(transcripts_root: Path, sha256: str) -> list[Path]:
             for model_dir in workflow_dir.iterdir():
                 if not model_dir.is_dir():
                     continue
-                hash_dir = model_dir / sha256
+                hash_dir = model_dir / audio_hash
                 if hash_dir.exists() and hash_dir.is_dir():
                     dirs.append(hash_dir)
 
     return dirs
 
 
-def find_diarization_dirs(transcripts_root: Path, sha256: str) -> list[Path]:
+def find_diarization_dirs(transcripts_root: Path, audio_hash: str) -> list[Path]:
     """Find all diarization directories for a given hash.
 
     Handles both:
@@ -198,7 +198,7 @@ def find_diarization_dirs(transcripts_root: Path, sha256: str) -> list[Path]:
         for model_dir in diarization_root.iterdir():
             if not model_dir.is_dir():
                 continue
-            hash_dir = model_dir / sha256
+            hash_dir = model_dir / audio_hash
             if hash_dir.exists() and hash_dir.is_dir():
                 dirs.append(hash_dir)
 
@@ -232,7 +232,7 @@ def build_cleanup_plan(
     """Build a cleanup plan for missing catalog entries.
 
     Args:
-        missing_entries: List of (sha256, full_path) tuples for missing files.
+        missing_entries: List of (audio_hash, full_path) tuples for missing files.
         catalog_csv: Path to the catalog CSV.
         normalized_csv: Optional path to the normalized catalog CSV.
         staging_dir: Optional path to the staging directory.
@@ -247,23 +247,23 @@ def build_cleanup_plan(
     """
     targets: list[CleanupTarget] = []
 
-    for sha256, original_path in missing_entries:
-        target = CleanupTarget(sha256=sha256, original_path=original_path)
+    for audio_hash, original_path in missing_entries:
+        target = CleanupTarget(audio_hash=audio_hash, original_path=original_path)
 
         # Find staged file
         if staging_dir and staging_dir.exists():
-            staged = find_staged_file(staging_dir, sha256)
-            if staged and shared_files_for and staged.resolve() in shared_files_for(sha256):
+            staged = find_staged_file(staging_dir, audio_hash)
+            if staged and shared_files_for and staged.resolve() in shared_files_for(audio_hash):
                 target.shared_staged_path = staged
             elif staged:
                 target.staged_path = staged
                 target.staged_exists = True
 
         # Find transcript directories
-        target.transcript_dirs = find_transcript_dirs(transcripts_root, sha256)
+        target.transcript_dirs = find_transcript_dirs(transcripts_root, audio_hash)
 
         # Find diarization directories
-        target.diarization_dirs = find_diarization_dirs(transcripts_root, sha256)
+        target.diarization_dirs = find_diarization_dirs(transcripts_root, audio_hash)
 
         # Find transcript sidecar files
         target.sidecar_files = find_sidecar_files(target.transcript_dirs)
@@ -347,10 +347,10 @@ def execute_cleanup(
 
         if len(result.errors) == errors_before:
             result.hashes_removed += 1
-            result.succeeded_hashes.append(target.sha256)
+            result.succeeded_hashes.append(target.audio_hash)
         else:
             result.hashes_failed += 1
-            result.failed_hashes.append(target.sha256)
+            result.failed_hashes.append(target.audio_hash)
 
     return result
 
@@ -359,7 +359,7 @@ def infer_staging_dir(normalized_entries: list[tuple[str, str]]) -> Path | None:
     """Infer staging directory from normalized catalog entries.
 
     Args:
-        normalized_entries: List of (sha256, full_path) tuples from normalized catalog.
+        normalized_entries: List of (audio_hash, full_path) tuples from normalized catalog.
 
     Returns:
         Common parent directory if consistent, None otherwise.

@@ -49,7 +49,7 @@ def locate_word_by_char_position(
         if seg_start <= char_pos < seg_end:
             words = segment.get("words", []) or []
             for word_idx, word in enumerate(words):
-                word_text = word.get("word") or word.get("text") or ""
+                word_text = word["word"]
                 pos = text.find(word_text)
                 if pos < 0:
                     continue

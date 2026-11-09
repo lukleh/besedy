@@ -22,7 +22,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
-from besedy.commands.catalog.system import detect_logical_cpus
+from besedy.core.system import detect_logical_cpus
 from besedy.lib.audio.quality import AudioQualityMetrics, analyze_audio_file
 from besedy.lib.catalog.manager import (
     DURATION_MISMATCH_TOLERANCE_SECONDS,
@@ -291,7 +291,6 @@ def enrich_basic_records(
 
     It does NOT compute:
     - Loudness metrics (integrated_loudness_lufs, true_peak_db, etc.)
-    - Volume metrics (mean_volume_db, max_volume_db)
     - needs_normalization flag
 
     Use catalog loudness for full analysis.

@@ -31,7 +31,6 @@ from besedy.core.paths import (
     resolve_share_home,
     resolve_state_home,
     resolve_tmp_dir,
-    resolve_transcripts_parquet_parent,
     resolve_transcripts_root,
     resolve_web_env_path,
     sanitize_component,
@@ -287,48 +286,6 @@ class TestResolveTranscriptsRoot:
         assert result == PROJECT_ROOT / "transcripts_20251128_120000"
 
 
-class TestResolveTranscriptsParquetParent:
-    """Tests for resolve_transcripts_parquet_parent()."""
-
-    def test_raises_when_no_text_data_dir(self, monkeypatch):
-        """text_data_dir is required when resolving parquet outputs."""
-        monkeypatch.delenv("BESEDY_TEXT_DATA_ROOT", raising=False)
-        original = get_config()
-        try:
-            set_config(
-                replace(
-                    original,
-                    paths=replace(original.paths, text_data_dir=""),
-                )
-            )
-            with pytest.raises(RuntimeError):
-                resolve_transcripts_parquet_parent()
-        finally:
-            set_config(original)
-
-    def test_returns_transcripts_parquet_subdir_when_text_data_dir_configured(
-        self, monkeypatch, tmp_path
-    ):
-        """When text_data_dir is configured, returns text_data_dir/transcripts_parquet/."""
-        monkeypatch.delenv("BESEDY_TEXT_DATA_ROOT", raising=False)
-        original = get_config()
-        try:
-            set_config(
-                replace(
-                    original,
-                    paths=replace(original.paths, text_data_dir=str(tmp_path)),
-                )
-            )
-            result = resolve_transcripts_parquet_parent()
-            expected = tmp_path / "transcripts_parquet"
-            assert result == expected
-            # Should also create the directory
-            assert result.exists()
-            assert result.is_dir()
-        finally:
-            set_config(original)
-
-
 class TestHashComponentFromSha:
     """Tests for hash_component_from_sha()."""
 
@@ -377,7 +334,7 @@ class TestTimestampExtraction:
         assert result is None
 
     def test_extract_from_normalized_catalog(self):
-        path = Path("audio_catalog_20251128_120000_normalized.csv")
+        path = Path("audio_catalog_20251128_120000_loudness_normalized.csv")
         result = extract_timestamp_from_normalized_catalog(path)
         assert result == "20251128_120000"
 
@@ -407,7 +364,7 @@ class TestIterTranscriptPaths:
 
     def test_finds_transcript_json(self, tmp_path):
         # Create structure: workflow/model/hash/transcript.json
-        transcript_dir = tmp_path / "faster-whisper" / "large-v3" / "abc123"
+        transcript_dir = tmp_path / "faster-whisper" / "large-v3@lang-cs" / ("a" * 64)
         transcript_dir.mkdir(parents=True)
         transcript_file = transcript_dir / "transcript.json"
         transcript_file.write_text('{"segments": []}')
@@ -434,7 +391,9 @@ class TestParseTranscriptComponents:
     """Tests for parse_transcript_components()."""
 
     def test_extracts_workflow_model_hash(self, tmp_path):
-        transcript_path = tmp_path / "faster-whisper" / "large-v3" / "abc123def" / "transcript.json"
+        transcript_path = (
+            tmp_path / "faster-whisper" / "large-v3@lang-cs" / ("a" * 64) / "transcript.json"
+        )
         transcript_path.parent.mkdir(parents=True)
         transcript_path.touch()
 
@@ -442,8 +401,8 @@ class TestParseTranscriptComponents:
         assert result is not None
         workflow, model, audio_hash = result
         assert workflow == "faster-whisper"
-        assert model == "large-v3"
-        assert audio_hash == "abc123def"
+        assert model == "large-v3@lang-cs"
+        assert audio_hash == "a" * 64
 
     def test_returns_none_for_shallow_path(self, tmp_path):
         # Path too shallow (fewer than 4 parts)
