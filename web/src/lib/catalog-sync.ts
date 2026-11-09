@@ -100,11 +100,6 @@ export interface CatalogSyncResult {
   status: 'success' | 'skipped' | 'error';
   changedSources: string[];
   rowCounts: Record<string, number>;
-  /**
-   * Metadata rows whose `Hash Algorithm` is missing or not the one this build
-   * knows. They sync anyway; set only when there are some.
-   */
-  unrecognizedHashAlgorithmRows?: number;
   error?: string;
 }
 
@@ -256,6 +251,9 @@ function parseCsvRows(content: string, kind: SourceKind): CsvRow[] {
     if (!HashSchema.safeParse(hash).success) {
       throw invalid(`data row ${index + 1} must have a 64-character hexadecimal Hash`);
     }
+    if (kind === 'metadata' && getRowValue(row, ['Hash Algorithm'])?.trim() !== AUDIO_HASH_ALGORITHM) {
+      throw invalid(`data row ${index + 1} must use Hash Algorithm ${AUDIO_HASH_ALGORITHM}`);
+    }
     for (const column of nonBlankCells) {
       if (!getRowValue(row, [column])?.trim()) {
         throw invalid(`data row ${index + 1} has a blank ${column}`);
@@ -301,18 +299,6 @@ function countUniqueHashes(rows: CsvRow[], sourceName: string): number {
     seen.add(hash);
   }
   return seen.size;
-}
-
-/** Rows with a hash whose `Hash Algorithm` is missing or not AUDIO_HASH_ALGORITHM. */
-export function countUnrecognizedHashAlgorithms(rows: CsvRow[]): number {
-  let count = 0;
-  for (const row of rows) {
-    if (!normalizeHash(getRowValue(row, ['Hash']))) continue;
-    if (getRowValue(row, ['Hash Algorithm'])?.trim() !== AUDIO_HASH_ALGORITHM) {
-      count += 1;
-    }
-  }
-  return count;
 }
 
 export function toMetadataPayload(row: CsvRow): MetadataPayload {
@@ -587,7 +573,6 @@ interface SourceClassification {
 interface ParsedBaseSources {
   metadataRows: CsvRow[];
   archivedRows: CsvRow[];
-  unrecognizedHashAlgorithmRows: number;
 }
 
 interface DuplicateRow {
@@ -719,21 +704,12 @@ function classifySources(
 }
 
 function parseBaseSources(
-  groupId: string,
   metadataState: SourceRuntimeState,
   archivedState: SourceRuntimeState,
   rowCounts: Record<string, number>,
 ): ParsedBaseSources {
   const metadataRows = parseCsvRows(metadataState.content!, 'metadata');
   const archivedRows = parseCsvRows(archivedState.content!, 'archived');
-
-  const unrecognizedHashAlgorithmRows =
-    countUnrecognizedHashAlgorithms(metadataRows);
-  if (unrecognizedHashAlgorithmRows > 0) {
-    console.warn(
-      `[catalog-sync] ${groupId}: ${unrecognizedHashAlgorithmRows} metadata rows have a missing or unknown Hash Algorithm (expected ${AUDIO_HASH_ALGORITHM}); syncing them anyway`,
-    );
-  }
 
   rowCounts[metadataState.descriptor.sourceKey] = countUniqueHashes(
     metadataRows,
@@ -744,7 +720,7 @@ function parseBaseSources(
     'archived',
   );
 
-  return { metadataRows, archivedRows, unrecognizedHashAlgorithmRows };
+  return { metadataRows, archivedRows };
 }
 
 async function assertBaseRowCountsNotDropped(
@@ -1028,10 +1004,9 @@ async function runSyncTransaction(
   let base: ParsedBaseSources = {
     metadataRows: [],
     archivedRows: [],
-    unrecognizedHashAlgorithmRows: 0,
   };
   if (baseChanged) {
-    base = parseBaseSources(groupId, metadataState!, archivedState!, rowCounts);
+    base = parseBaseSources(metadataState!, archivedState!, rowCounts);
     if (!allowRowCountDrop) {
       await assertBaseRowCountsNotDropped(
         tx,
@@ -1089,9 +1064,6 @@ async function runSyncTransaction(
       status: 'success' as const,
       changedSources,
       rowCounts,
-      ...(base.unrecognizedHashAlgorithmRows > 0 && {
-        unrecognizedHashAlgorithmRows: base.unrecognizedHashAlgorithmRows,
-      }),
     },
     unchangedSourceErrors,
   };

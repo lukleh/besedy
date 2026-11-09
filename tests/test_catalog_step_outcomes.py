@@ -13,15 +13,16 @@ from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 
 def _catalog(tmp_path: Path, source: str, *, analyzed: bool = False) -> Path:
     catalog = tmp_path / "audio_catalog_20260101_120000.csv"
-    columns = ["Hash", "Full Path", "Duration"]
-    row = {"Hash": "a" * 64, "Full Path": source, "Duration": "00:00:01"}
+    columns = ["Hash", "Full Path", "Duration", "added_at"]
+    row = {"Hash": "a" * 64, "Full Path": source, "Duration": "00:00:01", "added_at": "2026-01-01T00:00:00Z"}
     with catalog.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=columns)
         writer.writeheader()
         writer.writerow(row)
     if analyzed:
-        columns.append("integrated_loudness_lufs")
-        row["integrated_loudness_lufs"] = "-18"
+        measurements = {"integrated_loudness_lufs": "-18", "true_peak_db": "-2", "loudness_range_lu": "3", "input_thresh": "-28", "target_offset": "0"}
+        columns.extend(measurements)
+        row.update(measurements)
         with catalog.with_name(f"{catalog.stem}_loudness.csv").open(
             "w", newline="", encoding="utf-8"
         ) as handle:

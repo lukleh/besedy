@@ -17,7 +17,7 @@ from rich.progress import (
 
 from besedy.lib.data.encoding import load_json_with_fallback
 from besedy.lib.validation.schema import is_finite_number as _is_number
-from besedy.lib.validation.schema import validate_transcript_schema
+from besedy.lib.validation.schema import validate_canonical_schema
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -29,11 +29,6 @@ def _summarize_counts(data: dict[str, Any]) -> tuple[int, int]:
     segments = data.get("segments", []) if isinstance(data, dict) else []
     words = sum(len(seg.get("words", [])) for seg in segments if isinstance(seg, dict))
     return len(segments), words
-
-
-def validate_shared_schema(data: Any) -> list[str]:
-    """Validate imported transcripts with optional canonical metadata fields."""
-    return validate_transcript_schema(data)
 
 
 def validate_single_file(
@@ -74,7 +69,7 @@ def validate_single_file(
         _record(status="failed", message=str(exc))
         return False
 
-    schema_issues = validate_shared_schema(data)
+    schema_issues = validate_canonical_schema(data)
 
     if schema_issues:
         _emit(f"  ✗ Schema validation failed ({len(schema_issues)} issue(s))")
@@ -101,24 +96,6 @@ def validate_single_file(
     _emit(f"✓ All checks passed for {path.name}")
     _record(status="passed", segments=seg_count, words=word_count, issues=0)
     return True
-
-
-def validate_conversion(
-    converted_path: Path,
-    original_path: Path,
-    backend: str,
-) -> bool:
-    """Validate conversion from backend-specific JSON to canonical format."""
-
-    print(f"Verifying conversion: {converted_path.name}")
-    print(f"  Original: {original_path.name}")
-    print(f"  Backend: {backend}")
-
-    load_json(converted_path)
-    load_json(original_path)
-
-    print(f"Error: Conversion verification not implemented for backend: {backend}")
-    return False
 
 
 def validate_diarization_file(
@@ -543,8 +520,7 @@ def batch_validate(
 
 __all__ = [
     "batch_validate",
-    "validate_conversion",
-    "validate_shared_schema",
+    "validate_canonical_schema",
     "validate_single_file",
     "load_json",
 ]

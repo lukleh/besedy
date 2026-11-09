@@ -339,17 +339,13 @@ def _load_config() -> Config:
 
     transcription_workflows = _load_transcription_workflows(data)
 
-    # Existing operator configurations may retain this retired setting.
-    web_settings = dict(data.get("web", {}))
-    web_settings.pop("deep_search_default_instructions", None)
-
     return Config(
         paths=PathsConfig(**data["paths"]),
         audio=AudioConfig(**data["audio"]),
         transcription_workflows=transcription_workflows,
         vad=VadConfig(**data["vad"]),
         nemo=NemoConfig(**data["nemo"]),
-        web=WebConfig(**web_settings),
+        web=WebConfig(**data.get("web", {})),
         rag=RagConfig(**data.get("rag", {})),
     )
 

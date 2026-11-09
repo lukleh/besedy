@@ -20,7 +20,7 @@ def test_example_loads_without_retired_sections(tmp_path, monkeypatch):
     assert loaded.transcription_workflows
 
 
-def test_retired_web_instructions_do_not_break_existing_configs(tmp_path, monkeypatch):
+def test_retired_web_instructions_require_explicit_migration(tmp_path, monkeypatch):
     example = Path(__file__).resolve().parents[1] / "besedy.toml.example"
     config_path = tmp_path / "besedy.toml"
     config_path.write_text(
@@ -32,10 +32,8 @@ def test_retired_web_instructions_do_not_break_existing_configs(tmp_path, monkey
     )
     monkeypatch.setattr(settings, "resolve_config_path", lambda: config_path)
 
-    loaded = settings._load_config()
-
-    assert loaded.web.superadmin_email == "owner@example.org"
-    assert not hasattr(loaded.web, "deep_search_default_instructions")
+    with pytest.raises(TypeError, match="deep_search_default_instructions"):
+        settings._load_config()
 
 
 @pytest.mark.parametrize("section", ["diarization", "analysis", "unknown"])

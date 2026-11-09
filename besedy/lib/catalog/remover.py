@@ -192,7 +192,7 @@ def _hash_column(csv_path: Path, columns: Sequence[str]) -> str | None:
     if csv_path.resolve().name.endswith("_joined.csv"):
         return JOINED_HASH_COLUMN if JOINED_HASH_COLUMN in columns else None
     try:
-        return resolve_hash_column(columns, csv_path, preferred="Hash")
+        return resolve_hash_column(columns, csv_path)
     except ValueError:
         return None
 

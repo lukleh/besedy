@@ -54,12 +54,20 @@ def quick_validate(path: Path) -> tuple[bool, dict[str, object]]:
         return False, {"error": "failed to load"}
 
     issues = validate_canonical_schema(data)
+    if not isinstance(data, dict):
+        return False, {"issues": len(issues), "issue_samples": issues[:3]}
     meta = data.get("meta", {}) if isinstance(data.get("meta"), dict) else {}
-    segments = data.get("segments", []) or []
+    segments = data.get("segments")
+    if not isinstance(segments, list):
+        segments = []
     info = {
         "backend": meta.get("backend", "unknown"),
         "segments": len(segments),
-        "words": sum(len(seg.get("words", [])) for seg in segments),
+        "words": sum(
+            len(seg["words"])
+            for seg in segments
+            if isinstance(seg, dict) and isinstance(seg.get("words"), list)
+        ),
         "duration": meta.get("duration"),
         "issues": len(issues),
     }

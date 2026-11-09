@@ -298,8 +298,16 @@ def handle_loudness(
             _, existing_rows = load_csv(output_path, encoding=request.encoding)
             for row in existing_rows:
                 row_hash = row.get(hash_column, "").strip()
-                # Consider it "done" if it has loudness data
-                if row_hash and row.get("integrated_loudness_lufs", "").strip():
+                if row_hash and all(
+                    row.get(field, "").strip()
+                    for field in (
+                        "integrated_loudness_lufs",
+                        "true_peak_db",
+                        "loudness_range_lu",
+                        "input_thresh",
+                        "target_offset",
+                    )
+                ):
                     existing_loudness[row_hash] = row
             print(f"Found {len(existing_loudness)} files with existing loudness data")
         except Exception as exc:

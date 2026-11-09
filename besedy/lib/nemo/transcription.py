@@ -453,9 +453,7 @@ def transcribe_segments(
                         words.append({"word": normalized_words[idx], "index": idx})
 
         mean_probability = _derive_segment_confidence(hypothesis)
-        vad_mean_probability = _coerce_float(
-            segment.get("mean_probability", segment.get("mean_prob"))
-        )
+        vad_mean_probability = _coerce_float(segment.get("mean_prob"))
         if mean_probability is None:
             mean_probability = vad_mean_probability
         logging.debug(

@@ -502,14 +502,7 @@ def _resolve_timestamped_inputs(
     ts_catalog: str,
 ) -> _CheckInputs | _IncompletePipeline:
     catalog_dir = csv_path.resolve().parent
-    normalized_candidates = [
-        catalog_dir / f"audio_catalog_{ts_catalog}_loudness_normalized.csv",
-        catalog_dir / f"audio_catalog_{ts_catalog}_normalized.csv",
-    ]
-    expected_normalized = next(
-        (candidate for candidate in normalized_candidates if candidate.exists()),
-        normalized_candidates[-1],
-    )
+    expected_normalized = catalog_dir / f"audio_catalog_{ts_catalog}_loudness_normalized.csv"
     transcripts_parent = resolve_transcripts_parent()
     expected_transcripts = transcripts_parent / catalog_transcripts_dirname(ts_catalog)
     expected_loudness = catalog_dir / f"audio_catalog_{ts_catalog}_loudness.csv"
