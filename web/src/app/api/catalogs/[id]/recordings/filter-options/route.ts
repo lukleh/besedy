@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { resolveRecordingDisplay } from "@/lib/catalog-recordings/metadata";
 import {
   loadEnrichedCatalogEntries,
   applyFilters,
@@ -234,7 +235,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       visibleEntries,
       filters,
       "artist",
-      (e) => e.artist?.trim() || null
+      (e) => resolveRecordingDisplay(e).artist?.trim() || null
     );
     const artistOptions = Array.from(artistCounts.entries())
       .map(([value, count]) => ({ value, count }))

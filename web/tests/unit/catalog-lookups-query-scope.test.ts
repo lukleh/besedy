@@ -31,6 +31,7 @@ import {
   locationCollectionHandlers, locationItemHandlers,
   albumCollectionHandlers, albumItemHandlers,
 } from "@/lib/api/crud-factory";
+import { getCatalogCapability } from "@/lib/access/capabilities";
 
 const CATALOG = "20251222_144441";
 const resources = [
@@ -41,6 +42,7 @@ const resources = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getCatalogCapability).mockResolvedValue({ canManageLookups: true } as Awaited<ReturnType<typeof getCatalogCapability>>);
   mocks.loadCatalogHashes.mockRejectedValue(new Error("Catalog hashes must not be enumerated"));
   mocks.db.audioMetadata.count.mockResolvedValue(0);
   mocks.db.catalogEvent.count.mockResolvedValue(0);
@@ -53,6 +55,41 @@ beforeEach(() => {
 });
 
 describe.each(resources)("$name lookup query scope", ({ name, collection, item }) => {
+  it.each(["POST", "PUT", "DELETE"] as const)("%s requires lookup permission before querying a model", async (method) => {
+    vi.mocked(getCatalogCapability).mockResolvedValue({ canManageLookups: false } as Awaited<ReturnType<typeof getCatalogCapability>>);
+    const request = new NextRequest(`http://localhost/api/catalogs/${CATALOG}/metadata/${name}s/5`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Name" }),
+    });
+    const params = { params: Promise.resolve({ id: CATALOG, itemId: "5" }) };
+    const response = method === "POST"
+      ? await collection.POST(request, params)
+      : await item[method](request, params);
+
+    expect(response.status).toBe(403);
+    for (const query of Object.values(mocks.db[name])) expect(query).not.toHaveBeenCalled();
+  });
+
+  it.each(["PUT", "DELETE"] as const)("%s refuses an item outside the resolved catalog", async (method) => {
+    mocks.db[name].findFirst.mockResolvedValue(null);
+    const request = new NextRequest(`http://localhost/api/catalogs/${CATALOG}/metadata/${name}s/5`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Name" }),
+    });
+    const response = await item[method](request, {
+      params: Promise.resolve({ id: CATALOG, itemId: "5" }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(mocks.db[name].findFirst).toHaveBeenCalledWith({
+      where: { id: 5, workflowGroupId: CATALOG }, select: { id: true },
+    });
+    expect(mocks.db[name].update).not.toHaveBeenCalled();
+    expect(mocks.db[name].delete).not.toHaveBeenCalled();
+  });
+
   it.each(["POST", "PUT", "DELETE"] as const)("%s does not enumerate catalog hashes", async (method) => {
     const request = new NextRequest(`http://localhost/api/catalogs/${CATALOG}/metadata/${name}s/5`, {
       method,

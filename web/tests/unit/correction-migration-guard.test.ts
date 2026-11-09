@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
  */
 
 const MIGRATIONS_DIR = path.resolve(__dirname, '../../prisma/migrations');
-const CONTRACT_MIGRATION = '20261020050450_correction_data_contract';
+const CONTRACT_MIGRATION = '20261108000000_current_schema';
 
 const PROTECTED_TABLES = [
   'transcript_workspace',
