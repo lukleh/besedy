@@ -46,20 +46,16 @@ export interface PlaybackReport {
  */
 function playbackColumns(
   kind: TranscriptDecisionKind,
-  playback: PlaybackReport | null | undefined,
-  contract: boolean
+  playback: PlaybackReport | null | undefined
 ): { heardFraction: number | null; minPlaybackRate: number | null; maxPlaybackRate: number | null } {
   if (kind === "WITHDRAW") {
     return { heardFraction: null, minPlaybackRate: null, maxPlaybackRate: null };
   }
   if (!playback) {
-    if (contract) {
-      throw new CorrectionError(
-        "PLAYBACK_REQUIRED",
-        "An approval or disapproval reports how much of the span was played"
-      );
-    }
-    return { heardFraction: null, minPlaybackRate: null, maxPlaybackRate: null };
+    throw new CorrectionError(
+      "PLAYBACK_REQUIRED",
+      "An approval or disapproval reports how much of the span was played"
+    );
   }
   return {
     heardFraction: playback.heardFraction,
@@ -130,13 +126,12 @@ async function lockSpan(tx: TransactionClient, command: SpanCommandBase): Promis
 async function assertWorkspaceWritable(
   tx: TransactionClient,
   workspaceId: string
-): Promise<{ workflowGroupId: string; segmentationVersion: string | null }> {
+): Promise<{ workflowGroupId: string }> {
   const workspace = await tx.transcriptWorkspace.findUnique({
     where: { id: workspaceId },
     select: {
       status: true,
       workflowGroupId: true,
-      segmentationVersion: true,
       publications: {
         where: { status: { in: ["PENDING", "ACTIVATING", "ROLLING_BACK"] } },
         select: { id: true },
@@ -160,7 +155,6 @@ async function assertWorkspaceWritable(
   }
   return {
     workflowGroupId: workspace.workflowGroupId,
-    segmentationVersion: workspace.segmentationVersion,
   };
 }
 
@@ -287,12 +281,12 @@ export async function recordDecision(command: DecisionCommand): Promise<SpanComm
       };
     }
 
-    const workspace = await assertWorkspaceWritable(tx, command.workspaceId);
+    await assertWorkspaceWritable(tx, command.workspaceId);
     await requireContributorConsent(tx, command.userId);
     // After the lock: a stale request is a revision conflict first, whatever
     // else it is missing.
     const span = await lockSpan(tx, command);
-    const playback = playbackColumns(command.kind, command.playback, workspace.segmentationVersion !== null);
+    const playback = playbackColumns(command.kind, command.playback);
 
     await tx.transcriptSpanDecision.create({
       data: {
@@ -368,7 +362,7 @@ export async function saveAndApprove(command: EditCommand): Promise<SpanCommandR
       // ADR 0012: every revision of a contract workspace names the guide it
       // was written under.
       const guideRevisionId = await getActiveGuideRevisionId(workspace.workflowGroupId, tx);
-      if (workspace.segmentationVersion && !guideRevisionId) {
+      if (!guideRevisionId) {
         throw new CorrectionError("GUIDE_MISSING", "This catalog has no saved correction guide");
       }
       await tx.transcriptSpanRevision.create({
@@ -402,7 +396,7 @@ export async function saveAndApprove(command: EditCommand): Promise<SpanCommandR
         idempotencyKey: command.idempotencyKey ?? null,
         commandName: identity.name,
         commandDigest: digestCommand(identity),
-        ...playbackColumns("APPROVE", command.playback, workspace.segmentationVersion !== null),
+        ...playbackColumns("APPROVE", command.playback),
       },
     });
 

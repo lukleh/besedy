@@ -92,7 +92,7 @@ WORKSPACES_JSON="$(docker exec -i "$DB_CONTAINER_ID" psql -U "$DB_USER" -d "$DB_
           AND encode(sha256(convert_to(r.text, 'UTF8')), 'hex') <> r.text_hash
       ) AS bad_revision_hashes
     FROM transcript_workspace ws
-    WHERE ws.status = 'ACTIVE' AND ws.segmentation_version IS NOT NULL
+    WHERE ws.status = 'ACTIVE'
     ORDER BY ws.created_at
   ) w")"
 

@@ -31,23 +31,20 @@ const LOCK_NOT_AVAILABLE = "55P03";
  * Whether a database error is PostgreSQL giving up on a lock.
  *
  * Prisma 7 with a driver adapter reports a failed raw query as `P2010` with
- * the SQLSTATE in `meta.driverAdapterError.cause.originalCode` (and in the
- * message); the Rust engine put it in `meta.code`. All three are read, the
- * message last.
+ * the SQLSTATE in `meta.driverAdapterError.cause.originalCode` or `cause.code`.
+ * The raw-query message is the final fallback.
  */
 export function isLockTimeout(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const { code, meta, message } = error as {
     code?: unknown;
     meta?: {
-      code?: unknown;
       driverAdapterError?: { cause?: { code?: unknown; originalCode?: unknown } };
     };
     message?: unknown;
   };
   const cause = meta?.driverAdapterError?.cause;
   if (cause?.originalCode === LOCK_NOT_AVAILABLE || cause?.code === LOCK_NOT_AVAILABLE) return true;
-  if (meta?.code === LOCK_NOT_AVAILABLE) return true;
   return code === "P2010" && typeof message === "string" && message.includes(LOCK_NOT_AVAILABLE);
 }
 
@@ -63,7 +60,7 @@ export function isLockTimeout(error: unknown): boolean {
  * Every writer takes this first, so the order is always workspace then span
  * and two writers cannot deadlock against each other.
  *
- * Holding the lock on a live contract workspace also finishes a start that
+ * Holding the lock on a live workspace also finishes a start that
  * committed its rows but never rewrote its manifest from `starting` to
  * `active` (ADR 0012). Under the lock no archive can interleave, so the
  * rewrite cannot undo an `archived` manifest.
@@ -76,12 +73,12 @@ export async function lockWorkspace(
   // the statement needs no parameters, which SET does not accept anyway.
   await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '${WORKSPACE_LOCK_WAIT_MS}ms'`);
 
-  let rows: { id: string; workflow_group_id: string; status: string; segmentation_version: string | null }[];
+  let rows: { id: string; workflow_group_id: string; status: string }[];
   try {
     rows = await tx.$queryRaw<
-      { id: string; workflow_group_id: string; status: string; segmentation_version: string | null }[]
+      { id: string; workflow_group_id: string; status: string }[]
     >`
-      SELECT "id", "workflow_group_id", "status"::text AS "status", "segmentation_version"
+      SELECT "id", "workflow_group_id", "status"::text AS "status"
       FROM "transcript_workspace"
       WHERE "id" = ${workspaceId}::uuid
       FOR UPDATE
@@ -100,7 +97,7 @@ export async function lockWorkspace(
   if (!row) {
     throw new CorrectionError("NO_WORKSPACE", "Correction workspace not found");
   }
-  if (row.status === "ACTIVE" && row.segmentation_version !== null) {
+  if (row.status === "ACTIVE") {
     // Best effort: the manifest stays protective either way, and a broken one
     // is the nightly integrity check's to report, not a reason to refuse work.
     await completeStartingManifest(row.workflow_group_id, row.id).catch((error: unknown) => {

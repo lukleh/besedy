@@ -88,7 +88,6 @@ def test_an_intact_workspace_passes(workspace) -> None:
     row, root = workspace
     check = check_workspace(row, root)
     assert check.problems == []
-    assert check.notes == []
 
 
 @pytest.mark.parametrize(
@@ -175,7 +174,7 @@ def test_each_kind_of_drift_is_reported(workspace, change, expected: str) -> Non
     assert any(expected in problem for problem in problems), problems
 
 
-def test_another_segmentation_version_is_noted_not_failed(workspace) -> None:
+def test_another_segmentation_version_fails(workspace) -> None:
     row, root = workspace
     row = dict(copy.deepcopy(row), segmentation_version="chunks-v0", spans=[])
     manifest_path = root / f"corrections_{CATALOG}" / WORKSPACE / "workspace.json"
@@ -183,8 +182,7 @@ def test_another_segmentation_version_is_noted_not_failed(workspace) -> None:
     manifest["segmentation_version"] = "chunks-v0"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     check = check_workspace(row, root)
-    assert check.problems == []
-    assert any("chunks-v0" in note for note in check.notes)
+    assert any("unsupported segmentation chunks-v0" in problem for problem in check.problems)
 
     # The checks that do not depend on the version still run.
     Path(row["staged_audio_path"]).write_bytes(b"short")
