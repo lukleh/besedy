@@ -4,10 +4,9 @@ import {
   createContext,
   useContext,
   useEffect,
-  useState,
-  useCallback,
   type ReactNode,
 } from "react";
+import { useHydratedState } from "@/hooks/use-hydrated-state";
 
 export type TextSize = "default" | "large" | "xlarge";
 
@@ -16,6 +15,11 @@ const TEXT_SIZE_VALUES: Record<TextSize, string> = {
   default: "100%",
   large: "112%",
   xlarge: "125%",
+};
+const textSizeCodec = {
+  serialize: (value: TextSize) => value,
+  deserialize: (stored: string): TextSize =>
+    Object.hasOwn(TEXT_SIZE_VALUES, stored) ? stored as TextSize : "default",
 };
 
 interface TextSizeContextValue {
@@ -28,29 +32,15 @@ const TextSizeContext = createContext<TextSizeContextValue | undefined>(
 );
 
 export function TextSizeProvider({ children }: { children: ReactNode }) {
-  const [textSize, setTextSizeState] = useState<TextSize>("default");
-  const [mounted, setMounted] = useState(false);
-
-  // Load from localStorage on mount - standard SSR hydration pattern
-  useEffect(() => {
-    const stored = localStorage.getItem(TEXT_SIZE_STORAGE_KEY) as TextSize | null;
-    if (stored && TEXT_SIZE_VALUES[stored]) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setTextSizeState(stored);
-    }
-    setMounted(true);
-  }, []);
+  const [textSize, setTextSize, mounted] = useHydratedState(
+    TEXT_SIZE_STORAGE_KEY, "default" as TextSize, textSizeCodec,
+  );
 
   // Apply the font-size to html element
   useEffect(() => {
     if (!mounted) return;
     document.documentElement.style.fontSize = TEXT_SIZE_VALUES[textSize];
   }, [textSize, mounted]);
-
-  const setTextSize = useCallback((size: TextSize) => {
-    setTextSizeState(size);
-    localStorage.setItem(TEXT_SIZE_STORAGE_KEY, size);
-  }, []);
 
   return (
     <TextSizeContext.Provider value={{ textSize, setTextSize }}>
