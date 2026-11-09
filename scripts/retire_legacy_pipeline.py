@@ -96,6 +96,9 @@ def main(argv: list[str] | None = None) -> int:
         config = args.config.resolve(strict=True) if args.config else None
         old_config = config.read_text(encoding="utf-8") if config else None
         new_config = without_retired_web_key(old_config) if old_config is not None else None
+        for path in args.retire_file:
+            if path.is_symlink():
+                raise ValueError(f"Refusing to retire a symlink instead of a named regular file: {path}")
         retired = [path.resolve(strict=True) for path in args.retire_file]
         if retired and (not args.references_json or not args.retired_dir):
             raise ValueError(
@@ -125,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
                 for reference in references
             ):
                 raise ValueError(f"Refusing to retire referenced file: {path}")
-            if destination is None or (destination / path.name).exists():
+            if destination is None or os.path.lexists(destination / path.name):
                 raise ValueError(f"Retirement destination already exists for {path.name}")
         if len({path.name for path in retired}) != len(retired):
             raise ValueError("Retired files have colliding destination names")

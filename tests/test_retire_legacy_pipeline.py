@@ -95,3 +95,59 @@ def test_retirement_destination_must_be_disjoint_from_active_artifacts(tmp_path)
         )
     assert obsolete.exists()
     assert not (active / "retired").exists()
+
+
+@pytest.mark.parametrize("apply", [False, True])
+@pytest.mark.parametrize("dangling", [False, True])
+def test_retirement_refuses_named_symlinks_before_any_mutation(tmp_path, apply, dangling):
+    target = tmp_path / "valuable.csv"
+    if not dangling:
+        target.write_text("valuable")
+    selected = tmp_path / "obsolete.csv"
+    selected.symlink_to(target)
+    references = tmp_path / "references.json"
+    references.write_text("[]")
+    config = tmp_path / "besedy.toml"
+    config.write_text('[web]\ndeep_search_default_instructions = "old"\n')
+    original_config = config.read_bytes()
+    sidecar = tmp_path / "old.wav.audiohash"
+    sidecar.write_text("a" * 64 + "  old.wav\n")
+    args = [
+        "--retire-file", str(selected),
+        "--references-json", str(references),
+        "--retired-dir", str(tmp_path / "retired"),
+        "--config", str(config),
+        "--sidecars-root", str(tmp_path),
+    ]
+    with pytest.raises(SystemExit, match="1"):
+        main([*args, *(["--apply"] if apply else [])])
+    assert selected.is_symlink()
+    assert target.exists() is not dangling
+    if not dangling:
+        assert target.read_text() == "valuable"
+    assert config.read_bytes() == original_config
+    assert sidecar.exists()
+    assert not (tmp_path / "retired").exists()
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_retirement_refuses_dangling_destination_symlink(tmp_path, apply):
+    obsolete = tmp_path / "obsolete.csv"
+    obsolete.write_text("old")
+    references = tmp_path / "references.json"
+    references.write_text("[]")
+    destination = tmp_path / "retired"
+    destination.mkdir()
+    target = tmp_path / "missing.csv"
+    collision = destination / obsolete.name
+    collision.symlink_to(target)
+    args = [
+        "--retire-file", str(obsolete),
+        "--references-json", str(references),
+        "--retired-dir", str(destination),
+    ]
+    with pytest.raises(SystemExit, match="1"):
+        main([*args, *(["--apply"] if apply else [])])
+    assert obsolete.read_text() == "old"
+    assert collision.is_symlink()
+    assert not target.exists()

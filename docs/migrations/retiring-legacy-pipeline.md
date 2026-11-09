@@ -76,8 +76,9 @@ uv run python -m scripts.retire_legacy_pipeline \
   --retired-dir /absolute/path/retired-pipeline-files
 ```
 
-The tool refuses referenced files, directories, destination collisions, and
-retirement without the reference snapshot. Only explicitly named files move;
+The tool refuses referenced files, directories, source symlinks, destination
+collisions (including dangling symlinks), and retirement without the reference
+snapshot. Only explicitly named regular files move;
 repeat `--retire-file` for each reviewed file. The destination must be outside
 the live data trees; the tool also refuses a destination overlapping an active
 artifact reference. Review the dry-run, then repeat with `--apply`. Preserve
