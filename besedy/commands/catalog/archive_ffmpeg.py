@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import json
-import re
 import subprocess
 from pathlib import Path
 
-from besedy.lib.audio.types import LOUDNESS_RANGE_LU, LOUDNESS_TARGET_LUFS, TRUE_PEAK_TARGET_DBTP
-
-ADECLIP_FILTER = "adeclip=window=55:overlap=75:arorder=8:threshold=10:method=a"
-ARESAMPLE_FILTER = "aresample=async=1:first_pts=0"
+from besedy.lib.audio.processing import (
+    LoudnessMeasurement,
+    loudness_measurement_command,
+    loudnorm_filter,
+    normalization_filter,
+)
 
 
 def check_encoder_available(ffmpeg_binary: str, encoder: str) -> bool:
@@ -105,16 +105,9 @@ def analyze_loudness(
     ffmpeg_binary: str,
 ) -> tuple[dict[str, str] | None, str | None]:
     """Analyze audio loudness using first-pass loudnorm."""
-    cmd = [
-        ffmpeg_binary,
-        "-i",
-        str(source),
-        "-af",
-        f"loudnorm=I={LOUDNESS_TARGET_LUFS}:LRA={LOUDNESS_RANGE_LU}:tp={TRUE_PEAK_TARGET_DBTP}:print_format=json",
-        "-f",
-        "null",
-        "-",
-    ]
+    # Archive analysis deliberately remains on the source. Recovery decoding
+    # and its publication policy are owned by prepare_source in archive.py.
+    cmd = loudness_measurement_command(source, ffmpeg_binary, loudnorm_filter(print_json=True))
 
     try:
         result = subprocess.run(
@@ -125,26 +118,10 @@ def analyze_loudness(
         return None, f"loudness analysis failed: {exc}"
 
     stderr = result.stderr.decode("utf-8", errors="replace")
-    if not (json_match := re.search(r"\{[^}]+\}", stderr, re.DOTALL)):
-        return None, "could not parse loudnorm JSON output"
-
     try:
-        data = json.loads(json_match.group())
-    except json.JSONDecodeError as exc:
-        return None, f"invalid loudnorm JSON: {exc}"
-
-    required_keys = [
-        "input_i",
-        "input_lra",
-        "input_tp",
-        "input_thresh",
-        "target_offset",
-    ]
-    missing = [key for key in required_keys if key not in data]
-    if missing:
-        return None, f"loudnorm JSON missing keys: {missing}"
-
-    return data, None
+        return LoudnessMeasurement.from_log(stderr).as_dict(), None
+    except ValueError as exc:
+        return None, str(exc)
 
 
 def build_opus_command(
@@ -158,20 +135,9 @@ def build_opus_command(
     apply_declipping: bool = False,
 ) -> list[str]:
     """Build ffmpeg command for Opus/WebM compression."""
-    filter_components: list[str] = []
-    if apply_declipping:
-        filter_components.append(ADECLIP_FILTER)
-
-    filter_components.append(
-        f"loudnorm=I={LOUDNESS_TARGET_LUFS}:LRA={LOUDNESS_RANGE_LU}:tp={TRUE_PEAK_TARGET_DBTP}:"
-        f"measured_I={measured['input_i']}:"
-        f"measured_LRA={measured['input_lra']}:"
-        f"measured_tp={measured['input_tp']}:"
-        f"measured_thresh={measured['input_thresh']}:"
-        f"offset={measured['target_offset']}:linear=true"
+    audio_filter = normalization_filter(
+        LoudnessMeasurement.from_mapping(measured), apply_declipping=apply_declipping
     )
-    filter_components.append(ARESAMPLE_FILTER)
-    audio_filter = ",".join(filter_components)
 
     return [
         ffmpeg_binary,
@@ -211,20 +177,9 @@ def build_m4a_command(
     apply_declipping: bool = False,
 ) -> list[str]:
     """Build ffmpeg command for M4A/AAC compression."""
-    filter_components: list[str] = []
-    if apply_declipping:
-        filter_components.append(ADECLIP_FILTER)
-
-    filter_components.append(
-        f"loudnorm=I={LOUDNESS_TARGET_LUFS}:LRA={LOUDNESS_RANGE_LU}:tp={TRUE_PEAK_TARGET_DBTP}:"
-        f"measured_I={measured['input_i']}:"
-        f"measured_LRA={measured['input_lra']}:"
-        f"measured_tp={measured['input_tp']}:"
-        f"measured_thresh={measured['input_thresh']}:"
-        f"offset={measured['target_offset']}:linear=true"
+    audio_filter = normalization_filter(
+        LoudnessMeasurement.from_mapping(measured), apply_declipping=apply_declipping
     )
-    filter_components.append(ARESAMPLE_FILTER)
-    audio_filter = ",".join(filter_components)
 
     cmd = [
         ffmpeg_binary,

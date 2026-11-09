@@ -254,7 +254,7 @@ def test_reuse_does_not_run_ffmpeg_or_copy_source_measurements(
 
     monkeypatch.setattr(stage_helpers, "analyze_audio_file", unexpected_work)
     monkeypatch.setattr(stage_helpers.subprocess, "run", unexpected_work)
-    monkeypatch.setattr("besedy.lib.audio.normalize.resolve_analysis_binary", unexpected_work)
+    monkeypatch.setattr("besedy.lib.audio.normalize.resolve_audio_executable", unexpected_work)
     manifest_path = tmp_path / "normalized.csv"
     manifest = ManifestWriter(manifest_path, include_analysis=True)
     try:
