@@ -8,7 +8,6 @@ import { handleCorrectionRouteError } from "@/lib/correction/route-errors";
 import {
   reconcilePublication,
   rollbackPublication,
-  withdrawFromSearch,
 } from "@/lib/correction/publication-service";
 import { requireActiveWorkspace } from "@/lib/correction/workspace-service";
 
@@ -20,13 +19,12 @@ interface RouteParams {
 }
 
 /**
- * The three exceptional operations, kept together and away from ordinary
- * publishing.
+ * Administrative recovery for an unfinished publication.
  *
  * `reconcile` finishes an activation that crashed after its artifacts were
  * written; `rollback` abandons one and restores the previous effective source
- * for this recording alone; `withdraw_from_search` takes corrected text back
- * out of search, which ordinary unpublish deliberately does not do.
+ * for this recording alone. Ordinary Unpublish retracts corrected text from
+ * both reading and search through the publisher's DELETE route.
  */
 const RecoverBodySchema = z.discriminatedUnion("action", [
   z.object({
@@ -37,7 +35,6 @@ const RecoverBodySchema = z.discriminatedUnion("action", [
     action: z.literal("rollback"),
     publicationId: z.string().uuid(),
   }),
-  z.object({ action: z.literal("withdraw_from_search") }),
 ]);
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
@@ -68,16 +65,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       case "rollback":
         result = { status: await rollbackPublication(command.publicationId, workspace.id) };
         break;
-      case "withdraw_from_search":
-        await withdrawFromSearch(catalogId, hash);
-        result = { withdrawnFromSearch: true };
-        break;
     }
 
     await logAuditEvent({
       userId,
       // Reconciling completes an activation and makes the transcript readable;
-      // the other two take it away. Recording all three as an unpublish would
+      // rollback abandons the candidate. Recording both as an unpublish would
       // make the log say the opposite of what happened.
       action:
         command.action === "reconcile"

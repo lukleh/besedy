@@ -369,8 +369,8 @@ that search and MCP require must never become a fallback for the reading page:
 
 | Consumer                     | Resolves                                                                       |
 | ---------------------------- | ------------------------------------------------------------------------------ |
-| Reader and ordinary download | The active reader publication; with none, no transcript text                   |
-| Search and MCP               | The active search publication, otherwise the search backend's machine transcript |
+| Reader and ordinary download | The current publication; with none, no transcript text                   |
+| Search and MCP               | The current publication, otherwise the search backend's machine transcript; unpublishing waits for index confirmation |
 | Correction surface           | The live workspace of a recording in correction scope, which `correct_transcripts` opens; starting one requires a primary recording |
 | Privileged original access   | The search backend's machine transcript, or the frozen source once correction started |
 
@@ -380,14 +380,19 @@ machine variants, including before publication. `download_original_transcript`
 delivers the machine text underneath, and asking for it never starts or changes
 a correction workspace.
 
-Three exceptional operations sit with `manage_catalog_config` rather than with
-either of those: archiving a mis-started workspace so a new one can be started,
-reconciling or rolling back a publication that crashed mid-activation, and
-withdrawing corrected text from search. Each can change what every consumer
-resolves, which is why none of them is part of ordinary correction or
-publication. Archiving refuses a workspace that still backs a published
-transcript: unpublishing and withdrawing it from search are deliberate acts of
-their own, and archiving must not perform them silently.
+Archiving a mis-started workspace so a new one can be started, and reconciling or
+rolling back a publication that crashed mid-activation, require
+`manage_catalog_config`. Ordinary Unpublish requires `publish_transcript` and
+takes corrected text off the reading surfaces and out of search together. The
+reader withholds text at once; search returns to machine text through a durable
+index-sync operation. A publisher may retry an interrupted Unpublish, including
+when both stored publication pointers are already clear. There is no separate
+administrative withdrawal-from-search action.
+
+Archiving refuses a workspace that still backs a publication or has an
+unpublish operation awaiting index confirmation. It must not silently perform
+either action. New publication also waits for unpublishing to finish, and
+republishing unchanged text renders and indexes a new immutable snapshot.
 
 `publish_transcript` grants no adjudication. The server rechecks every span
 when publication starts: two distinct approvals on its current revision and no
