@@ -50,7 +50,7 @@ def _patch_catalog_check(
 
     csv_path = tmp_path / "audio_catalog_20260101_000000.csv"
     csv_path.write_text("Hash,Full Path\n", encoding="utf-8")
-    normalized_path = tmp_path / "audio_catalog_20260101_000000_normalized.csv"
+    normalized_path = tmp_path / "audio_catalog_20260101_000000_loudness_normalized.csv"
     normalized_path.write_text("Hash,Full Path\n", encoding="utf-8")
     transcripts_root = tmp_path / "transcripts_20260101_000000"
     transcripts_root.mkdir()

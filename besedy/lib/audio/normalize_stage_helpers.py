@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import shlex
@@ -15,9 +14,18 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from besedy.config.settings import config
-from besedy.core.paths import validate_mono_wav_16k
 from besedy.lib.audio.decode import decode_to_temp_wav
 from besedy.lib.audio.probe import probe_media_duration_seconds
+from besedy.lib.audio.processing import (
+    DECLIP_THRESHOLD_DBTP,
+    LoudnessMeasurement,
+    duration_tolerance_seconds,
+    normalization_filter,
+    parse_loudnorm_output,
+)
+from besedy.lib.audio.processing import (
+    validate_staged_wav as _validate_staged_wav,
+)
 from besedy.lib.audio.quality import (
     AudioQualityMetrics,
     analyze_audio_file,
@@ -25,16 +33,10 @@ from besedy.lib.audio.quality import (
     needs_declipping,
 )
 from besedy.lib.audio.types import (
-    DECLIP_THRESHOLD_DBTP,
-    DURATION_TOLERANCE_MIN_SECONDS,
-    DURATION_TOLERANCE_PERCENTAGE,
     FILESIZE_MISMATCH_DRIFT_TOLERANCE,
-    LOUDNESS_RANGE_LU,
-    LOUDNESS_TARGET_LUFS,
     NON_MONOTONIC_MAX_RATIO,
     NON_MONOTONIC_MIN_RATIO,
     TARGET_CHANNELS,
-    TRUE_PEAK_TARGET_DBTP,
     ConversionLogMessage,
     ConversionResult,
     PreparedEntry,
@@ -63,18 +65,6 @@ class ConversionLogNoticeState:
         return f"[stage_audio_files] ffmpeg logs are being written to {self.log_file_path}"
 
 
-def resolve_analysis_binary(binary: str) -> str:
-    path = shutil.which(binary)
-    if path:
-        return path
-    candidate = Path(binary)
-    if candidate.exists():
-        return str(candidate)
-    raise RuntimeError(
-        f"Executable '{binary}' is required for audio analysis but was not found in PATH."
-    )
-
-
 def reuse_existing_staged_entry(
     *,
     row: CsvAudioRow,
@@ -97,26 +87,6 @@ def reuse_existing_staged_entry(
     # Reuse does not remeasure the WAV. Source measurements describe different
     # audio, so leave the manifest's unmeasured quality fields blank.
     return entry, existing_size_bytes
-
-
-def _validate_staged_wav(path: Path, expected_duration: float) -> None:
-    """Reject empty, truncated, or incompatible WAVs before publishing them."""
-    with wave.open(str(path), "rb") as audio:
-        validate_mono_wav_16k(path, audio.getframerate(), audio.getnchannels())
-        frames = audio.getnframes()
-        if audio.getsampwidth() != 2 or frames <= 0:
-            raise ValueError("staged WAV must contain 16-bit PCM audio")
-        audio.setpos(frames - 1)
-        if len(audio.readframes(1)) != 2:
-            raise ValueError("staged WAV contains truncated audio")
-        duration = frames / audio.getframerate()
-    tolerance = max(
-        DURATION_TOLERANCE_MIN_SECONDS, expected_duration * DURATION_TOLERANCE_PERCENTAGE
-    )
-    if abs(duration - expected_duration) > tolerance:
-        raise ValueError(
-            f"duration mismatch (expected {expected_duration:.2f}s, got {duration:.2f}s)"
-        )
 
 
 class _SkippedConversion(Exception):
@@ -221,30 +191,21 @@ def _convert_stage_audio(
         )
         normalized = has_norm_data
 
-        aresample_component = "aresample=async=1:first_pts=0"
-        filter_components: list[str] = []
-
-        apply_declipping = needs_declipping(row.true_peak_db, threshold=DECLIP_THRESHOLD_DBTP)
-        if apply_declipping:
-            filter_components.append("adeclip=window=55:overlap=75:arorder=8:threshold=10:method=a")
-
-        if has_norm_data:
-            filter_components.append(
-                f"loudnorm=I={LOUDNESS_TARGET_LUFS}:LRA={LOUDNESS_RANGE_LU}:"
-                f"tp={TRUE_PEAK_TARGET_DBTP}:"
-                f"measured_I={row.integrated_loudness_lufs}:"
-                f"measured_LRA={row.loudness_range_lu}:"
-                f"measured_tp={row.true_peak_db}:"
-                f"measured_thresh={row.input_thresh}:"
-                f"offset={row.target_offset}:"
-                f"linear=true"
+        measurement = (
+            LoudnessMeasurement(
+                row.integrated_loudness_lufs or "",
+                row.loudness_range_lu or "",
+                row.true_peak_db or "",
+                row.input_thresh or "",
+                row.target_offset or "",
             )
-
-        filter_components.append(aresample_component)
-
-        audio_filter_with_async = ",".join(filter_components)
-        simplified_components = filter_components[:-1]
-        simplified_filter = ",".join(simplified_components).strip(",")
+            if has_norm_data else None
+        )
+        apply_declipping = needs_declipping(row.true_peak_db, threshold=DECLIP_THRESHOLD_DBTP)
+        audio_filter_with_async = normalization_filter(measurement, apply_declipping=apply_declipping)
+        simplified_filter = normalization_filter(
+            measurement, apply_declipping=apply_declipping, async_resample=False
+        )
 
         label_parts = []
         if apply_declipping:
@@ -420,10 +381,7 @@ def _convert_stage_audio(
                 )
 
             if converted_duration is not None:
-                tolerance = max(
-                    DURATION_TOLERANCE_MIN_SECONDS,
-                    expected_duration * DURATION_TOLERANCE_PERCENTAGE,
-                )
+                tolerance = duration_tolerance_seconds(expected_duration)
                 if converted_duration <= 0:
                     duration_error = "reported duration was non-positive"
                 elif abs(converted_duration - expected_duration) > tolerance:
@@ -488,10 +446,7 @@ def _convert_stage_audio(
                         ffprobe=ffprobe_path,
                     )
                     if source_duration is not None:
-                        source_tolerance = max(
-                            DURATION_TOLERANCE_MIN_SECONDS,
-                            source_duration * DURATION_TOLERANCE_PERCENTAGE,
-                        )
+                        source_tolerance = duration_tolerance_seconds(source_duration)
                         if abs(converted_duration - source_duration) <= source_tolerance:
                             duration_mismatch_tolerated = True
                             effective_duration = converted_duration
@@ -601,33 +556,16 @@ def _convert_stage_audio(
                     )
                     lufs_stderr = safe_decode(lufs_result.stderr)
 
-                    stderr_lines = lufs_stderr.splitlines()
-                    json_start = -1
-                    json_end = -1
-
-                    for i in range(len(stderr_lines) - 1, -1, -1):
-                        line = stderr_lines[i].strip()
-                        if json_end == -1 and line.endswith("}"):
-                            json_end = i
-                        if json_start == -1 and line.startswith("{"):
-                            json_start = i
-                            if json_end >= json_start:
-                                break
-
-                    if json_start >= 0 and json_end >= 0 and json_end >= json_start:
-                        json_text = "\n".join(stderr_lines[json_start : json_end + 1])
-                        loudness_data = json.loads(json_text)
-                        measured_lufs = loudness_data.get("input_i")
-
-                        if measured_lufs and determine_needs_normalization(measured_lufs) == "yes":
-                            needs_compression_retry = True
-                            messages.append(
-                                ConversionLogMessage(
-                                    f"[stage_audio_files] linear normalization achieved "
-                                    f"{measured_lufs} LUFS (target: -20 to -12), retrying "
-                                    f"with compression (linear=false)"
-                                )
+                    measured_lufs = parse_loudnorm_output(lufs_stderr).get("input_i")
+                    if measured_lufs and determine_needs_normalization(measured_lufs) == "yes":
+                        needs_compression_retry = True
+                        messages.append(
+                            ConversionLogMessage(
+                                f"[stage_audio_files] linear normalization achieved "
+                                f"{measured_lufs} LUFS (target: -20 to -12), retrying "
+                                f"with compression (linear=false)"
                             )
+                        )
                 except Exception as check_exc:
                     messages.append(
                         ConversionLogMessage(
@@ -637,26 +575,9 @@ def _convert_stage_audio(
                     )
 
             if needs_compression_retry:
-                compression_filter_components = []
-
-                if apply_declipping:
-                    compression_filter_components.append(
-                        "adeclip=window=55:overlap=75:arorder=8:threshold=10:method=a"
-                    )
-
-                compression_filter_components.append(
-                    f"loudnorm=I={LOUDNESS_TARGET_LUFS}:LRA={LOUDNESS_RANGE_LU}:"
-                    f"tp={TRUE_PEAK_TARGET_DBTP}:"
-                    f"measured_I={row.integrated_loudness_lufs}:"
-                    f"measured_LRA={row.loudness_range_lu}:"
-                    f"measured_tp={row.true_peak_db}:"
-                    f"measured_thresh={row.input_thresh}:"
-                    f"offset={row.target_offset}:"
-                    f"linear=false"
+                compression_filter = normalization_filter(
+                    measurement, apply_declipping=apply_declipping, linear=False
                 )
-
-                compression_filter_components.append(aresample_component)
-                compression_filter = ",".join(compression_filter_components)
 
                 retry_cmd = [
                     ffmpeg_binary,

@@ -49,6 +49,7 @@ from besedy.core.paths_runtime import (
 from besedy.core.paths_transcripts import (
     assert_catalog_transcripts_alignment,
     assert_transcripts_speaker_clusters_alignment,
+    catalog_transcripts_dirname,
     derive_common_root,
     extract_run_id_from_speaker_clusters_root,
     extract_run_id_from_transcripts_root,
@@ -113,6 +114,7 @@ __all__ = [
     "hash_component_from_sha",
     "require_valid_hash_stem",
     "sanitize_component",
+    "catalog_transcripts_dirname",
     "derive_common_root",
     "iter_transcript_paths",
     "parse_transcript_components",

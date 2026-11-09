@@ -1015,7 +1015,7 @@ class TestBackfillSafety:
 
     @pytest.fixture
     def backfill_tools(self, monkeypatch):
-        monkeypatch.setattr(archive_module.shutil, "which", lambda binary: str(binary))
+        monkeypatch.setattr(archive_module, "resolve_audio_executable", lambda binary: str(binary))
         monkeypatch.setattr(archive_module, "select_aac_encoder", lambda *_: False)
 
     def _manifest(self, tmp_path: Path, rows: list[dict[str, str]]) -> Path:

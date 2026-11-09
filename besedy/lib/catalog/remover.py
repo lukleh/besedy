@@ -17,7 +17,7 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from besedy.core.paths import extract_timestamp_from_catalog
+from besedy.core.paths import catalog_transcripts_dirname, extract_timestamp_from_catalog
 from besedy.lib.catalog.cleaner import (
     _get_transcript_search_roots,
     find_diarization_dirs,
@@ -75,7 +75,7 @@ class CatalogGeneration:
 
     @property
     def transcripts_root(self) -> Path:
-        return self.transcripts_parent / f"transcripts_{self.timestamp}"
+        return self.transcripts_parent / catalog_transcripts_dirname(self.timestamp)
 
     @property
     def embeddings_root(self) -> Path:

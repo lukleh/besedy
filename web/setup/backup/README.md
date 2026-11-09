@@ -116,10 +116,12 @@ regular Compose backup service alone does not pause the host schedule.
 
 To test restoration, download a trusted dump from the NAS into a private recovery
 directory and run `bash web/scripts/db-backup-restore-test.sh /path/to/dump.sql.gz`.
-It uses an already installed `pgvector/pgvector:pg18` image, with no network,
+It uses an already installed `postgres:18-bookworm` image, with no network,
 published ports, persistent DB volume, or production mounts. It restores into a
 temporary RAM-backed database, checks tables and app-role access, and removes
 the test container on exit. This is a manual drill, not an additional schedule.
+For a pre-baseline dump containing vector objects, set
+`DB_RESTORE_TEST_IMAGE=pgvector/pgvector:pg18` to use the matching older image.
 
 Recommended host crontab for the extra root:
 

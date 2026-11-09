@@ -40,6 +40,31 @@ def test_required_metadata_fields(field):
     assert any(field in issue for issue in validate_canonical_schema(data))
 
 
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("model", None),
+        ("audio_filepath", 1),
+        ("backend", []),
+        ("duration", True),
+        ("duration", "1"),
+        ("duration", -1),
+        ("duration", float("nan")),
+        ("duration", float("inf")),
+        ("generation_params", []),
+    ],
+)
+def test_invalid_metadata_is_rejected_by_all_entry_points(tmp_path, field, value):
+    data = create_transcript_with_words(["Hello"])
+    data["meta"][field] = value
+    path = tmp_path / "transcript.json"
+    path.write_text(json.dumps(data))
+
+    assert any(f"meta.{field}" in issue for issue in validate_canonical_schema(data))
+    assert not validate_single_file(path, quiet=True)
+    assert not quick_validate(path)[0]
+
+
 @pytest.mark.parametrize("field", ["start", "end", "text", "confidence", "words"])
 def test_required_segment_fields(field):
     data = create_transcript_with_words(["Hello"])
@@ -96,7 +121,7 @@ def test_segment_and_word_timing_remain_validated():
     assert any("not monotonic" in issue for issue in validate_canonical_schema(data))
     data["segments"] = data["segments"][:1]
     data["segments"][0]["words"][0]["end"] = 2
-    assert any("segment end" in issue for issue in validate_canonical_schema(data))
+    assert any("segment bounds" in issue for issue in validate_canonical_schema(data))
 
 
 def test_cli_reports_missing_invalid_and_incomplete_files(tmp_path):
