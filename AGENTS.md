@@ -263,3 +263,8 @@ No route picks a catalog from `?group=` or a saved preference.
 5. **Timestamped Outputs**: CLI commands that create output directories must follow the timestamp + symlink pattern; `export-transcripts` is the documented sidecar exception.
 6. **Audio Input Format**: All workflows expect 16kHz mono WAV; use `validate_mono_wav_16k()`.
 7. **Workflow Registration**: Add labels in `besedy/core/paths.py` and register in `besedy/lib/workflow/runner.py`.
+8. **Current Contracts Only**: Runtime code reads and writes only current formats,
+   versions and canonical names. Migrate, rebuild or retire old data explicitly;
+   do not add compatibility aliases, old-format fallbacks or multiple-version
+   readers. Migration tools stay outside routine paths and are retired after
+   their cutover. Keep current version markers and reject unsupported versions.

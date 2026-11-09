@@ -10,9 +10,7 @@ from typing import Any, cast
 
 from besedy.core.paths import SHA256_HASH_PATTERN
 
-_START_KEYS = ("start", "start_sec", "start_seconds")
-_END_KEYS = ("end", "end_sec", "end_seconds")
-_TIME_KEYS = {*_START_KEYS, *_END_KEYS}
+_TIME_KEYS = {"start_seconds", "end_seconds"}
 
 
 @dataclass(frozen=True)
@@ -59,7 +57,7 @@ def load_eval_records(path: Path | str) -> list[dict[str, Any]]:
         record = cast(dict[str, Any], raw_record)
         record_label = _record_label(record, fallback=str(index))
         if not record_query(record):
-            raise ValueError(f"{record_label} must define a non-empty 'question' or 'query' field.")
+            raise ValueError(f"{record_label} must define a non-empty 'question' field.")
         if not parse_eval_targets(record):
             raise ValueError(f"{record_label} must define at least one target.")
         records.append(record)
@@ -67,13 +65,12 @@ def load_eval_records(path: Path | str) -> list[dict[str, Any]]:
 
 
 def record_query(record: dict[str, Any]) -> str:
-    """Return query text from either supported fixture field."""
+    """Return the question from the current evaluation record format."""
 
-    for key in ("question", "query"):
-        value = record.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
+    if "query" in record:
+        raise ValueError("Evaluation records use 'question'; migrate the retired 'query' field")
+    value = record.get("question")
+    return value.strip() if isinstance(value, str) else ""
 
 
 def parse_eval_targets(record: dict[str, Any]) -> list[EvalTarget]:
@@ -144,15 +141,15 @@ def _parse_time_span(
             f"{label} uses unsupported time field(s): {', '.join(unsupported_time_keys)}."
         )
 
-    start_values = _alias_values(target, _START_KEYS)
-    end_values = _alias_values(target, _END_KEYS)
-    if not start_values and not end_values:
+    has_start = "start_seconds" in target
+    has_end = "end_seconds" in target
+    if not has_start and not has_end:
         return None, None
-    if not start_values or not end_values:
+    if not has_start or not has_end:
         raise ValueError(f"{label} must define both start and end time fields.")
 
-    start_sec = _coerce_time_aliases(start_values, side="start", label=label)
-    end_sec = _coerce_time_aliases(end_values, side="end", label=label)
+    start_sec = _parse_time(target["start_seconds"], key="start_seconds", label=label)
+    end_sec = _parse_time(target["end_seconds"], key="end_seconds", label=label)
     if start_sec < 0:
         raise ValueError(f"{label} start time must be non-negative.")
     if start_sec >= end_sec:
@@ -167,36 +164,10 @@ def _record_label(record: dict[str, Any], *, fallback: str = "<unknown>") -> str
     return f"Evaluation record {fallback}"
 
 
-def _alias_values(
-    payload: dict[str, Any],
-    keys: tuple[str, ...],
-) -> list[tuple[str, Any]]:
-    return [(key, payload[key]) for key in keys if key in payload]
-
-
-def _coerce_time_aliases(
-    values: list[tuple[str, Any]],
-    *,
-    side: str,
-    label: str,
-) -> float:
-    parsed: list[tuple[str, float]] = []
-    for key, value in values:
-        if isinstance(value, bool):
-            raise ValueError(f"{label} field {key!r} must be a finite number.")
-        try:
-            number = float(value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{label} field {key!r} must be a finite number.") from exc
-        if not math.isfinite(number):
-            raise ValueError(f"{label} field {key!r} must be a finite number.")
-        parsed.append((key, number))
-
-    first_value = parsed[0][1]
-    if any(value != first_value for _, value in parsed[1:]):
-        fields = ", ".join(key for key, _ in parsed)
-        raise ValueError(f"{label} has conflicting {side} time fields: {fields}.")
-    return first_value
+def _parse_time(value: Any, *, key: str, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{label} field {key!r} must be a finite number.")
+    return float(value)
 
 
 __all__ = [

@@ -59,8 +59,9 @@ def _chunk_select_columns(*, table_alias: str = "") -> str:
     )
 
 
-def _connect(path: Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(path)
+def _connect(path: Path, *, create: bool = False) -> sqlite3.Connection:
+    mode = "rwc" if create else "rw"
+    connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode={mode}", uri=True)
     connection.row_factory = sqlite3.Row
     return connection
 
@@ -72,16 +73,12 @@ def _connect_read_only(path: Path) -> sqlite3.Connection:
 
 
 def _initialize_schema(connection: sqlite3.Connection) -> None:
-    fts_exists = connection.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-        (CHUNK_FTS_TABLE,),
-    ).fetchone()
     connection.executescript(
         """
         PRAGMA journal_mode = DELETE;
         PRAGMA synchronous = NORMAL;
 
-        CREATE TABLE IF NOT EXISTS chunks (
+        CREATE TABLE chunks (
           chunk_id TEXT PRIMARY KEY,
           audio_hash TEXT NOT NULL,
           chunk_ordinal INTEGER NOT NULL,
@@ -95,39 +92,39 @@ def _initialize_schema(connection: sqlite3.Connection) -> None:
           source_path TEXT NOT NULL
         );
 
-        CREATE UNIQUE INDEX IF NOT EXISTS chunks_audio_ordinal_uq
+        CREATE UNIQUE INDEX chunks_audio_ordinal_uq
           ON chunks(audio_hash, chunk_ordinal);
 
-        CREATE INDEX IF NOT EXISTS chunks_audio_hash_idx
+        CREATE INDEX chunks_audio_hash_idx
           ON chunks(audio_hash);
 
-        CREATE INDEX IF NOT EXISTS chunks_audio_time_idx
+        CREATE INDEX chunks_audio_time_idx
           ON chunks(audio_hash, start_sec, end_sec);
 
-        CREATE TABLE IF NOT EXISTS chunk_store_metadata (
+        CREATE TABLE chunk_store_metadata (
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL
         );
 
-        CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+        CREATE VIRTUAL TABLE chunks_fts USING fts5(
           text,
           content = 'chunks',
           content_rowid = 'rowid',
           tokenize = 'unicode61 remove_diacritics 2'
         );
 
-        CREATE TRIGGER IF NOT EXISTS chunks_fts_after_insert
+        CREATE TRIGGER chunks_fts_after_insert
         AFTER INSERT ON chunks BEGIN
           INSERT INTO chunks_fts(rowid, text) VALUES (new.rowid, new.text);
         END;
 
-        CREATE TRIGGER IF NOT EXISTS chunks_fts_after_delete
+        CREATE TRIGGER chunks_fts_after_delete
         AFTER DELETE ON chunks BEGIN
           INSERT INTO chunks_fts(chunks_fts, rowid, text)
           VALUES ('delete', old.rowid, old.text);
         END;
 
-        CREATE TRIGGER IF NOT EXISTS chunks_fts_after_update
+        CREATE TRIGGER chunks_fts_after_update
         AFTER UPDATE ON chunks BEGIN
           INSERT INTO chunks_fts(chunks_fts, rowid, text)
           VALUES ('delete', old.rowid, old.text);
@@ -135,37 +132,35 @@ def _initialize_schema(connection: sqlite3.Connection) -> None:
         END;
         """
     )
-    backfill_version = connection.execute(
-        "SELECT value FROM chunk_store_metadata WHERE key = ?",
-        (CHUNK_FTS_BACKFILL_KEY,),
-    ).fetchone()
+    connection.execute(
+        "INSERT INTO chunk_store_metadata (key, value) VALUES (?, ?)",
+        (CHUNK_FTS_BACKFILL_KEY, CHUNK_FTS_BACKFILL_VERSION),
+    )
+
+
+def _require_current_schema(connection: sqlite3.Connection) -> None:
+    try:
+        version = connection.execute(
+            "SELECT value FROM chunk_store_metadata WHERE key = ?",
+            (CHUNK_FTS_BACKFILL_KEY,),
+        ).fetchone()
+        objects = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master")}
+    except sqlite3.OperationalError as exc:
+        raise ValueError("Unsupported chunk store; run rag-colbert-index --rebuild") from exc
+    required_objects = {
+        "chunks",
+        CHUNK_FTS_TABLE,
+        "chunk_store_metadata",
+        "chunks_fts_after_insert",
+        "chunks_fts_after_delete",
+        "chunks_fts_after_update",
+    }
     if (
-        fts_exists is None
-        or backfill_version is None
-        or str(backfill_version["value"]) != CHUNK_FTS_BACKFILL_VERSION
+        version is None
+        or version["value"] != CHUNK_FTS_BACKFILL_VERSION
+        or not required_objects.issubset(objects)
     ):
-        # CREATE VIRTUAL TABLE does not backfill an external-content FTS index.
-        # Record completion only after rebuilding so an interrupted migration is
-        # retried instead of mistaking the virtual table's presence for success.
-        connection.execute("INSERT INTO chunks_fts(chunks_fts) VALUES ('rebuild')")
-        connection.execute(
-            """
-            INSERT INTO chunk_store_metadata (key, value)
-            VALUES (?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value
-            """,
-            (CHUNK_FTS_BACKFILL_KEY, CHUNK_FTS_BACKFILL_VERSION),
-        )
-
-
-def ensure_chunk_store_fts(*, path: Path | str) -> Path:
-    """Create and backfill the FTS5 index for a new or existing chunk store."""
-
-    store_path = Path(path)
-    with _connect(store_path) as connection:
-        _initialize_schema(connection)
-        connection.commit()
-    return store_path
+        raise ValueError("Unsupported chunk store; run rag-colbert-index --rebuild")
 
 
 def _chunk_row(chunk: RagChunk) -> tuple[object, ...]:
@@ -338,7 +333,7 @@ def write_chunk_store(*, path: Path | str, chunks: Sequence[RagChunk]) -> Path:
     if temporary_path.exists():
         temporary_path.unlink()
 
-    connection = _connect(temporary_path)
+    connection = _connect(temporary_path, create=True)
     try:
         _initialize_schema(connection)
         rows = [_chunk_row(chunk) for chunk in chunks]
@@ -449,7 +444,7 @@ def delete_chunks_for_audio_hashes(
     store_path = Path(path)
     placeholders = ", ".join("?" for _ in audio_hashes)
     with _connect(store_path) as connection:
-        _initialize_schema(connection)
+        _require_current_schema(connection)
         cursor = connection.execute(
             f"DELETE FROM chunks WHERE audio_hash IN ({placeholders})",
             list(audio_hashes),
@@ -475,7 +470,7 @@ def replace_chunks_for_audio_hash(
 
     rows = [_chunk_row(chunk) for chunk in chunks]
     with _connect(store_path) as connection:
-        _initialize_schema(connection)
+        _require_current_schema(connection)
         delete_cursor = connection.execute(
             "DELETE FROM chunks WHERE audio_hash = ?",
             (audio_hash,),
@@ -583,7 +578,6 @@ __all__ = [
     "build_fts_query",
     "count_chunks_by_audio_hash",
     "delete_chunks_for_audio_hashes",
-    "ensure_chunk_store_fts",
     "lookup_chunk_neighbors",
     "lookup_chunks",
     "list_chunk_ids_by_audio_hashes",
