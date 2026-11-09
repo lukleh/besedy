@@ -1,5 +1,7 @@
 """Current-only boundaries reject old inputs without rewriting valuable files."""
 
+import argparse
+
 import pytest
 
 from besedy.commands.catalog.duplicates import parse_hash_sidecar_file
@@ -12,6 +14,28 @@ from besedy.lib.catalog.manager import (
     write_audio_hash_sidecar,
 )
 from besedy.workflows import align_nemo_with_whisperx
+
+
+def test_check_uses_only_the_current_normalized_filename(tmp_path, monkeypatch):
+    from besedy.commands.catalog import check
+
+    timestamp = "20260101_120000"
+    catalog = tmp_path / f"audio_catalog_{timestamp}.csv"
+    catalog.touch()
+    (tmp_path / f"audio_catalog_{timestamp}_normalized.csv").touch()
+    (tmp_path / f"transcripts_{timestamp}").mkdir()
+    monkeypatch.setattr(check, "resolve_transcripts_parent", lambda: tmp_path)
+    args = argparse.Namespace(csv_normalized=tmp_path / "audio_catalog_normalized.csv")
+    current = tmp_path / f"audio_catalog_{timestamp}_loudness_normalized.csv"
+
+    incomplete = check._resolve_timestamped_inputs(args, catalog, timestamp)
+    assert isinstance(incomplete, check._IncompletePipeline)
+    assert incomplete.normalized_path == current
+
+    current.touch()
+    resolved = check._resolve_timestamped_inputs(args, catalog, timestamp)
+    assert isinstance(resolved, check._CheckInputs)
+    assert resolved.csv_normalized_path == current
 
 
 def test_catalog_requires_current_headers_and_recorded_timestamps(tmp_path):

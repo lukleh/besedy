@@ -178,7 +178,6 @@ export default function CatalogSettingsContent({
       archivedCatalogPath: catalogConfig.archivedCatalogPath ?? "",
       metadataCatalogPath: catalogConfig.metadataCatalogPath ?? "",
       duplicatesCatalogPath: catalogConfig.duplicatesCatalogPath ?? "",
-      transcriptsPath: catalogConfig.transcriptsPath ?? "",
     });
   }, [catalogConfig, isEditingConfig]);
 
@@ -188,7 +187,6 @@ export default function CatalogSettingsContent({
       archivedCatalogPath?: string;
       metadataCatalogPath?: string;
       duplicatesCatalogPath?: string | null;
-      transcriptsPath?: string | null;
     }) => {
       return fetchJson(`/api/catalogs/${catalogId}`, {
         method: "PUT",
@@ -396,7 +394,6 @@ export default function CatalogSettingsContent({
       archivedCatalogPath: catalogConfig.archivedCatalogPath ?? "",
       metadataCatalogPath: catalogConfig.metadataCatalogPath ?? "",
       duplicatesCatalogPath: catalogConfig.duplicatesCatalogPath ?? "",
-      transcriptsPath: catalogConfig.transcriptsPath ?? "",
     });
     setIsEditingConfig(true);
   };
@@ -408,7 +405,6 @@ export default function CatalogSettingsContent({
         archivedCatalogPath: catalogConfig.archivedCatalogPath ?? "",
         metadataCatalogPath: catalogConfig.metadataCatalogPath ?? "",
         duplicatesCatalogPath: catalogConfig.duplicatesCatalogPath ?? "",
-        transcriptsPath: catalogConfig.transcriptsPath ?? "",
       });
     }
     setIsEditingConfig(false);
@@ -448,7 +444,6 @@ export default function CatalogSettingsContent({
       duplicatesCatalogPath: normalizeOptional(
         configDraft.duplicatesCatalogPath
       ),
-      transcriptsPath: normalizeOptional(configDraft.transcriptsPath),
     });
   };
 

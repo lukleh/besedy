@@ -8,12 +8,8 @@
  *
  * Environment variables:
  *   SEED_ADMIN_EMAIL - Email address for the initial superadmin
- *   DATABASE_URL - Database connection string (from .env.local)
+ *   DATABASE_URL - Explicit database connection string
  */
-
-import { config } from "dotenv";
-// Load .env.local for local development
-config({ path: ".env.local" });
 
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";

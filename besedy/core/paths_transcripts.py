@@ -13,6 +13,13 @@ from besedy.core.paths_common import (
 )
 
 
+def catalog_transcripts_dirname(catalog_id: str) -> str:
+    """The transcript generation shared by the pipeline and deployment readers."""
+    if not re.fullmatch(r"[0-9]{8}_[0-9]{6}", catalog_id):
+        raise ValueError("Invalid catalog ID (expected YYYYMMDD_HHMMSS)")
+    return f"transcripts_{catalog_id}"
+
+
 def _extract_timestamp(path: Path, pattern: str, strip_slash: bool = False) -> str | None:
     """Extract timestamp matching pattern from a path name."""
     name = path.name.rstrip("/") if strip_slash else path.name

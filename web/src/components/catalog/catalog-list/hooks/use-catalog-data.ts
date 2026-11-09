@@ -1,14 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type {
-  CatalogResponse,
-  ColumnKey,
-  StatusFilter,
-  DurationFilter,
-  VerifiedFilter,
-  SortDirection,
-} from "../types";
+import type { CatalogResponse } from "../types";
+import type { CatalogFilterParams } from "../utils";
 import { catalogResponseSchema } from "../types";
 import { buildCatalogParams, catalogRecordingsUrl } from "../utils";
 import { fetchJson } from "@/lib/api/fetch-json";
@@ -20,93 +14,29 @@ import {
 
 interface UseCatalogDataOptions {
   activeCatalogId: string | null | undefined;
-  statusFilter: StatusFilter;
-  durationFilter: DurationFilter;
-  verifiedFilter: VerifiedFilter;
-  recorderFilter: string;
-  locationFilter: string;
-  partFilter: string;
-  dateYear: string;
-  dateMonth: string;
-  dateDay: string;
-  artistFilter: string;
-  albumFilter: string;
-  duplicatesFilter: string;
-  sortKey: ColumnKey;
-  sortDir: SortDirection;
+  filters: CatalogFilterParams;
   page: number;
-  visibleColumnKeys: ColumnKey[];
   enabled: boolean;
 }
 
 export function useCatalogData({
   activeCatalogId,
-  statusFilter,
-  durationFilter,
-  verifiedFilter,
-  recorderFilter,
-  locationFilter,
-  partFilter,
-  dateYear,
-  dateMonth,
-  dateDay,
-  artistFilter,
-  albumFilter,
-  duplicatesFilter,
-  sortKey,
-  sortDir,
+  filters,
   page,
-  visibleColumnKeys,
   enabled,
 }: UseCatalogDataOptions) {
+  const params = buildCatalogParams(filters, page, 50);
+  const requestKey = params.toString();
   const query = useQuery<CatalogResponse>({
-    queryKey: [
-      "catalog",
-      activeCatalogId,
-      page,
-      statusFilter,
-      durationFilter,
-      verifiedFilter,
-      recorderFilter,
-      locationFilter,
-      partFilter,
-      dateYear,
-      dateMonth,
-      dateDay,
-      artistFilter,
-      albumFilter,
-      duplicatesFilter,
-      sortKey,
-      sortDir,
-      visibleColumnKeys.join(","),
-    ],
-    queryFn: async () => {
-      // Note: Filters are applied regardless of column visibility to support URL sharing
-      const params = buildCatalogParams(
+    queryKey: ["catalog", activeCatalogId, requestKey],
+    queryFn: ({ signal }) =>
+      fetchJson<CatalogResponse>(
+        catalogRecordingsUrl(activeCatalogId, params),
         {
-          activeCatalogId,
-          statusFilter,
-          durationFilter,
-          verifiedFilter,
-          recorderFilter,
-          locationFilter,
-          partFilter,
-          dateYear,
-          dateMonth,
-          dateDay,
-          artistFilter,
-          albumFilter,
-          duplicatesFilter,
-          sortKey,
-          sortDir,
+          schema: catalogResponseSchema,
+          signal,
         },
-        page,
-        50
-      );
-      return fetchJson<CatalogResponse>(catalogRecordingsUrl(activeCatalogId, params), {
-        schema: catalogResponseSchema,
-      });
-    },
+      ),
     enabled,
     ...AUTH_SENSITIVE_QUERY_OPTIONS,
   });

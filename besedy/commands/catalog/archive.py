@@ -15,9 +15,7 @@ from __future__ import annotations
 import argparse
 import csv
 import fcntl
-import math
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -66,11 +64,10 @@ from besedy.core.symlinks import (
 from besedy.lib.audio.decode import decode_to_temp_wav
 from besedy.lib.audio.join import probe_audio_file
 from besedy.lib.audio.probe import measure_audio_duration_seconds
+from besedy.lib.audio.processing import resolve_audio_executable, validate_audio_duration
 from besedy.lib.audio.quality import needs_declipping
 from besedy.lib.audio.types import (
     DECLIP_THRESHOLD_DBTP,
-    DURATION_TOLERANCE_MIN_SECONDS,
-    DURATION_TOLERANCE_PERCENTAGE,
     detect_logical_cpus,
     format_size,
 )
@@ -523,18 +520,7 @@ def _archive_output_metadata(
     info = probe_audio_file(path, ffprobe_binary=ffprobe_binary)
     if info.codec != codec:
         raise RuntimeError(f"Archive output has codec {info.codec}, expected {codec}: {path}")
-    if not all(
-        math.isfinite(value) and value > 0 for value in (info.duration_seconds, expected_duration)
-    ):
-        raise RuntimeError(f"Archive output has invalid duration: {path}")
-    tolerance = max(
-        DURATION_TOLERANCE_MIN_SECONDS, expected_duration * DURATION_TOLERANCE_PERCENTAGE
-    )
-    if abs(info.duration_seconds - expected_duration) > tolerance:
-        raise RuntimeError(
-            f"Archive output duration {info.duration_seconds:.2f}s differs from "
-            f"decoded source {expected_duration:.2f}s: {path}"
-        )
+    validate_audio_duration(info.duration_seconds, expected_duration)
     return size, info.duration_seconds
 
 
@@ -1041,11 +1027,11 @@ def run_aac_backfill(
         print(f"Error: no archived manifest to backfill: {archived_csv_path}", file=sys.stderr)
         return 1
 
-    ffmpeg_binary = shutil.which(str(request.ffmpeg_binary))
-    ffprobe_binary = shutil.which(str(request.ffprobe_binary))
-    if not ffmpeg_binary or not ffprobe_binary:
-        missing = request.ffmpeg_binary if not ffmpeg_binary else request.ffprobe_binary
-        print(f"Error: not found: {missing}", file=sys.stderr)
+    try:
+        ffmpeg_binary = resolve_audio_executable(str(request.ffmpeg_binary))
+        ffprobe_binary = resolve_audio_executable(str(request.ffprobe_binary))
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         return 1
 
     try:
@@ -1319,14 +1305,11 @@ def handle_archive(
         print(f"Created output directory: {output_dir}")
 
     # 6. Check ffmpeg/ffprobe availability
-    ffmpeg_binary = shutil.which(str(request.ffmpeg_binary))
-    if not ffmpeg_binary:
-        print(f"Error: ffmpeg not found: {request.ffmpeg_binary}", file=sys.stderr)
-        return 1
-
-    ffprobe_binary = shutil.which(str(request.ffprobe_binary))
-    if not ffprobe_binary:
-        print(f"Error: ffprobe not found: {request.ffprobe_binary}", file=sys.stderr)
+    try:
+        ffmpeg_binary = resolve_audio_executable(str(request.ffmpeg_binary))
+        ffprobe_binary = resolve_audio_executable(str(request.ffprobe_binary))
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         return 1
 
     # Check encoder availability for M4A and the AAC copy

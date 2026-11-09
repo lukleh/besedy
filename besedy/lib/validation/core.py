@@ -16,6 +16,7 @@ from rich.progress import (
 )
 
 from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.validation.schema import is_finite_number as _is_number
 from besedy.lib.validation.schema import validate_canonical_schema
 
 
@@ -28,10 +29,6 @@ def _summarize_counts(data: dict[str, Any]) -> tuple[int, int]:
     segments = data.get("segments", []) if isinstance(data, dict) else []
     words = sum(len(seg.get("words", [])) for seg in segments if isinstance(seg, dict))
     return len(segments), words
-
-
-def _is_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def validate_single_file(
@@ -171,8 +168,8 @@ def validate_diarization_file(
             issues.append(f"Segment {idx} 'speaker' must be a non-empty string")
             continue
 
-        start_f = float(cast(float | int, start))
-        end_f = float(cast(float | int, end))
+        start_f = float(start)
+        end_f = float(end)
         if end_f <= start_f:
             issues.append(f"Segment {idx} end must be greater than start")
             continue

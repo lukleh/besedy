@@ -21,6 +21,7 @@ from besedy.commands.catalog.default_paths import (
 from besedy.config.settings import config
 from besedy.core.cli_output import JsonStatus, print_json_result
 from besedy.core.paths import (
+    catalog_transcripts_dirname,
     extract_run_id_from_transcripts_root,
     extract_timestamp_from_catalog,
     extract_timestamp_from_normalized_catalog,
@@ -501,17 +502,9 @@ def _resolve_timestamped_inputs(
     ts_catalog: str,
 ) -> _CheckInputs | _IncompletePipeline:
     catalog_dir = csv_path.resolve().parent
-    normalized_candidates = [
-        catalog_dir / f"audio_catalog_{ts_catalog}_loudness_normalized.csv",
-        catalog_dir / f"audio_catalog_{ts_catalog}_normalized.csv",
-    ]
-    expected_normalized = next(
-        (candidate for candidate in normalized_candidates if candidate.exists()),
-        normalized_candidates[-1],
-    )
+    expected_normalized = catalog_dir / f"audio_catalog_{ts_catalog}_loudness_normalized.csv"
     transcripts_parent = resolve_transcripts_parent()
-    base_name = config.paths.transcripts_dir
-    expected_transcripts = transcripts_parent / f"{base_name}_{ts_catalog}"
+    expected_transcripts = transcripts_parent / catalog_transcripts_dirname(ts_catalog)
     expected_loudness = catalog_dir / f"audio_catalog_{ts_catalog}_loudness.csv"
     expected_archived = catalog_dir / f"audio_catalog_{ts_catalog}_loudness_archived.csv"
 
@@ -604,7 +597,7 @@ def _build_incomplete_report(pipeline: _IncompletePipeline) -> _IncompleteReport
         missing_lines.append(
             _missing_artifact_line(
                 "Transcripts: ",
-                resolve_transcripts_parent() / config.paths.transcripts_dir,
+                resolve_transcripts_parent() / "transcripts",
                 extract_timestamp_from_transcripts_root,
             )
         )

@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { GET, PUT } from "@/app/api/catalogs/[id]/route";
 
+vi.mock("@/lib/paths", () => ({
+  resolveTranscriptsPath: (id: string) => `/data/text/transcripts/transcripts_${id}`,
+}));
+
 vi.mock("@/lib/auth/permissions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/auth/permissions")>()),
   requireAuth: vi.fn(),
@@ -74,7 +78,6 @@ const formPayload = {
   archivedCatalogPath: storedCatalog.archivedCatalogPath,
   metadataCatalogPath: storedCatalog.metadataCatalogPath,
   duplicatesCatalogPath: storedCatalog.duplicatesCatalogPath,
-  transcriptsPath: storedCatalog.transcriptsPath,
 };
 
 function putCatalog(body: unknown) {
@@ -173,6 +176,7 @@ describe("catalog config route", () => {
     await expect(response.json()).resolves.toMatchObject({
       id: catalogId,
       label: "Test Catalog",
+      transcriptsPath: `/data/text/transcripts/transcripts_${catalogId}`,
     });
   });
 
@@ -237,8 +241,6 @@ describe("catalog config route", () => {
       ["archivedCatalogPath", "/data/b/archived.csv"],
       ["metadataCatalogPath", "/data/b/metadata.csv"],
       ["duplicatesCatalogPath", "/data/b/duplicates.csv"],
-      ["transcriptsPath", "/data/b/transcripts"],
-      ["transcriptsPath", null],
     ])("is refused a change to %s (%j)", async (field, value) => {
       const response = await putCatalog({
         ...formPayload,
@@ -273,7 +275,6 @@ describe("catalog config route", () => {
       ...formPayload,
       archivedCatalogPath: "/data/new/archived.csv",
       duplicatesCatalogPath: "/data/new/duplicates.csv",
-      transcriptsPath: null,
     });
 
     expect(response.status).toBe(200);
@@ -288,7 +289,6 @@ describe("catalog config route", () => {
               to: "/data/new/archived.csv",
             },
             duplicatesCatalogPath: { from: null, to: "/data/new/duplicates.csv" },
-            transcriptsPath: { from: "/data/a/transcripts", to: null },
           },
         },
       })
@@ -311,6 +311,7 @@ describe("catalog config route", () => {
     ["an unknown field", { label: "x", description: "not a catalog field" }],
     ["a retired default selection", { isDefault: true }],
     ["a retired deactivation flag", { isActive: false }],
+    ["an ignored transcript path override", { transcriptsPath: "/elsewhere" }],
     ["an empty required path", { archivedCatalogPath: "" }],
     ["a null required path", { metadataCatalogPath: null }],
     ["an overlong label", { label: "x".repeat(101) }],

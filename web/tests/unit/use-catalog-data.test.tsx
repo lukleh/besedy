@@ -5,6 +5,7 @@ import {
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_FILTER_STATE } from "@/components/catalog/catalog-list/filter-state";
 import { useCatalogData } from "@/components/catalog/catalog-list/hooks/use-catalog-data";
 import type { CatalogResponse } from "@/components/catalog/catalog-list/types";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
@@ -77,26 +78,7 @@ describe("useCatalogData", () => {
       },
     };
 
-    const queryKey = [
-      "catalog",
-      "20260101_120000",
-      1,
-      "all",
-      "all",
-      "all",
-      "all",
-      "all",
-      "all",
-      "all",
-      "all",
-      "all",
-      "all",
-      "all",
-      "all",
-      "date",
-      "desc",
-      "",
-    ];
+    const queryKey = ["catalog", "20260101_120000", "page=1&limit=50"];
     queryClient.setQueryData(queryKey, cachedResponse);
 
     let resolveFetch: ((value: CatalogResponse) => void) | undefined;
@@ -111,22 +93,8 @@ describe("useCatalogData", () => {
       () =>
         useCatalogData({
           activeCatalogId: "20260101_120000",
-          statusFilter: "all",
-          durationFilter: "all",
-          verifiedFilter: "all",
-          recorderFilter: "all",
-          locationFilter: "all",
-          partFilter: "all",
-          dateYear: "all",
-          dateMonth: "all",
-          dateDay: "all",
-          artistFilter: "all",
-          albumFilter: "all",
-          duplicatesFilter: "all",
-          sortKey: "date",
-          sortDir: "desc",
+          filters: DEFAULT_FILTER_STATE,
           page: 1,
-          visibleColumnKeys: [],
           enabled: true,
         }),
       { wrapper: createWrapper(queryClient) }
@@ -197,26 +165,7 @@ describe("useCatalogData", () => {
     };
 
     queryClient.setQueryData(
-      [
-        "catalog",
-        "20260101_120000",
-        1,
-        "all",
-        "all",
-        "all",
-        "all",
-        "all",
-        "all",
-        "all",
-        "all",
-        "all",
-        "all",
-        "all",
-        "all",
-        "date",
-        "desc",
-        "",
-      ],
+      ["catalog", "20260101_120000", "page=1&limit=50"],
       cachedResponse
     );
     fetchJsonMock.mockRejectedValueOnce(new ApiError("Access denied", 403));
@@ -225,22 +174,8 @@ describe("useCatalogData", () => {
       () =>
         useCatalogData({
           activeCatalogId: "20260101_120000",
-          statusFilter: "all",
-          durationFilter: "all",
-          verifiedFilter: "all",
-          recorderFilter: "all",
-          locationFilter: "all",
-          partFilter: "all",
-          dateYear: "all",
-          dateMonth: "all",
-          dateDay: "all",
-          artistFilter: "all",
-          albumFilter: "all",
-          duplicatesFilter: "all",
-          sortKey: "date",
-          sortDir: "desc",
+          filters: DEFAULT_FILTER_STATE,
           page: 1,
-          visibleColumnKeys: [],
           enabled: true,
         }),
       { wrapper: createWrapper(queryClient) }
@@ -298,22 +233,8 @@ describe("useCatalogData", () => {
       () =>
         useCatalogData({
           activeCatalogId: "20260101_120000",
-          statusFilter: "all",
-          durationFilter: "all",
-          verifiedFilter: "all",
-          recorderFilter: "all",
-          locationFilter: "all",
-          partFilter: "all",
-          dateYear: "all",
-          dateMonth: "all",
-          dateDay: "all",
-          artistFilter: "all",
-          albumFilter: "all",
-          duplicatesFilter: "all",
-          sortKey: "date",
-          sortDir: "desc",
+          filters: DEFAULT_FILTER_STATE,
           page: 1,
-          visibleColumnKeys: [],
           enabled: true,
         }),
       { wrapper: createWrapper(queryClient) }
@@ -346,5 +267,79 @@ describe("useCatalogData", () => {
       expect(result.current.data?.verified).toBe(0);
       expect(result.current.isLoading).toBe(false);
     });
+  });
+  it("uses request values as cache identity and sends every selected filter", async () => {
+    const queryClient = createQueryClient();
+    const response: CatalogResponse = {
+      groupId: "catalog",
+      groupLabel: null,
+      total: 0,
+      actionable: 0,
+      verified: 0,
+      entries: [],
+      pagination: {
+        page: 2,
+        limit: 50,
+        totalPages: 2,
+        hasNextPage: false,
+        hasPrevPage: true,
+      },
+    };
+    fetchJsonMock.mockResolvedValue(response);
+    const filters = {
+      ...DEFAULT_FILTER_STATE,
+      status: "ready" as const,
+      verified: "unverified" as const,
+      recorder: "7",
+      location: "empty",
+      album: "8",
+      part: "2",
+      duration: "long" as const,
+      dateYear: "2024",
+      dateMonth: "3",
+      dateDay: "4",
+      artist: "Singer",
+      duplicates: "2",
+      sortKey: "title" as const,
+    };
+    const { result, rerender } = renderHook(
+      ({ values }) =>
+        useCatalogData({
+          activeCatalogId: "catalog",
+          filters: values,
+          page: 2,
+          enabled: true,
+        }),
+      {
+        initialProps: { values: filters },
+        wrapper: createWrapper(queryClient),
+      },
+    );
+    await waitFor(() => expect(result.current.data).toEqual(response));
+    const params = new URL(
+      String(fetchJsonMock.mock.calls[0][0]),
+      "https://example.test",
+    ).searchParams;
+    expect(Object.fromEntries(params)).toEqual({
+      page: "2",
+      limit: "50",
+      status: "ready",
+      verified: "false",
+      recorder: "7",
+      location: "empty",
+      album: "8",
+      part: "2",
+      duration: "long",
+      dateYear: "2024",
+      dateMonth: "3",
+      dateDay: "4",
+      artist: "Singer",
+      duplicates: "2",
+      sort: "title",
+      dir: "desc",
+    });
+    rerender({ values: { ...filters } });
+    expect(fetchJsonMock).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(1);
   });
 });

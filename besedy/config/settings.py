@@ -45,6 +45,8 @@ class PathsConfig:
             empty value is an error unless BESEDY_TEXT_DATA_ROOT is set.
             Creates catalogs/, transcripts/, and transcripts_parquet/
             subdirectories.
+            Each transcript generation contains
+            {workflow}/{output_component}/{audio_hash}/transcript.json.
         sources_dir: Directory for recording sources (URLs/files) managed by
             the web app. Defaults to text_data_dir when empty.
         uploads_dir: Directory where the web app stores admin-uploaded
@@ -56,14 +58,14 @@ class PathsConfig:
             text_data_dir. Defaults to <text_data_dir>/corrections. It is
             deliberately outside the transcripts tree, which ADR 0002 keeps
             immutable.
-        transcripts_dir: Directory name for transcript JSON files, organized as
-            {workflow}/{output_component}/{audio_hash}/transcript.json.
+        transcripts_dir: Parent directory for transcript generations, relative
+            to text_data_dir. Defaults to "transcripts".
         speaker_clusters_dir: Directory name for speaker clustering results from
             cross-file speaker matching.
     """
 
-    transcripts_dir: str
     speaker_clusters_dir: str
+    transcripts_dir: str = "transcripts"
     audio_artifacts_dir: str = ""
     joined_audio_dir: str = "joined_audio"
     original_audio_dir: str = ""
