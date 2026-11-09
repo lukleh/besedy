@@ -89,18 +89,21 @@ class ValidationResult:
 
 
 def load_catalog_csv(csv_path: Path) -> list[CatalogEntry]:
-    """Load and parse the audio catalog CSV."""
+    """Load catalog entries, allowing an unmeasured duration for coverage checks."""
     entries = []
 
     with open(csv_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
+        if reader.fieldnames is not None and "Duration" not in reader.fieldnames:
+            raise ValueError(f"{csv_path} is missing required 'Duration' column")
         for row in reader:
             audio_hash = row.get("Hash", "").strip()
             if not audio_hash:
                 continue
 
-            duration_str = row.get("Duration", "").strip()
-            duration_seconds = parse_duration_to_seconds(duration_str)
+            duration_str = (row.get("Duration") or "").strip()
+            # The catalog writer leaves Duration blank when it has not been measured.
+            duration_seconds = parse_duration_to_seconds(duration_str) if duration_str else 0.0
 
             entry = CatalogEntry(
                 audio_hash=audio_hash,

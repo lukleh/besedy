@@ -9,10 +9,12 @@ source and output audio hashes, and explicit positive `Source Order` and
 valid. The join command refuses incompatible existing manifests before
 creating joined audio or moving originals, and a failed output hash never
 produces a manifest row.
-CSV durations use `HH:MM:SS`, normalized manifests end in
+CSV durations, when present, use `HH:MM:SS`, normalized manifests end in
 `_loudness_normalized.csv`, and transcript paths use a full audio hash and an
 explicit `@lang-<code>` or `@lang-auto` component. Transcript JSON must satisfy
 `docs/schemas/transcript.schema.json`; confidence may explicitly be `null`.
+The coverage checker accepts a blank `Duration` from an incomplete metadata
+probe; processing commands that require duration still reject it.
 
 Recreate obsolete catalogs from their source audio with `catalog create`.
 Keep metadata from old files separately until it has been reconciled with the
@@ -41,6 +43,55 @@ No automatic converter guesses how historical joined rows correspond.
 Incomplete loudness rows are automatically measured again. This rebuilds a
 derived cache under the current contract; it does not retain an alternate
 format reader.
+
+## Upgrade pre-AAC archive manifests
+
+An archived manifest records existing compressed files and their metadata;
+`catalog create` cannot reconstruct it. Before enabling the new pipeline code,
+upgrade each pre-AAC manifest with the explicit tool below. Pause archive and
+ingest workers and back up the manifest first. Run the tool from the new checkout
+while those workers remain stopped. Select the concrete file, not its latest
+symlink; symlinked parent directories are supported.
+
+```sh
+uv run python -m scripts.migrate_archive_manifest \
+  /absolute/path/audio_catalog_20260221_120320_loudness_archived.csv
+```
+
+The default dry-run validates the entire CSV and reports its row count and
+the three columns to add: `Compressed AAC Path`, `Compressed AAC Size (bytes)`,
+and `Compressed AAC Bitrate (kbps)`. Only the known ten-column pre-AAC schema
+or the complete current schema is accepted, independent of column order.
+Duplicate or unknown headers, missing pre-AAC columns, partially present AAC
+columns, malformed CSV and rows with the wrong cell count are refused before
+rewriting anything.
+
+Review the plan, then apply it to that same file:
+
+```sh
+uv run python -m scripts.migrate_archive_manifest \
+  /absolute/path/audio_catalog_20260221_120320_loudness_archived.csv --apply
+```
+
+The tool preserves the original column order, every existing cell value and row
+order, appending the three AAC columns with blank values. It takes the catalog
+ingest and manifest locks and replaces the CSV atomically, retaining its file
+permission mode. It neither encodes nor changes audio. An already current
+manifest is validated and left byte-for-byte unchanged, including on a repeated
+`--apply`. Ordinary readers and writers continue to require the current schema.
+
+After upgrading all manifests, resume workers with the new code. Appending to
+an upgraded archive now works normally. To populate AAC copies, run backfill
+against the matching loudness catalog, whose archived sibling was just upgraded:
+
+```sh
+just catalog archive \
+  --csv /absolute/path/audio_catalog_20260221_120320_loudness.csv --backfill-aac
+```
+
+Keep the pre-upgrade backup until the converted manifest and any backfill have
+been verified. Quarantining an archive with `--retire-file` does not upgrade it
+or preserve it as a usable live manifest.
 
 ## Explicit retirement tool
 
