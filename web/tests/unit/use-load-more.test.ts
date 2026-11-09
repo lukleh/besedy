@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { DEFAULT_FILTER_STATE } from "@/components/catalog/catalog-list/filter-state";
 import { useLoadMore } from "@/components/catalog/catalog-list/hooks/use-load-more";
 import type { CatalogEntry, PaginationInfo, CatalogResponse } from "@/components/catalog/catalog-list/types";
 
@@ -31,20 +32,7 @@ const pagination: PaginationInfo = {
 
 const defaultOptions: Parameters<typeof useLoadMore>[0] = {
   activeCatalogId: "test-catalog",
-  statusFilter: "all",
-  durationFilter: "all",
-  verifiedFilter: "all",
-  recorderFilter: "all",
-  locationFilter: "all",
-  partFilter: "all",
-  dateYear: "all",
-  dateMonth: "all",
-  dateDay: "all",
-  artistFilter: "all",
-  albumFilter: "all",
-  duplicatesFilter: "all",
-  sortKey: "date",
-  sortDir: "desc",
+  filters: DEFAULT_FILTER_STATE,
   currentPage: 1,
   currentEntries: page1Entries,
   pagination,
@@ -421,7 +409,7 @@ describe("useLoadMore", () => {
       expect(result.current.isLoadMoreMode).toBe(true);
 
       // Change filter
-      rerender({ ...defaultOptions, statusFilter: "ready" });
+      rerender({ ...defaultOptions, filters: { ...defaultOptions.filters, status: "ready" } });
 
       expect(result.current.isLoadMoreMode).toBe(false);
       expect(result.current.displayEntries).toEqual(page1Entries);
@@ -494,7 +482,7 @@ describe("useLoadMore", () => {
       expect(result.current.error).toBe("Test error");
 
       // Change filter to trigger reset
-      rerender({ ...defaultOptions, statusFilter: "ready" });
+      rerender({ ...defaultOptions, filters: { ...defaultOptions.filters, status: "ready" } });
 
       expect(result.current.error).toBe(null);
     });
