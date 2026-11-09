@@ -176,7 +176,7 @@ describe("ServiceWorkerProvider", () => {
   });
 
   it("restores dismissal for the same web version when its worker is waiting", async () => {
-    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-a");
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-v2-8cd2becee79a5bda17181cca450835451f6e048f");
     const waitingWorker = { postMessage: vi.fn() };
     const registrationMock = {
       waiting: waitingWorker,
@@ -201,13 +201,13 @@ describe("ServiceWorkerProvider", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       })
     );
     vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
       if (key === UPDATE_STATE_STORAGE_KEY) {
         return JSON.stringify({
-          version: "web-b",
+          version: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326",
           dismissed: true,
           deadline: Date.now() + 60_000
         });
@@ -252,7 +252,7 @@ describe("ServiceWorkerProvider", () => {
     vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
       if (key === UPDATE_STATE_STORAGE_KEY) {
         return JSON.stringify({
-          version: "web-v2-previous",
+          version: "web-v2-c37b9dc12b19ba60c4f45b8a5f83137d6b8d142b",
           dismissed: true,
           deadline: Date.now() + 60_000
         });
@@ -270,7 +270,7 @@ describe("ServiceWorkerProvider", () => {
     );
 
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-v2-client"
+      clientVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a"
     });
     runtime.setAppShellMode({
       isAuthenticatedAppShell: true,
@@ -284,7 +284,7 @@ describe("ServiceWorkerProvider", () => {
   });
 
   it("clears dismissal when a different web version is detected", async () => {
-    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-a");
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-v2-8cd2becee79a5bda17181cca450835451f6e048f");
     const registrationMock = {
       waiting: null,
       active: null,
@@ -308,13 +308,13 @@ describe("ServiceWorkerProvider", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-c" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-c537730f96be664880ebf8a0945be1f0974b6981" })
       })
     );
     vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
       if (key === UPDATE_STATE_STORAGE_KEY) {
         return JSON.stringify({
-          version: "web-b",
+          version: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326",
           dismissed: true,
           deadline: Date.now() + 60_000
         });
@@ -338,7 +338,7 @@ describe("ServiceWorkerProvider", () => {
 
     expect(window.localStorage.setItem).toHaveBeenCalledWith(
       UPDATE_STATE_STORAGE_KEY,
-      expect.stringContaining('"version":"web-c"')
+      expect.stringContaining('"version":"web-v2-c537730f96be664880ebf8a0945be1f0974b6981"')
     );
   });
 
@@ -363,12 +363,12 @@ describe("ServiceWorkerProvider", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-target" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-19c55588a7bd7e56ba7c2e6ada6f27831e8a1b73" })
       })
     );
 
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-v2-client"
+      clientVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a"
     });
     runtime.setAppShellMode({
       isAuthenticatedAppShell: true,
@@ -378,7 +378,7 @@ describe("ServiceWorkerProvider", () => {
     await waitFor(() => expect(runtime.getSnapshot().updateAvailable).toBe(true));
     registrationMock.update.mockClear();
 
-    runtime.observeWebVersion("web-v2-client");
+    runtime.observeWebVersion("web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a");
 
     expect(registrationMock.update).toHaveBeenCalledTimes(1);
     expect(runtime.getSnapshot().updateAvailable).toBe(false);
@@ -386,7 +386,7 @@ describe("ServiceWorkerProvider", () => {
   });
 
   it("auto-applies an ignored update after its deadline when hidden", async () => {
-    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-a");
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-v2-8cd2becee79a5bda17181cca450835451f6e048f");
     const waitingWorker = { postMessage: vi.fn() };
     const registrationMock = {
       waiting: waitingWorker,
@@ -412,12 +412,12 @@ describe("ServiceWorkerProvider", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       })
     );
     vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
       if (key === UPDATE_STATE_STORAGE_KEY) {
-        return JSON.stringify({ version: "web-b", dismissed: false, deadline });
+        return JSON.stringify({ version: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326", dismissed: false, deadline });
       }
       return null;
     });
@@ -445,7 +445,7 @@ describe("ServiceWorkerProvider", () => {
   });
 
   it("uses real version reachability rather than navigator.onLine", async () => {
-    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-a");
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-v2-8cd2becee79a5bda17181cca450835451f6e048f");
     const waitingWorker = { postMessage: vi.fn() };
     const registrationMock = {
       waiting: waitingWorker,
@@ -478,13 +478,13 @@ describe("ServiceWorkerProvider", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       })
     );
     vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
       if (key === UPDATE_STATE_STORAGE_KEY) {
         return JSON.stringify({
-          version: "web-b",
+          version: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326",
           dismissed: false,
           deadline: Date.now() - 1000
         });
@@ -513,22 +513,22 @@ describe("ServiceWorkerProvider", () => {
       throw new DOMException("Storage blocked", "SecurityError");
     });
 
-    const runtime = createServiceWorkerRuntime({ clientVersion: "web-a" });
+    const runtime = createServiceWorkerRuntime({ clientVersion: "web-v2-8cd2becee79a5bda17181cca450835451f6e048f" });
 
-    expect(() => runtime.observeWebVersion("web-b")).not.toThrow();
+    expect(() => runtime.observeWebVersion("web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326")).not.toThrow();
     expect(runtime.getSnapshot().updateAvailable).toBe(true);
     expect(runtime.getSnapshot().wasDismissed).toBe(false);
   });
 
   it("clears a pending update when the server rolls back to the running client", () => {
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-v2-client"
+      clientVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a"
     });
 
-    runtime.observeWebVersion("web-v2-newer");
+    runtime.observeWebVersion("web-v2-505d6e7efb67373464b6b68b5a021ec4e601e171");
     expect(runtime.getSnapshot().updateAvailable).toBe(true);
 
-    runtime.observeWebVersion("web-v2-client");
+    runtime.observeWebVersion("web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a");
 
     expect(runtime.getSnapshot()).toMatchObject({
       updateAvailable: false,
@@ -574,19 +574,19 @@ describe("ServiceWorkerProvider", () => {
     });
 
     act(() => {
-      notifyWebVersionObserver("web-a");
+      notifyWebVersionObserver("web-v2-8cd2becee79a5bda17181cca450835451f6e048f");
     });
     await waitFor(() => {
       expect(registrationMock.update).toHaveBeenCalledTimes(1);
     });
 
     act(() => {
-      notifyWebVersionObserver("web-a");
+      notifyWebVersionObserver("web-v2-8cd2becee79a5bda17181cca450835451f6e048f");
     });
     expect(registrationMock.update).toHaveBeenCalledTimes(1);
 
     act(() => {
-      notifyWebVersionObserver("web-b");
+      notifyWebVersionObserver("web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326");
     });
     await waitFor(() => {
       expect(registrationMock.update).toHaveBeenCalledTimes(2);
@@ -617,7 +617,7 @@ describe("ServiceWorkerProvider", () => {
       status: 200,
       headers: new Headers({
         "content-type": "application/json",
-        "x-web-version": "deployed-web-version"
+        "x-web-version": "web-v2-3a42607441a6436d73f5bbbd8c30508b424bd993"
       }),
       json: vi.fn().mockResolvedValue({ ok: true })
     });
@@ -651,7 +651,7 @@ describe("ServiceWorkerProvider", () => {
   });
 
   it("does not compare a fingerprinted client with the legacy commit header", async () => {
-    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-v2-client");
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a");
     const observer = vi.fn();
     const unregister = registerWebVersionObserver(observer);
     vi.stubGlobal(
@@ -717,7 +717,7 @@ describe("ServiceWorkerProvider", () => {
     expect(registrationMock.update).not.toHaveBeenCalled();
 
     act(() => {
-      notifyWebVersionObserver("real-web-version");
+      notifyWebVersionObserver("web-v2-57abbfb57b39e609d1dcfc734959b02f45fd1fd6");
     });
 
     await waitFor(() => {
@@ -752,7 +752,7 @@ describe("ServiceWorkerProvider", () => {
         statusText: "Internal Server Error",
         headers: new Headers({
           "content-type": "application/json",
-          "x-web-version": "web-500"
+          "x-web-version": "web-v2-d51a19cf740c5847d6b5e44b5406ab7836d15432"
         }),
         json: vi.fn().mockResolvedValue({ error: "boom" })
       })
@@ -762,7 +762,7 @@ describe("ServiceWorkerProvider", () => {
         statusText: "Unauthorized",
         headers: new Headers({
           "content-type": "application/json",
-          "x-web-version": "web-401"
+          "x-web-version": "web-v2-35603517a6ebb9c71835af7a34e1bb8915da3e98"
         }),
         json: vi.fn().mockResolvedValue({ error: "unauthorized" })
       });
@@ -797,7 +797,7 @@ describe("ServiceWorkerProvider", () => {
 
   it("checks /api/version immediately and then hourly in the authenticated app shell", async () => {
     vi.useFakeTimers();
-    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-a");
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-v2-8cd2becee79a5bda17181cca450835451f6e048f");
 
     const registrationMock = {
       waiting: null,
@@ -822,7 +822,7 @@ describe("ServiceWorkerProvider", () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-a" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-8cd2becee79a5bda17181cca450835451f6e048f" })
       })
       .mockResolvedValueOnce({
         ok: false,
@@ -831,7 +831,7 @@ describe("ServiceWorkerProvider", () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -860,7 +860,7 @@ describe("ServiceWorkerProvider", () => {
       new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.headers).get(
         "If-None-Match"
       )
-    ).toBe('"web-a"');
+    ).toBe('"web-v2-8cd2becee79a5bda17181cca450835451f6e048f"');
     expect(registrationMock.update).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -872,7 +872,7 @@ describe("ServiceWorkerProvider", () => {
       new Headers((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.headers).get(
         "If-None-Match"
       )
-    ).toBe('"web-a"');
+    ).toBe('"web-v2-8cd2becee79a5bda17181cca450835451f6e048f"');
     expect(registrationMock.update).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -884,7 +884,7 @@ describe("ServiceWorkerProvider", () => {
       new Headers((fetchMock.mock.calls[2]?.[1] as RequestInit | undefined)?.headers).get(
         "If-None-Match"
       )
-    ).toBe('"web-a"');
+    ).toBe('"web-v2-8cd2becee79a5bda17181cca450835451f6e048f"');
     expect(registrationMock.update).toHaveBeenCalledTimes(1);
   });
 
@@ -910,12 +910,12 @@ describe("ServiceWorkerProvider", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: vi.fn().mockResolvedValue({ webVersion: "web-server" })
+      json: vi.fn().mockResolvedValue({ webVersion: "web-v2-d254f73b2e3deba4b887879f91ec0a3dffafba80" })
     });
     vi.stubGlobal("fetch", fetchMock);
     const reloadPage = vi.fn();
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-client",
+      clientVersion: "web-v2-83edbea20711fe9e24487b33f78ab761a3ee7a7b",
       reloadPage
     });
 
@@ -963,22 +963,22 @@ describe("ServiceWorkerProvider", () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       })
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-c" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-c537730f96be664880ebf8a0945be1f0974b6981" })
       })
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-c" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-c537730f96be664880ebf8a0945be1f0974b6981" })
       });
     vi.stubGlobal("fetch", fetchMock);
     const reloadPage = vi.fn();
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-a",
+      clientVersion: "web-v2-8cd2becee79a5bda17181cca450835451f6e048f",
       reloadPage
     });
     const stop = runtime.start();
@@ -1069,7 +1069,7 @@ describe("ServiceWorkerProvider", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1135,7 +1135,7 @@ describe("ServiceWorkerProvider", () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1189,7 +1189,7 @@ describe("ServiceWorkerProvider", () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1253,13 +1253,13 @@ describe("ServiceWorkerProvider", () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       })
       .mockRejectedValueOnce(new TypeError("server unavailable"))
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       });
     vi.stubGlobal("fetch", fetchMock);
     const reloadPage = vi.fn();
@@ -1325,18 +1325,18 @@ describe("ServiceWorkerProvider", () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       })
       .mockRejectedValueOnce(new TypeError("server unavailable"))
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       });
     vi.stubGlobal("fetch", fetchMock);
     const reloadPage = vi.fn();
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-a",
+      clientVersion: "web-v2-8cd2becee79a5bda17181cca450835451f6e048f",
       reloadPage
     });
     runtime.setAppShellMode({
@@ -1350,7 +1350,7 @@ describe("ServiceWorkerProvider", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    runtime.observeWebVersion("web-b");
+    runtime.observeWebVersion("web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326");
     runtime.dismissUpdate();
     act(() => {
       listeners.get("controllerchange")?.forEach((handler) => handler());
@@ -1387,13 +1387,13 @@ describe("ServiceWorkerProvider", () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-client" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a" })
       })
       .mockRejectedValue(new TypeError("server unavailable"));
     vi.stubGlobal("fetch", fetchMock);
     const reloadPage = vi.fn();
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-v2-client",
+      clientVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a",
       reloadPage
     });
     runtime.setAppShellMode({
@@ -1402,7 +1402,7 @@ describe("ServiceWorkerProvider", () => {
     });
     const stop = runtime.start();
     await vi.advanceTimersByTimeAsync(0);
-    runtime.observeWebVersion("web-v2-target");
+    runtime.observeWebVersion("web-v2-19c55588a7bd7e56ba7c2e6ada6f27831e8a1b73");
 
     await expect(runtime.applyUpdate()).resolves.toBe(false);
     expect(runtime.getSnapshot().applyState).toBe("waiting-for-connection");
@@ -1443,7 +1443,7 @@ describe("ServiceWorkerProvider", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       })
     );
     const reloadPage = vi.fn();
@@ -1513,7 +1513,7 @@ describe("ServiceWorkerProvider", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       })
     );
     const reloadPage = vi.fn();
@@ -1579,7 +1579,7 @@ describe("ServiceWorkerProvider", () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       })
       .mockReturnValueOnce(
         new Promise<Response>((resolve) => {
@@ -1607,7 +1607,7 @@ describe("ServiceWorkerProvider", () => {
       shouldSilentlyActivateWaitingWorker: true
     });
     resolveReloadProbe(
-      new Response(JSON.stringify({ webVersion: "web-b" }), {
+      new Response(JSON.stringify({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" }), {
         status: 200,
         headers: { "content-type": "application/json" }
       })
@@ -1648,7 +1648,7 @@ describe("ServiceWorkerProvider", () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-target" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-19c55588a7bd7e56ba7c2e6ada6f27831e8a1b73" })
       })
       .mockReturnValueOnce(
         new Promise<Response>((resolve) => {
@@ -1658,7 +1658,7 @@ describe("ServiceWorkerProvider", () => {
     vi.stubGlobal("fetch", fetchMock);
     const reloadPage = vi.fn();
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-v2-client",
+      clientVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a",
       reloadPage
     });
     runtime.setAppShellMode({
@@ -1675,7 +1675,7 @@ describe("ServiceWorkerProvider", () => {
       shouldSilentlyActivateWaitingWorker: false
     });
     resolveApplyProbe(
-      new Response(JSON.stringify({ webVersion: "web-v2-target" }), {
+      new Response(JSON.stringify({ webVersion: "web-v2-19c55588a7bd7e56ba7c2e6ada6f27831e8a1b73" }), {
         status: 200,
         headers: { "content-type": "application/json" }
       })
@@ -1687,7 +1687,7 @@ describe("ServiceWorkerProvider", () => {
     stop();
   });
 
-  it("uses a direct reload for a reachable legacy server", async () => {
+  it("waits for a server that reports the current deployment identity", async () => {
     const waitingWorker = { scriptURL: "/sw.js", postMessage: vi.fn() };
     const registrationMock = {
       waiting: waitingWorker,
@@ -1715,7 +1715,7 @@ describe("ServiceWorkerProvider", () => {
     vi.stubGlobal("fetch", fetchMock);
     const reloadPage = vi.fn();
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-v2-client",
+      clientVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a",
       reloadPage
     });
     runtime.setAppShellMode({
@@ -1725,10 +1725,10 @@ describe("ServiceWorkerProvider", () => {
     const stop = runtime.start();
     await waitFor(() => expect(runtime.getSnapshot().updateReady).toBe(true));
 
-    await expect(runtime.applyUpdate()).resolves.toBe(true);
+    await expect(runtime.applyUpdate()).resolves.toBe(false);
 
-    expect(reloadPage).toHaveBeenCalledTimes(1);
-    expect(runtime.getSnapshot().applyState).not.toBe("waiting-for-connection");
+    expect(reloadPage).not.toHaveBeenCalled();
+    expect(runtime.getSnapshot().applyState).toBe("waiting-for-connection");
     expect(waitingWorker.postMessage).not.toHaveBeenCalledWith({
       type: "SKIP_WAITING"
     });
@@ -1757,7 +1757,7 @@ describe("ServiceWorkerProvider", () => {
     vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => {
       if (key === UPDATE_STATE_STORAGE_KEY) {
         return JSON.stringify({
-          version: "web-server",
+          version: "web-v2-d254f73b2e3deba4b887879f91ec0a3dffafba80",
           dismissed: false,
           deadline: Date.now() + 60_000
         });
@@ -1775,7 +1775,7 @@ describe("ServiceWorkerProvider", () => {
       )
     );
 
-    const runtime = createServiceWorkerRuntime({ clientVersion: "web-client" });
+    const runtime = createServiceWorkerRuntime({ clientVersion: "web-v2-83edbea20711fe9e24487b33f78ab761a3ee7a7b" });
     const stop = runtime.start();
     runtime.setAppShellMode({
       isAuthenticatedAppShell: true,
@@ -1788,7 +1788,7 @@ describe("ServiceWorkerProvider", () => {
 
     runtime.dismissUpdate();
     resolveVersionCheck(
-      new Response(JSON.stringify({ webVersion: "web-server" }), {
+      new Response(JSON.stringify({ webVersion: "web-v2-d254f73b2e3deba4b887879f91ec0a3dffafba80" }), {
         status: 200,
         headers: { "content-type": "application/json" }
       })
@@ -1828,16 +1828,16 @@ describe("ServiceWorkerProvider", () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
       })
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-c" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-c537730f96be664880ebf8a0945be1f0974b6981" })
       });
     vi.stubGlobal("fetch", fetchMock);
 
-    const runtime = createServiceWorkerRuntime({ clientVersion: "web-a" });
+    const runtime = createServiceWorkerRuntime({ clientVersion: "web-v2-8cd2becee79a5bda17181cca450835451f6e048f" });
     const stop = runtime.start();
     runtime.setAppShellMode({
       isAuthenticatedAppShell: true,
@@ -1860,7 +1860,7 @@ describe("ServiceWorkerProvider", () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(window.localStorage.setItem).toHaveBeenLastCalledWith(
         UPDATE_STATE_STORAGE_KEY,
-        expect.stringContaining('"version":"web-c"')
+        expect.stringContaining('"version":"web-v2-c537730f96be664880ebf8a0945be1f0974b6981"')
       );
       expect(runtime.getSnapshot().wasDismissed).toBe(false);
     });
@@ -1873,7 +1873,7 @@ describe("ServiceWorkerProvider", () => {
       if (message.type === "GET_WEB_VERSION") {
         (transfer?.[0] as MessagePort | undefined)?.postMessage({
           type: "WEB_VERSION",
-          version: "web-v2-stale"
+          version: "web-v2-756fe8dfae631e2a25736da241ed4783a98a7c02"
         });
       }
     });
@@ -1898,12 +1898,12 @@ describe("ServiceWorkerProvider", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-current" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-9171869b88ebca113b66e5505511f399b2a7863f" })
       })
     );
 
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-v2-client"
+      clientVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a"
     });
     runtime.setAppShellMode({
       isAuthenticatedAppShell: true,
@@ -1950,12 +1950,12 @@ describe("ServiceWorkerProvider", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-client" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a" })
       })
     );
 
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-v2-client"
+      clientVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a"
     });
     runtime.setAppShellMode({
       isAuthenticatedAppShell: false,
@@ -1985,7 +1985,7 @@ describe("ServiceWorkerProvider", () => {
       window.setTimeout(() => {
         (transfer?.[0] as MessagePort | undefined)?.postMessage({
           type: "WEB_VERSION",
-          version: "web-v2-stale"
+          version: "web-v2-756fe8dfae631e2a25736da241ed4783a98a7c02"
         });
       }, 100);
     });
@@ -2010,12 +2010,12 @@ describe("ServiceWorkerProvider", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-client" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a" })
       })
     );
 
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-v2-client"
+      clientVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a"
     });
     runtime.setAppShellMode({
       isAuthenticatedAppShell: false,
@@ -2044,7 +2044,7 @@ describe("ServiceWorkerProvider", () => {
       if (handshakeCount === 2) {
         (transfer?.[0] as MessagePort | undefined)?.postMessage({
           type: "WEB_VERSION",
-          version: "web-v2-target"
+          version: "web-v2-19c55588a7bd7e56ba7c2e6ada6f27831e8a1b73"
         });
       }
     });
@@ -2069,12 +2069,12 @@ describe("ServiceWorkerProvider", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-target" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-19c55588a7bd7e56ba7c2e6ada6f27831e8a1b73" })
       })
     );
 
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-v2-client"
+      clientVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a"
     });
     runtime.setAppShellMode({
       isAuthenticatedAppShell: false,
@@ -2095,7 +2095,7 @@ describe("ServiceWorkerProvider", () => {
       if (message.type !== "GET_WEB_VERSION") return;
       (transfer?.[0] as MessagePort | undefined)?.postMessage({
         type: "WEB_VERSION",
-        version: "web-v2-target"
+        version: "web-v2-19c55588a7bd7e56ba7c2e6ada6f27831e8a1b73"
       });
     });
     const waitingWorker = { scriptURL: "/sw.js", postMessage };
@@ -2119,12 +2119,12 @@ describe("ServiceWorkerProvider", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-target" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-19c55588a7bd7e56ba7c2e6ada6f27831e8a1b73" })
       })
     );
 
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-v2-client"
+      clientVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a"
     });
     runtime.setAppShellMode({
       isAuthenticatedAppShell: true,
@@ -2171,12 +2171,12 @@ describe("ServiceWorkerProvider", () => {
       vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-target" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-19c55588a7bd7e56ba7c2e6ada6f27831e8a1b73" })
       })
     );
     const reloadPage = vi.fn();
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-v2-client",
+      clientVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a",
       reloadPage
     });
     runtime.setAppShellMode({
@@ -2206,7 +2206,7 @@ describe("ServiceWorkerProvider", () => {
   });
 
   it("checks for a new web version when the installed app returns to the foreground", async () => {
-    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-client");
+    vi.stubEnv("NEXT_PUBLIC_WEB_VERSION", "web-v2-83edbea20711fe9e24487b33f78ab761a3ee7a7b");
 
     const registrationMock = {
       waiting: null,
@@ -2232,7 +2232,7 @@ describe("ServiceWorkerProvider", () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-server" })
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-d254f73b2e3deba4b887879f91ec0a3dffafba80" })
       });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -2290,7 +2290,7 @@ describe("ServiceWorkerProvider", () => {
     });
 
     const runtime = createServiceWorkerRuntime({
-      clientVersion: "web-v2-client"
+      clientVersion: "web-v2-a09221b131546ef6253190809ee3fa7096b3cd7a"
     });
     runtime.setAppShellMode({
       isAuthenticatedAppShell: true,
@@ -2366,7 +2366,7 @@ describe("ServiceWorkerProvider", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -2419,7 +2419,7 @@ describe("ServiceWorkerProvider", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: vi.fn().mockResolvedValue({ webVersion: "web-b" })
+      json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
     });
     vi.stubGlobal("fetch", fetchMock);
 

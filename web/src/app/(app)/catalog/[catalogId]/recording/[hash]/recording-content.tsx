@@ -3,11 +3,7 @@
 import { use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useCatalogContext } from "@/hooks/use-catalog-context";
-import { useHydratedBoolean } from "@/hooks/use-hydrated-state";
-import { useAacUpgradeAvailable } from "@/hooks/use-aac-upgrade-available";
-import { useDownloadRecord } from "@/hooks/use-downloads";
 import { useLocalAudioSrc } from "@/hooks/use-local-package";
-import { FormatUpgradeNotice } from "@/components/offline/format-upgrade-notice";
 import { browserPrefersAacAudio } from "@/lib/audio-format";
 import {
   buildAudioDownloadUrl,
@@ -89,13 +85,6 @@ export default function RecordingContent({
   // playback behavior and view sections live in sibling modules.
   const resolvedParams: { catalogId: string; hash: string } = isPromiseParams(params) ? use(params) : params;
   const { catalogId, hash } = resolvedParams;
-  // Keep the legacy key so existing users keep their saved transcript view preference.
-  // Reading is the default view. The stream is the administrative one, and is
-  // only reachable by an account that may see the transcripts behind it.
-  const [showTranscriptStream, setShowTranscriptStream] = useHydratedBoolean(
-    "besedy-transcript-enabled",
-    false
-  );
   const { catalogNotFound, catalogValidationLoading } = useCatalogContext(catalogId, {
     skipCatalogValidation,
   });
@@ -106,7 +95,6 @@ export default function RecordingContent({
     handlePlayingChange,
     handlePlayerSeek,
     handleSeek,
-    isPlaying,
     seekRequest,
     setCurrentTime,
   } = useRecordingPlayback(catalogId, hash);
@@ -149,12 +137,6 @@ export default function RecordingContent({
   // A complete local package plays in preference to the network; the page
   // never learns how it is stored.
   const localAudioSrc = useLocalAudioSrc(catalogId, hash, selectedAudioUrl, availableSources.length > 0);
-  // A WebM download from before the AAC copy, playing on WebKit, stops early;
-  // offer the copy here as well as on the Downloads page.
-  const downloadRecord = useDownloadRecord(catalogId, hash);
-  const formatUpgrade =
-    useAacUpgradeAvailable(downloadRecord, availableSources) && localAudioSrc !== null;
-
   // Fetch single catalog entry with permissions
   const { data, cachedData, isLoading, isValidatingAccess, error, isError } = useRecordingEntry({
     catalogId,
@@ -238,16 +220,7 @@ export default function RecordingContent({
         hideDefaultRecorder={hideDefaultRecorder}
       />
       <RecordingAudioSection
-        beforeAudioPlayer={
-          formatUpgrade && downloadRecord ? (
-            <>
-              {beforeAudioPlayer}
-              <FormatUpgradeNotice downloadKey={downloadRecord.key} />
-            </>
-          ) : (
-            beforeAudioPlayer
-          )
-        }
+        beforeAudioPlayer={beforeAudioPlayer}
         afterAudioPlayer={afterAudioPlayer}
         audioUrl={audioUrl}
         bookmarkMarkers={bookmarkMarkers}
@@ -288,11 +261,8 @@ export default function RecordingContent({
           catalogId={catalogId}
           clock={clock}
           hash={hash}
-          isPlaying={isPlaying}
           onSeek={handleSeek}
-          onToggleTranscriptStream={setShowTranscriptStream}
           onTranscriptChange={handleTranscriptChange}
-          showTranscriptStream={showTranscriptStream}
         />
       )}
     </div>

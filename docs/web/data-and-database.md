@@ -35,14 +35,12 @@ been retired. Existing source records and their historical references remain.
 ### Sync Rules
 
 CSV-to-DB sync stores a versioned SHA-256 generation fingerprint for the exact
-source bytes that were parsed (`v5:sha256:<digest>`). Source snapshots are read
+source bytes that were parsed (`v6:sha256:<digest>`). Source snapshots are read
 once per reconciliation, before the database transaction and advisory lock, so
-fingerprinting and parsing cannot observe different file contents. Older
-stat-based fingerprints cause a one-time refresh after upgrade. The version is
-bumped when sync starts reading a column it ignored before, so every source is
-rebuilt once on the first sync after that deploy, even when its bytes are
-unchanged; `v5` revalidates sources under the stricter CSV and recording-identity
-checks below.
+fingerprinting and parsing cannot observe different file contents. A previous
+fingerprint triggers one rebuild and validation under the current contract,
+even when its bytes are unchanged. The `v6` cutover revalidates every source
+against complete current headers and the decoded-audio hash algorithm below.
 
 | Condition                        | Effect                                                   |
 | -------------------------------- | -------------------------------------------------------- |
@@ -94,25 +92,18 @@ the canonical rules by the same contract suite; Python tests check the rules aga
 actual writer output.
 
 Sync rejects CSV parsing errors, blank or duplicate column names, and sources
-missing their core identity columns: `Hash` and `Full Path` for metadata;
-`Hash`, `Original Path`, and `Compressed Path` for archives; `Hash`,
-`Original Path`, and `Duplicate Path` for duplicates. Every row must contain
-a full 64-character hexadecimal hash and nonblank values in required path cells.
-Duplicates are the exception: Python may write a blank `Original Path` when the
-original is unknown. Its header is still required, but those rows are skipped by
-the web projection, preserving the existing duplicate-count behavior.
+missing any current writer header, including `added_at`, `Hash Algorithm` in
+metadata and the AAC copy columns in archives. Every row must contain a full
+64-character hexadecimal hash and nonblank values in required path cells.
+Metadata must name `pcm-s16le-16000hz-mono-sha256-v1` as its `Hash Algorithm`;
+missing or unsupported algorithms fail validation before projection writes.
+Duplicates may have a blank `Original Path` when the original is unknown; the
+header remains required, and those rows are skipped by the web projection.
 Headers ignore case and surrounding whitespace; hashes normalize to lowercase.
-Other columns, including the AAC copy columns, remain optional. Invalid input
+Optional cell values may be blank, but their headers are required. Invalid input
 leaves the live projection and successful source fingerprints unchanged, even
 when the row-count-drop override is enabled. Header-only CSVs remain valid empty
 sources, subject to the existing row-count-drop guard.
-
-A metadata row whose `Hash Algorithm` is missing or not
-`pcm-s16le-16000hz-mono-sha256-v1` still syncs. The sync that parses the
-changed CSV carries the count as `unrecognizedHashAlgorithmRows` in its result
-and logs a warning; the catalog settings sync toast shows it when that sync was
-started from the settings page. The count is not stored, so a later sync of
-unchanged CSVs (`skipped`) does not repeat it.
 
 `GET /api/health` reports the startup projection state (`ready`, `degraded`,
 `running`, `disabled`, or `not-started`). By default a sync error is reported as
@@ -211,8 +202,11 @@ parameter:
 1. **Archived** (compressed, the default) -- primary playback source
 2. **Original** -- uncompressed source for download
 
-The retired `listening` source (and its `variant` parameter) is still accepted
-from old clients and served as archived.
+Only `source`, `format`, `download` and `local` query parameters are accepted,
+and each may occur once. The retired `listening` source, `variant` and `group`
+parameters, unknown parameters and duplicate parameters return `400`.
+`download` accepts `true` or `false`; the local player may add `local=1`, which
+does not change the served bytes.
 
 There is no per-recording source preference. The retired
 `user_preferences.settings.audioSources` key is removed by the archive-selection
@@ -220,10 +214,8 @@ cleanup migration.
 
 Independently of the source, `format` picks the file: `webm` (default), the Opus
 archive every recording has, or `aac`, its AAC-in-MP4 copy (`compressed_aac_path`,
-#291) for browsers that cannot stream WebM. The route resolves the source first
-(a variant without a row for the recording falls back to archived) and then takes
-that source's AAC copy; when it has none the response is `404` rather than the
-WebM, and `format=aac` with `source=original` is a `400`. `/audio/sources` lists
+#291) for browsers that cannot stream WebM. An unavailable AAC copy returns
+`404`, and `format=aac` with `source=original` returns `400`. `/audio/sources` lists
 the `formats` each source can be served in, so clients only ask for copies that
 exist.
 
@@ -447,10 +439,12 @@ Span state is never stored. It is derived from the decisions bound to a span's
 **current** revision, so a superseded approval cannot count and no status
 column can drift from the decisions underneath it.
 
-The two workspace pointers are deliberately separate. `reader_publication_id`
-is what the reader, the ordinary download and the bulk export resolve;
-`search_publication_id` is what search indexing and MCP resolve. An ordinary
-unpublish clears only the first.
+The existing `reader_publication_id` and `search_publication_id` columns now
+represent one logical publication. Publish sets both together; Unpublish clears
+both and starts the durable index sync back to the original machine transcript.
+The storage columns remain in place, so this behavior change needs no schema
+migration or rewrite of correction history. A historical disagreement must be
+resolved through Unpublish before another publication can start.
 
 Neither pointer moves until the search index has caught up. A publication in
 `ACTIVATING` carries `index_job_id`, the Prefect flow run asked to sync the

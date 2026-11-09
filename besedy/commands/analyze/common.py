@@ -22,7 +22,7 @@ from besedy.core.paths import (
     resolve_transcripts_root,
 )
 from besedy.lib.analysis.comparison import ModelSegment
-from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.data.encoding import load_json_utf8
 
 
 @dataclass(slots=True)
@@ -79,7 +79,7 @@ def load_transcript_records(
             return
 
         try:
-            data = load_json_with_fallback(path)
+            data = load_json_utf8(path)
         except Exception as exc:  # pragma: no cover - defensive
             errors.append({"path": str(path), "error": str(exc)})
             return

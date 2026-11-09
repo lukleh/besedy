@@ -133,7 +133,7 @@ class TestPipelineDataFlow:
     @pytest.mark.e2e
     def test_transcript_schema_valid(self, complete_pipeline_structure):
         """All transcripts conform to schema."""
-        from besedy.lib.validation.core import validate_shared_schema
+        from besedy.lib.validation.core import validate_canonical_schema
 
         transcripts_dir = complete_pipeline_structure["transcripts_dir"]
 
@@ -141,7 +141,7 @@ class TestPipelineDataFlow:
             with transcript_path.open() as f:
                 data = json.load(f)
 
-            issues = validate_shared_schema(data)
+            issues = validate_canonical_schema(data)
             assert issues == [], f"Schema issues in {transcript_path}: {issues}"
 
     @pytest.mark.e2e

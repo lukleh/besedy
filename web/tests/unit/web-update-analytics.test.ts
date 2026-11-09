@@ -33,7 +33,7 @@ import {
 describe('web update analytics', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubEnv('WEB_VERSION', 'web-v2-current');
+    vi.stubEnv('WEB_VERSION', 'web-v2-9171869b88ebca113b66e5505511f399b2a7863f');
   });
 
   it('parses supported observation windows and defaults to seven days', () => {
@@ -51,13 +51,13 @@ describe('web update analytics', () => {
   });
 
   it('classifies opaque versions only by equality with the deployed version', () => {
-    expect(getWebUpdateVersionStatus('web-v2-current', 'web-v2-current')).toBe(
+    expect(getWebUpdateVersionStatus('web-v2-9171869b88ebca113b66e5505511f399b2a7863f', 'web-v2-9171869b88ebca113b66e5505511f399b2a7863f')).toBe(
       'current',
     );
-    expect(getWebUpdateVersionStatus('web-v2-another', 'web-v2-current')).toBe(
+    expect(getWebUpdateVersionStatus('web-v2-another', 'web-v2-9171869b88ebca113b66e5505511f399b2a7863f')).toBe(
       'other',
     );
-    expect(getWebUpdateVersionStatus(null, 'web-v2-current')).toBe('unknown');
+    expect(getWebUpdateVersionStatus(null, 'web-v2-9171869b88ebca113b66e5505511f399b2a7863f')).toBe('unknown');
     expect(formatWebVersion('web-v2-12345678901234567890')).toBe(
       'web-v2-12345678…7890',
     );
@@ -69,7 +69,7 @@ describe('web update analytics', () => {
     const unknownLastSeen = new Date('2026-09-18T09:00:00.000Z');
     const currentDeployedAt = new Date('2026-09-15T08:00:00.000Z');
     mocks.deployLogGroupBy.mockResolvedValue([
-      { webVersion: 'web-v2-current', _max: { deployedAt: currentDeployedAt } },
+      { webVersion: 'web-v2-9171869b88ebca113b66e5505511f399b2a7863f', _max: { deployedAt: currentDeployedAt } },
     ]);
     mocks.groupBy
       .mockResolvedValueOnce([
@@ -77,7 +77,7 @@ describe('web update analytics', () => {
       ])
       .mockResolvedValueOnce([
         {
-          clientVersion: 'web-v2-current',
+          clientVersion: 'web-v2-9171869b88ebca113b66e5505511f399b2a7863f',
           _count: { _all: 3 },
           _max: { createdAt: currentLastSeen },
         },
@@ -95,7 +95,7 @@ describe('web update analytics', () => {
     mocks.queryRaw.mockResolvedValue([
       {
         user_id: 'user-current',
-        client_version: 'web-v2-current',
+        client_version: 'web-v2-9171869b88ebca113b66e5505511f399b2a7863f',
         browser: 'Chrome',
         created_at: currentLastSeen,
         name: 'Current User',
@@ -130,7 +130,7 @@ describe('web update analytics', () => {
     });
     expect(analytics.versions).toEqual([
       {
-        clientVersion: 'web-v2-current',
+        clientVersion: 'web-v2-9171869b88ebca113b66e5505511f399b2a7863f',
         starts: 3,
         observedUsers: 1,
         lastSeenAt: currentLastSeen,
@@ -154,7 +154,7 @@ describe('web update analytics', () => {
     expect(analytics.latestUsers[0]).toEqual(
       expect.objectContaining({
         userId: 'user-current',
-        clientVersion: 'web-v2-current',
+        clientVersion: 'web-v2-9171869b88ebca113b66e5505511f399b2a7863f',
       }),
     );
   });
@@ -184,10 +184,10 @@ describe('getWebUpdateDailyVersionSeries', () => {
   });
 
   it('always features the current version, caps others at the limit, and folds the rest into other/unknown', async () => {
-    vi.stubEnv('WEB_VERSION', 'web-v2-current');
+    vi.stubEnv('WEB_VERSION', 'web-v2-9171869b88ebca113b66e5505511f399b2a7863f');
     const day = new Date('2026-09-20T00:00:00.000Z');
     mocks.queryRaw.mockResolvedValue([
-      { day, client_version: 'web-v2-current', users: 9 },
+      { day, client_version: 'web-v2-9171869b88ebca113b66e5505511f399b2a7863f', users: 9 },
       ...Array.from({ length: 7 }, (_, i) => ({
         day,
         client_version: `web-v2-other-${i}`,
@@ -205,7 +205,7 @@ describe('getWebUpdateDailyVersionSeries', () => {
         isCurrent: entry.isCurrent,
       })),
     ).toEqual([
-      { kind: 'version', version: 'web-v2-current', isCurrent: true },
+      { kind: 'version', version: 'web-v2-9171869b88ebca113b66e5505511f399b2a7863f', isCurrent: true },
       { kind: 'version', version: 'web-v2-other-0', isCurrent: false },
       { kind: 'version', version: 'web-v2-other-1', isCurrent: false },
       { kind: 'version', version: 'web-v2-other-2', isCurrent: false },
@@ -285,7 +285,7 @@ describe('getWebUpdateDailyVersionSeries', () => {
   });
 
   it('reports a genuinely empty window as supported-but-empty, not unsupported-range', async () => {
-    vi.stubEnv('WEB_VERSION', 'web-v2-current');
+    vi.stubEnv('WEB_VERSION', 'web-v2-9171869b88ebca113b66e5505511f399b2a7863f');
     mocks.queryRaw.mockResolvedValue([]);
 
     const result = await getWebUpdateDailyVersionSeries('30d', 'en');

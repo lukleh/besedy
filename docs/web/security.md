@@ -45,9 +45,11 @@ There is one live invitation per canonical email: the existing `PortalAdmission`
 row plus at most one bound `PendingCatalogGrant`. Source foreign keys, IDs,
 provenance and historical rows stay in place. No membership table, permission
 copying or automatic migration is required. Existing unbacked admissions remain
-visible to administrators for notes and cancellation, but cannot be claimed.
-A notes-only save never assigns a role or reopens a revoked admission. Explicit
-role assignment is required to add archive access to a legacy admission.
+visible to administrators for cancellation, but cannot be claimed or edited.
+Their former notes-only and in-place role-assignment paths are retired: revoke
+the admission and create a new invitation with explicit archive access. All
+edits to role-backed invitations, including notes, use the same conditional
+admission/grant transition and cannot reopen a revoked admission.
 
 Revoking the bound invitation revokes portal admission even if historical grants
 exist on other sources. An `ADMIN_DENIED` tombstone can only be reopened by an
@@ -367,8 +369,8 @@ that search and MCP require must never become a fallback for the reading page:
 
 | Consumer                     | Resolves                                                                       |
 | ---------------------------- | ------------------------------------------------------------------------------ |
-| Reader and ordinary download | The active reader publication; with none, no transcript text                   |
-| Search and MCP               | The active search publication, otherwise the search backend's machine transcript |
+| Reader and ordinary download | The current publication; with none, no transcript text                   |
+| Search and MCP               | The current publication, otherwise the search backend's machine transcript; unpublishing waits for index confirmation |
 | Correction surface           | The live workspace of a recording in correction scope, which `correct_transcripts` opens; starting one requires a primary recording |
 | Privileged original access   | The search backend's machine transcript, or the frozen source once correction started |
 
@@ -378,14 +380,19 @@ machine variants, including before publication. `download_original_transcript`
 delivers the machine text underneath, and asking for it never starts or changes
 a correction workspace.
 
-Three exceptional operations sit with `manage_catalog_config` rather than with
-either of those: archiving a mis-started workspace so a new one can be started,
-reconciling or rolling back a publication that crashed mid-activation, and
-withdrawing corrected text from search. Each can change what every consumer
-resolves, which is why none of them is part of ordinary correction or
-publication. Archiving refuses a workspace that still backs a published
-transcript: unpublishing and withdrawing it from search are deliberate acts of
-their own, and archiving must not perform them silently.
+Archiving a mis-started workspace so a new one can be started, and reconciling or
+rolling back a publication that crashed mid-activation, require
+`manage_catalog_config`. Ordinary Unpublish requires `publish_transcript` and
+takes corrected text off the reading surfaces and out of search together. The
+reader withholds text at once; search returns to machine text through a durable
+index-sync operation. A publisher may retry an interrupted Unpublish, including
+when both stored publication pointers are already clear. There is no separate
+administrative withdrawal-from-search action.
+
+Archiving refuses a workspace that still backs a publication or has an
+unpublish operation awaiting index confirmation. It must not silently perform
+either action. New publication also waits for unpublishing to finish, and
+republishing unchanged text renders and indexes a new immutable snapshot.
 
 `publish_transcript` grants no adjudication. The server rechecks every span
 when publication starts: two distinct approvals on its current revision and no
@@ -458,11 +465,8 @@ role.
 
 `see_transcript_variants` covers the fact that more than one machine transcript
 exists. Without it, `GET /api/catalogs/:id/recordings/:hash/transcript` lists only
-the default backend and refuses to serve any other, `GET …/transcript/compare` — the
-multi-backend stream view in its entirety — is refused, and the picker, the
-variant counts and the stream switch are not rendered. **Reading is now the
-default view**; the stream used to be, and a stored preference saying so does
-not reopen it.
+the default backend and refuses to serve any other, and the picker and variant
+counts are not rendered.
 
 `see_speakers` covers the diarization overlay. Without it,
 `GET …/transcript/speakers` reports no backends, the `speaker` on each

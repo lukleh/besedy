@@ -64,8 +64,9 @@ export const workspaceSummarySchema = z.object({
   spanCount: z.number(),
   spanDurationSeconds: z.number(),
   status: z.enum(["ACTIVE", "ARCHIVED"]),
-  readerPublicationId: z.string().nullable(),
-  searchPublicationId: z.string().nullable(),
+  publicationId: z.string().nullable(),
+  canUnpublish: z.boolean(),
+  unpublishPending: z.boolean(),
   lockedByPublicationId: z.string().nullable(),
   startedById: z.string().nullable(),
   createdAt: z.string(),
@@ -103,7 +104,6 @@ export type InFlightPublication = z.infer<typeof inFlightPublicationSchema>;
 export const publishResultSchema = z.object({
   publicationId: z.string(),
   status: z.enum(["SUCCEEDED", "ACTIVATING", "FAILED"]),
-  reused: z.boolean(),
   resumed: z.boolean(),
   error: publicationErrorSchema.nullable(),
 });

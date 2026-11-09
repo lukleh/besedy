@@ -19,8 +19,8 @@ from rich.progress import (
 )
 
 from besedy.commands.catalog.metadata import enrich_basic_records
-from besedy.commands.catalog.system import detect_logical_cpus
 from besedy.commands.catalog.ui import write_duplicates_csv
+from besedy.core.system import detect_logical_cpus
 from besedy.lib.catalog.manager import (
     FileRecord,
     build_record_for_file,

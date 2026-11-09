@@ -168,7 +168,6 @@ const INVITED_USERS = [
     name: TEST_USERS.listener.name,
     role: "listener" as CatalogRole,
   },
-  { email: TEST_USERS.noaccess.email, name: TEST_USERS.noaccess.name },
 ];
 
 // Test workflow group configuration
@@ -294,13 +293,13 @@ async function main() {
         email: userData.email,
         createdById: superadminId,
         createdAt: new Date(),
-        catalogId: userData.role ? workflowGroup.id : null,
-        role: userData.role ?? null,
+        catalogId: workflowGroup.id,
+        role: userData.role,
         extraPermissions: userData.extraPermissions,
         notes: `E2E test user: ${userData.name}`,
       });
       console.log(
-        `  ✓ ${userData.email}${userData.role ? ` (${userData.role})` : ""}`
+        `  ✓ ${userData.email} (${userData.role})`
       );
     }
 

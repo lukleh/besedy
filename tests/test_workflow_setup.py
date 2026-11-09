@@ -66,7 +66,7 @@ class TestRejectStaleAsrManifests:
         (tmp_path / "audio_catalog_asr.csv").touch()
         monkeypatch.setattr(workflow_setup, "resolve_catalogs_root", lambda: tmp_path)
         monkeypatch.setenv("BESEDY_TEXT_DATA_ROOT", str(tmp_path))
-        catalog = _write_catalog_csv(tmp_path / "audio_catalog_20260101_120000_normalized.csv")
+        catalog = _write_catalog_csv(tmp_path / "audio_catalog_20260101_120000_loudness_normalized.csv")
 
         result = workflow_setup.resolve_and_load_catalog(catalog, "transcribe", limit=None)
 
@@ -87,7 +87,7 @@ class TestRejectStaleAsrManifests:
 
 class TestExtractRunInfo:
     def test_normalized_catalog_yields_timestamp(self, tmp_path: Path) -> None:
-        catalog = tmp_path / "audio_catalog_20260101_120000_normalized.csv"
+        catalog = tmp_path / "audio_catalog_20260101_120000_loudness_normalized.csv"
         catalog.touch()
 
         run_id, base_name = workflow_setup.extract_run_info(catalog)
@@ -106,4 +106,4 @@ class TestExtractRunInfo:
         with pytest.raises(SystemExit):
             workflow_setup.extract_run_info(catalog)
 
-        assert "no longer supported" in capsys.readouterr().err
+        assert "loudness_normalized.csv" in capsys.readouterr().err

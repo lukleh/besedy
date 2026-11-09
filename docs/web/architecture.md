@@ -217,10 +217,20 @@ requires the named catalog permission.
 | POST | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId/comments` | `correct_transcripts` | Add a comment |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/publication` | `publish_transcript` | Publications of the workspace and their state |
 | POST | `/api/catalogs/:id/recordings/:hash/correction/publication` | `publish_transcript` | Publish or republish; resumes a publication that stalled |
-| DELETE | `/api/catalogs/:id/recordings/:hash/correction/publication` | `publish_transcript` | Unpublish: clears the reader pointer, search keeps the snapshot |
-| POST | `/api/catalogs/:id/recordings/:hash/correction/publication/recover` | `manage_catalog_config` | Reconcile or roll back a publication, or withdraw corrected text from search |
+| DELETE | `/api/catalogs/:id/recordings/:hash/correction/publication` | `publish_transcript` | Unpublish: withhold the reader transcript and durably restore machine search; retry resumes a pending unpublish |
+| POST | `/api/catalogs/:id/recordings/:hash/correction/publication/recover` | `manage_catalog_config` | Reconcile or roll back a publication |
 
 A span's state is derived in one SQL query, `spanStatesSql` in `web/src/lib/correction/span-state-sql.ts`. The span listing, the progress and resume figures, the publication check, the overview, "next" and the strip all read it, so no second statement of the two-approval rule exists in application code. It is exercised against a real database by `npm run test:correction-smoke`.
+
+Correction exposes one logical current publication. Publish activates the same
+snapshot for readers and search after the index confirms it. Unpublish clears
+both retained database pointers, removes the filesystem index-source pointer,
+and submits the existing `withdraw` index operation. Its durable token remains
+until the worker confirms machine text, so a failed or interrupted Unpublish can
+be retried. Publishing and workspace archiving wait for that confirmation.
+Republishing unchanged text creates and indexes a new snapshot. The workspace
+response exposes `publicationId`, `canUnpublish` and `unpublishPending`; separate
+reader-only publication controls are not exposed.
 
 `edit_metadata` (curated metadata of one recording) and `manage_lookups` (the recorder, location and album rows, per [ADR 0007](../adr/0007-per-catalog-lookups.md)) are both carried only by `curator` and `catalog_admin`, and neither can be granted as an extra. "Catalog access" for a plain read means any active grant on the catalog, or `isCatalogAdmin` -- there is no per-recording release scoping on the lookup/filter endpoints.
 
@@ -304,7 +314,6 @@ call it. Endpoints not listed above:
 | GET/PUT | `/api/catalogs/:id/recordings/:hash/progress` | Playback progress |
 | PATCH | `/api/catalogs/:id/recordings/:hash/ready` | Manual publication toggle (`publish_recording`) |
 | POST | `/api/catalogs/:id/events/from-recording` | Create an event from a recording |
-| GET | `/api/catalogs/:id/recordings/:hash/transcript/compare` | All transcript lanes for timeline comparison |
 | GET | `/api/catalogs/:id/events/:eventId/artwork` | The event's published artwork (WebP copy; the stored original when no copy exists) |
 | GET/POST | `/api/catalogs/:id/events/:eventId/artworks` | List and add artwork candidates; `…/artworks/:artworkId` (DELETE) and `…/image` (GET; `?size=original` for the stored original) sit below it |
 | PUT/DELETE | `/api/catalogs/:id/events/:eventId/artwork-publication` | Publish or unpublish artwork |

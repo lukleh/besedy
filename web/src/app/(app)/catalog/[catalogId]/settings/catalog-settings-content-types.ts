@@ -99,7 +99,6 @@ export interface CatalogSyncResult {
   groupId: string;
   status: "success" | "skipped" | "error";
   changedSources: string[];
-  unrecognizedHashAlgorithmRows?: number;
   error?: string;
 }
 
@@ -195,7 +194,6 @@ export const catalogSyncResultSchema = z.object({
   groupId: z.string(),
   status: z.enum(["success", "skipped", "error"]),
   changedSources: z.array(z.string()),
-  unrecognizedHashAlgorithmRows: z.number().optional(),
   error: z.string().optional(),
 });
 
