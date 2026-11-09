@@ -10,7 +10,6 @@ its own rows and re-syncing the projection.
 
 from __future__ import annotations
 
-import json
 import shutil
 from pathlib import Path
 
@@ -22,14 +21,13 @@ from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 
 from ..json_types import JsonDict
 from .ingest_recording import (
-    COMPLETION_REPORT_FAILED_MARKER,
     MAX_ERROR_MESSAGE_LENGTH,
     IngestFlowError,
     IngestPaths,
     _report_failure_best_effort,
     catalog_ingest_lock,
+    deliver_completion,
     progress_reporter,
-    report_completion,
     resolve_ingest_paths,
     run_catalog_cli,
 )
@@ -113,12 +111,5 @@ def remove_recording_flow(
         "errorCode": "derived_refresh_failed" if warning else None,
         "errorMessage": warning[:MAX_ERROR_MESSAGE_LENGTH] if warning else None,
     }
-    try:
-        report_completion(paths.intake_id, outcome)
-    except Exception as exc:
-        raise IngestFlowError(
-            f"Completion report failed: {exc}. "
-            f"{COMPLETION_REPORT_FAILED_MARKER}{json.dumps(outcome)}",
-            error_code="completion_report_failed",
-        ) from exc
+    deliver_completion(paths.intake_id, outcome)
     return outcome

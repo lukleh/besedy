@@ -1,6 +1,6 @@
 # Recording Ingest (Admin Upload)
 
-> **Last Updated:** 2026-10-04
+> **Last Updated:** 2026-11-08
 > **Status:** Phase 1 - upload, process, auto-sync, status. Metadata/event
 > pre-fill is a follow-up.
 
@@ -32,13 +32,13 @@ host worker (work pool besedy-ingest-<env>, concurrency 1)
        (exit 2 = other rows were skipped: accepted when the upload has a row
         in the archived manifest and a transcript.json for every pipeline
         transcription workflow, otherwise run_pipeline_failed naming the hash)
-       (CLI children run with PYTHONUNBUFFERED=1; every `[N/M] step...` header
-        line, and the duplicate check and catalog add before it, is sent to
+       (CLI children run with PYTHONUNBUFFERED=1 and BESEDY_JOB_RECORDS=1;
+        structured progress records, and the duplicate check/catalog add, are sent to
         POST web /api/internal/ingest/<intake>/progress {step, total, label}
         best effort: a failed report is only logged)
     5. POST web /api/internal/ingest/<intake>/complete {status, audioHash, errorCode}
-       (if this cannot be delivered the run fails with a message carrying the
-        outcome as `completion_report_failed:{...}` and the web app applies it later)
+       (if this cannot be delivered the worker stores a structured result artifact
+        in Prefect and fails the run; the web app applies that outcome later)
 
 web complete route: update recording_intake; on SUCCEEDED run syncCatalogGroup()
 web progress route: records the step on a QUEUED/RUNNING/REMOVING row (never
@@ -57,6 +57,33 @@ non-path metadata (`original_filename` and `requested_by_id`), while removals
 carry the validated audio hash. The web container and the host see the uploads
 root under different paths (`/data/uploads` vs. the host directory), so no
 filesystem path is ever passed across.
+
+## Job records and recovery
+
+`besedy.lib.job_records` defines a versioned envelope:
+`{"protocol":"besedy-job","version":1,"kind":"progress|result","payload":{...}}`.
+The worker enables JSON-line records for CLI children with `BESEDY_JOB_RECORDS=1`.
+Human headings and diagnostics remain readable logs, with no protocol meaning.
+Pipeline steps emit progress records; ColBERT's JSON command emits one result
+record. The worker requires exactly one result when a command needs one, without
+retaining the full output. Normal operator CLI output is unchanged.
+
+If completion callbacks exhaust their existing retries, ingest/removal writes a
+`besedy-job-result` artifact to Prefect's server database, with its own retry
+policy. Its result record includes the catalog, intake, and flow attempt. The
+jobs API reads only the artifact for the exact failed flow run and current
+attempt; the web app validates the record version and matching catalog/intake
+before applying the existing guarded transition and catalog sync/removal cleanup.
+No worker-local result filesystem is required. If both callback delivery and
+artifact storage fail, the run remains failed and needs operator recovery.
+
+Deploy the web app, jobs API, and host worker checkout/deployment from the same
+revision. Drain active ingest/removal/correction-index runs and stop new worker
+work before switching all three, then restart the worker. The prose protocol is
+retired: historical callback failures containing only the old exception marker
+need explicit operator reconciliation from the catalog and run history, rather
+than automatic interpretation of their messages. Do not blindly rerun an ingest
+whose catalog work already completed.
 
 ## Paths and configuration
 
@@ -238,9 +265,9 @@ failed - click **Sync catalog**).
 
 If the jobs API is unreachable or misconfigured at finalize, the row stays
 `UPLOADING` with the file kept and the page shows **Retry submit**. If the
-worker cannot deliver its final report (web down during the retry window), the
-run fails with `completion_report_failed:{...}` in its message and the next
-admin poll applies that outcome and syncs the catalog.
+worker cannot deliver its final report (web down during the retry window), it
+stores the structured outcome in a Prefect artifact and fails the run. The next
+admin poll reads the matching flow attempt's result and syncs the catalog.
 
 ## Operations
 

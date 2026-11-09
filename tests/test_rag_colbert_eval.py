@@ -88,7 +88,7 @@ def test_colbert_eval_reports_oblique_span_and_audio_only_diagnostics(
             [
                 {
                     "id": "oblique-1",
-                    "query": "find the implicit acceptance distinction",
+                    "question": "find the implicit acceptance distinction",
                     "category": "implicit_theme",
                     "targets": [
                         {
@@ -105,7 +105,7 @@ def test_colbert_eval_reports_oblique_span_and_audio_only_diagnostics(
                 },
                 {
                     "id": "oblique-miss",
-                    "query": "find a latent behavior change",
+                    "question": "find a latent behavior change",
                     "targets": [
                         {
                             "audio_hash": audio_a,

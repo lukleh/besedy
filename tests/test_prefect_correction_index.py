@@ -153,26 +153,6 @@ def test_service_submits_correction_index_sync(tmp_path: Path) -> None:
 # --- flow -------------------------------------------------------------------
 
 
-def test_parse_trailing_json_skips_worker_chatter() -> None:
-    output = "\n".join(
-        [
-            "[docker] pulling image",
-            "{ not json",
-            "progress 50%",
-            "{",
-            '  "index_dir": "/bundles/index",',
-            '  "chunk_count": 3',
-            "}",
-        ]
-    )
-    assert sync_module.parse_trailing_json(output) == {
-        "index_dir": "/bundles/index",
-        "chunk_count": 3,
-    }
-    with pytest.raises(sync_module.CorrectionIndexFlowError):
-        sync_module.parse_trailing_json("no result here")
-
-
 @pytest.mark.parametrize(
     "timings",
     [
@@ -188,8 +168,7 @@ def test_sync_recording_prints_available_timings_and_returns_the_unmodified_resu
     (tmp_path / f"transcripts_{CATALOG_ID}").mkdir()
     monkeypatch.setattr(sync_module, "resolve_transcripts_parent", lambda: tmp_path)
     payload = {"index_dir": "/bundles/scope/index", "chunk_count": 3, **timings}
-    cli_output = "worker chatter\n" + json.dumps(payload, indent=2)
-    monkeypatch.setattr(sync_module, "run_catalog_cli", lambda *_args, **_kwargs: cli_output)
+    monkeypatch.setattr(sync_module, "run_catalog_cli", lambda *_args, **_kwargs: payload)
 
     result = sync_module.sync_recording.fn(CATALOG_ID, AUDIO_HASH, None)
 
@@ -206,7 +185,7 @@ def _run_flow(monkeypatch, *, operation: str, indexed_row, tmp_path: Path):  # t
 
     def fake_cli(args, *, stage, **_kwargs):  # type: ignore[no-untyped-def]
         cli_calls.append([stage, *args])
-        return "worker chatter\n" + json.dumps({"index_dir": "/bundles/scope/index"}, indent=2)
+        return {"index_dir": "/bundles/scope/index"}
 
     (tmp_path / f"transcripts_{CATALOG_ID}").mkdir()
     monkeypatch.setattr(sync_module, "resolve_transcripts_parent", lambda: tmp_path)

@@ -9,14 +9,13 @@ evidence before changing production retrieval.
 
 ## Fixture Shape
 
-`tests/rag_colbert_eval.py` accepts an eval record list with either `question`
-or `query`:
+`tests/rag_colbert_eval.py` accepts an eval record list with a `question` field:
 
 ```json
 [
   {
     "id": "oblique_implicit_acceptance_001",
-    "query": "najdi misto, kde recnik rozlisuje prijeti situace od souhlasu s nasilim",
+    "question": "najdi misto, kde recnik rozlisuje prijeti situace od souhlasu s nasilim",
     "category": "implicit_theme",
     "targets": [
       {
@@ -39,7 +38,7 @@ Supported target forms:
 - `{"chunk_id": "..."}`
 - `{"audio_hash": "..."}`
 - `{"audio_hash": "...", "start_seconds": 10.0, "end_seconds": 25.0}`
-- `start`/`end` and `start_sec`/`end_sec` are accepted aliases for generated fixtures.
+- Time bounds use `start_seconds` and `end_seconds`; alternate spellings are rejected.
 
 Audio hashes must be 64-character SHA-256 hex values, and time spans must start
 at or after zero. The evaluation commands reject malformed records instead of
