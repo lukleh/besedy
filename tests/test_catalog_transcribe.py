@@ -257,3 +257,107 @@ def test_handle_transcribe_reports_already_complete_rows(
 
     assert transcribe_module.handle_transcribe(request) == 0
     assert summaries == [{"already_complete": 1}]
+
+
+def _capture_transcription_jobs(
+    monkeypatch, tmp_path, configs, rows, invalid_hashes=(), **request_options
+):
+    monkeypatch.setattr(
+        transcribe_module, "resolve_and_load_catalog", lambda *_: (tmp_path / "catalog.csv", rows)
+    )
+    monkeypatch.setattr(transcribe_module, "extract_run_info", lambda _: ("run", "transcripts"))
+    monkeypatch.setattr(transcribe_module, "setup_output_root", lambda *_: True)
+    monkeypatch.setattr(
+        transcribe_module,
+        "validate_staged_audio",
+        lambda selected: (
+            [
+                PreparedEntry(row.audio_hash, Path(row.full_path), Path(row.full_path), "existing", 1)
+                for row in selected
+                if row.audio_hash not in invalid_hashes
+            ],
+            [
+                (row.audio_hash, Path(row.full_path), "invalid staged audio")
+                for row in selected
+                if row.audio_hash in invalid_hashes
+            ],
+        ),
+    )
+    captured = []
+    monkeypatch.setattr(
+        transcribe_module,
+        "build_workflows",
+        lambda *_, **kwargs: captured.extend(kwargs["transcription_jobs"]) or [],
+    )
+    request = transcribe_module.TranscribeRequest(
+        output_root=tmp_path, workflow_configs=tuple(configs), **request_options
+    )
+    assert transcribe_module.handle_transcribe(request) == (
+        transcribe_module.EXIT_ROWS_SKIPPED if invalid_hashes else 0
+    )
+    return captured
+
+
+def test_exact_configuration_is_not_selected_again(monkeypatch, tmp_path):
+    """A selected VAD/aligner variant cannot expand into non-pipeline siblings."""
+    selected = make_workflow_config(vad_model="selected-vad", align_model="selected-aligner")
+
+    def unexpected_selection(**_):
+        raise AssertionError("an internal configuration must not be selected again")
+
+    monkeypatch.setattr(transcribe_module, "get_transcription_workflows", unexpected_selection)
+    jobs = _capture_transcription_jobs(
+        monkeypatch, tmp_path, [selected], [CsvAudioRow("a" * 64, "audio.wav")]
+    )
+    assert len(jobs) == 1
+    assert jobs[0].config is selected
+
+
+def test_exact_configuration_rejects_ambiguous_selector_overrides(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(
+        transcribe_module,
+        "resolve_and_load_catalog",
+        lambda *_: pytest.fail("catalog must not be read"),
+    )
+    request = transcribe_module.TranscribeRequest(
+        workflow_configs=(make_workflow_config(),), workflows=["faster-whisper"]
+    )
+    assert transcribe_module.handle_transcribe(request) == 1
+    assert "cannot be combined" in capsys.readouterr().err
+
+
+def test_beam_limit_selects_recordings_with_all_their_required_stages(monkeypatch, tmp_path):
+    beam = make_workflow_config(
+        workflow_id="canary-nemo-beam", workflow_label="canary-nemo-beam", decode_strategy="beam"
+    )
+    rows = [CsvAudioRow(char * 64, f"{char}.wav") for char in "ab"]
+    first = transcribe_module.path_builder(beam).workflow_dir(tmp_path) / rows[0].audio_hash
+    first.mkdir(parents=True)
+    (first / "transcript.json").write_text("{}", encoding="utf-8")
+    jobs = _capture_transcription_jobs(monkeypatch, tmp_path, [beam], rows, limit=1)
+    assert jobs[0].hashes == {rows[0].audio_hash}
+    assert jobs[0].align_hashes == set()
+    # Once the first row's missing stage is done, the next batch carries both
+    # stages for b, instead of aligning b while only a is transcribed.
+    (first / "nemo_beam_segments.json").write_text("{}", encoding="utf-8")
+    jobs = _capture_transcription_jobs(monkeypatch, tmp_path, [beam], rows, limit=1)
+    assert jobs[0].hashes == jobs[0].align_hashes == {rows[1].audio_hash}
+
+
+def test_each_exact_variant_keeps_its_own_recording_limit(monkeypatch, tmp_path):
+    configs = [make_workflow_config(vad_model=name) for name in ("first", "second")]
+    rows = [CsvAudioRow(char * 64, f"{char}.wav") for char in "ab"]
+    completed = transcribe_module.path_builder(configs[0]).workflow_dir(tmp_path) / rows[0].audio_hash
+    completed.mkdir(parents=True)
+    (completed / "transcript.json").write_text("{}", encoding="utf-8")
+    jobs = _capture_transcription_jobs(monkeypatch, tmp_path, configs, rows, limit=1)
+    assert [job.hashes for job in jobs] == [{rows[1].audio_hash}, {rows[0].audio_hash}]
+
+
+def test_alignment_jobs_exclude_rows_that_failed_staged_validation(monkeypatch, tmp_path):
+    beam = make_workflow_config(workflow_id="canary-nemo-beam", decode_strategy="beam")
+    rows = [CsvAudioRow(char * 64, f"{char}.wav") for char in "ab"]
+    jobs = _capture_transcription_jobs(
+        monkeypatch, tmp_path, [beam], rows, invalid_hashes={rows[1].audio_hash}, continue_on_error=True
+    )
+    assert jobs[0].hashes == jobs[0].align_hashes == {rows[0].audio_hash}

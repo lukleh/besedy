@@ -369,8 +369,7 @@ def test_build_workflows_nemo_docker_runtime_forwards_gpu_and_nemo_env(
     ]
     assert "--gpus" not in argv
     assert "nemo" in argv
-    assert argv[argv.index("--source-lang") + 1] == "cs"
-    assert argv[argv.index("--target-lang") + 1] == "cs"
+    assert WorkflowConfig.from_json(argv[argv.index("--workflow-config") + 1]) == workflow
     assert "NEMO_LOG_TEXT_NO_WORDS=1" in argv
     assert "BESEDY_NEMO_VAD_NUM_WORKERS=0" in argv
     assert "PYTORCH_ALLOC_CONF=expandable_segments:True" in argv
