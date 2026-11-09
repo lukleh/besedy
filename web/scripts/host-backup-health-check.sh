@@ -170,7 +170,8 @@ load_extra_required_paths() {
             continue
         fi
 
-        label="$(normalize_label "$(trim_whitespace "${line#*|}")")"
+        label="${line#*|}"
+        label="$(normalize_label "$(trim_whitespace "${label%%|*}")")"
         if [ -z "$label" ]; then
             failures+=("Invalid mapping on line $lineno in $EXTRA_MAP_FILE (empty label)")
             continue

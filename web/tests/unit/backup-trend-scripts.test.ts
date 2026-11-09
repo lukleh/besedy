@@ -98,6 +98,7 @@ function runHealthCheck(
     env?: Record<string, string>;
     projectTrailer?: string;
     requiredPath?: string;
+    extraMapEntry?: string;
     nasState?: 'healthy' | 'missing_receipt' | 'missing_dump' | 'stale' | 'corrupt' | 'changed';
   } = {},
 ) {
@@ -142,7 +143,7 @@ cp '${remoteDump}' "$destination"
 `,
   );
   const mapFile = join(root, 'extra.paths');
-  writeFileSync(mapFile, '/src/x|audio/x\n');
+  writeFileSync(mapFile, `${options.extraMapEntry ?? '/src/x|audio/x'}\n`);
 
   const projectLog = join(root, 'project.log');
   const extraLog = join(root, 'extra.log');
@@ -208,6 +209,17 @@ describe('scheduled monitoring scripts', () => {
 });
 
 describe('host-backup-health-check.sh remote sync trend', () => {
+  it.skipIf(process.platform !== 'linux')('reads the destination before an optional source allowlist', () => {
+    const result = runHealthCheck(
+      [{ endMinutesAgo: 60, durationMinutes: 1, files: 100 }],
+      { extraMapEntry: '/src/x|audio/x|/private/audio.include' },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('extra_path_ok=audio/x');
+    expect(result.stdout).not.toContain('extra_path_ok=audio/x|');
+  });
+
   it('stays healthy when the sync is quick and the file count is stable', () => {
     const result = runHealthCheck([
       { endMinutesAgo: 8 * DAY, durationMinutes: 30, files: 1000 },

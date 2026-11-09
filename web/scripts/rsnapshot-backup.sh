@@ -48,6 +48,7 @@ MAX_DETAIL_LOG_BYTES="${MAX_DETAIL_LOG_BYTES:-52428800}"
 
 declare -a BACKUP_SOURCES=()
 declare -a BACKUP_LABELS=()
+declare -a BACKUP_INCLUDE_FILES=()
 
 ts() {
     date '+%Y-%m-%d %H:%M:%S %Z'
@@ -176,9 +177,23 @@ validation_fail() {
     exit 1
 }
 
+validate_include_file() {
+    local path="$1" rule="" last_rule=""
+    if [[ "$path" != /* || "$path" == *[[:space:],]* ]] ||
+        [ ! -f "$path" ] || [ ! -r "$path" ] || [ ! -s "$path" ]; then
+        validation_fail "Backup failed: include file must be a readable, nonempty absolute path without whitespace or commas ($path)"
+    fi
+    while IFS= read -r rule || [ -n "$rule" ]; do
+        case "$rule" in ''|\#*|\;*) continue ;; esac
+        last_rule="$rule"
+    done < "$path"
+    [ "$last_rule" = '- *' ] || validation_fail "Backup failed: include file must end with '- *' to omit unlisted paths ($path)"
+}
+
 load_backup_targets() {
     BACKUP_SOURCES=()
     BACKUP_LABELS=()
+    BACKUP_INCLUDE_FILES=()
 
     if [ -n "$SNAPSHOT_MAP_FILE" ]; then
         if [ ! -f "$SNAPSHOT_MAP_FILE" ]; then
@@ -188,6 +203,7 @@ load_backup_targets() {
         local line=""
         local source_dir=""
         local backup_label=""
+        local remainder="" include_file=""
         local lineno=0
         declare -A seen_labels=()
 
@@ -206,7 +222,16 @@ load_backup_targets() {
             fi
 
             source_dir="$(trim_whitespace "${line%%|*}")"
-            backup_label="$(trim_whitespace "${line#*|}")"
+            remainder="${line#*|}"
+            backup_label="$(trim_whitespace "${remainder%%|*}")"
+            include_file=""
+            if [[ "$remainder" == *"|"* ]]; then
+                include_file="$(trim_whitespace "${remainder#*|}")"
+                if [[ -z "$include_file" || "$include_file" == *"|"* ]]; then
+                    validation_fail "Backup failed: invalid mapping on line $lineno in $SNAPSHOT_MAP_FILE (expected source|label[|include-file])"
+                fi
+                validate_include_file "$include_file"
+            fi
 
             if [ -z "$source_dir" ] || [ -z "$backup_label" ]; then
                 validation_fail "Backup failed: invalid mapping on line $lineno in $SNAPSHOT_MAP_FILE (empty source or label)"
@@ -224,6 +249,7 @@ load_backup_targets() {
             seen_labels["$backup_label"]=1
             BACKUP_SOURCES+=("$source_dir")
             BACKUP_LABELS+=("$backup_label")
+            BACKUP_INCLUDE_FILES+=("$include_file")
         done < "$SNAPSHOT_MAP_FILE"
 
         if [ "${#BACKUP_SOURCES[@]}" -eq 0 ]; then
@@ -239,6 +265,7 @@ load_backup_targets() {
 
     BACKUP_SOURCES+=("$SOURCE_DIR")
     BACKUP_LABELS+=("$(normalize_backup_label "$BACKUP_LABEL")")
+    BACKUP_INCLUDE_FILES+=("")
 }
 
 validate_inputs() {
@@ -325,7 +352,11 @@ EOF
 
     local idx=0
     for idx in "${!BACKUP_SOURCES[@]}"; do
-        printf 'backup\t%s/\t%s\n' "${BACKUP_SOURCES[$idx]%/}" "${BACKUP_LABELS[$idx]}" >>"$RSNAPSHOT_CONFIG"
+        printf 'backup\t%s/\t%s' "${BACKUP_SOURCES[$idx]%/}" "${BACKUP_LABELS[$idx]}" >>"$RSNAPSHOT_CONFIG"
+        if [ -n "${BACKUP_INCLUDE_FILES[$idx]}" ]; then
+            printf '\tinclude_file=%s' "${BACKUP_INCLUDE_FILES[$idx]}" >>"$RSNAPSHOT_CONFIG"
+        fi
+        printf '\n' >>"$RSNAPSHOT_CONFIG"
     done
 }
 

@@ -9,8 +9,36 @@ Besedy uses two host-side rsnapshot roots.
   - Besedy-specific non-project paths that are not covered by the generic project backup
 
 The extra snapshot root is driven by [rsnapshot-backup.sh](../../scripts/rsnapshot-backup.sh) with
-`SNAPSHOT_MAP_FILE` pointing at your `besedy-extra.paths` (gitignored; copy it
+`SNAPSHOT_MAP_FILE` pointing at your private `besedy-extra.paths` (copy it
 from [besedy-extra.paths.example](./besedy-extra.paths.example)).
+
+Each map row is `source|label` with an optional third field:
+`source|label|/absolute/path/to/include-file`. The include file uses native
+rsync rules and applies only to that source. Its path must have no whitespace
+or commas. Its last non-comment rule must be exactly `- *` without padding,
+so unlisted paths are omitted. A missing, empty or invalid include file stops the
+run before database hooks or snapshots; it never widens backup coverage.
+
+Use [audio.include](./audio.include) for the `besedy_audio` source. It selects
+the `audio_archived` and `audio_staged` aliases and every timestamped generation
+of those two families. Future generations are included automatically;
+training outputs, model directories, experiments and other new root entries
+stay outside coverage until deliberately added. Keep the source and snapshot
+label unchanged so existing restore paths still work. The other mapped
+sources retain their existing coverage.
+
+Keep the private map and include file outside deployment checkouts. Set
+`EXTRA_MAP_FILE` in `ops.env` to the same map used by `SNAPSHOT_MAP_FILE`, so
+the runner and coverage checks read one selection policy. Both the runner and
+host health helper must support the optional field before switching the map;
+the weekly report uses its sibling host health helper.
+
+The project profile should likewise retain its explicit top-level selection
+of valuable project/data directories. Dependency and cache rules can still
+omit regenerable subtrees inside selected directories. Avoid blanket model
+file-extension rules: binary files can also belong to a required RAG index.
+Previous snapshots keep their recorded contents until normal retention
+expires; changing selection does not require rewriting backup history.
 
 Current labels inside `rsnapshot_besedy_extra/<interval>.N/`:
 

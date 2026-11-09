@@ -1,0 +1,8 @@
+# Pipeline audio only. New unrelated directories are outside backup coverage.
+# Stable aliases are symlinks; archive mode preserves them without following.
++ /audio_archived
++ /audio_staged
+# Include all generations under the current YYYYMMDD_HHMMSS naming contract.
++ /audio_archived_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9]/***
++ /audio_staged_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9]/***
+- *
