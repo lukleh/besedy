@@ -7,6 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
+import type { FilterOptionsResponse } from "@/hooks/use-filter-options";
 import { useCatalogFilters } from "@/components/catalog/catalog-list/hooks/use-catalog-filters";
 
 // Mock useDebounce to return value immediately for simpler testing
@@ -19,20 +20,6 @@ describe("useCatalogFilters", () => {
     catalogId: "test-catalog",
     activeCatalogId: "test-catalog",
     isHydrated: true,
-    columnVisibility: {
-      title: true,
-      date: true,
-      part: true,
-      recorder: true,
-      location: true,
-      status: true,
-      duration: false,
-      verified: false,
-      artist: false,
-      album: false,
-      duplicates: false,
-      offline: true,
-    },
   };
 
   beforeEach(() => {
@@ -217,22 +204,11 @@ describe("useCatalogFilters", () => {
       expect(result.current.hasActiveFilters).toBe(true);
     });
 
-    it("should be false when filter is set but column is hidden", async () => {
-      const options = {
-        ...defaultOptions,
-        columnVisibility: {
-          ...defaultOptions.columnVisibility,
-          status: false, // Hide status column
-        },
-      };
-
-      const { result } = renderHook(() => useCatalogFilters(options));
-
-      act(() => {
-        result.current.setStatusFilter("ready");
-      });
-
-      // Filter is set, but column is hidden, so hasActiveFilters should be false
+    it("reports URL filters even when their controls are not displayed", () => {
+      const { result } = renderHook(() => useCatalogFilters(defaultOptions));
+      act(() => result.current.setAlbumFilter("12"));
+      expect(result.current.hasActiveFilters).toBe(true);
+      act(() => result.current.clearFilters());
       expect(result.current.hasActiveFilters).toBe(false);
     });
 
@@ -303,5 +279,89 @@ describe("useCatalogFilters", () => {
 
       expect(result.current.page).toBe(3);
     });
+  });
+  it("restores existing saved filters and persists subsequent changes without renaming fields", () => {
+    vi.mocked(localStorage.getItem).mockReturnValueOnce(
+      JSON.stringify({
+        status: "ready",
+        recorder: "77",
+        dateYear: "2024",
+        sortKey: "title",
+        sortDir: "asc",
+        page: 3,
+      }),
+    );
+    const { result } = renderHook(() => useCatalogFilters(defaultOptions));
+    expect(result.current.values).toMatchObject({
+      status: "ready",
+      recorder: "77",
+      dateYear: "2024",
+      sortKey: "title",
+      sortDir: "asc",
+      page: 3,
+    });
+    act(() => result.current.setLocationFilter("empty"));
+    expect(
+      JSON.parse(vi.mocked(localStorage.setItem).mock.calls.at(-1)![1]),
+    ).toEqual({
+      status: "ready",
+      recorder: "77",
+      location: "empty",
+      dateYear: "2024",
+      sortKey: "title",
+      sortDir: "asc",
+    });
+    act(() => result.current.clearFilters());
+    expect(
+      JSON.parse(vi.mocked(localStorage.setItem).mock.calls.at(-1)![1]),
+    ).toEqual({ sortKey: "title", sortDir: "asc" });
+  });
+
+  it("clears unavailable selections atomically, preserving URL filters and null metadata", () => {
+    const { result } = renderHook(() => useCatalogFilters(defaultOptions));
+    act(() => {
+      result.current.setRecorderFilter("77");
+      result.current.setLocationFilter("empty");
+      result.current.setAlbumFilter("88");
+      result.current.setDateYear("2024");
+      result.current.setDateMonth("2");
+      result.current.setDateDay("20");
+      result.current.setStatusFilter("ready");
+    });
+    const options: FilterOptionsResponse = {
+      groupId: "test-catalog",
+      totalMatching: 1,
+      options: {
+        recorders: [],
+        locations: [],
+        albums: [],
+        parts: [],
+        artists: [],
+        duplicates: [],
+        years: [{ value: 2024, count: 1 }],
+        months: [{ value: 1, count: 1 }],
+        days: [{ value: 20, count: 1 }],
+        statuses: [{ value: "ready", count: 1 }],
+        durations: [],
+        verified: [],
+      },
+    };
+    act(() =>
+      result.current.syncWithAvailableOptions(options, { recorder: true }),
+    );
+    expect(result.current.values).toMatchObject({
+      recorder: "77",
+      location: "empty",
+      album: "all",
+      dateYear: "2024",
+      dateMonth: "all",
+      dateDay: "all",
+      status: "ready",
+    });
+    const unchanged = result.current.values;
+    act(() =>
+      result.current.syncWithAvailableOptions(options, { recorder: true }),
+    );
+    expect(result.current.values).toBe(unchanged);
   });
 });

@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveRecordingDisplay } from "@/lib/catalog-recordings/metadata";
+
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Calendar, Clock, Hash, MapPin, Mic } from "lucide-react";
@@ -32,7 +34,7 @@ export function MobileCardView({ entries, groupId }: MobileCardViewProps) {
   return (
     <div className="space-y-2 @[768px]/catalog:hidden landscape-mobile:block">
       {entries.map((entry) => {
-        const fallbackTitle = entry.curatedTitle || entry.title || entry.filename || entry.hash.slice(0, 16);
+        const fallbackTitle = resolveRecordingDisplay(entry, entry.filename || entry.hash.slice(0, 16)).title;
         const dateStr = formatDate(entry.dateYear, entry.dateMonth, entry.dateDay);
 
         // Enhanced mode: use date + location as title when both fully available
