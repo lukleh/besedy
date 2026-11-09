@@ -114,7 +114,7 @@ describe("catalog recording route access", () => {
       "catalog_entry",
       "a".repeat(64),
       {
-        groupId: "catalog-1",
+        catalogId: "catalog-1",
         reason: "No access grant",
       }
     );
@@ -138,7 +138,7 @@ describe("catalog recording route access", () => {
       "catalog_entry",
       "catalog-1",
       {
-        groupId: "catalog-1",
+        catalogId: "catalog-1",
         reason: "No access grant",
       }
     );
@@ -183,7 +183,7 @@ describe("catalog recording route access", () => {
       "audio",
       "a".repeat(64),
       {
-        groupId: "catalog-1",
+        catalogId: "catalog-1",
         reason: "Download not permitted",
       }
     );
@@ -211,7 +211,7 @@ describe("catalog recording route access", () => {
       "catalog",
       "a".repeat(64),
       {
-        groupId: "catalog-1",
+        catalogId: "catalog-1",
         reason: "No access grant",
       }
     );
@@ -237,7 +237,7 @@ describe("catalog recording route access", () => {
       "catalog",
       "a".repeat(64),
       {
-        groupId: "catalog-1",
+        catalogId: "catalog-1",
         reason: "Edit permission required",
       }
     );

@@ -27,19 +27,16 @@ vi.mock("@/app/(app)/auth/complete/auth-complete-client", () => ({
     callbackUrl,
     error,
     errorDescription,
-    state,
   }: {
     callbackUrl: string;
     error: string | null;
     errorDescription: string | null;
-    state: string | null;
   }) => (
     <div
       data-testid="auth-complete-client"
       data-callback-url={callbackUrl}
       data-error={error ?? ""}
       data-error-description={errorDescription ?? ""}
-      data-state={state ?? ""}
     />
   ),
 }));
@@ -75,6 +72,19 @@ describe("AuthCompletePage", () => {
     ).rejects.toThrow("NEXT_REDIRECT:/settings");
   });
 
+  it("redirects admission denials in the provider description before checking session", async () => {
+    await expect(
+      AuthCompletePage({
+        searchParams: Promise.resolve({
+          error: "access_denied",
+          error_description: "not_authorized:user@example.com",
+        }),
+      })
+    ).rejects.toThrow("NEXT_REDIRECT:/auth/unauthorized?error=not_authorized%3Auser%40example.com");
+
+    expect(mocks.resolveRequestAuthFromHeadersMock).not.toHaveBeenCalled();
+  });
+
   it("normalizes callback targets before applying post-auth redirect rules", async () => {
     mocks.resolveRequestAuthFromHeadersMock.mockResolvedValue({ authenticated: true });
 
@@ -103,7 +113,7 @@ describe("AuthCompletePage", () => {
     const page = await AuthCompletePage({
       searchParams: Promise.resolve({
         callbackUrl: "/settings/../../auth/signin",
-        state: "state_not_found",
+        error: "state_not_found",
       }),
     });
 
@@ -111,6 +121,18 @@ describe("AuthCompletePage", () => {
 
     const fallback = screen.getByTestId("auth-complete-client");
     expect(fallback).toHaveAttribute("data-callback-url", "/catalog");
-    expect(fallback).toHaveAttribute("data-state", "state_not_found");
+    expect(fallback).toHaveAttribute("data-error", "state_not_found");
+  });
+
+  it("ignores opaque OAuth state rather than treating it as an error", async () => {
+    const page = await AuthCompletePage({
+      searchParams: Promise.resolve({ state: "opaque-oauth-state-token" }),
+    });
+
+    render(page);
+
+    const fallback = screen.getByTestId("auth-complete-client");
+    expect(fallback).toHaveAttribute("data-error", "");
+    expect(fallback).toHaveAttribute("data-error-description", "");
   });
 });

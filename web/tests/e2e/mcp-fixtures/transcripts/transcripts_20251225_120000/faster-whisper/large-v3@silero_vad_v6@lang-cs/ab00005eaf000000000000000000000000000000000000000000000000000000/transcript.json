@@ -1,23 +1,31 @@
 {
-  "backend": "faster-whisper",
-  "hash": "ab00005eaf000000000000000000000000000000000000000000000000000000",
-  "model": "large-v3@silero_vad_v6@lang-cs",
-  "language": "cs",
-  "duration": 45,
+  "meta": {
+    "backend": "faster-whisper",
+    "model": "large-v3",
+    "audio_filepath": "/data/audio/audio_staged/ab00005eaf000000000000000000000000000000000000000000000000000000.wav",
+    "duration": 45,
+    "generation_params": {
+      "language": "cs"
+    }
+  },
   "segments": [
     {
       "id": 0,
       "text": "Besedy MCP transcript fixture opens the discussion.",
       "start": 0,
       "end": 5,
-      "speaker": "SPEAKER_00"
+      "speaker": "SPEAKER_00",
+      "confidence": null,
+      "words": []
     },
     {
       "id": 1,
       "text": "The second segment confirms bounded transcript pagination.",
       "start": 5,
       "end": 10,
-      "speaker": "SPEAKER_01"
+      "speaker": "SPEAKER_01",
+      "confidence": null,
+      "words": []
     }
   ]
 }

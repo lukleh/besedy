@@ -41,7 +41,6 @@ vi.mock("@/lib/access/capabilities", () => ({
 
 vi.mock("@/lib/audit/logger", () => ({
   logAccessDenied: vi.fn(),
-  logAudit: vi.fn(),
   logDataAccessEvent: vi.fn(),
   AuditAction: {
     TRANSCRIPT_DOWNLOADED: "TRANSCRIPT_DOWNLOADED",
@@ -178,7 +177,7 @@ describe("catalog transcript export route", () => {
       canBulkExportTranscripts: true,
       canViewTranscripts: true,
     });
-    getRagBackendKey.mockReturnValue("faster-whisper/large-v3@silero_vad_v6");
+    getRagBackendKey.mockReturnValue("faster-whisper/large-v3@silero_vad_v6@lang-cs");
     loadVisibleCatalogHashes.mockResolvedValue(new Set([HASH_A, HASH_B]));
     resolveTranscriptsPath.mockReturnValue(`/data/transcripts_${CATALOG_ID}`);
     prisma.audioMetadata.findMany.mockResolvedValue([
@@ -262,7 +261,7 @@ describe("catalog transcript export under the reading gate", () => {
       canBulkExportTranscripts: true,
       canViewTranscripts: true,
     } as never);
-    vi.mocked(getRagBackendKey).mockReturnValue("faster-whisper/large-v3@silero_vad_v6");
+    vi.mocked(getRagBackendKey).mockReturnValue("faster-whisper/large-v3@silero_vad_v6@lang-cs");
     vi.mocked(loadVisibleCatalogHashes).mockResolvedValue(new Set([HASH_A, HASH_B]));
     vi.mocked(resolveTranscriptsPath).mockReturnValue(`/data/transcripts_${CATALOG}`);
     prisma.audioMetadata.findMany.mockResolvedValue([]);
@@ -327,9 +326,9 @@ describe("catalog transcript export under the reading gate", () => {
     await arrange();
     const { readTranscriptFile } = await import("@/lib/transcript");
     const { resolveConfiguredDefaultBackend } = await import("@/lib/correction/source");
-    vi.mocked(resolveConfiguredDefaultBackend).mockResolvedValue("whisperx/large-v3@pyannote_v3");
+    vi.mocked(resolveConfiguredDefaultBackend).mockResolvedValue("whisperx/large-v3@pyannote_v3@lang-cs");
     vi.mocked(readTranscriptFile).mockImplementation(async (_path, _hash, backend) =>
-      backend === "whisperx/large-v3@pyannote_v3"
+      backend === "whisperx/large-v3@pyannote_v3@lang-cs"
         ? { content: "Fallback words\n", filename: "transcript.txt" }
         : null
     );

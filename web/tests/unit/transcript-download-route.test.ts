@@ -87,7 +87,7 @@ describe("transcript download route", () => {
       });
 
       const request = new NextRequest(
-        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6&format=json`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs&format=json`
       );
       const response = await downloadTranscript(request, {
         params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
@@ -109,7 +109,7 @@ describe("transcript download route", () => {
       findActiveCatalog.mockResolvedValue({ id: "20251225_120000", isActive: true });
 
       const request = new NextRequest(
-        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6&format=json`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs&format=json`
       );
       const response = await downloadTranscript(request, {
         params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
@@ -131,7 +131,7 @@ describe("transcript download route", () => {
       findActiveCatalog.mockResolvedValue({ id: "20251225_120000", isActive: true });
 
       const request = new NextRequest(
-        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6&format=json`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs&format=json`
       );
       const response = await downloadTranscript(request, {
         params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
@@ -161,7 +161,7 @@ describe("transcript download route", () => {
       );
 
       const request = new NextRequest(
-        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6&format=json`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs&format=json`
       );
       const response = await downloadTranscript(request, {
         params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
@@ -175,11 +175,11 @@ describe("transcript download route", () => {
   });
 
   describe("input validation", () => {
-    it("rejects invalid backend parameter", async () => {
+    it.each(["invalid-backend", "faster-whisper/large-v3@silero_vad_v6"])("rejects invalid backend parameter %s", async (backend) => {
       requireAuth.mockResolvedValue("user-1");
 
       const request = new NextRequest(
-        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=invalid-backend&format=json`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=${encodeURIComponent(backend)}&format=json`
       );
       const response = await downloadTranscript(request, {
         params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
@@ -194,7 +194,7 @@ describe("transcript download route", () => {
       requireAuth.mockResolvedValue("user-1");
 
       const request = new NextRequest(
-        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6&format=invalid-format`
+        `http://localhost/api/catalogs/20251225_120000/recordings/${VALID_HASH}/transcript/download?backend=faster-whisper/large-v3@silero_vad_v6@lang-cs&format=invalid-format`
       );
       const response = await downloadTranscript(request, {
         params: Promise.resolve({ id: "20251225_120000", hash: VALID_HASH }),
@@ -213,7 +213,7 @@ describe("transcript download route under the reading gate", () => {
   });
 
   const GROUP = "20251225_120000";
-  const MACHINE = "faster-whisper/large-v3@silero_vad_v6";
+  const MACHINE = "faster-whisper/large-v3@silero_vad_v6@lang-cs";
 
   async function arrange(capability: Record<string, boolean>) {
     const { requireAuth } = await import("@/lib/auth/permissions");
@@ -313,7 +313,7 @@ describe("transcript download route under the reading gate", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("frozen");
     expect(response.headers.get("content-disposition")).toContain(
-      "faster-whisper_large-v3@silero_vad_v6_original.json"
+      "faster-whisper_large-v3@silero_vad_v6@lang-cs_original.json"
     );
     expect(logOriginalTranscriptDownloaded).toHaveBeenCalledWith(
       "user-1",

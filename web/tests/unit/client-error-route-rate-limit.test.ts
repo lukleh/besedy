@@ -12,7 +12,7 @@ vi.mock("@/lib/db", () => ({
   default: { clientErrorReport: { create: vi.fn().mockResolvedValue({}) } },
 }));
 
-vi.mock("@/lib/auth/permissions", () => ({
+vi.mock('@/lib/auth/session', () => ({
   getCurrentUserId: vi.fn().mockResolvedValue(null),
 }));
 

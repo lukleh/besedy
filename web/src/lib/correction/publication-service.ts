@@ -4,7 +4,7 @@ import prisma from "@/lib/db";
 import { CorrectionError } from "@/lib/correction/errors";
 import { materializeCorrectedTranscript, CORRECTION_PROVENANCE_SCHEMA_VERSION } from "@/lib/correction/materialize";
 import { renderSrt, renderTxt, renderVtt, type RenderableSegment } from "@/lib/correction/render";
-import type { CanonicalTranscript } from "@/lib/correction/source";
+import { canonicalTranscriptSchema } from "@/lib/transcript-schema";
 import {
   INDEX_POINTER_SCHEMA_VERSION,
   readJsonFile,
@@ -850,12 +850,13 @@ interface MaterializeTarget {
 async function materializeArtifacts(
   publication: MaterializeTarget
 ): Promise<{ fingerprint: string; jsonPath: string }> {
-  const source = await readJsonFile<CanonicalTranscript>(
+  const parsed = canonicalTranscriptSchema.safeParse(await readJsonFile<unknown>(
     resolveWorkspaceSourcePath(publication.workflowGroupId, publication.workspaceId)
-  );
-  if (!source) {
-    throw new CorrectionError("SOURCE_MISSING", "The frozen machine source for this workspace is missing");
+  ));
+  if (!parsed.success) {
+    throw new CorrectionError("SOURCE_MISSING", "The frozen machine source for this workspace is missing or invalid");
   }
+  const source = parsed.data;
 
   const rows = await prisma.transcriptPublicationSpan.findMany({
     where: { publicationId: publication.id },

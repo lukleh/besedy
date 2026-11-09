@@ -8,6 +8,7 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import type { CanonicalTranscript } from "../../../src/lib/transcript-schema";
 import {
   TEST_AUDIO_FILES,
   TEST_TRANSCRIPTS_COMPLETE_MARKER,
@@ -36,7 +37,7 @@ const SAMPLE_SENTENCES = [
 function generateSegments(
   duration: number,
   segmentLength: number = 5
-): { text: string; start: number; end: number; words?: { word: string; start: number; end: number; confidence: number }[] }[] {
+): CanonicalTranscript["segments"] {
   const segments = [];
   let currentTime = 0;
   let sentenceIndex = 0;
@@ -61,6 +62,7 @@ function generateSegments(
       text,
       start: currentTime,
       end: currentTime + segmentDuration,
+      confidence: null,
       words,
     });
 
@@ -112,7 +114,7 @@ const SAMPLE_RATE = 16000;
  * pause, speech the model wrote nothing for, a short run merged into its
  * neighbour, and a chunk with no text at all.
  */
-function batchedTranscript(hash: string, duration: number) {
+function batchedTranscript(hash: string, duration: number): CanonicalTranscript {
   const chunks: { regions: [number, number][]; words: [string, number, number][]; text: string }[] = [
     {
       // Two runs split by a 1.2 s pause.
@@ -146,6 +148,7 @@ function batchedTranscript(hash: string, duration: number) {
       audio_filepath: `/data/audio/audio_staged/${hash}.wav`,
       duration,
       generation_params: {
+        language: "cs",
         batch_size: 8,
         vad_filter: true,
         word_timestamps: true,
@@ -165,6 +168,7 @@ function batchedTranscript(hash: string, duration: number) {
       start: chunk.words[0]?.[1] ?? chunk.regions[0][0],
       end: chunk.words.at(-1)?.[2] ?? chunk.regions.at(-1)![1],
       text: chunk.text,
+      confidence: null,
       words: chunk.words.map(([word, start, end]) => ({ word, start, end, confidence: 0.9 })),
     })),
   };
@@ -177,21 +181,25 @@ async function generateASRTranscript(
   transcriptsDir: string,
   hash: string,
   duration: number,
-  backend: string = "faster-whisper",
+  backend: CanonicalTranscript["meta"]["backend"] = "faster-whisper",
   model: string = "large-v3@silero_vad_v6@lang-cs"
 ): Promise<void> {
   const outputDir = path.join(transcriptsDir, backend, model, hash);
   await fs.mkdir(outputDir, { recursive: true });
 
-  const transcript =
+  const transcript: CanonicalTranscript =
     backend === "faster-whisper" && hash.startsWith(CORRECTION_RECORDING)
       ? batchedTranscript(hash, duration)
       : {
-          backend,
-          hash,
-          model,
-          language: "cs",
-          duration,
+          meta: {
+            backend,
+            model: model.split("@")[0],
+            audio_filepath: `/data/audio/audio_staged/${hash}.wav`,
+            duration,
+            generation_params: backend === "canary-nemo"
+              ? { source_lang: "cs", target_lang: "cs" }
+              : { language: "cs" },
+          },
           segments: generateSegments(duration),
         };
 
@@ -263,7 +271,7 @@ async function generateDiarizationFile(
 const TRANSCRIPT_BACKENDS = [
   { backend: "faster-whisper", model: "large-v3@silero_vad_v6@lang-cs" },
   { backend: "canary-nemo", model: "canary-1b@lang-cs" },
-];
+] as const;
 
 /**
  * Generate all transcript files

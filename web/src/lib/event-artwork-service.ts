@@ -137,7 +137,8 @@ async function lockEvent(tx: Prisma.TransactionClient, catalogId: string, eventI
 }
 
 async function logArtworkAudit(options: {
-  action: "EVENT_ARTWORK_CREATED" | "EVENT_ARTWORK_DELETED" | "EVENT_ARTWORK_PUBLISHED" | "EVENT_ARTWORK_UNPUBLISHED";
+  action:
+    | "EVENT_ARTWORK_CREATED" | "EVENT_ARTWORK_DELETED" | "EVENT_ARTWORK_PUBLISHED" | "EVENT_ARTWORK_UNPUBLISHED";
   userId: string;
   catalogId: string;
   eventId: number;
@@ -452,15 +453,14 @@ export async function loadEventArtworkAsset(options: {
   artworkId?: string;
   variant: ArtworkVariant;
   publishedOnly: boolean;
-  /** "web" (default) serves the WebP copy, falling back to the stored original
-   * when that copy has not been generated; "original" serves the original. */
+  /** "web" (default) serves the required WebP copy; "original" serves the original. */
   size?: ArtworkSize;
 }): Promise<{
   bytes: Buffer;
   contentType: string;
   artworkId: string;
   sha256: string;
-  /** What was actually read: "web" requests can fall back to the original. */
+  /** The requested asset size. */
   served: ArtworkSize;
 } | null> {
   const artwork = await findArtworkAssetRecord(options);
@@ -478,6 +478,7 @@ export async function loadEventArtworkAsset(options: {
         served: "web",
       };
     }
+    return null
   }
   const extension = (
     options.variant === "square" ? artwork.squareExtension : artwork.landscapeExtension

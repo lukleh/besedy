@@ -8,6 +8,8 @@ import {
   TEST_TRANSCRIPTS_SUBDIR,
 } from "../../prisma/test-data";
 import { generateAllTranscripts } from "../e2e/scripts/generate-transcripts";
+import { parseTranscriptBackendKey } from "@/lib/transcript-backend-key";
+import { canonicalTranscriptLanguage, canonicalTranscriptSchema } from "@/lib/transcript-schema";
 
 let fixturesDir: string;
 
@@ -29,8 +31,12 @@ async function expectGeneratedTree(): Promise<void> {
     expect(backends).toContain("faster-whisper");
     for (const backend of backends.filter((name) => name !== "speaker_diarization")) {
       const [component] = await fs.readdir(path.join(catalogDir, backend));
+      expect(parseTranscriptBackendKey(`${backend}/${component}`)).not.toBeNull();
       const raw = await fs.readFile(path.join(catalogDir, backend, component, file.hash, "transcript.json"), "utf-8");
-      expect(Object.keys(JSON.parse(raw)).length).toBeGreaterThan(0);
+      const transcript = canonicalTranscriptSchema.parse(JSON.parse(raw));
+      expect(transcript.meta.backend).toBe(backend);
+      expect(transcript.meta.duration).toBe(file.duration);
+      expect(canonicalTranscriptLanguage(transcript)).toBe("cs");
     }
   }
   for (const file of TEST_AUDIO_FILES) {
@@ -47,6 +53,17 @@ async function expectGeneratedTree(): Promise<void> {
 }
 
 describe("generateAllTranscripts", () => {
+  it("keeps the static MCP transcript fixture in the canonical disk contract", async () => {
+    const raw = await fs.readFile(path.resolve(
+      "tests/e2e/mcp-fixtures",
+      TEST_TRANSCRIPTS_SUBDIR,
+      "faster-whisper/large-v3@silero_vad_v6@lang-cs",
+      TEST_AUDIO_FILES[4].hash,
+      "transcript.json"
+    ), "utf-8");
+    expect(canonicalTranscriptLanguage(canonicalTranscriptSchema.parse(JSON.parse(raw)))).toBe("cs");
+  });
+
   it("writes the transcript fixtures into an empty fixtures directory", async () => {
     await generateAllTranscripts(fixturesDir);
 

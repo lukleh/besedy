@@ -111,12 +111,12 @@ fs.writeFileSync(
           end: 12.4,
           text: "Dobry den vsichni. Vitejte na besede.",
           words: [
-            { word: "Dobry", start: 0.2, end: 0.6 },
-            { word: "den", start: 0.6, end: 0.9 },
-            { word: "vsichni.", start: 0.9, end: 1.6 },
-            { word: "Vitejte", start: 6.2, end: 6.8 },
-            { word: "na", start: 6.8, end: 7.0 },
-            { word: "besede.", start: 7.0, end: 12.4 },
+            { word: "Dobry", start: 0.2, end: 0.6, confidence: 0.7 },
+            { word: "den", start: 0.6, end: 0.9, confidence: 0.7 },
+            { word: "vsichni.", start: 0.9, end: 1.6, confidence: 0.7 },
+            { word: "Vitejte", start: 6.2, end: 6.8, confidence: 0.7 },
+            { word: "na", start: 6.8, end: 7.0, confidence: 0.7 },
+            { word: "besede.", start: 7.0, end: 12.4, confidence: 0.7 },
           ],
           confidence: 0.7,
         },
@@ -1225,7 +1225,7 @@ async function main() {
           transcription_options: { clip_timestamps: [{ start: seconds(0), end: seconds(4) }] },
         },
       },
-      segments: [{ start: 0, end: 4, text: "Jina nahravka.", words: [] }],
+      segments: [{ start: 0, end: 4, text: "Jina nahravka.", confidence: null, words: [] }],
     })
   );
   await prisma.catalogEntry.create({

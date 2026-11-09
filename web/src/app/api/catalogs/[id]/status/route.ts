@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { getCurrentUserId } from "@/lib/auth/permissions";
+import { getCurrentUserId } from '@/lib/auth/session';
 import { getCatalogCapability } from "@/lib/access/capabilities";
 import { TimestampIdParamSchema } from "@/lib/validation/schemas";
 import { validateParams, notFound, forbidden, unauthorized } from "@/lib/api";

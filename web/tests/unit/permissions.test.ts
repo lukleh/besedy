@@ -48,142 +48,25 @@ describe("AuthError", () => {
   });
 });
 
-// Mock getSession for canAccessAdmin tests
-vi.mock("@/lib/auth/session", () => {
-  const getSession = vi.fn();
-  return {
-    getSession,
-    getCurrentUserId: vi.fn(async () => {
-      const session = await getSession();
-      return session?.user?.id ?? null;
-    }),
-  };
-});
+vi.mock("@/lib/auth/session", () => ({ getCurrentUserId: vi.fn() }));
 
-describe("canAccessAdmin", () => {
-  let mockPrisma: {
-    user: { findUnique: ReturnType<typeof vi.fn> };
-    catalogAccess: { findUnique: ReturnType<typeof vi.fn> };
-  };
-  let mockGetSession: ReturnType<typeof vi.fn>;
+describe('requireAuth', () => {
+  it('rejects an absent session', async () => {
+      const { getCurrentUserId } = await import("@/lib/auth/session");
+    vi.mocked(getCurrentUserId).mockResolvedValue(null);
 
-  beforeEach(async () => {
-    vi.resetModules();
-    const prismaModule = await import("@/lib/db");
-    mockPrisma = prismaModule.default as unknown as typeof mockPrisma;
-    const authModule = await import("@/lib/auth/session");
-    mockGetSession = authModule.getSession as ReturnType<typeof vi.fn>;
-    vi.clearAllMocks();
-  });
-
-  it("should return false when no session", async () => {
-    mockGetSession.mockResolvedValue(null);
-
-    const { canAccessAdmin } = await import("@/lib/auth/permissions");
-    const result = await canAccessAdmin();
-
-    expect(result).toBe(false);
-  });
-
-  it("should return true for superadmin", async () => {
-    mockGetSession.mockResolvedValue({ user: { id: "user-id" } });
-    mockPrisma.user.findUnique.mockResolvedValue({
-      isSuperadmin: true,
-      isAdmin: false,
-      status: "ACTIVE",
-    });
-
-    const { canAccessAdmin } = await import("@/lib/auth/permissions");
-    const result = await canAccessAdmin();
-
-    expect(result).toBe(true);
-  });
-
-  it("should return true for admin", async () => {
-    mockGetSession.mockResolvedValue({ user: { id: "user-id" } });
-    mockPrisma.user.findUnique.mockResolvedValue({
-      isSuperadmin: false,
-      isAdmin: true,
-      status: "ACTIVE",
-    });
-
-    const { canAccessAdmin } = await import("@/lib/auth/permissions");
-    const result = await canAccessAdmin();
-
-    expect(result).toBe(true);
-  });
-
-  it("should return false for regular active user (no first-user fallback)", async () => {
-    mockGetSession.mockResolvedValue({ user: { id: "user-id" } });
-    mockPrisma.user.findUnique.mockResolvedValue({
-      isSuperadmin: false,
-      isAdmin: false,
-      status: "ACTIVE",
-    });
-
-    const { canAccessAdmin } = await import("@/lib/auth/permissions");
-    const result = await canAccessAdmin();
-
-    expect(result).toBe(false);
-  });
-
-  it("should return false for blocked user even if admin", async () => {
-    mockGetSession.mockResolvedValue({ user: { id: "user-id" } });
-    mockPrisma.user.findUnique.mockResolvedValue({
-      isSuperadmin: false,
-      isAdmin: true,
-      status: "BLOCKED",
-    });
-
-    const { canAccessAdmin } = await import("@/lib/auth/permissions");
-    const result = await canAccessAdmin();
-
-    expect(result).toBe(false);
-  });
-});
-
-describe("requirePortalAdmissionManagement", () => {
-  let mockPrisma: {
-    user: { findUnique: ReturnType<typeof vi.fn> };
-  };
-  let mockGetSession: ReturnType<typeof vi.fn>;
-
-  beforeEach(async () => {
-    vi.resetModules();
-    const prismaModule = await import("@/lib/db");
-    mockPrisma = prismaModule.default as unknown as typeof mockPrisma;
-    const authModule = await import("@/lib/auth/session");
-    mockGetSession = authModule.getSession as ReturnType<typeof vi.fn>;
-    vi.clearAllMocks();
-  });
-
-  it("throws AuthError when user is not admin", async () => {
-    mockGetSession.mockResolvedValue({ user: { id: "user-id" } });
-    mockPrisma.user.findUnique.mockResolvedValue({
-      isSuperadmin: false,
-      isAdmin: false,
-      status: "ACTIVE",
-    });
-
-    const { requirePortalAdmissionManagement } = await import("@/lib/auth/permissions");
-    // Use toMatchObject instead of toBeInstanceOf because vi.resetModules() causes class identity mismatch
-    await expect(requirePortalAdmissionManagement()).rejects.toMatchObject({
+    const { requireAuth } = await import("@/lib/auth/permissions");
+    await expect(requireAuth()).rejects.toMatchObject({
       name: "AuthError",
-      statusCode: 403,
+      statusCode: 401,
     });
   });
 
-  it("returns user id for admin users", async () => {
-    mockGetSession.mockResolvedValue({ user: { id: "admin-id" } });
-    mockPrisma.user.findUnique.mockResolvedValue({
-      isSuperadmin: false,
-      isAdmin: true,
-      status: "ACTIVE",
-    });
+  it('returns the authenticated identity', async () => {
+    const { getCurrentUserId } = await import('@/lib/auth/session');
+    vi.mocked(getCurrentUserId).mockResolvedValue('user-id');
 
-    const { requirePortalAdmissionManagement } = await import("@/lib/auth/permissions");
-    const result = await requirePortalAdmissionManagement();
-
-    expect(result).toBe("admin-id");
+    const { requireAuth } = await import("@/lib/auth/permissions");
+    await expect(requireAuth()).resolves.toBe('user-id');
   });
 });

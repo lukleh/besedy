@@ -5,9 +5,9 @@ import { formatTimestamp } from "@/lib/utils";
 describe("TranscriptBackend type", () => {
   it("accepts valid backends", () => {
     const backends: string[] = [
-      "faster-whisper/large-v3@silero_vad_v6",
-      "canary-nemo/nvidia_canary-1b-v2",
-      "whisperx/large-v3@silero",
+      "faster-whisper/large-v3@silero_vad_v6@lang-cs",
+      "canary-nemo/nvidia_canary-1b-v2@lang-cs",
+      "whisperx/large-v3@silero@lang-cs",
     ];
 
     expect(backends).toHaveLength(3);
@@ -30,34 +30,34 @@ describe("TranscriptFormat type", () => {
 describe("orderTranscriptBackends", () => {
   it("orders by priority descending then alphabetically", () => {
     const backends = [
-      "whisperx/large-v3@silero",
-      "faster-whisper/large-v3@silero_vad_v6",
-      "canary-nemo/nvidia_canary-1b-v2",
+      "whisperx/large-v3@silero@lang-cs",
+      "faster-whisper/large-v3@silero_vad_v6@lang-cs",
+      "canary-nemo/nvidia_canary-1b-v2@lang-cs",
     ];
     const result = orderTranscriptBackends(backends, {
-      "whisperx/large-v3@silero": 5,
-      "faster-whisper/large-v3@silero_vad_v6": 10,
+      "whisperx/large-v3@silero@lang-cs": 5,
+      "faster-whisper/large-v3@silero_vad_v6@lang-cs": 10,
     });
 
     expect(result).toEqual([
-      "faster-whisper/large-v3@silero_vad_v6",
-      "whisperx/large-v3@silero",
-      "canary-nemo/nvidia_canary-1b-v2",
+      "faster-whisper/large-v3@silero_vad_v6@lang-cs",
+      "whisperx/large-v3@silero@lang-cs",
+      "canary-nemo/nvidia_canary-1b-v2@lang-cs",
     ]);
   });
 
   it("falls back to alphabetical ordering when no priorities are provided", () => {
     const backends = [
-      "whisperx/large-v3@silero",
-      "canary-nemo/nvidia_canary-1b-v2",
-      "faster-whisper/large-v3@silero_vad_v6",
+      "whisperx/large-v3@silero@lang-cs",
+      "canary-nemo/nvidia_canary-1b-v2@lang-cs",
+      "faster-whisper/large-v3@silero_vad_v6@lang-cs",
     ];
     const result = orderTranscriptBackends(backends);
 
     expect(result).toEqual([
-      "canary-nemo/nvidia_canary-1b-v2",
-      "faster-whisper/large-v3@silero_vad_v6",
-      "whisperx/large-v3@silero",
+      "canary-nemo/nvidia_canary-1b-v2@lang-cs",
+      "faster-whisper/large-v3@silero_vad_v6@lang-cs",
+      "whisperx/large-v3@silero@lang-cs",
     ]);
   });
 });

@@ -216,12 +216,11 @@ describe("proxy security controls", () => {
     const { proxy } = await import("@/proxy");
 
     const request = new NextRequest(
-      "http://localhost/auth/signin?callbackUrl=%2Fsettings&state=state_not_found&error=access_denied"
+      "http://localhost/auth/signin?callbackUrl=%2Fsettings&error=state_not_found"
     );
     const response = await proxy(request);
 
-    // No redirect into /auth/complete: those parameters only came from tabs
-    // running a bundle that no longer exists.
+    // Callback failures can be displayed directly by the sign-in page.
     expect(response.status).toBe(200);
     expect(response.headers.get("location")).toBeNull();
     expect(response.headers.get("X-Web-Version")).toBeTruthy();

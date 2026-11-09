@@ -496,8 +496,10 @@ Prefer the typed capability layer over older ad hoc permission helpers:
 | `getRecordingCapability()`     | Recording-scoped access               |
 | `requireCatalogEventsAccess()` | Event visibility and edit checks      |
 
-Compatibility helpers still exist in `src/lib/auth/permissions.ts`; new policy
-logic should be added to the capability layer first.
+`src/lib/auth/permissions.ts` contains only the authentication guard and shared
+error type. Authorization uses the capability layer above. Audit reads require
+the current versioned metadata envelope and matching canonical columns; content
+expansion requires recorded source provenance.
 
 ### DTO Boundary Rules
 

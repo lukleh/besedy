@@ -185,16 +185,17 @@ describe("UserStatusSchema", () => {
 describe("TranscriptBackendSchema", () => {
   it("accepts valid backends", () => {
     expect(
-      TranscriptBackendSchema.safeParse("faster-whisper/large-v3@silero_vad_v6")
+      TranscriptBackendSchema.safeParse("faster-whisper/large-v3@silero_vad_v6@lang-cs")
         .success
     ).toBe(true);
     expect(
-      TranscriptBackendSchema.safeParse("canary-nemo/nvidia_canary-1b-v2")
+      TranscriptBackendSchema.safeParse("canary-nemo/nvidia_canary-1b-v2@lang-auto")
         .success
     ).toBe(true);
     expect(
-      TranscriptBackendSchema.safeParse("whisperx/large-v3@silero").success
+      TranscriptBackendSchema.safeParse("whisperx/large-v3@silero@lang-en-us").success
     ).toBe(true);
+    expect(TranscriptBackendSchema.safeParse("corrected/published").success).toBe(true);
   });
 
   it("rejects invalid backends", () => {
@@ -211,6 +212,15 @@ describe("TranscriptBackendSchema", () => {
     expect(TranscriptBackendSchema.safeParse("openai-whisper").success).toBe(
       false
     );
+  });
+
+  it.each([
+    "faster-whisper/large-v3@silero_vad_v6",
+    "canary-nemo/nvidia_canary-1b-v2",
+    "whisperx/large-v3@silero@lang-CS",
+    "corrected/other@lang-cs",
+  ])("rejects a noncanonical backend %s", (backend) => {
+    expect(TranscriptBackendSchema.safeParse(backend).success).toBe(false);
   });
 });
 

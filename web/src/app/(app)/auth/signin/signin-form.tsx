@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { signInWithOAuth } from "@/lib/auth/client";
+import { getOAuthErrorMessage } from "@/lib/auth/oauth-errors";
 import {
   getAllowlistRejectionParam,
   sanitizePostAuthCallbackPath,
@@ -53,7 +54,7 @@ export default function SignInForm({ hasMockOAuth }: SignInFormProps) {
     }
   };
 
-  const displayError = loginError || error;
+  const displayError = loginError || getOAuthErrorMessage(error, errorDescription, t);
 
   return (
     <Card className="w-full max-w-md">
@@ -61,19 +62,10 @@ export default function SignInForm({ hasMockOAuth }: SignInFormProps) {
         <CardTitle className="text-2xl">{t("signInTitle")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Legacy or direct OAuth errors may still arrive here; allowlist errors redirect away. */}
-        {displayError && !displayError.startsWith("not_authorized:") && (
+        {displayError && !allowlistRejection && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              {displayError === "OAuthAccountNotLinked"
-                ? t("errors.accountLinked")
-                : displayError === "AccessDenied"
-                  ? t("errors.accessDenied")
-                  : displayError.startsWith("OAuthCallbackError")
-                    ? t("errors.oauthCallback")
-                    : displayError}
-            </AlertDescription>
+            <AlertDescription>{displayError}</AlertDescription>
           </Alert>
         )}
 

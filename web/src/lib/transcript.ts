@@ -2,6 +2,8 @@ import fs from "fs/promises";
 import path from "path";
 import { validatePath } from "@/lib/security/path-validation";
 import { RESERVED_TRANSCRIPT_WORKFLOW_DIR } from "@/lib/correction/backend-key";
+import { parseTranscriptBackendKey } from "@/lib/transcript-backend-key";
+import { canonicalTranscriptLanguage, canonicalTranscriptSchema } from "@/lib/transcript-schema";
 
 /**
  * Validate that a transcripts path is within allowed directories.
@@ -55,13 +57,14 @@ export interface TranscriptWord {
   word: string;
   start: number;
   end: number;
-  confidence?: number;
+  confidence?: number | null;
 }
 
 /**
  * Segment from ASR transcripts
  */
 export interface TranscriptSegment {
+  confidence?: number | null;
   id?: number;
   text: string;
   start: number;
@@ -90,21 +93,11 @@ export interface ASRTranscript extends Transcript {
 }
 
 function parseBackendKey(backendKey: string): { workflow: string; model: string } {
-  const parts = backendKey.split("/");
-  if (parts.length !== 2) {
+  const parsed = parseTranscriptBackendKey(backendKey);
+  if (!parsed || parsed.workflow === RESERVED_TRANSCRIPT_WORKFLOW_DIR) {
     throw new Error(`Invalid backend key: ${backendKey}`);
   }
-  const [workflow, model] = parts;
-  if (!workflow || !model) {
-    throw new Error(`Invalid backend key: ${backendKey}`);
-  }
-  if (workflow === "." || workflow === ".." || model === "." || model === "..") {
-    throw new Error(`Invalid backend key: ${backendKey}`);
-  }
-  if (workflow.includes("\\") || model.includes("\\")) {
-    throw new Error(`Invalid backend key: ${backendKey}`);
-  }
-  return { workflow, model };
+  return parsed;
 }
 
 /**
@@ -169,7 +162,9 @@ export async function discoverTranscriptBackends(
       for (const modelDir of modelDirs) {
         if (!modelDir.isDirectory()) continue;
         if (modelDir.name.startsWith(".")) continue;
-        backends.add(`${workflowDir.name}/${modelDir.name}`);
+        const backend = `${workflowDir.name}/${modelDir.name}`;
+        if (!parseTranscriptBackendKey(backend)) continue;
+        backends.add(backend);
       }
     }
   }
@@ -239,6 +234,9 @@ export async function getAvailableTranscripts(
         if (!modelDir.isDirectory()) continue;
         if (modelDir.name.startsWith(".")) continue;
 
+        const backend = `${workflowDir.name}/${modelDir.name}`;
+        if (!parseTranscriptBackendKey(backend)) continue;
+
         const transcriptPath = resolveTranscriptSubpath(
           validatedPath,
           workflowDir.name,
@@ -248,7 +246,7 @@ export async function getAvailableTranscripts(
         );
         try {
           await fs.access(transcriptPath);
-          backends.push(`${workflowDir.name}/${modelDir.name}`);
+          backends.push(backend);
         } catch {
           // Transcript missing for this model/hash
         }
@@ -281,15 +279,15 @@ export async function loadTranscript(
       "transcript.json"
     );
     const content = await fs.readFile(transcriptPath, "utf-8");
-    const data = JSON.parse(content);
+    const data = canonicalTranscriptSchema.parse(JSON.parse(content));
 
     return {
       backend,
       hash,
-      model,
-      language: data.language,
-      duration: data.duration,
-      segments: data.segments || [],
+      model: data.meta.model,
+      language: canonicalTranscriptLanguage(data),
+      duration: data.meta.duration,
+      segments: data.segments,
     };
   } catch {
     return null;

@@ -14,7 +14,7 @@ vi.mock("@/lib/db", () => ({
   default: { webUpdateEvent: { create: mocks.create, deleteMany: mocks.deleteMany } },
 }));
 
-vi.mock("@/lib/auth/permissions", () => ({
+vi.mock('@/lib/auth/session', () => ({
   getCurrentUserId: mocks.getCurrentUserId,
 }));
 

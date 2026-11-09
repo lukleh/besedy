@@ -1,4 +1,4 @@
-import type { CanonicalTranscript } from "@/lib/correction/source";
+import type { CanonicalTranscript } from "@/lib/transcript-schema";
 import type { RenderableSegment } from "@/lib/correction/render";
 
 /** Provenance block added to a published corrected transcript. */
@@ -50,7 +50,7 @@ export interface MaterializeInput {
 export function materializeCorrectedTranscript(
   input: MaterializeInput
 ): Record<string, unknown> {
-  const sourceMeta = { ...(input.source.meta ?? {}) } as Record<string, unknown>;
+  const sourceMeta = { ...input.source.meta };
   for (const field of DERIVED_META_FIELDS) {
     delete sourceMeta[field];
   }

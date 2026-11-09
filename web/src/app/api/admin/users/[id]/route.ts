@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isSuperadmin } from "@/lib/auth/permissions";
 import prisma from "@/lib/db";
 import { UserStatus } from "@/generated/prisma/client";
 import { UserIdParamSchema, UpdateUserSchema } from "@/lib/validation/schemas";
@@ -176,7 +175,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
  */
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
-    const { userId: currentUserId } = await requireAdminCapability({
+    const { userId: currentUserId, capability } = await requireAdminCapability({
       message: "Unauthorized",
     });
 
@@ -200,8 +199,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     // Prevent modifying superadmin status unless you're a superadmin
     if (targetUser.isSuperadmin) {
-      const currentIsSuperadmin = await isSuperadmin();
-      if (!currentIsSuperadmin) {
+      if (!capability.isSuperadmin) {
         return forbidden("Cannot modify superadmin users");
       }
     }
