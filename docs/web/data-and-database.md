@@ -437,10 +437,12 @@ Span state is never stored. It is derived from the decisions bound to a span's
 **current** revision, so a superseded approval cannot count and no status
 column can drift from the decisions underneath it.
 
-The two workspace pointers are deliberately separate. `reader_publication_id`
-is what the reader, the ordinary download and the bulk export resolve;
-`search_publication_id` is what search indexing and MCP resolve. An ordinary
-unpublish clears only the first.
+The existing `reader_publication_id` and `search_publication_id` columns now
+represent one logical publication. Publish sets both together; Unpublish clears
+both and starts the durable index sync back to the original machine transcript.
+The storage columns remain in place, so this behavior change needs no schema
+migration or rewrite of correction history. A historical disagreement must be
+resolved through Unpublish before another publication can start.
 
 Neither pointer moves until the search index has caught up. A publication in
 `ACTIVATING` carries `index_job_id`, the Prefect flow run asked to sync the
