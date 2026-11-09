@@ -12,20 +12,17 @@ const featureCapabilitySchema = z.object({
   showTabs: z.boolean(),
   showAllColumns: z.boolean(),
   showReleaseState: z.boolean(),
-  canUseRagSearch: z.boolean().optional().default(false),
+  canUseRagSearch: z.boolean(),
 });
 
 const recordingsCapabilitySchema = z.object({
-  // Optional so a page served by an older build still parses; absent reads as
-  // "cannot browse", which shows the events surface rather than a list that
-  // would be refused.
-  canBrowse: z.boolean().optional().default(false),
+  canBrowse: z.boolean(),
 });
 
 export const catalogFeaturesResponseSchema = z.object({
   features: z.object({
     events: featureCapabilitySchema,
-    recordings: recordingsCapabilitySchema.optional().default({ canBrowse: false }),
+    recordings: recordingsCapabilitySchema,
   }),
 });
 
@@ -43,7 +40,7 @@ export function useCatalogFeatures(
     queryFn: () =>
       fetchJson<CatalogFeaturesResponse>(
         `/api/catalogs/${catalogId}/features${
-          includeInactive ? "?includeInactive=true" : ""
+          includeInactive ? '?includeInactive=true' : ''
         }`,
         {
           schema: catalogFeaturesResponseSchema,

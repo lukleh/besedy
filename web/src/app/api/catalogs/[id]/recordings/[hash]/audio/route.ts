@@ -420,7 +420,7 @@ export async function GET(
         pathValidation.reason
       );
       await logAccessDenied(userId, "audio", hash, {
-        groupId: catalogId,
+        catalogId: catalogId,
         reason: "Path outside allowed directories",
       });
       const response = NextResponse.json(

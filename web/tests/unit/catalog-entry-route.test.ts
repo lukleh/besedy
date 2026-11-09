@@ -96,7 +96,7 @@ describe("catalog entry route", () => {
       "catalog_entry",
       CATALOG_ID,
       {
-        groupId: CATALOG_ID,
+        catalogId: CATALOG_ID,
         reason: "No access grant",
       }
     );

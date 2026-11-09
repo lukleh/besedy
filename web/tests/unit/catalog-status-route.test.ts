@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as getCatalogStatus } from "@/app/api/catalogs/[id]/status/route";
 
-vi.mock("@/lib/auth/permissions", () => ({
+vi.mock('@/lib/auth/session', () => ({
   getCurrentUserId: vi.fn(),
 }));
 
@@ -30,7 +30,7 @@ describe("catalog status route", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
 
-    getCurrentUserId = (await import("@/lib/auth/permissions")).getCurrentUserId as ReturnType<
+    getCurrentUserId = (await import('@/lib/auth/session')).getCurrentUserId as ReturnType<
       typeof vi.fn
     >;
     getCatalogCapability = (

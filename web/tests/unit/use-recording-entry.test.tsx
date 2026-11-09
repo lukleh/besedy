@@ -1,11 +1,12 @@
 import {
   QueryClient,
-  QueryClientProvider,
-} from "@tanstack/react-query";
+  QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useRecordingEntry } from "@/hooks/use-recording-entry";
+import { useRecordingEntry,
+  catalogEntryWithPermissionsSchema
+} from "@/hooks/use-recording-entry";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
 
@@ -208,7 +209,7 @@ describe("useRecordingEntry", () => {
     };
 
     let resolveRefetch:
-      | ((value: CatalogEntryWithPermissions) => void)
+      ((value: CatalogEntryWithPermissions) => void)
       | undefined;
     fetchJsonMock
       .mockResolvedValueOnce(initialData)
@@ -257,4 +258,40 @@ describe("useRecordingEntry", () => {
       expect(result.current.isLoading).toBe(false);
     });
   });
+});
+
+it('rejects recording responses that omit current capability fields', () => {
+  const current = {
+    entry: {
+      hash: 'a'.repeat(64),
+      hasArchived: true,
+      hasMetadata: true,
+      isActionable: true,
+      isPublished: true,
+      hasArchivedAudio: true,
+      hasOriginalAudio: true
+    },
+    canViewTranscripts: true,
+    canEditMetadata: false,
+    canDownloadAudio: true,
+    canDownloadOriginalAudio: false,
+    canDownloadTranscripts: true,
+    canSeeTranscriptVariants: false,
+    canSeeSpeakers: false
+  };
+  expect(catalogEntryWithPermissionsSchema.safeParse(current).success).toBe(
+    true
+  );
+  for (const field of [
+    'canDownloadOriginalAudio',
+    'canDownloadTranscripts',
+    'canSeeTranscriptVariants',
+    'canSeeSpeakers'
+  ]) {
+    const missing: Record<string, unknown> = { ...current };
+    delete missing[field];
+    expect(catalogEntryWithPermissionsSchema.safeParse(missing).success).toBe(
+      false
+    )
+  }
 });

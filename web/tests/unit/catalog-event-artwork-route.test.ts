@@ -155,20 +155,13 @@ describe("catalog event artwork routes", () => {
       expect(response.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
     });
 
-    it("does not pin the original as the web image while no WebP copy exists", async () => {
-      loadEventArtworkAsset.mockResolvedValue({
-        bytes: Buffer.from("original"),
-        contentType: "image/png",
-        artworkId,
-        sha256: "def456",
-        served: "original",
-      });
+    it('returns missing when the requested web asset is absent', async () => {
+      loadEventArtworkAsset.mockResolvedValue(null);
 
-      const fallback = await getCandidateImage(candidateUrl("variant=square"), candidateContext);
-      const requestedOriginal = await getCandidateImage(candidateUrl("variant=square&size=original"), candidateContext);
+      const response = await getCandidateImage(candidateUrl("variant=square"), candidateContext,
+      );
 
-      expect(fallback.headers.get("cache-control")).toBe("private, no-cache");
-      expect(requestedOriginal.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
+      expect(response.status).toBe(404);
     });
 
     it("rejects an unknown size", async () => {

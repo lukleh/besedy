@@ -19,7 +19,7 @@ interface UseRecordingEntryParams {
   enabled: boolean;
 }
 
-const catalogEntryWithPermissionsSchema = z.object({
+export const catalogEntryWithPermissionsSchema = z.object({
   entry: z.object({
     hash: z.string(),
     hasArchived: z.boolean(),
@@ -32,12 +32,10 @@ const catalogEntryWithPermissionsSchema = z.object({
   canViewTranscripts: z.boolean(),
   canEditMetadata: z.boolean(),
   canDownloadAudio: z.boolean(),
-  canDownloadOriginalAudio: z.boolean().optional(),
-  canDownloadTranscripts: z.boolean().optional(),
-  // Optional so a page served by an older build still parses; absent reads as
-  // false everywhere it is consumed, which is the closed answer.
-  canSeeTranscriptVariants: z.boolean().optional(),
-  canSeeSpeakers: z.boolean().optional(),
+  canDownloadOriginalAudio: z.boolean(),
+  canDownloadTranscripts: z.boolean(),
+    canSeeTranscriptVariants: z.boolean(),
+  canSeeSpeakers: z.boolean(),
 }).passthrough();
 
 /** The entry request, shared by the page and by neighbor preloading. */

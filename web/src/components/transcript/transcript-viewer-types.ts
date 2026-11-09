@@ -36,10 +36,11 @@ export interface TranscriptWord {
   word: string;
   start: number;
   end: number;
-  confidence?: number;
+  confidence?: number | null;
 }
 
 export interface TranscriptSegment {
+  confidence?: number | null;
   text: string;
   start: number;
   end: number;
@@ -87,13 +88,14 @@ export const transcriptWordSchema = z.object({
   word: z.string(),
   start: z.number(),
   end: z.number(),
-  confidence: z.number().optional(),
+  confidence: z.number().nullable().optional(),
 });
 
 export const transcriptSegmentSchema = z.object({
   text: z.string(),
   start: z.number(),
   end: z.number(),
+  confidence: z.number().nullable().optional(),
   speaker: z.string().optional(),
   words: z.array(transcriptWordSchema).optional(),
 });

@@ -5,7 +5,6 @@ const SANITIZER_BASE_URL = "http://besedy.local";
 type AuthCompletePathOptions = {
   error?: string | null;
   errorDescription?: string | null;
-  state?: string | null;
 };
 
 function normalizeAppRelativePath(path: string | null | undefined): string | null {
@@ -76,10 +75,6 @@ export function buildAuthCompletePath(
   if (options?.errorDescription) {
     params.set("error_description", options.errorDescription);
   }
-  if (options?.state) {
-    params.set("state", options.state);
-  }
-
   return `/auth/complete?${params.toString()}`;
 }
 

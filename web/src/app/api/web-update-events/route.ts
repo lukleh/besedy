@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { WebUpdateEventType } from "@/generated/prisma/enums";
 import prisma from "@/lib/db";
-import { getCurrentUserId } from "@/lib/auth/permissions";
+import { getCurrentUserId } from '@/lib/auth/session';
 import { checkRateLimit } from "@/lib/security/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -52,12 +52,12 @@ function clientIp(request: NextRequest): string {
 
 function browserFamily(userAgent: string | null): string | null {
   if (!userAgent) return null;
-  if (/Edg\//.test(userAgent)) return "Edge";
-  if (/Firefox\//.test(userAgent)) return "Firefox";
-  if (/CriOS\//.test(userAgent)) return "Chrome iOS";
-  if (/Chrome\//.test(userAgent)) return "Chrome";
-  if (/FxiOS\//.test(userAgent)) return "Firefox iOS";
-  if (/Safari\//.test(userAgent)) return "Safari";
+  if (/Edg\//.test(userAgent)) return 'Edge';
+  if (/Firefox\//.test(userAgent)) return 'Firefox';
+  if (/CriOS\//.test(userAgent)) return 'Chrome iOS';
+  if (/Chrome\//.test(userAgent)) return 'Chrome';
+  if (/FxiOS\//.test(userAgent)) return 'Firefox iOS';
+  if (/Safari\//.test(userAgent)) return 'Safari';
   return "Other";
 }
 

@@ -145,7 +145,7 @@ const mcpHandler = createMcpHandler(
     });
   },
   {
-    legacy: 'stateless',
+    legacy: 'reject',
     responseMode: 'json',
   },
 );

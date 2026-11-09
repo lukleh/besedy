@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isSuperadmin, requireAuth } from "@/lib/auth/permissions";
+import { requireAuth } from "@/lib/auth/permissions";
+import { getAdminCapability } from '@/lib/access/capabilities';
 import prisma from "@/lib/db";
 import { logAdminRoleEvent } from "@/lib/audit/logger";
 
@@ -29,7 +30,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const currentUserId = await requireAuth();
     // Only superadmins can manage admin status
-    const currentIsSuperadmin = await isSuperadmin();
+    const { isSuperadmin: currentIsSuperadmin } = await getAdminCapability(currentUserId);
     if (!currentIsSuperadmin) {
       return NextResponse.json(
         { error: "Only superadmins can manage admin status" },
@@ -117,7 +118,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const currentUserId = await requireAuth();
     // Only superadmins can manage admin status
-    const currentIsSuperadmin = await isSuperadmin();
+    const { isSuperadmin: currentIsSuperadmin } = await getAdminCapability(currentUserId);
     if (!currentIsSuperadmin) {
       return NextResponse.json(
         { error: "Only superadmins can manage admin status" },

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { getAuthCompletionStatus } from "@/lib/auth/client";
+import { getOAuthErrorMessage } from "@/lib/auth/oauth-errors";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -23,36 +24,12 @@ type AuthCompleteClientProps = {
   callbackUrl: string;
   error: string | null;
   errorDescription: string | null;
-  state: string | null;
 };
-
-function mapAuthErrorMessage(
-  error: string | null,
-  errorDescription: string | null,
-  state: string | null,
-  t: ReturnType<typeof useTranslations>
-): string | null {
-  const rawError = error || errorDescription;
-  if (!rawError) {
-    return state === "state_not_found" ? t("errors.oauthCallback") : null;
-  }
-  if (rawError === "OAuthAccountNotLinked") {
-    return t("errors.accountLinked");
-  }
-  if (rawError === "AccessDenied") {
-    return t("errors.accessDenied");
-  }
-  if (rawError.startsWith("OAuthCallbackError")) {
-    return t("errors.oauthCallback");
-  }
-  return rawError;
-}
 
 export default function AuthCompleteClient({
   callbackUrl,
   error,
   errorDescription,
-  state,
 }: AuthCompleteClientProps) {
   const t = useTranslations("auth");
   const router = useRouter();
@@ -129,7 +106,7 @@ export default function AuthCompleteClient({
     };
   }, [attemptNonce, callbackUrl, router]);
 
-  const errorMessage = mapAuthErrorMessage(error, errorDescription, state, t);
+  const errorMessage = getOAuthErrorMessage(error, errorDescription, t);
   const signInHref = `/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`;
 
   return (

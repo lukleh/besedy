@@ -4,8 +4,6 @@ import { GET as getAuditDetail } from "@/app/api/admin/audit/[id]/route";
 
 vi.mock("@/lib/auth/permissions", () => ({
   requireAuth: vi.fn(),
-  isAdmin: vi.fn(),
-  isSuperadmin: vi.fn(),
 }));
 
 vi.mock("@/lib/access/capabilities", () => ({
@@ -33,8 +31,6 @@ vi.mock("@/lib/db", () => ({
 describe("admin audit detail route", () => {
   let requireAuth: ReturnType<typeof vi.fn>;
   let getAdminCapability: ReturnType<typeof vi.fn>;
-  let isAdmin: ReturnType<typeof vi.fn>;
-  let isSuperadmin: ReturnType<typeof vi.fn>;
   let prisma: {
     auditLog: {
       findFirst: ReturnType<typeof vi.fn>;
@@ -57,14 +53,10 @@ describe("admin audit detail route", () => {
     const accessModule = await import("@/lib/access/capabilities");
     requireAuth = permissions.requireAuth as ReturnType<typeof vi.fn>;
     getAdminCapability = accessModule.getAdminCapability as ReturnType<typeof vi.fn>;
-    isAdmin = permissions.isAdmin as ReturnType<typeof vi.fn>;
-    isSuperadmin = permissions.isSuperadmin as ReturnType<typeof vi.fn>;
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
 
     requireAuth.mockResolvedValue("admin-1");
     getAdminCapability.mockResolvedValue({ canAccessAdmin: true });
-    isAdmin.mockResolvedValue(true);
-    isSuperadmin.mockResolvedValue(false);
   });
 
   it("does not expose pre-cutover audit rows through the detail route", async () => {
@@ -93,7 +85,21 @@ describe("admin audit detail route", () => {
       action: "PORTAL_ADMISSION_RESET",
       resource: "portal_admission",
       resourceId: "pending@example.com",
-      details: null,
+      domain: 'admission',
+      subjectType: 'portal_admission',
+      outcome: 'changed',
+      payloadVersion: 1,
+      details: {
+        audit: {
+          payloadVersion: 1,
+          domain: 'admission',
+          subjectType: 'portal_admission',
+          outcome: 'changed',
+          summary: 'Invitation changed',
+          actorSnapshot: { type: 'user', userId: 'admin-1' },
+          subjectSnapshot: { type: 'portal_admission' }
+        }
+      },
       ipAddress: null,
       userAgent: null,
       createdAt: "2026-03-10T12:00:00.000Z",
@@ -144,7 +150,21 @@ describe("admin audit detail route", () => {
       action: "PENDING_CATALOG_GRANT_UPDATED",
       resource: "pending_catalog_grant",
       resourceId: "pending@example.com:20260101_000000",
-      details: null,
+      domain: 'admission',
+      subjectType: 'pending_catalog_grant',
+      outcome: 'changed',
+      payloadVersion: 1,
+      details: {
+        audit: {
+          payloadVersion: 1,
+          domain: 'admission',
+          subjectType: 'pending_catalog_grant',
+          outcome: 'changed',
+          summary: 'Invitation changed',
+          actorSnapshot: { type: 'user', userId: 'admin-1' },
+          subjectSnapshot: { type: 'portal_admission' }
+        }
+      },
       ipAddress: null,
       userAgent: null,
       createdAt: "2026-03-10T12:00:00.000Z",
@@ -203,7 +223,21 @@ describe("admin audit detail route", () => {
     prisma.auditLog.findFirst.mockResolvedValue({
       id: "historical-audio", userId: "admin-1", action: "AUDIO_STREAMED",
       resource: "audio", resourceId: "a".repeat(64), catalogId: "20260101_120000",
-      details: null, ipAddress: null, userAgent: null,
+      domain: 'data_access',
+      subjectType: 'audio',
+      outcome: 'success',
+      payloadVersion: 1,
+      details: {
+        audit: {
+          payloadVersion: 1,
+          domain: 'data_access',
+          subjectType: 'audio',
+          outcome: 'success',
+          summary: 'Audio streamed',
+          actorSnapshot: { type: 'user', userId: 'admin-1' },
+          subjectSnapshot: { type: 'audio' }
+        }
+      }, ipAddress: null, userAgent: null,
       createdAt: "2026-03-10T12:00:00.000Z", user: null,
     });
     const response = await getAuditDetail(new NextRequest("http://localhost/api/admin/audit/historical-audio?expand=true"), {
@@ -212,7 +246,50 @@ describe("admin audit detail route", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       target: { catalogId: "20260101_120000" },
-      relatedEntity: { type: "audio", found: false, data: null, error: "Historical recording belongs to another source" },
+      relatedEntity: { type: "audio", found: false, data: null, error: "Historical recording belongs to another source"
+      }
+    });
+    expect(prisma.audioMetadata.findFirst).not.toHaveBeenCalled()
+  });
+
+  it('does not expand recording events without recorded source provenance', async () => {
+    prisma.auditLog.findFirst.mockResolvedValue({
+      id: 'unscoped',
+      userId: 'admin-1',
+      action: 'AUDIO_STREAMED',
+      resource: 'audio',
+      resourceId: 'a'.repeat(64),
+      catalogId: null,
+      domain: 'data_access',
+      subjectType: 'audio',
+      outcome: 'success',
+      payloadVersion: 1,
+      details: {
+        audit: {
+          payloadVersion: 1,
+          domain: 'data_access',
+          subjectType: 'audio',
+          outcome: 'success',
+          summary: 'Audio streamed',
+          actorSnapshot: { type: 'user', userId: 'admin-1' },
+          subjectSnapshot: { type: 'audio' }
+        }
+      },
+      ipAddress: null,
+      userAgent: null,
+      createdAt: new Date(),
+      user: null
+    });
+    const response = await getAuditDetail(
+      new NextRequest('http://localhost/api/admin/audit/unscoped?expand=true'),
+      { params: Promise.resolve({ id: 'unscoped' }) }
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      relatedEntity: {
+        found: false,
+        error: 'Recording audit has no source provenance'
+      },
     });
     expect(prisma.audioMetadata.findFirst).not.toHaveBeenCalled();
   });

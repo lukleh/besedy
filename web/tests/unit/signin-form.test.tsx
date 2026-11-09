@@ -66,6 +66,24 @@ describe("SignInForm", () => {
         "/auth/unauthorized?error=not_authorized%3Auser%40example.com"
       );
     });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("redirects allowlist rejections supplied as the provider error description", async () => {
+    searchParamsMock.mockReturnValue(
+      new URLSearchParams(
+        "error=access_denied&error_description=not_authorized%3Auser%40example.com"
+      )
+    );
+
+    render(<SignInForm hasMockOAuth={false} />);
+
+    await waitFor(() => {
+      expect(replaceMock).toHaveBeenCalledWith(
+        "/auth/unauthorized?error=not_authorized%3Auser%40example.com"
+      );
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("starts OAuth with a safe callback target", async () => {
@@ -94,11 +112,29 @@ describe("SignInForm", () => {
     });
   });
 
-  it("still displays non-allowlist OAuth errors", () => {
-    searchParamsMock.mockReturnValue(new URLSearchParams("error=OAuthCallbackError"));
+  it.each([
+    ["state_not_found", "Authentication failed. Please try again."],
+    ["access_denied", "Sign in was cancelled. Please try again."],
+    [
+      "account_already_linked_to_different_user",
+      "This email is already associated with another account.",
+    ],
+    ["provider_specific_error", "provider_specific_error"],
+  ])("displays the callback error %s", (error, message) => {
+    searchParamsMock.mockReturnValue(new URLSearchParams({ error }));
 
     render(<SignInForm hasMockOAuth={false} />);
 
-    expect(screen.getByText("Authentication failed. Please try again.")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(message);
+  });
+
+  it("displays an error description without an error code", () => {
+    searchParamsMock.mockReturnValue(
+      new URLSearchParams({ error_description: "Provider diagnostic" })
+    );
+
+    render(<SignInForm hasMockOAuth={false} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Provider diagnostic");
   });
 });

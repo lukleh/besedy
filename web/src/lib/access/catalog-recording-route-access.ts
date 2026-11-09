@@ -68,7 +68,7 @@ export async function requireCatalogAccess(
     options.auditResource,
     options.auditResourceId ?? context.hash,
     {
-      groupId: context.catalogId,
+      catalogId: context.catalogId,
       reason: options.reason ?? "No access grant",
     }
   );
@@ -88,7 +88,7 @@ export async function requireCatalogRecordingAccess(
   }
 
   await logAccessDenied(context.userId, options.auditResource, context.hash, {
-    groupId: context.catalogId,
+    catalogId: context.catalogId,
     reason: options.reason,
   });
 
@@ -107,7 +107,7 @@ export async function requireCatalogRecordingOriginalAudio(
   }
 
   await logAccessDenied(context.userId, options.auditResource, context.hash, {
-    groupId: context.catalogId,
+    catalogId: context.catalogId,
     reason: options.reason ?? "Original audio not permitted",
   });
 
@@ -126,7 +126,7 @@ export async function requireCatalogRecordingDownload(
   }
 
   await logAccessDenied(context.userId, options.auditResource, context.hash, {
-    groupId: context.catalogId,
+    catalogId: context.catalogId,
     reason: options.reason ?? "Download not permitted",
   });
 
@@ -145,7 +145,7 @@ export async function requireCatalogRecordingEditAccess(
   }
 
   await logAccessDenied(context.userId, options.auditResource, context.hash, {
-    groupId: context.catalogId,
+    catalogId: context.catalogId,
     reason:
       options.reason ??
       (context.capability.hasAccess

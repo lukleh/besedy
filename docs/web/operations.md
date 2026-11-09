@@ -375,10 +375,10 @@ Each artwork directory holds the stored originals (`square.png|jpg`,
 `landscape.png|jpg`) and, beside them, a WebP copy at the same pixel size
 (`square.web.webp`, `landscape.web.webp`; quality 85, roughly a seventh of the
 PNG size). New uploads get both. The audience pages and offline downloads serve
-the WebP copy and fall back to the original when it does not exist; the artwork
-edit page shows the WebP thumbnails and opens the original when enlarged. Run
-`just artwork optimize` once per catalog to add the WebP copy to artwork
-uploaded earlier. It needs no database access or actor and never touches the
+the required WebP copy; a missing derivative returns 404. The artwork
+edit page shows WebP thumbnails and opens the original when enlarged. Before
+upgrading an installation with older artwork, run `just artwork optimize` once
+per catalog to create every missing WebP derivative. It needs no database access or actor and never touches the
 originals. Each copy gets its original's group and permission bits, so it is
 readable wherever the original is; if the group cannot be applied the file is
 reported as failed instead of being left in place. Finished files are skipped,

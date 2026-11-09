@@ -494,39 +494,11 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         },
       },
     });
-    const legacyInitializeText = await legacyInitializeResponse.text();
-    expect(legacyInitializeResponse.ok(), legacyInitializeText).toBe(true);
-    expect(legacyInitializeText).toContain(
-      `\"protocolVersion\":\"${LEGACY_MCP_PROTOCOL_VERSION}\"`,
-    );
-
-    const legacyToolsResponse = await request.post(MCP_RESOURCE, {
-      headers: {
-        ...legacyHeaders,
-        'MCP-Protocol-Version': LEGACY_MCP_PROTOCOL_VERSION,
-      },
-      data: {
-        jsonrpc: '2.0',
-        id: 101,
-        method: 'tools/list',
-        params: {},
-      },
+    expect(legacyInitializeResponse.status()).toBe(400);
+    expect(await legacyInitializeResponse.json()).toMatchObject({
+      error: { code: -32022,
+      data: { supported: [MCP_PROTOCOL_VERSION] } },
     });
-    const legacyToolsText = await legacyToolsResponse.text();
-    expect(legacyToolsResponse.ok(), legacyToolsText).toBe(true);
-    for (const toolName of [
-      'who_am_i',
-      'list_locations',
-      'list_recorders',
-      'list_events',
-      'get_event',
-      'get_recording',
-      'get_transcript',
-      'search_transcripts',
-      'find_transcript_mentions',
-    ]) {
-      expect(legacyToolsText).toContain(`\"name\":\"${toolName}\"`);
-    }
 
     const envelope = {
       'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,

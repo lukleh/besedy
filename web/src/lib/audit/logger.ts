@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import prisma from "@/lib/db";
-import { toPrismaJson } from "@/lib/prisma-json";
+import type { Prisma } from "@/generated/prisma/client";
 import { AuditAction } from "@/generated/prisma/enums";
 import type { AuditAction as AuditActionType } from "@/generated/prisma/enums";
 import { createServerLogger } from "@/lib/log/server";
@@ -12,6 +12,7 @@ import {
   inferAuditOutcome,
   inferSubjectType,
   type AuditActorSnapshot,
+  type AuditMetadataEnvelope,
   type AuditDomain,
   type AuditOutcome,
   type AuditSubjectSnapshot,
@@ -49,7 +50,7 @@ type CatalogAccessAction =
   | "CATALOG_ACCESS_UPDATED"
   | "CATALOG_ACCESS_REVOKED";
 type CatalogLifecycleAction =
-  | "CATALOG_CREATED"
+  "CATALOG_CREATED"
   | "CATALOG_UPDATED"
   | "CATALOG_DEACTIVATED";
 type DataAccessAction =
@@ -65,21 +66,6 @@ type ContentAuditAction =
   | "METADATA_DELETED"
   | "RECORDING_INGEST_REQUESTED"
   | "RECORDING_INGEST_REMOVED";
-
-export interface AuditLogParams {
-  userId?: string | null;
-  action: AuditActionType;
-  domain?: AuditDomain | null;
-  subjectType?: AuditSubjectType | null;
-  subjectId?: string | null;
-  catalogId?: string | null;
-  outcome?: AuditOutcome | null;
-  payloadVersion?: number | null;
-  resource: string;
-  resourceId?: string | null;
-  details?: Record<string, unknown> | null;
-  request?: Request | null;
-}
 
 export interface AuditEventParams {
   userId?: string | null;
@@ -154,39 +140,6 @@ async function getUserAgent(): Promise<string | null> {
   }
 }
 
-/**
- * Log an audit event to the database.
- *
- * This low-level helper intentionally stays permissive so older raw call sites
- * can continue to work while the typed builders migrate the active writers.
- */
-export async function logAudit(params: AuditLogParams): Promise<void> {
-  try {
-    const ipAddress = await getClientIp();
-    const userAgent = await getUserAgent();
-
-    await prisma.auditLog.create({
-      data: {
-        userId: params.userId ?? null,
-        action: params.action,
-        domain: params.domain ?? null,
-        subjectType: params.subjectType ?? null,
-        subjectId: params.subjectId ?? null,
-        catalogId: params.catalogId ?? null,
-        outcome: params.outcome ?? null,
-        payloadVersion: params.payloadVersion ?? null,
-        resource: params.resource,
-        resourceId: params.resourceId ?? null,
-        details: toPrismaJson(params.details),
-        ipAddress,
-        userAgent,
-      },
-    });
-  } catch (error) {
-    logger.error("Failed to write audit log:", error);
-  }
-}
-
 export async function logAuditEvent(params: AuditEventParams): Promise<void> {
   const subjectType = params.subjectType ?? inferSubjectType(params.action, params.resource);
   const subjectId = params.subjectId ?? params.resourceId ?? null;
@@ -213,36 +166,44 @@ export async function logAuditEvent(params: AuditEventParams): Promise<void> {
       subjectSnapshot,
     });
 
-  return logAudit({
-    userId: params.userId ?? null,
-    action: params.action,
-    domain: params.domain ?? inferAuditDomain(params.action, params.resource),
+  const domain = params.domain ?? inferAuditDomain(params.action, params.resource);
+  const outcome = params.outcome ?? inferAuditOutcome(params.action);
+  const catalogId = params.catalogId ?? subjectSnapshot.catalogId ??
+    (isNonEmptyString(payload?.catalogId) ? payload.catalogId : null);
+  const metadata: AuditMetadataEnvelope = {
+    payloadVersion: AUDIT_PAYLOAD_VERSION,
+    domain,
     subjectType,
     subjectId,
-    catalogId:
-      params.catalogId ??
-      subjectSnapshot.catalogId ??
-      (isNonEmptyString(payload?.catalogId) ? payload.catalogId : null),
-    outcome: params.outcome ?? inferAuditOutcome(params.action),
-    payloadVersion: AUDIT_PAYLOAD_VERSION,
-    resource: params.resource,
-    resourceId: params.resourceId ?? null,
-    details: buildAuditDetails(payload, {
-      payloadVersion: AUDIT_PAYLOAD_VERSION,
-      domain: params.domain ?? inferAuditDomain(params.action, params.resource),
-      subjectType,
-      subjectId,
-      catalogId:
-        params.catalogId ??
-        subjectSnapshot.catalogId ??
-        (isNonEmptyString(payload?.catalogId) ? payload.catalogId : null),
-      outcome: params.outcome ?? inferAuditOutcome(params.action),
-      summary,
-      actorSnapshot,
-      subjectSnapshot,
-    }),
-    request: params.request ?? null,
-  });
+    catalogId,
+    outcome,
+    summary,
+    actorSnapshot,
+    subjectSnapshot,
+  };
+
+  try {
+    const [ipAddress, userAgent] = await Promise.all([getClientIp(), getUserAgent()]);
+    await prisma.auditLog.create({
+      data: {
+        userId: params.userId ?? null,
+        action: params.action,
+        domain,
+        subjectType,
+        subjectId,
+        catalogId,
+        outcome,
+        payloadVersion: AUDIT_PAYLOAD_VERSION,
+        resource: params.resource,
+        resourceId: params.resourceId ?? null,
+        details: buildAuditDetails(payload, metadata) as Prisma.InputJsonObject,
+        ipAddress,
+        userAgent,
+      },
+    });
+  } catch (error) {
+    logger.error("Failed to write audit log:", error);
+  }
 }
 
 export async function logAuthEvent(params: {
