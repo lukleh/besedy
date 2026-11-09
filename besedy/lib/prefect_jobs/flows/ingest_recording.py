@@ -8,7 +8,6 @@ using the worker's own configuration; display metadata never selects a path.
 from __future__ import annotations
 
 import fcntl
-import json
 import os
 import re
 import shutil
@@ -21,8 +20,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from prefect import flow, task
+from prefect.client.orchestration import get_client
+from prefect.client.schemas.actions import ArtifactCreate
+from prefect.context import FlowRunContext
 from prefect.states import State
 
 from besedy.core.paths import (
@@ -47,6 +50,12 @@ from besedy.lib.internal_ingest_client import (
     IngestProgressReport,
     build_besedy_ingest_client_from_env,
 )
+from besedy.lib.job_records import (
+    JOB_RECORDS_ENV,
+    JOB_RESULT_ARTIFACT_TYPE,
+    job_record,
+    parse_job_record,
+)
 from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
 from besedy.lib.workflow.paths import missing_pipeline_transcripts
 
@@ -62,13 +71,7 @@ ACCEPTED_DIRNAME = "accepted"
 REJECTED_DIRNAME = "rejected"
 CLI_OUTPUT_TAIL_LINES = 40
 MAX_ERROR_MESSAGE_LENGTH = 2000
-# Prefix of the failure message used when the ingest itself finished but the
-# completion callback could not be delivered; the web app parses the JSON that
-# follows it to recover the outcome.
-COMPLETION_REPORT_FAILED_MARKER = "completion_report_failed:"
 _SAFE_EXTENSION_RE = re.compile(r"^\.[a-z0-9]{1,8}$")
-# Step header printed by `run-pipeline` (`print_step` in commands/catalog/pipeline.py).
-_PIPELINE_STEP_RE = re.compile(r"^\[(\d+)/(\d+)\] (\S+)(?: \((.*)\))?\.\.\.$")
 
 ProgressReporter = Callable[[IngestProgressReport], None]
 
@@ -156,16 +159,6 @@ def catalog_cli_command(args: Sequence[str]) -> list[str]:
     return [sys.executable, "-m", "besedy.cli.catalog", *args]
 
 
-def parse_pipeline_step(line: str) -> IngestProgressReport | None:
-    """Return the step a `run-pipeline` header line announces, if it is one."""
-    match = _PIPELINE_STEP_RE.fullmatch(line.strip())
-    if match is None:
-        return None
-    step, total, name, detail = match.groups()
-    label = f"{name} ({detail})" if detail else name
-    return IngestProgressReport(label=label, step=int(step), total=int(total))
-
-
 def progress_reporter(intake_id: str, *, log: Callable[[str], None] = print) -> ProgressReporter:
     """Send step reports to the web app; best effort, never raises.
 
@@ -201,27 +194,26 @@ def run_catalog_cli(
     stage: str,
     cwd: Path = PROJECT_ROOT,
     log: Callable[[str], None] = print,
-    capture_output: bool = False,
+    expect_result: bool = False,
     progress: ProgressReporter | None = None,
-) -> str | None:
+) -> JsonDict | None:
     """Run a catalog CLI subcommand in its own process group and stream its output.
 
     A fresh interpreter mirrors what the operator runs by hand and keeps the CLI's
     ``sys.exit``/signal handling out of the Prefect flow process. The process group
     lets a cancelled flow terminate the whole tree, including Docker backend runs.
 
-    With ``capture_output`` the complete output is returned as well, for commands
-    whose result the flow has to read back (``--json`` reports). The default keeps
-    only a tail for the error message, because a pipeline run logs for hours.
-
-    With ``progress``, every ``run-pipeline`` step header is reported as it is
-    printed. The child runs unbuffered so its lines reach the flow (and the
+    Only versioned JSON-line records carry progress/results. Human output keeps
+    a bounded tail for errors, because a pipeline run logs for hours. With
+    ``expect_result``, exactly one result record is required and returned.
+    The child runs unbuffered so its lines reach the flow (and the
     worker journal) when they are written, not in 8 KB bursts.
     """
     command = catalog_cli_command(args)
     log(f"[{stage}] $ {' '.join(command)}")
     tail: deque[str] = deque(maxlen=CLI_OUTPUT_TAIL_LINES)
-    captured: list[str] = []
+    result: JsonDict | None = None
+    duplicate_result = False
     process = subprocess.Popen(
         command,
         cwd=str(cwd),
@@ -229,20 +221,27 @@ def run_catalog_cli(
         stderr=subprocess.STDOUT,
         text=True,
         start_new_session=True,
-        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        env={**os.environ, "PYTHONUNBUFFERED": "1", JOB_RECORDS_ENV: "1"},
     )
     try:
         assert process.stdout is not None
         for line in process.stdout:
             rendered = line.rstrip()
             tail.append(rendered)
-            if capture_output:
-                captured.append(rendered)
             log(f"[{stage}] {rendered}")
-            if progress is not None:
-                step = parse_pipeline_step(rendered)
-                if step is not None:
-                    progress(step)
+            record = parse_job_record(rendered)
+            if record is None:
+                continue
+            payload = record["payload"]
+            if record["kind"] == "progress" and progress is not None:
+                progress(
+                    IngestProgressReport(
+                        label=payload["label"], step=payload.get("step"), total=payload.get("total")
+                    )
+                )
+            elif record["kind"] == "result":
+                duplicate_result = result is not None
+                result = payload
         return_code = process.wait()
     finally:
         if process.poll() is None:
@@ -254,7 +253,12 @@ def run_catalog_cli(
             error_code=f"{stage}_failed",
             return_code=return_code,
         )
-    return "\n".join(captured) if capture_output else None
+    if expect_result and (result is None or duplicate_result):
+        raise IngestFlowError(
+            f"{stage} must emit exactly one structured result record.",
+            error_code=f"{stage}_result_invalid",
+        )
+    return result
 
 
 def _terminate_process_group(process: subprocess.Popen[str]) -> None:
@@ -480,17 +484,44 @@ def ingest_recording_flow(
             _report_failure_best_effort(paths.intake_id, exc, audio_hash=audio_hash)
             raise
 
-    try:
-        report_completion(paths.intake_id, outcome)
-    except Exception as exc:
-        # The catalog is already updated; carry the outcome in the failure
-        # message so the web app can apply it when it reconciles the run.
-        raise IngestFlowError(
-            f"Completion report failed: {exc}. "
-            f"{COMPLETION_REPORT_FAILED_MARKER}{json.dumps(outcome)}",
-            error_code="completion_report_failed",
-        ) from exc
+    deliver_completion(paths.intake_id, outcome)
     return outcome
+
+
+def deliver_completion(intake_id: str, outcome: JsonDict) -> None:
+    """Keep an undelivered outcome in Prefect, independent of exception prose.
+
+    Artifacts live in the server database, so recovery needs no worker-local
+    result filesystem. Bind to this flow attempt to reject an earlier retry's
+    outcome if a later attempt fails before producing one.
+    """
+    try:
+        report_completion(intake_id, outcome)
+    except Exception as exc:
+        context = FlowRunContext.get()
+        if context is None or context.flow_run is None:
+            raise RuntimeError("Completion delivery requires a flow context.") from exc
+        persist_terminal_result(
+            str(context.flow_run.id),
+            {
+                **job_record("result", outcome),
+                "attempt": context.flow_run.run_count,
+                "catalogId": context.flow_run.parameters["catalog_id"],
+                "intakeId": intake_id,
+            },
+        )
+        raise IngestFlowError(
+            f"Completion report failed: {exc}", error_code="completion_report_failed"
+        ) from exc
+
+
+@task(retries=3, retry_delay_seconds=[5, 15, 45])
+def persist_terminal_result(flow_run_id: str, record: JsonDict) -> None:
+    """Retry the durable recovery write independently of the web callback."""
+    with get_client(sync_client=True) as client:
+        client.create_artifact(
+            ArtifactCreate(type=JOB_RESULT_ARTIFACT_TYPE, flow_run_id=UUID(flow_run_id), data=record)
+        )
 
 
 def _report_failure_best_effort(
@@ -500,7 +531,7 @@ def _report_failure_best_effort(
     audio_hash: str | None = None,
 ) -> None:
     try:
-        report_completion(intake_id, build_failure_report(exc, audio_hash=audio_hash))
+        deliver_completion(intake_id, build_failure_report(exc, audio_hash=audio_hash))
     except Exception as report_exc:  # pragma: no cover - defensive runtime guard
         print(f"Failed to report ingest failure for intake {intake_id}: {report_exc}")
 
