@@ -10,11 +10,10 @@ from pathlib import Path
 
 from besedy.core.paths import resolve_catalogs_root
 from besedy.lib.catalog.manager import (
-    get_iso8601_timestamp,
+    catalog_fieldnames,
     load_csv,
     merge_catalogs,
-    require_audio_hash_contract,
-    resolve_hash_column,
+    require_catalog_schema,
     write_merged_csv,
 )
 from besedy.lib.data.atomic_io import rewrite_lock
@@ -58,11 +57,6 @@ Example:
         help="Character encoding for reading/writing CSV files. Default: utf-8.",
     )
     parser.add_argument(
-        "--hash-column",
-        default=None,
-        help="Name of the hash column if non-standard. Auto-detects: 'hash', 'sha256', 'Hash'. Case-insensitive.",
-    )
-    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress informational output; only show warnings and errors.",
@@ -96,69 +90,23 @@ def handle_merge(args: argparse.Namespace) -> int:
 
 def _merge_into(args: argparse.Namespace, output_path: Path, LOGGER: logging.Logger) -> int:
     target_columns, target_rows = load_csv(args.source1, encoding=args.encoding)
-    target_hash_column = resolve_hash_column(
-        target_columns, args.source1, preferred=args.hash_column
-    )
-
     source_columns, source_rows = load_csv(args.source2, encoding=args.encoding)
-    source_hash_column = resolve_hash_column(
-        source_columns, args.source2, preferred=args.hash_column
-    )
-
     try:
-        require_audio_hash_contract(
-            target_columns,
-            target_rows,
-            path=args.source1,
-            hash_column=target_hash_column,
-        )
-        require_audio_hash_contract(
-            source_columns,
-            source_rows,
-            path=args.source2,
-            hash_column=source_hash_column,
-        )
+        require_catalog_schema(target_columns, target_rows, path=args.source1)
+        require_catalog_schema(source_columns, source_rows, path=args.source2)
     except ValueError as exc:
         print(
-            f"Error: {exc}. Recreate untyped catalogs with 'catalog create' before merging.",
+            f"Error: {exc}. Recreate catalogs with 'catalog create' before merging.",
             file=sys.stderr,
         )
         return 1
 
-    if source_hash_column != target_hash_column:
-        LOGGER.info(
-            "Aligning source hash column '%s' to target column '%s'",
-            source_hash_column,
-            target_hash_column,
-        )
-
-    all_columns = list(target_columns)
-    for col in source_columns:
-        if col not in all_columns:
-            all_columns.append(col)
-
+    all_columns = catalog_fieldnames()
     merged_rows, appended_rows = merge_catalogs(
         source_rows=source_rows,
         target_rows=target_rows,
         columns=all_columns,
-        source_hash_column=source_hash_column,
-        target_hash_column=target_hash_column,
     )
-
-    # Ensure added_at column exists in canonical position and backfill all rows
-    current_timestamp = get_iso8601_timestamp()
-    if "added_at" not in all_columns:
-        # Insert after Duration (canonical position)
-        if "Duration" in all_columns:
-            idx = all_columns.index("Duration") + 1
-            all_columns.insert(idx, "added_at")
-        else:
-            all_columns.append("added_at")
-
-    # Backfill all rows (both existing and new) that lack added_at
-    for row in merged_rows:
-        if not row.get("added_at", "").strip():
-            row["added_at"] = current_timestamp
 
     write_merged_csv(output_path, merged_rows, columns=all_columns, encoding=args.encoding)
     LOGGER.info(

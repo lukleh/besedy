@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-# Re-export from core for backwards compatibility
-from besedy.core.system import detect_logical_cpus
-
-__all__ = ["detect_logical_cpus", "parse_positive_int"]
+__all__ = ["parse_positive_int"]
 
 
 def parse_positive_int(value: str) -> int:

@@ -38,10 +38,7 @@ def extract_timestamp_from_loudness_catalog(path: Path) -> str | None:
 
 
 def extract_timestamp_from_normalized_catalog(path: Path) -> str | None:
-    """Extract <ts> from audio_catalog_<ts>_normalized or _loudness_normalized."""
-    result = _extract_timestamp(path, r"audio_catalog_(\d{8}_\d{6})_normalized\.csv$")
-    if result:
-        return result
+    """Extract <ts> from the current loudness-normalized manifest name."""
     return _extract_timestamp(path, r"audio_catalog_(\d{8}_\d{6})_loudness_normalized\.csv$")
 
 
@@ -65,16 +62,6 @@ def extract_run_id_from_transcripts_root(path: Path) -> str | None:
     return _extract_timestamp(path, r"transcripts_(\d{8}_\d{6}(?:_.+)?)$", strip_slash=True)
 
 
-def extract_timestamp_from_parquet_root(path: Path) -> str | None:
-    """Extract <ts> from transcripts_parquet_<ts> directory name."""
-    return _extract_timestamp(path, r"transcripts_parquet_(\d{8}_\d{6})(?:_.+)?$", strip_slash=True)
-
-
-def extract_run_id_from_parquet_root(path: Path) -> str | None:
-    """Extract <run_id> from transcripts_parquet_<run_id> directory name."""
-    return _extract_timestamp(path, r"transcripts_parquet_(\d{8}_\d{6}(?:_.+)?)$", strip_slash=True)
-
-
 def extract_timestamp_from_speaker_clusters_root(path: Path) -> str | None:
     """Extract <ts> from speaker_clusters_<ts> directory name."""
     return _extract_timestamp(path, r"speaker_clusters_(\d{8}_\d{6})(?:_.+)?$", strip_slash=True)
@@ -83,16 +70,6 @@ def extract_timestamp_from_speaker_clusters_root(path: Path) -> str | None:
 def extract_run_id_from_speaker_clusters_root(path: Path) -> str | None:
     """Extract <run_id> from speaker_clusters_<run_id> directory name."""
     return _extract_timestamp(path, r"speaker_clusters_(\d{8}_\d{6}(?:_.+)?)$", strip_slash=True)
-
-
-def extract_timestamp_from_merged_root(path: Path) -> str | None:
-    """Extract <ts> from transcripts_merged_<ts> directory name."""
-    return _extract_timestamp(path, r"transcripts_merged_(\d{8}_\d{6})(?:_.+)?$", strip_slash=True)
-
-
-def extract_run_id_from_merged_root(path: Path) -> str | None:
-    """Extract <run_id> from transcripts_merged_<run_id> directory name."""
-    return _extract_timestamp(path, r"transcripts_merged_(\d{8}_\d{6}(?:_.+)?)$", strip_slash=True)
 
 
 def assert_catalog_transcripts_alignment(
@@ -120,30 +97,6 @@ def assert_catalog_transcripts_alignment(
         raise RuntimeError(
             "Timestamp mismatch: "
             f"catalog={ts_catalog}, normalized={ts_norm}, transcripts={ts_transcripts}"
-        )
-
-
-def assert_transcripts_parquet_alignment(
-    transcripts_root: Path,
-    parquet_root: Path,
-) -> None:
-    """Ensure transcripts and parquet roots share the same timestamp."""
-    if not parquet_root.exists():
-        raise RuntimeError(f"parquet path not found: {parquet_root}")
-
-    run_id_transcripts = require_run_id_from_transcripts_root(transcripts_root)
-    run_id_parquet = extract_run_id_from_parquet_root(parquet_root.resolve())
-
-    if not run_id_parquet:
-        raise RuntimeError(
-            "parquet path must be timestamped as transcripts_parquet_<YYYYMMDD_HHMMSS>[_<variant>]. "
-            f"Got: {parquet_root}"
-        )
-
-    if run_id_parquet != run_id_transcripts:
-        raise RuntimeError(
-            "Timestamp mismatch between transcripts and parquet: "
-            f"transcripts={run_id_transcripts}, parquet={run_id_parquet}"
         )
 
 
@@ -252,7 +205,12 @@ def iter_transcript_paths(root: Path) -> Iterable[Path]:
         if len(parts) == 1 and parts[0] == "transcript.json":
             yield candidate
             continue
-        if len(parts) >= 4 and parts[0] in allowed:
+        if (
+            len(parts) == 4
+            and parts[0] in allowed
+            and SHA256_HASH_PATTERN.fullmatch(parts[2])
+            and parse_transcript_components(candidate, root)
+        ):
             yield candidate
 
 
@@ -264,9 +222,11 @@ def parse_transcript_components(path: Path, root: Path) -> tuple[str, str, str] 
         return None
 
     parts = relative.parts
-    if len(parts) < 4:
+    if len(parts) != 4 or parts[3] != "transcript.json":
         return None
     workflow, model_component, audio_hash = parts[:3]
+    if not re.search(r"@lang-(?:auto|[a-z]{2,3}(?:-[a-z]{2,3})?)$", model_component):
+        return None
     return workflow, model_component, audio_hash
 
 

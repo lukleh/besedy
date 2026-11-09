@@ -11,6 +11,7 @@ represented by placeholder tests in this extras-free unit suite.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import sys
 from pathlib import Path
@@ -19,82 +20,52 @@ import pytest
 import yaml
 
 
+@pytest.fixture(scope="module")
+def load_vad_config():
+    """Exercise the actual pure loader without importing NeMo's GPU stack."""
+    path = Path(__file__).resolve().parents[1] / "besedy/workflows/transcribe_nemo.py"
+    tree = ast.parse(path.read_text())
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_load_vad_config"
+    )
+    namespace = {"Path": Path, "yaml": yaml}
+    exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), "exec"), namespace)
+    return namespace["_load_vad_config"]
+
+
 class TestLoadVadConfig:
-    """Tests for VAD configuration loading.
-
-    These tests don't require NeMo imports - they test pure YAML loading.
-    """
-
-    def test_load_valid_yaml_config(self, tmp_path):
-        """Test loading valid YAML VAD config."""
-
-        # Replicate the function logic for testing
-        def _load_vad_config(path):
-            if path is None:
-                return {}
-            if not path.exists():
-                raise FileNotFoundError(f"VAD config file not found: {path}")
-            with path.open("r", encoding="utf-8") as handle:
-                return yaml.safe_load(handle) or {}
-
+    def test_load_valid_yaml_config(self, tmp_path, load_vad_config):
         config_path = tmp_path / "vad_config.yaml"
-        config_path.write_text(
-            """
-onset: 0.5
-offset: 0.4
-min_duration_on: 0.1
-min_duration_off: 0.3
-pad_onset: 0.1
-pad_offset: 0.1
-"""
-        )
+        config_path.write_text("vad:\n  parameters:\n    onset: 0.5\n    offset: 0.4\n")
+        assert load_vad_config(config_path)["vad"]["parameters"]["onset"] == 0.5
 
-        config = _load_vad_config(config_path)
-        assert config["onset"] == 0.5
-        assert config["offset"] == 0.4
-        assert config["min_duration_on"] == 0.1
+    def test_load_none_returns_empty_dict(self, load_vad_config):
+        assert load_vad_config(None) == {}
 
-    def test_load_none_returns_empty_dict(self):
-        """Test that None path returns empty dict."""
-
-        def _load_vad_config(path):
-            if path is None:
-                return {}
-            return {}
-
-        config = _load_vad_config(None)
-        assert config == {}
-
-    def test_missing_file_raises_error(self, tmp_path):
-        """Test that missing file raises FileNotFoundError."""
-
-        def _load_vad_config(path):
-            if path is None:
-                return {}
-            if not path.exists():
-                raise FileNotFoundError(f"VAD config file not found: {path}")
-            return {}
-
-        missing = tmp_path / "nonexistent.yaml"
+    def test_missing_file_raises_error(self, tmp_path, load_vad_config):
         with pytest.raises(FileNotFoundError, match="VAD config file not found"):
-            _load_vad_config(missing)
+            load_vad_config(tmp_path / "missing.yaml")
 
-    def test_empty_yaml_returns_empty_dict(self, tmp_path):
-        """Test that empty YAML file returns empty dict."""
-
-        def _load_vad_config(path):
-            if path is None:
-                return {}
-            if not path.exists():
-                raise FileNotFoundError(f"VAD config file not found: {path}")
-            with path.open("r", encoding="utf-8") as handle:
-                return yaml.safe_load(handle) or {}
-
+    def test_empty_yaml_returns_empty_dict(self, tmp_path, load_vad_config):
         config_path = tmp_path / "empty.yaml"
         config_path.write_text("")
+        assert load_vad_config(config_path) == {}
 
-        config = _load_vad_config(config_path)
-        assert config == {}
+    @pytest.mark.parametrize(
+        "settings",
+        [
+            "vad:\n  parameters:\n    smoothing: false\n",
+            "vad:\n  parameters:\n    overlap: 0.875\n",
+            "smoothing_out_dir: null\n",
+        ],
+    )
+    def test_retired_settings_are_rejected(self, tmp_path, load_vad_config, settings):
+        config_path = tmp_path / "retired.yaml"
+        config_path.write_text(settings)
+        with pytest.raises(ValueError, match="Unsupported frame-VAD settings"):
+            load_vad_config(config_path)
 
 
 class TestIsHidden:

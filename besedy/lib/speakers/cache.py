@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from besedy.lib.data.encoding import load_json_with_fallback
+from besedy.lib.data.encoding import load_json_utf8
 from besedy.lib.speakers.utils import round_time, segment_key
 
 
@@ -124,7 +124,7 @@ class EmbeddingCache:
             return {"status": "miss"}
 
         try:
-            payload = load_json_with_fallback(cache_file)
+            payload = load_json_utf8(cache_file)
         except (ValueError, Exception) as exc:
             print(f"  Warning: Failed to read cache {cache_file}: {exc}")
             return {"status": "miss"}

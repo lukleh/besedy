@@ -16,14 +16,10 @@ WebEnvMode = Literal["development", "production", "test"]
 TOOLS_ROOT = BESEDY_ROOT
 TRANSCRIPTS_DIRNAME = "transcripts"
 
-# Compatibility constants describe the built-in artifact layout. Runtime code
-# that supports configured transcription variants must use its WorkflowConfig
-# instead of consulting these defaults.
-NEMO_VAD_WORKFLOW_LABEL = "canary-nemo"
+# Defaults used by the registered workflows and their artifact paths.
 FASTER_WHISPER_VAD_MODEL_FILENAME = "silero_vad_v6.onnx"
 PYANNOTE_DIARIZATION_WORKFLOW_LABEL = "speaker_diarization"
 PYANNOTE_DIARIZATION_MODEL_NAME = "pyannote_speaker-diarization-community-1"
-WHISPERX_DIRNAME = "whisperx"
 
 CONFIG_DIR = BESEDY_ROOT / "config"
 FRAME_VAD_CONFIG_PATH = CONFIG_DIR / "frame_vad_infer_postprocess.yaml"

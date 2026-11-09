@@ -14,7 +14,6 @@ import logging
 import os
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +24,6 @@ if str(PROJECT_ROOT) not in sys.path:
 # This script may be executed directly, so it bootstraps the repo root onto
 # sys.path before importing the package.
 from besedy.core.paths import (  # noqa: E402
-    resolve_config_home,
     resolve_project_path,
     resolve_transcripts_root,
 )
@@ -72,66 +70,8 @@ def _resolve_audio_path(
     raise ValueError("No audio path found in transcript/segments meta; pass --audio.")
 
 
-def _find_config_path() -> Path | None:
-    env_path = os.getenv("BESEDY_CONFIG")
-    if env_path:
-        candidate = Path(env_path).expanduser()
-        return candidate if candidate.exists() else None
-
-    candidates = [
-        Path.cwd() / "besedy.toml",
-        PROJECT_ROOT / "besedy.toml",
-        resolve_config_home() / "besedy.toml",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return None
-
-
-def _resolve_transcripts_from_text_root(text_root: Path) -> Path:
-    transcripts_dir = text_root / "transcripts"
-    inner_symlink = transcripts_dir / "transcripts"
-    if inner_symlink.is_symlink():
-        return inner_symlink.resolve()
-    return transcripts_dir
-
-
-def _fallback_transcripts_root() -> Path | None:
-    env_value = os.getenv("BESEDY_TEXT_DATA_ROOT")
-    if env_value:
-        candidate = Path(env_value).expanduser()
-        text_root = candidate if candidate.is_absolute() else PROJECT_ROOT / candidate
-        return _resolve_transcripts_from_text_root(text_root)
-
-    config_path = _find_config_path()
-    if config_path:
-        try:
-            with config_path.open("rb") as handle:
-                data = tomllib.load(handle)
-        except Exception as exc:
-            logging.debug("Failed to read config %s: %s", config_path, exc)
-            return None
-        paths_cfg = data.get("paths", {}) if isinstance(data, dict) else {}
-        text_data_dir = paths_cfg.get("text_data_dir") if isinstance(paths_cfg, dict) else None
-
-        if text_data_dir:
-            candidate = Path(text_data_dir).expanduser()
-            text_root = candidate if candidate.is_absolute() else PROJECT_ROOT / candidate
-            return _resolve_transcripts_from_text_root(text_root)
-
-    return None
-
-
 def _default_transcripts_root() -> Path:
-    try:
-        return resolve_transcripts_root()
-    except Exception as exc:
-        logging.debug("resolve_transcripts_root failed: %s", exc)
-    fallback = _fallback_transcripts_root()
-    if fallback is not None:
-        return fallback
-    return resolve_project_path("transcripts")
+    return resolve_transcripts_root()
 
 
 def _prepend_pythonpath(prefix: Path, existing: str | None) -> str:
