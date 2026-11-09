@@ -426,6 +426,10 @@ Two more guards keep the correction data as it was recorded:
   deletes or rewrites correction rows, or makes deletes cascade into them. The
   sole pinned exception is the guarded retirement of unused pre-contract machine
   snapshots described in ADR 0012.
+- CI also runs `npm run test:correction-contract-migration` against a separate
+  disposable `besedy_contract_migration_test` database prepared with only the
+  migrations preceding the current-contract cutover. Its rollback scenarios
+  check that protected work aborts the upgrade and current workspaces survive.
 - `web/scripts/correction-integrity-check.sh`, run nightly from the host's
   cron, checks every live workspace: the frozen source against its
   fingerprint, the stored spans against a fresh segmentation of it, the staged
