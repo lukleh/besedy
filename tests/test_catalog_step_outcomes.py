@@ -73,7 +73,7 @@ def test_loudness_empty_analysis_is_incomplete(
 def test_archive_missing_source_reports_incomplete_work(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(archive.shutil, "which", lambda binary: str(binary))
+    monkeypatch.setattr(archive, "resolve_audio_executable", lambda binary: str(binary))
     catalog = _catalog(tmp_path, str(tmp_path / "missing.wav"))
 
     result = archive.handle_archive(
