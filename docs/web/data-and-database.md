@@ -208,8 +208,9 @@ parameters, unknown parameters and duplicate parameters return `400`.
 `download` accepts `true` or `false`; the local player may add `local=1`, which
 does not change the served bytes.
 
-There is no per-recording source preference any more. Older rows may still carry
-`user_preferences.settings.audioSources`; nothing reads or writes it.
+There is no per-recording source preference. The retired
+`user_preferences.settings.audioSources` key is removed by the archive-selection
+cleanup migration.
 
 Independently of the source, `format` picks the file: `webm` (default), the Opus
 archive every recording has, or `aac`, its AAC-in-MP4 copy (`compressed_aac_path`,
@@ -414,13 +415,19 @@ Two more guards keep the correction data as it was recorded:
 
 - `web/tests/unit/correction-migration-guard.test.ts` fails on any migration
   after the contract that drops, renames or retypes a correction column,
-  deletes or rewrites correction rows, or makes deletes cascade into them.
+  deletes or rewrites correction rows, or makes deletes cascade into them. The
+  sole pinned exception is the guarded retirement of unused pre-contract machine
+  snapshots described in ADR 0012.
+- CI also runs `npm run test:correction-contract-migration` against a separate
+  disposable `besedy_contract_migration_test` database prepared with only the
+  migrations preceding the current-contract cutover. Its rollback scenarios
+  check that protected work aborts the upgrade and current workspaces survive.
 - `web/scripts/correction-integrity-check.sh`, run nightly from the host's
   cron, checks every live workspace: the frozen source against its
   fingerprint, the stored spans against a fresh segmentation of it, the staged
   audio's size (and its SHA-256 on one night a week per workspace,
   `AUDIO_HASH_EVERY_DAYS`), the manifest, and every revision against its text
-  hash. A workspace cut by an older segmentation version is noted, not failed.
+  hash. An unsupported segmentation version fails and requires migration.
   It also reports orphan manifests: `starting` or `active` ones with no live
   workspace in the database. It mails `ALERT_EMAIL` when anything differs or
   the check cannot run.

@@ -42,7 +42,7 @@ export async function inspectArchiveMigration() {
     const groups = await tx.workflowGroup.findMany({
       orderBy: { id: 'asc' },
       select: {
-        id: true, label: true, isActive: true, isDefault: true,
+        id: true, label: true, isActive: true,
         archivedCatalogPath: true, metadataCatalogPath: true,
         duplicatesCatalogPath: true, transcriptsPath: true,
         _count: true,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { regionIndexAt, spanAudioRegions } from "@/components/correction/correction-span-audio";
-import type { SpanView } from "@/components/correction/correction-types";
+import { spanViewSchema, type SpanView } from "@/components/correction/correction-types";
 import { regionIndexForMidpoint } from "@/lib/correction/segmentation";
 
 function span(overrides: Partial<SpanView>): SpanView {
@@ -52,18 +52,26 @@ describe("span audio regions", () => {
     ]);
   });
 
-  it("uses the span window for spans from before the data contract", () => {
-    expect(spanAudioRegions(span({ speechRegions: null, machineWords: [] }))).toEqual([
-      { start: 10, end: 27, wordCount: 0 },
-    ]);
-  });
-
   it("finds the region at a time, else the next one, else the last", () => {
     const regions = spanAudioRegions(span({}));
     expect(regionIndexAt(regions, 12)).toBe(0);
     expect(regionIndexAt(regions, 18.9)).toBe(1);
     expect(regionIndexAt(regions, 5)).toBe(0);
     expect(regionIndexAt(regions, 40)).toBe(1);
+  });
+});
+
+describe("current correction span contract", () => {
+  it.each(["speechRegions", "machineWords", "flags"])("rejects a response missing %s", (field) => {
+    const response: Record<string, unknown> = span({});
+    delete response[field];
+    expect(spanViewSchema.safeParse(response).success).toBe(false);
+  });
+
+  it("requires recorded speech regions", () => {
+    expect(spanViewSchema.safeParse(span({ speechRegions: [] })).success).toBe(false);
+    expect(spanViewSchema.safeParse({ ...span({}), speechRegions: null }).success).toBe(false);
+    expect(spanViewSchema.safeParse(span({})).success).toBe(true);
   });
 });
 

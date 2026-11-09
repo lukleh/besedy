@@ -154,6 +154,7 @@ async function main() {
   // A full listen at normal speed, which every approve and disapprove reports (ADR 0012).
   const HEARD = { heardFraction: 1, minPlaybackRate: 1, maxPlaybackRate: 1 };
   const { recordFlag } = await import("@/lib/correction/flag-service");
+  const { SEGMENTATION_PARAMS, SEGMENTATION_VERSION } = await import("@/lib/correction/segmentation");
   const { appendGuideRevision } = await import("@/lib/correction/guide");
   const { getPublicationEligibility } = await import("@/lib/correction/publication-eligibility");
   const {
@@ -1712,6 +1713,12 @@ async function main() {
         audioHash: createHash("sha256").update(randomUUID()).digest("hex"),
         sourceBackend: BACKEND,
         sourceFingerprint: "0".repeat(64),
+        segmentationVersion: SEGMENTATION_VERSION,
+        segmentationParams: SEGMENTATION_PARAMS,
+        sourceChunkCount: 1,
+        stagedAudioPath: "/state-smoke.wav",
+        stagedAudioSize: BigInt(44),
+        stagedAudioSha256: "0".repeat(64),
       },
     });
 
@@ -1728,6 +1735,10 @@ async function main() {
           endSeconds: ordinal * 10 + 10,
           originalText: text,
           originalTextHash: createHash("sha256").update(text).digest("hex"),
+          chunkOrdinal: ordinal, firstRegionIndex: ordinal, lastRegionIndex: ordinal,
+          startSample: seconds(ordinal * 10), endSample: seconds(ordinal * 10 + 10),
+          speechRegions: [[seconds(ordinal * 10), seconds(ordinal * 10 + 10)]],
+          machineWords: [],
         },
       });
       const revision = await newRevision(span.id, text, null);
@@ -1741,6 +1752,8 @@ async function main() {
           text,
           textHash: createHash("sha256").update(text).digest("hex"),
           previousRevisionId,
+          origin: previousRevisionId ? "MANUAL" : "MACHINE",
+          guideRevisionId: guide.revisionId!,
         },
       });
       await prisma.transcriptSpan.update({ where: { id: spanId }, data: { currentRevisionId: revision.id } });
@@ -1753,7 +1766,11 @@ async function main() {
       kind: "APPROVE" | "DISAPPROVE" | "WITHDRAW"
     ) {
       await prisma.transcriptSpanDecision.create({
-        data: { workspaceId: stateWorkspace.id, spanId, revisionId, actorKey: actor, kind },
+        data: {
+          workspaceId: stateWorkspace.id, spanId, revisionId, actorKey: actor, kind,
+          commandName: kind.toLowerCase(), commandDigest: "0".repeat(64),
+          ...(kind === "WITHDRAW" ? {} : HEARD),
+        },
       });
     }
 

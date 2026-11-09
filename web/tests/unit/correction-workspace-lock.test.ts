@@ -46,7 +46,7 @@ describe('lockWorkspace', () => {
     );
   });
 
-  it('leaves archived and pre-contract workspaces alone', async () => {
+  it('leaves archived workspaces alone', async () => {
     const { lockWorkspace } = await import('@/lib/correction/workspace-lock');
     await lockWorkspace(
       txReturning([
@@ -55,17 +55,6 @@ describe('lockWorkspace', () => {
           workflow_group_id: 'c',
           status: 'ARCHIVED',
           segmentation_version: 'chunks-v1',
-        },
-      ]),
-      WORKSPACE,
-    );
-    await lockWorkspace(
-      txReturning([
-        {
-          id: WORKSPACE,
-          workflow_group_id: 'c',
-          status: 'ACTIVE',
-          segmentation_version: null,
         },
       ]),
       WORKSPACE,

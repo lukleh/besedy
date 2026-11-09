@@ -82,10 +82,9 @@ describe("playback tracker", () => {
 });
 
 describe("speech regions in seconds", () => {
-  it("converts stored sample regions, and falls back to the span window", () => {
+  it("converts the stored sample regions", () => {
     expect(
-      speechRegionsInSeconds({ startSeconds: 0, endSeconds: 13, speechRegions: [[0, 80000], [96000, 208000]] })
+      speechRegionsInSeconds({ speechRegions: [[0, 80000], [96000, 208000]] })
     ).toEqual([[0, 5], [6, 13]]);
-    expect(speechRegionsInSeconds({ startSeconds: 2, endSeconds: 7, speechRegions: null })).toEqual([[2, 7]]);
   });
 });
