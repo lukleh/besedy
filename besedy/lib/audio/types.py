@@ -18,6 +18,16 @@ from pathlib import Path
 
 from besedy.core.paths import FFMPEG_LOG_DIR
 from besedy.core.system import detect_logical_cpus
+from besedy.lib.audio.processing import (
+    DECLIP_THRESHOLD_DBTP,
+    DURATION_TOLERANCE_MIN_SECONDS,
+    DURATION_TOLERANCE_PERCENTAGE,
+    LOUDNESS_ACCEPTABLE_MAX_LUFS,
+    LOUDNESS_ACCEPTABLE_MIN_LUFS,
+    LOUDNESS_RANGE_LU,
+    LOUDNESS_TARGET_LUFS,
+    TRUE_PEAK_TARGET_DBTP,
+)
 from besedy.lib.audio.quality import AUDIO_QUALITY_COLUMNS, AudioQualityMetrics
 
 __all__ = [
@@ -68,16 +78,6 @@ STAGE_AUDIO_AUTO = "__AUTO_STAGE_DIR__"
 # =============================================================================
 # Duration Validation Tolerances
 # =============================================================================
-# WHY 0.25s: Minimum absolute tolerance for very short clips (<12.5s).
-# For files shorter than 12.5 seconds, 2% tolerance is less than 0.25s,
-# so we use 0.25s as a floor to avoid false positives from rounding.
-DURATION_TOLERANCE_MIN_SECONDS = 0.25
-
-# WHY 2%: Relative tolerance for longer files where fixed tolerance is too strict.
-# Audio encoding/decoding can introduce small timing variations; 2% accounts
-# for normal codec behavior without accepting gross errors.
-DURATION_TOLERANCE_PERCENTAGE = 0.02
-
 # WHY 10%: Container formats (MP4, MKV, WebM) often have inaccurate duration
 # metadata vs actual audio stream length. When FFmpeg warns "filesize and
 # duration do not match", accept up to 10% drift before failing.
@@ -89,33 +89,6 @@ FILESIZE_MISMATCH_DRIFT_TOLERANCE = 0.10
 # of expected duration when this warning appears.
 NON_MONOTONIC_MIN_RATIO = 0.5
 NON_MONOTONIC_MAX_RATIO = 2.5
-
-# =============================================================================
-# Loudness Normalization (EBU R128 Broadcast Standard)
-# =============================================================================
-# WHY -16 LUFS: EBU R128 target for broadcast speech. Optimal for intelligibility
-# and listening comfort across devices. Lower than music (-14 LUFS) because
-# speech has narrower dynamic range and benefits from headroom.
-LOUDNESS_TARGET_LUFS = -16
-
-# WHY 11 LU: Loudness Range preserves natural speech dynamics. Too low (< 8 LU)
-# sounds compressed/flat; too high (> 15 LU) causes volume jumping.
-LOUDNESS_RANGE_LU = 11
-
-# WHY -1.5 dBTP: True peak limit with 0.5 dB headroom below 0 dBFS. Prevents
-# inter-sample peaks from causing clipping on playback. EBU R128 recommends -1 dBTP.
-TRUE_PEAK_TARGET_DBTP = -1.5
-
-# WHY -20 to -12 LUFS: ±4 LUFS tolerance around -16 target. Linear normalization
-# preserves dynamics but can't always hit exact target without compression.
-# Files outside this range trigger compression retry (linear=false).
-LOUDNESS_ACCEPTABLE_MIN_LUFS = -20
-LOUDNESS_ACCEPTABLE_MAX_LUFS = -12
-
-# WHY -1.0 dBTP: EBU R128 maximum true peak threshold for broadcast compliance.
-# Peaks >= -1.0 dBTP indicate clipped samples that degrade speech quality.
-# Audio above this threshold triggers declipping filter.
-DECLIP_THRESHOLD_DBTP = -1.0
 
 
 @dataclass(frozen=True)

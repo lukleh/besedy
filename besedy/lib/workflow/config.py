@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from dataclasses import dataclass
 from typing import TypedDict
@@ -53,6 +54,14 @@ class WorkflowConfig:
 
     pipeline_default: bool = True
     expected_default: bool = True
+
+    @classmethod
+    def from_json(cls, value: str) -> WorkflowConfig:
+        """Read the exact configuration serialized by the workflow runner."""
+        data = json.loads(value)
+        if not isinstance(data, dict):
+            raise ValueError("workflow configuration must be an object")
+        return cls(**data)
 
     def output_component(self, sanitize_fn) -> str:
         model_component = sanitize_fn(self.model_name)

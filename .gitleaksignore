@@ -1,0 +1,9 @@
+# SHA-256 digests of public migration SQL, verified by check_migration_baseline.mjs.
+# Migration names containing token/access trigger the generic credential rule.
+/github/workspace/web/prisma/baseline.json:generic-api-key:12
+/github/workspace/web/prisma/baseline.json:generic-api-key:26
+/github/workspace/web/prisma/baseline.json:generic-api-key:27
+/github/workspace/web/prisma/baseline.json:generic-api-key:34
+/github/workspace/web/prisma/baseline.json:generic-api-key:46
+/github/workspace/web/prisma/baseline.json:generic-api-key:62
+/github/workspace/web/prisma/baseline.json:generic-api-key:73
