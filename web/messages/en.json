@@ -1114,7 +1114,6 @@
         "catalog": "Catalog",
         "catalogId": "Catalog ID",
         "created": "Created",
-        "default": "Default",
         "active": "Active",
         "inactive": "Inactive",
         "role": "Role",

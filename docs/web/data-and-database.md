@@ -208,8 +208,9 @@ parameters, unknown parameters and duplicate parameters return `400`.
 `download` accepts `true` or `false`; the local player may add `local=1`, which
 does not change the served bytes.
 
-There is no per-recording source preference any more. Older rows may still carry
-`user_preferences.settings.audioSources`; nothing reads or writes it.
+There is no per-recording source preference. The retired
+`user_preferences.settings.audioSources` key is removed by the archive-selection
+cleanup migration.
 
 Independently of the source, `format` picks the file: `webm` (default), the Opus
 archive every recording has, or `aac`, its AAC-in-MP4 copy (`compressed_aac_path`,

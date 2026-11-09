@@ -51,7 +51,6 @@ export interface CatalogConfig {
   metadataCatalogPath: string;
   duplicatesCatalogPath: string | null;
   transcriptsPath: string | null;
-  isDefault: boolean;
   isActive: boolean;
   createdAt: string;
 }
@@ -161,7 +160,6 @@ export const catalogConfigSchema = z.object({
   metadataCatalogPath: z.string(),
   duplicatesCatalogPath: z.string().nullable(),
   transcriptsPath: z.string().nullable(),
-  isDefault: z.boolean(),
   isActive: z.boolean(),
   createdAt: z.string(),
 });
