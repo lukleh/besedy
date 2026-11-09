@@ -11,7 +11,7 @@ from besedy.commands.catalog import diarize as diarize_module
 from besedy.commands.catalog import stage as stage_module
 from besedy.commands.catalog import transcribe as transcribe_module
 from besedy.commands.catalog.extract import ExportTranscriptsRequest, handle_export_transcripts
-from besedy.lib.audio.types import SkippedEntry
+from besedy.lib.audio.types import PreparedEntry, SkippedEntry
 from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED, CsvAudioRow
 from tests.helpers.transcript import create_minimal_transcript, write_transcript_json
 from tests.helpers.workflows import make_workflow_config
@@ -79,10 +79,13 @@ def _stub_transcribe(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     *,
-    prepared: list[object],
+    prepared: list[PreparedEntry],
     launch_failures: list[tuple[str, int]],
 ) -> None:
-    rows = [CsvAudioRow(sha256=HASH_A, full_path=str(tmp_path / "a.wav"))]
+    rows = [
+        CsvAudioRow(sha256=HASH_A, full_path=str(tmp_path / "a.wav")),
+        CsvAudioRow(sha256=HASH_B, full_path=str(tmp_path / "b.wav")),
+    ]
     monkeypatch.setattr(
         transcribe_module, "resolve_and_load_catalog", lambda *_args: (tmp_path / "c.csv", rows)
     )
@@ -94,7 +97,7 @@ def _stub_transcribe(
     monkeypatch.setattr(
         transcribe_module,
         "validate_staged_audio",
-        lambda _rows: (prepared, [(HASH_A, Path("/staged/a.wav"), "staged audio missing")]),
+        lambda _rows: (prepared, [(HASH_B, Path("/staged/b.wav"), "staged audio missing")]),
     )
     monkeypatch.setattr(transcribe_module, "build_workflows", lambda *_a, **_k: ["job"])
     monkeypatch.setattr(transcribe_module, "prepare_workflow_env", lambda: {})
@@ -116,7 +119,13 @@ def test_transcribe_exits_2_when_rows_are_skipped(
 def test_transcribe_exits_1_when_a_workflow_fails_even_with_skips(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _stub_transcribe(monkeypatch, tmp_path, prepared=[object()], launch_failures=[("fw", 1)])
+    staged = tmp_path / "a.wav"
+    _stub_transcribe(
+        monkeypatch,
+        tmp_path,
+        prepared=[PreparedEntry(HASH_A, staged, staged, "existing", 1)],
+        launch_failures=[("fw", 1)],
+    )
 
     request = transcribe_module.TranscribeRequest(
         output_root=tmp_path / "transcripts", continue_on_error=True

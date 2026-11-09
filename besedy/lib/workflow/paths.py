@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from besedy.core.paths import (
+    catalog_transcripts_dirname,
     extract_timestamp_from_catalog,
     hash_component_from_sha,
     iter_transcript_paths,
@@ -279,7 +280,7 @@ def missing_pipeline_transcripts(csv_path: Path, audio_hash: str) -> list[Path]:
     timestamp = extract_timestamp_from_catalog(csv_path.resolve())
     if not timestamp:
         raise ValueError(f"Catalog CSV is not timestamped: {csv_path}")
-    transcripts_run_root = resolve_transcripts_parent() / f"transcripts_{timestamp}"
+    transcripts_run_root = resolve_transcripts_parent() / catalog_transcripts_dirname(timestamp)
     hash_component = hash_component_from_sha(audio_hash)
     expected = [
         path_builder(workflow).artifact_path(hash_component, transcripts_run_root)

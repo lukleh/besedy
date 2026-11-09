@@ -9,6 +9,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from besedy.lib.audio.decode import decode_to_temp_wav
+from besedy.lib.audio.processing import (
+    DECLIP_THRESHOLD_DBTP,
+    LOUDNESS_ACCEPTABLE_MAX_LUFS,
+    LOUDNESS_ACCEPTABLE_MIN_LUFS,
+    LOUDNESS_RANGE_LU,
+    LOUDNESS_TARGET_LUFS,
+    TRUE_PEAK_TARGET_DBTP,
+    LoudnessMeasurement,
+    loudness_measurement_command,
+    loudnorm_filter,
+)
 
 AUDIO_QUALITY_COLUMNS = (
     "sample_rate",
@@ -46,9 +57,9 @@ def analyze_loudness(
     *,
     ffmpeg_binary: str = "ffmpeg",
     timeout: int | None = None,
-    target_lufs: float = -16,
-    loudness_range_lu: float = 11,
-    true_peak_dbtp: float = -1.5,
+    target_lufs: float = LOUDNESS_TARGET_LUFS,
+    loudness_range_lu: float = LOUDNESS_RANGE_LU,
+    true_peak_dbtp: float = TRUE_PEAK_TARGET_DBTP,
 ) -> tuple[dict[str, str | None], str | None]:
     """Analyze audio loudness using ffmpeg's loudnorm filter.
 
@@ -86,19 +97,16 @@ def analyze_loudness(
             return metrics, f"decode failed: {decode_error}"
 
         # Step 2: Run loudnorm analysis on the clean temp WAV
-        cmd = [
+        cmd = loudness_measurement_command(
+            temp_path,
             ffmpeg_binary,
-            "-nostdin",
-            "-hide_banner",
-            "-nostats",
-            "-i",
-            str(temp_path),  # Analyze temp WAV, not original source
-            "-af",
-            f"loudnorm=I={target_lufs}:LRA={loudness_range_lu}:tp={true_peak_dbtp}:print_format=json",
-            "-f",
-            "null",
-            "-",
-        ]
+            loudnorm_filter(
+                target_lufs=target_lufs,
+                loudness_range_lu=loudness_range_lu,
+                true_peak_dbtp=true_peak_dbtp,
+                print_json=True,
+            ),
+        )
 
         try:
             result = subprocess.run(
@@ -124,62 +132,17 @@ def analyze_loudness(
         if not stderr:
             return metrics, "ffmpeg loudnorm produced no stderr output"
 
-        lines = stderr.strip().split("\n")
-        json_start = -1
-        for i in range(len(lines) - 1, -1, -1):
-            stripped = lines[i].strip()
-            if stripped.startswith("{"):
-                json_start = i
-                break
-
-        if json_start >= 0:
-            json_text = "\n".join(lines[json_start:])
-            try:
-                data = json.loads(json_text)
-                metrics["integrated_loudness_lufs"] = data.get("input_i") or ""
-                metrics["true_peak_db"] = data.get("input_tp") or ""
-                metrics["loudness_range_lu"] = data.get("input_lra") or ""
-                metrics["input_thresh"] = data.get("input_thresh") or ""
-                metrics["target_offset"] = data.get("target_offset") or ""
-            except json.JSONDecodeError:
-                for i in range(json_start, len(lines)):
-                    try:
-                        potential_json = "\n".join(lines[i:])
-                        brace_count = 0
-                        end_pos = -1
-                        for j, char in enumerate(potential_json):
-                            if char == "{":
-                                brace_count += 1
-                            elif char == "}":
-                                brace_count -= 1
-                                if brace_count == 0:
-                                    end_pos = j + 1
-                                    break
-                        if end_pos > 0:
-                            json_text = potential_json[:end_pos]
-                            data = json.loads(json_text)
-                            metrics["integrated_loudness_lufs"] = data.get("input_i") or ""
-                            metrics["true_peak_db"] = data.get("input_tp") or ""
-                            metrics["loudness_range_lu"] = data.get("input_lra") or ""
-                            metrics["input_thresh"] = data.get("input_thresh") or ""
-                            metrics["target_offset"] = data.get("target_offset") or ""
-                            break
-                    except (json.JSONDecodeError, ValueError):
-                        continue
-                else:
-                    return metrics, "failed to parse loudnorm JSON output"
-        else:
-            return metrics, "ffmpeg loudnorm JSON block not found"
-
-        required_fields = (
-            "integrated_loudness_lufs",
-            "true_peak_db",
-            "loudness_range_lu",
-            "input_thresh",
-            "target_offset",
+        try:
+            measured = LoudnessMeasurement.from_log(stderr)
+        except ValueError as exc:
+            return metrics, str(exc)
+        metrics.update(
+            integrated_loudness_lufs=measured.input_i,
+            true_peak_db=measured.input_tp,
+            loudness_range_lu=measured.input_lra,
+            input_thresh=measured.input_thresh,
+            target_offset=measured.target_offset,
         )
-        if any(not metrics[field] for field in required_fields):
-            return metrics, "ffmpeg loudnorm output missing required metrics"
 
         return metrics, None
 
@@ -324,7 +287,7 @@ def analyze_technical_properties(
     return metrics
 
 
-def needs_declipping(true_peak_db: str | None, threshold: float = -1.0) -> bool:
+def needs_declipping(true_peak_db: str | None, threshold: float = DECLIP_THRESHOLD_DBTP) -> bool:
     """
     Detect if a file needs declipping based on true peak measurement.
 
@@ -361,7 +324,7 @@ def determine_needs_normalization(integrated_loudness: str | None) -> str:
         lufs = float(integrated_loudness)
     except ValueError:
         return ""
-    if lufs < -20 or lufs > -12:
+    if lufs < LOUDNESS_ACCEPTABLE_MIN_LUFS or lufs > LOUDNESS_ACCEPTABLE_MAX_LUFS:
         return "yes"
     return "no"
 

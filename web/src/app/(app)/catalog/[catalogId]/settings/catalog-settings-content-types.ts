@@ -60,7 +60,6 @@ export interface CatalogConfigDraft {
   archivedCatalogPath: string;
   metadataCatalogPath: string;
   duplicatesCatalogPath: string;
-  transcriptsPath: string;
 }
 
 export interface PendingCatalogGrant {
