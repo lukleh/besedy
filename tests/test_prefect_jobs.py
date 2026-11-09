@@ -111,6 +111,9 @@ class FakePrefectClient:
             raise FileNotFoundError(f"Unknown flow run: {flow_run_id}")
         return self.flow_run
 
+    def read_job_result(self, *, flow_run_id: str, attempt: int) -> dict | None:
+        return None
+
     def read_flow_runs(
         self,
         *,
@@ -226,6 +229,36 @@ def test_prefect_jobs_service_http_round_trip(jobs_server) -> None:
     )
     assert cancelled["status"] == JobStatus.RUNNING.value
     assert client.cancelled is True
+
+
+def test_failed_ingest_result_is_read_only_after_archive_scope_check(monkeypatch) -> None:
+    client = FakePrefectClient()
+    client.flow_run.state_name = "Failed"
+    client.flow_run.state_type = "FAILED"
+    client.flow_run.run_count = 2
+    calls = []
+    record = {"protocol": "besedy-job", "version": 1, "kind": "result", "payload": {}}
+
+    def read_result(**kwargs):
+        calls.append(kwargs)
+        return record
+
+    monkeypatch.setattr(client, "read_job_result", read_result)
+    service = PrefectJobsApiService(client=client)
+    assert service.get_job(job_id=client.flow_run_id)["result"] == record
+    assert calls == [{"flow_run_id": client.flow_run_id, "attempt": 2}]
+
+    calls.clear()
+    client.flow_run.parameters["catalog_id"] = "20260101_120000"
+    with pytest.raises(FileNotFoundError, match="Job not found"):
+        service.get_job(job_id=client.flow_run_id)
+    assert calls == []
+
+    client.flow_run.parameters["catalog_id"] = CATALOG_ID
+    client.flow_run.state_name = "Running"
+    client.flow_run.state_type = "RUNNING"
+    assert service.get_job(job_id=client.flow_run_id)["result"] is None
+    assert calls == []
 
 
 def test_prefect_jobs_service_health_does_not_require_bearer_token(

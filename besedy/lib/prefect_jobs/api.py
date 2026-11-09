@@ -181,6 +181,12 @@ class PrefectJobsApiService:
         job = normalize_flow_run(flow_run)
         if job.get("catalog_id") != archive_id:
             raise FileNotFoundError("Job not found.")
+        # Fetch recovery data only for a terminal ingest run that can need it.
+        # Scope/authorization checks above happen before reading its artifact.
+        if job.get("kind") == JobKind.INGEST.value and job.get("status") == JobStatus.FAILED.value:
+            job["result"] = self._client.read_job_result(
+                flow_run_id=job_id, attempt=getattr(flow_run, "run_count", 0)
+            )
         return job
 
     def get_history(self, *, job_id: str) -> dict[str, Any]:

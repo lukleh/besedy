@@ -52,7 +52,7 @@ def test_build_chunk_corpus_matches_per_transcript_chunk_builds(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120000"
@@ -124,7 +124,7 @@ def test_build_chunk_corpus_reports_distribution(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120001"
@@ -166,7 +166,7 @@ def test_build_chunk_corpus_assigns_chunk_ordinals_per_audio_hash(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120005"
@@ -210,7 +210,7 @@ def test_build_chunk_corpus_resolves_explicit_transcripts_container(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     transcripts_container = tmp_path / "text-data" / "transcripts"
@@ -282,7 +282,7 @@ def test_discover_transcript_sources_skips_directories_that_are_not_a_full_hash(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120012"
@@ -318,7 +318,7 @@ def test_build_chunk_corpus_skips_directories_that_are_not_a_full_hash(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
 
     transcripts_root = tmp_path / "transcripts_20260206_120013"
@@ -352,7 +352,7 @@ def test_per_file_builders_reject_a_transcript_directory_that_is_not_a_full_hash
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
     transcripts_root = tmp_path / "transcripts_20260206_120014"
     backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"
@@ -384,7 +384,7 @@ def test_an_uppercase_hex_leaf_is_indexed_under_its_lowercase_hash(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        rag_chunk_corpus, "get_chunk_token_counter", lambda: WhitespaceTokenCounter()
+        rag_chunk_corpus, "get_chunk_token_counter", lambda **_kwargs: WhitespaceTokenCounter()
     )
     transcripts_root = tmp_path / "transcripts_20260206_120015"
     backend_dir = transcripts_root / "faster-whisper" / "large-v3@silero_vad_v6@lang-cs"

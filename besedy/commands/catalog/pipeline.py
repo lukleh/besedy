@@ -15,6 +15,7 @@ from besedy.commands.catalog.csv_utils import resolve_catalog_csv
 from besedy.commands.catalog.diarize import DiarizeRequest, handle_diarize
 from besedy.commands.catalog.extract import ExportTranscriptsRequest, handle_export_transcripts
 from besedy.commands.catalog.loudness import LoudnessRequest, handle_loudness
+from besedy.commands.catalog.rag_backend import resolve_pipeline_rag_backend_key
 from besedy.commands.catalog.rag_colbert_index import (
     handle_rag_colbert_index,
 )
@@ -32,6 +33,7 @@ from besedy.core.paths import (
     resolve_transcripts_parent,
     sanitize_component,
 )
+from besedy.lib.job_records import emit_job_record
 from besedy.lib.rag_colbert import check_colbert_runtime_ready, default_colbert_index_runtime
 from besedy.lib.runtime.backend_runtime import BackendRuntimeUnavailableError
 from besedy.lib.workflow.common import EXIT_ROWS_SKIPPED
@@ -56,6 +58,7 @@ def resolve_pipeline_workflows() -> tuple[list[WorkflowConfig], list[str]]:
 def print_step(step_num: int, total: int, name: str, detail: str = "") -> None:
     """Print a step header."""
     detail_str = f" ({detail})" if detail else ""
+    emit_job_record("progress", {"label": f"{name}{detail_str}", "step": step_num, "total": total})
     print(f"\n[{step_num}/{total}] {name}{detail_str}...")
     print("=" * 60)
 
@@ -68,10 +71,6 @@ def backend_has_transcripts(transcripts_root: Path, workflow: WorkflowConfig) ->
     return _pipeline_rag.backend_has_transcripts(transcripts_root, workflow)
 
 
-def _resolve_pipeline_rag_backend_key(args: argparse.Namespace) -> str:
-    return _pipeline_rag._resolve_pipeline_rag_backend_key(args)
-
-
 def select_rag_workflows(
     args: argparse.Namespace,
     workflows: list[WorkflowConfig],
@@ -79,7 +78,7 @@ def select_rag_workflows(
     return _pipeline_rag.select_rag_workflows(
         args,
         workflows,
-        resolve_backend_key=_resolve_pipeline_rag_backend_key,
+        resolve_backend_key=resolve_pipeline_rag_backend_key,
     )
 
 
