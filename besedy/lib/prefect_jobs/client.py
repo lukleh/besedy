@@ -10,15 +10,20 @@ from uuid import UUID
 from prefect.client.orchestration import get_client
 from prefect.client.schemas.actions import WorkPoolCreate
 from prefect.client.schemas.filters import (
+    ArtifactFilter,
+    ArtifactFilterFlowRunId,
+    ArtifactFilterType,
     FlowRunFilter,
     FlowRunFilterState,
     FlowRunFilterStateName,
     FlowRunFilterTags,
 )
-from prefect.client.schemas.sorting import FlowRunSort
+from prefect.client.schemas.sorting import ArtifactSort, FlowRunSort
 from prefect.deployments import run_deployment
 from prefect.states import Cancelling
 from prefect.workers.process import ProcessWorker
+
+from besedy.lib.job_records import JOB_RESULT_ARTIFACT_TYPE, validate_job_record
 
 from .json_types import JsonDict
 
@@ -52,6 +57,8 @@ class PrefectJobsClient(Protocol):
     ) -> Sequence[object]: ...
 
     def read_flow_run_states(self, *, flow_run_id: str) -> Sequence[object]: ...
+
+    def read_job_result(self, *, flow_run_id: str, attempt: int) -> JsonDict | None: ...
 
     def cancel_flow_run(self, *, flow_run_id: str) -> object: ...
 
@@ -125,6 +132,26 @@ class RuntimePrefectJobsClient:
     def read_flow_run_states(self, *, flow_run_id: str) -> Sequence[object]:
         with get_client(sync_client=True) as client:
             return client.read_flow_run_states(UUID(flow_run_id))
+
+    def read_job_result(self, *, flow_run_id: str, attempt: int) -> JsonDict | None:
+        with get_client(sync_client=True) as client:
+            artifacts = client.read_artifacts(
+                artifact_filter=ArtifactFilter(
+                    flow_run_id=ArtifactFilterFlowRunId(any_=[UUID(flow_run_id)]),
+                    type=ArtifactFilterType(any_=[JOB_RESULT_ARTIFACT_TYPE]),
+                ),
+                sort=ArtifactSort.CREATED_DESC,
+                limit=1,
+            )
+        if not artifacts:
+            return None
+        record = validate_job_record(artifacts[0].data)
+        if (
+            record is None or record["kind"] != "result"
+            or type(record.get("attempt")) is not int or record["attempt"] != attempt
+        ):
+            return None
+        return record
 
     def cancel_flow_run(self, *, flow_run_id: str) -> object:
         with get_client(sync_client=True) as client:

@@ -322,7 +322,7 @@ def test_sync_colbert_index_updates_one_audio_hash_incrementally(
     assert staged_chunks[0].text == "zmeneny text s vice slovy"
 
 
-def test_sync_colbert_index_addition_backfills_fts_for_legacy_bundle(
+def test_sync_colbert_index_rejects_missing_fts_without_changing_serving_bundle(
     tmp_path: Path,
     fake_colbert_worker,
 ) -> None:
@@ -351,22 +351,19 @@ def test_sync_colbert_index_addition_backfills_fts_for_legacy_bundle(
         [{"start": 0.0, "end": 1.0, "text": "nove pridany rozhovor"}],
     )
 
-    result = sync_colbert_index(
-        workflow_group_id="wg-legacy-fts",
-        backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
-        transcripts_root=transcripts_root,
-        index_dir=bundle_dir,
-    )
-
-    assert result.hashes_added == 1
+    with pytest.raises(ValueError, match="--rebuild"):
+        sync_colbert_index(
+            workflow_group_id="wg-legacy-fts",
+            backend_key="faster-whisper/large-v3@silero_vad_v6@lang-cs",
+            transcripts_root=transcripts_root,
+            index_dir=bundle_dir,
+        )
+    assert len(list_chunks(path=bundle_dir / "chunk_store.sqlite")) == 1
     with sqlite3.connect(bundle_dir / "chunk_store.sqlite") as connection:
-        old_matches = connection.execute(
-            "SELECT count(*) FROM chunks_fts WHERE chunks_fts MATCH 'puvodni'"
-        ).fetchone()[0]
-        new_matches = connection.execute(
-            "SELECT count(*) FROM chunks_fts WHERE chunks_fts MATCH 'pridany'"
-        ).fetchone()[0]
-    assert (old_matches, new_matches) == (1, 1)
+        assert (
+            connection.execute("SELECT 1 FROM sqlite_master WHERE name='chunks_fts'").fetchone()
+            is None
+        )
 
 
 def test_sync_colbert_index_passes_runtime_override_to_final_token_audit(

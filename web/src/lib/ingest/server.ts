@@ -6,7 +6,11 @@ import prisma from '@/lib/db';
 import { assertArchiveCatalogId, assertConfiguredArchiveId } from '@/lib/archive';
 import { syncCatalogGroup } from '@/lib/catalog-sync';
 import { getUploadsDir } from '@/lib/config';
-import { ingestJobSchema, type IngestJob } from '@/lib/jobs-api/schemas';
+import {
+  ingestJobSchema,
+  ingestResultRecordSchema,
+  type IngestJob,
+} from '@/lib/jobs-api/schemas';
 import {
   fetchJobsApi,
   JobsApiConfigurationError,
@@ -20,10 +24,6 @@ const DEFAULT_CHUNK_BYTES = 50 * 1000 * 1000;
 const DEFAULT_MAX_UPLOAD_BYTES = 4 * 1000 * 1000 * 1000;
 const MAX_RECONCILED_JOBS = 10;
 const SHARED_INTAKE_DIR_MODE = 0o2770;
-// Marker the worker puts in its failure message when the ingest itself finished
-// but the completion callback could not be delivered; the JSON after it is the
-// outcome that would have been reported.
-const COMPLETION_REPORT_FAILED_MARKER = 'completion_report_failed:';
 
 export const INTAKE_INCLUDE = {
   workflowGroup: { select: { label: true } },
@@ -309,48 +309,6 @@ function parseFinishedAt(value: string | null | undefined): Date {
   return parsed && !Number.isNaN(parsed.getTime()) ? parsed : new Date();
 }
 
-/**
- * Recover the outcome the worker could not deliver: its failure message carries
- * `completion_report_failed:{...json outcome...}`.
- */
-export function parseUndeliveredOutcome(
-  message: string | null | undefined,
-): TerminalUpdate | null {
-  if (!message) return null;
-  const start = message.indexOf(COMPLETION_REPORT_FAILED_MARKER);
-  if (start === -1) return null;
-  const jsonStart = message.indexOf('{', start);
-  const jsonEnd = message.lastIndexOf('}');
-  if (jsonStart === -1 || jsonEnd <= jsonStart) return null;
-  try {
-    const parsed = JSON.parse(message.slice(jsonStart, jsonEnd + 1)) as Record<
-      string,
-      unknown
-    >;
-    const status = parsed.status;
-    if (
-      status !== 'SUCCEEDED' &&
-      status !== 'REJECTED' &&
-      status !== 'FAILED' &&
-      status !== 'REMOVED'
-    ) {
-      return null;
-    }
-    return {
-      status,
-      audioHash:
-        typeof parsed.audioHash === 'string'
-          ? parsed.audioHash.toLowerCase()
-          : null,
-      errorCode: typeof parsed.errorCode === 'string' ? parsed.errorCode : null,
-      errorMessage:
-        typeof parsed.errorMessage === 'string' ? parsed.errorMessage : null,
-    };
-  } catch {
-    return null;
-  }
-}
-
 /** Apply a terminal outcome the worker produced but could not deliver itself. */
 async function applyOutcome(
   row: IntakeRow,
@@ -410,9 +368,13 @@ async function applyJobState(
     );
   }
   if (job.status === 'FAILED') {
-    const undelivered = parseUndeliveredOutcome(job.error_message);
-    if (undelivered) {
-      return applyOutcome(row, { ...undelivered, finishedAt });
+    const undelivered = ingestResultRecordSchema.safeParse(job.result);
+    if (
+      undelivered.success &&
+      undelivered.data.catalogId === row.workflowGroupId &&
+      undelivered.data.intakeId === row.id
+    ) {
+      return applyOutcome(row, { ...undelivered.data.payload, finishedAt });
     }
     return transitionIntake(
       row,
