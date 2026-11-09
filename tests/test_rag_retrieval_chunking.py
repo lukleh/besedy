@@ -28,10 +28,9 @@ class WhitespaceTokenCounter:
         return [self.count_text(text) for text in texts]
 
 
-def test_normalize_backend_key_three_part() -> None:
-    assert normalize_backend_key("faster-whisper/large-v3/silero_vad_v6") == (
-        "faster-whisper/large-v3@silero_vad_v6"
-    )
+def test_normalize_backend_key_rejects_three_part_alias() -> None:
+    with pytest.raises(ValueError, match="model_component"):
+        normalize_backend_key("faster-whisper/large-v3/silero_vad_v6")
 
 
 def test_chunk_segments_overlap_strategy() -> None:

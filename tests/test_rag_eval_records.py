@@ -8,10 +8,21 @@ import pytest
 from besedy.lib.rag_eval_records import load_eval_records, parse_eval_targets, record_query
 
 
-def test_eval_record_parser_accepts_query_and_time_aliases() -> None:
+@pytest.mark.parametrize("filename", [
+    "questions_20_audio.json",
+    "czech_stress_audio.json",
+    "questions_benchmark_audio.json",
+    "oblique_queries.example.json",
+])
+def test_committed_eval_examples_use_current_contract(filename: str) -> None:
+    fixtures = Path(__file__).parent / "fixtures" / "rag"
+    assert load_eval_records(fixtures / filename)
+
+
+def test_eval_record_parser_accepts_current_question_and_time_fields() -> None:
     record = {
         "id": "oblique-1",
-        "query": "find the implicit distinction",
+        "question": "find the implicit distinction",
         "targets": [
             {
                 "audio_hash": "A" * 64,
@@ -82,7 +93,7 @@ def test_eval_record_parser_rejects_malformed_time_spans(
 ) -> None:
     record = {
         "id": "broken-span",
-        "query": "find something",
+        "question": "find something",
         "targets": [target],
     }
 
@@ -103,7 +114,7 @@ def test_eval_record_parser_rejects_malformed_audio_hashes(
 ) -> None:
     record = {
         "id": "broken-hash",
-        "query": "find something",
+        "question": "find something",
         "targets": [{"audio_hash": audio_hash}],
     }
 
@@ -138,7 +149,7 @@ def test_eval_record_parser_rejects_meaningless_time_spans(
 ) -> None:
     record = {
         "id": "broken-span",
-        "query": "find something",
+        "question": "find something",
         "targets": [target],
     }
 
@@ -150,9 +161,12 @@ def test_eval_record_parser_rejects_meaningless_time_spans(
     ("payload", "message"),
     [
         ([], "at least one evaluation record"),
-        ([{"query": "valid", "targets": [{"audio_hash": "a" * 64}]}, "not-an-object"], "record 1"),
-        ([{"qurey": "typo", "targets": [{"audio_hash": "a" * 64}]}], "question.*query"),
-        ([{"query": "missing targets", "target": [{"audio_hash": "a" * 64}]}], "one target"),
+        (
+            [{"question": "valid", "targets": [{"audio_hash": "a" * 64}]}, "not-an-object"],
+            "record 1",
+        ),
+        ([{"qurey": "typo", "targets": [{"audio_hash": "a" * 64}]}], "question"),
+        ([{"question": "missing targets", "target": [{"audio_hash": "a" * 64}]}], "one target"),
     ],
 )
 def test_load_eval_records_rejects_malformed_records(
@@ -165,3 +179,14 @@ def test_load_eval_records_rejects_malformed_records(
 
     with pytest.raises(ValueError, match=message):
         load_eval_records(path)
+
+
+def test_eval_records_reject_retired_query_alias() -> None:
+    with pytest.raises(ValueError, match="retired 'query'"):
+        record_query({"query": "old spelling"})
+
+
+@pytest.mark.parametrize("start_key,end_key", [("start", "end"), ("start_sec", "end_sec")])
+def test_eval_records_reject_retired_time_aliases(start_key: str, end_key: str) -> None:
+    with pytest.raises(ValueError, match="unsupported time field"):
+        parse_eval_targets({"targets": [{"audio_hash": "a" * 64, start_key: 1, end_key: 2}]})
