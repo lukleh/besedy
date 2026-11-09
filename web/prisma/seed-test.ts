@@ -180,7 +180,6 @@ const TEST_WORKFLOW_GROUP = {
   metadataCatalogPath: "/data/text/audio_catalog_test.csv",
   duplicatesCatalogPath: "/data/text/audio_catalog_test_duplicates.csv",
   transcriptsPath: `/data/text/${TEST_TRANSCRIPTS_SUBDIR}`,
-  isDefault: true,
   isActive: true,
 };
 

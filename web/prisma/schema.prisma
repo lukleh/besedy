@@ -560,14 +560,11 @@ model WorkflowGroup {
   transcriptsPath       String?  @map("transcripts_path")
   /// Soft-delete flag
   isActive              Boolean  @default(true) @map("is_active")
-  /// Default for new users
-  isDefault             Boolean  @default(false) @map("is_default")
   createdAt             DateTime @default(now()) @map("created_at")
   /// Last modification time (metadata changes, catalog updates)
   updatedAt             DateTime @default(now()) @updatedAt @map("updated_at")
 
   metadata                 AudioMetadata[]
-  preferences              UserPreferences[]
   catalogAccess            CatalogAccess[]
   pendingCatalogGrants     PendingCatalogGrant[]
   /// Scan state for detecting new ready recordings
@@ -864,19 +861,16 @@ model AudioMetadata {
 // User Preferences
 // ============================================================================
 
-/// User preferences including active group and UI settings
+/// Per-user UI settings
 model UserPreferences {
-  /// User ID (Phase 1a: "local" for single-user mode)
+  /// Authenticated user ID
   userId         String   @id @map("user_id") @db.VarChar(255)
-  activeGroupId  String?  @map("active_group") @db.VarChar(15)
   /// Theme: 'light', 'dark', 'system'
   theme          String   @default("system") @db.VarChar(10)
   /// Visible catalog columns
   catalogColumns String[] @default([]) @map("catalog_columns")
   /// Additional settings as JSON
   settings       Json     @default("{}")
-
-  activeGroup WorkflowGroup? @relation(fields: [activeGroupId], references: [id])
 
   @@map("user_preferences")
 }

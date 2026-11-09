@@ -55,7 +55,6 @@ export interface RelatedAudio {
 export interface RelatedCatalog {
   id: string;
   label: string | null;
-  isDefault: boolean;
   isActive: boolean;
   createdAt: string;
 }
