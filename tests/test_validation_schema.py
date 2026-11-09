@@ -1,235 +1,144 @@
-"""Tests for besedy/lib/validation/core.py schema validation."""
+"""All transcript validation entry points enforce the current canonical schema."""
 
 from __future__ import annotations
 
+import copy
 import json
 
-from besedy.lib.validation.core import validate_shared_schema, validate_single_file
+import pytest
+
+from besedy.lib.validation.core import validate_single_file
+from besedy.lib.validation.quickcheck import quick_validate
+from besedy.lib.validation.schema import validate_canonical_schema
+from tests.helpers.transcript import create_transcript_with_words
 
 
-class TestValidateSharedSchema:
-    """Tests for validate_shared_schema()."""
-
-    def test_valid_minimal_transcript(self):
-        """Minimal valid transcript passes."""
-        data = {"segments": [{"start": 0.0, "end": 2.5, "text": "Hello world"}]}
-        issues = validate_shared_schema(data)
-        assert issues == []
-
-    def test_valid_with_confidence(self):
-        """Transcript with confidence passes."""
-        data = {"segments": [{"start": 0.0, "end": 2.5, "text": "Hello", "confidence": 0.95}]}
-        issues = validate_shared_schema(data)
-        assert issues == []
-
-    def test_valid_with_words(self):
-        """Transcript with word-level data passes."""
-        data = {
-            "segments": [
-                {
-                    "start": 0.0,
-                    "end": 2.5,
-                    "text": "Hello world",
-                    "words": [
-                        {"word": "Hello", "start": 0.0, "end": 1.2},
-                        {"word": "world", "start": 1.3, "end": 2.5},
-                    ],
-                }
-            ]
-        }
-        issues = validate_shared_schema(data)
-        assert issues == []
-
-    def test_valid_with_word_confidence(self):
-        """Word-level confidence is optional and valid."""
-        data = {
-            "segments": [
-                {
-                    "start": 0.0,
-                    "end": 1.0,
-                    "text": "Hi",
-                    "words": [{"word": "Hi", "start": 0.0, "end": 1.0, "confidence": 0.98}],
-                }
-            ]
-        }
-        issues = validate_shared_schema(data)
-        assert issues == []
-
-    def test_valid_with_meta(self):
-        """Meta object is optional and valid."""
-        data = {
-            "meta": {"backend": "faster-whisper", "model": "large-v3"},
-            "segments": [{"start": 0.0, "end": 1.0, "text": "test"}],
-        }
-        issues = validate_shared_schema(data)
-        assert issues == []
-
-    # Invalid cases
-    def test_missing_segments(self):
-        """Missing segments list is invalid."""
-        issues = validate_shared_schema({})
-        assert len(issues) > 0
-        assert any("segments" in issue for issue in issues)
-
-    def test_empty_segments(self):
-        """Empty segments list is invalid."""
-        issues = validate_shared_schema({"segments": []})
-        assert len(issues) > 0
-
-    def test_not_dict_toplevel(self):
-        """Top-level must be dict."""
-        issues = validate_shared_schema([])
-        assert len(issues) > 0
-        assert any("object" in issue for issue in issues)
-
-    def test_segment_missing_start(self):
-        """Segment missing 'start' is invalid."""
-        data = {"segments": [{"end": 1.0, "text": "hello"}]}
-        issues = validate_shared_schema(data)
-        assert any("start" in issue for issue in issues)
-
-    def test_segment_missing_end(self):
-        """Segment missing 'end' is invalid."""
-        data = {"segments": [{"start": 0.0, "text": "hello"}]}
-        issues = validate_shared_schema(data)
-        assert any("end" in issue for issue in issues)
-
-    def test_segment_missing_text(self):
-        """Segment missing 'text' is invalid."""
-        data = {"segments": [{"start": 0.0, "end": 1.0}]}
-        issues = validate_shared_schema(data)
-        assert any("text" in issue for issue in issues)
-
-    def test_start_not_number(self):
-        """Start must be a number."""
-        data = {"segments": [{"start": "zero", "end": 1.0, "text": "hi"}]}
-        issues = validate_shared_schema(data)
-        assert any("number" in issue for issue in issues)
-
-    def test_end_not_number(self):
-        """End must be a number."""
-        data = {"segments": [{"start": 0.0, "end": "one", "text": "hi"}]}
-        issues = validate_shared_schema(data)
-        assert any("number" in issue for issue in issues)
-
-    def test_text_not_string(self):
-        """Text must be a string."""
-        data = {"segments": [{"start": 0.0, "end": 1.0, "text": 123}]}
-        issues = validate_shared_schema(data)
-        assert any("string" in issue for issue in issues)
-
-    def test_confidence_not_number(self):
-        """Confidence must be a number when present."""
-        data = {"segments": [{"start": 0.0, "end": 1.0, "text": "hi", "confidence": "high"}]}
-        issues = validate_shared_schema(data)
-        assert any("confidence" in issue and "number" in issue for issue in issues)
-
-    def test_words_not_list(self):
-        """Words must be a list when present."""
-        data = {"segments": [{"start": 0.0, "end": 1.0, "text": "hi", "words": "not a list"}]}
-        issues = validate_shared_schema(data)
-        assert any("words" in issue and "list" in issue for issue in issues)
-
-    def test_word_missing_word_field(self):
-        """Word entry missing 'word' field is invalid."""
-        data = {
-            "segments": [
-                {
-                    "start": 0.0,
-                    "end": 1.0,
-                    "text": "hi",
-                    "words": [{"start": 0.0, "end": 1.0}],
-                }
-            ]
-        }
-        issues = validate_shared_schema(data)
-        assert any("word" in issue and "missing" in issue for issue in issues)
-
-    def test_meta_not_object(self):
-        """Meta must be an object when present."""
-        data = {
-            "meta": "invalid",
-            "segments": [{"start": 0.0, "end": 1.0, "text": "test"}],
-        }
-        issues = validate_shared_schema(data)
-        assert any("meta" in issue for issue in issues)
-
-    def test_multiple_segments(self):
-        """Multiple valid segments pass."""
-        data = {
-            "segments": [
-                {"start": 0.0, "end": 2.0, "text": "First segment"},
-                {"start": 2.0, "end": 4.0, "text": "Second segment"},
-                {"start": 4.0, "end": 6.0, "text": "Third segment"},
-            ]
-        }
-        issues = validate_shared_schema(data)
-        assert issues == []
-
-    def test_integer_timestamps_valid(self):
-        """Integer timestamps are valid numbers."""
-        data = {"segments": [{"start": 0, "end": 1, "text": "test"}]}
-        issues = validate_shared_schema(data)
-        assert issues == []
+def test_current_transcript_passes_all_entry_points(tmp_path):
+    data = create_transcript_with_words(["Hello", "world"])
+    data["segments"][0]["confidence"] = None
+    data["segments"][0]["words"][0]["confidence"] = None
+    path = tmp_path / "transcript.json"
+    path.write_text(json.dumps(data))
+    assert validate_canonical_schema(data) == []
+    assert validate_single_file(path, quiet=True)
+    assert quick_validate(path)[0]
 
 
-class TestValidateSingleFile:
-    """Tests for validate_single_file()."""
+@pytest.mark.parametrize("field", ["meta", "segments"])
+def test_required_top_level_fields(field):
+    data = create_transcript_with_words(["Hello"])
+    del data[field]
+    assert any(field in issue for issue in validate_canonical_schema(data))
 
-    def test_valid_file_passes(self, tmp_path):
-        """Valid transcript file passes validation."""
-        transcript = tmp_path / "transcript.json"
-        data = {"segments": [{"start": 0.0, "end": 1.0, "text": "test"}]}
-        transcript.write_text(json.dumps(data))
 
-        result = validate_single_file(transcript, quiet=True)
-        assert result is True
+@pytest.mark.parametrize(
+    "field", ["model", "backend", "audio_filepath", "duration", "generation_params"]
+)
+def test_required_metadata_fields(field):
+    data = create_transcript_with_words(["Hello"])
+    del data["meta"][field]
+    assert any(field in issue for issue in validate_canonical_schema(data))
 
-    def test_nonexistent_file_fails(self, tmp_path):
-        """Nonexistent file fails validation."""
-        nonexistent = tmp_path / "missing.json"
-        result = validate_single_file(nonexistent, quiet=True)
-        assert result is False
 
-    def test_invalid_json_fails(self, tmp_path):
-        """Invalid JSON fails validation."""
-        bad_json = tmp_path / "bad.json"
-        bad_json.write_text("not valid json {")
-        result = validate_single_file(bad_json, quiet=True)
-        assert result is False
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("model", None),
+        ("audio_filepath", 1),
+        ("backend", []),
+        ("duration", True),
+        ("duration", "1"),
+        ("duration", -1),
+        ("duration", float("nan")),
+        ("duration", float("inf")),
+        ("generation_params", []),
+    ],
+)
+def test_invalid_metadata_is_rejected_by_all_entry_points(tmp_path, field, value):
+    data = create_transcript_with_words(["Hello"])
+    data["meta"][field] = value
+    path = tmp_path / "transcript.json"
+    path.write_text(json.dumps(data))
 
-    def test_invalid_schema_fails(self, tmp_path):
-        """Invalid schema fails validation."""
-        transcript = tmp_path / "transcript.json"
-        # Missing required fields
-        data = {"segments": [{"text": "no timestamps"}]}
-        transcript.write_text(json.dumps(data))
+    assert any(f"meta.{field}" in issue for issue in validate_canonical_schema(data))
+    assert not validate_single_file(path, quiet=True)
+    assert not quick_validate(path)[0]
 
-        result = validate_single_file(transcript, quiet=True)
-        assert result is False
 
-    def test_summary_dict_populated(self, tmp_path):
-        """Summary dict is populated with stats."""
-        transcript = tmp_path / "transcript.json"
-        data = {
-            "segments": [
-                {
-                    "start": 0.0,
-                    "end": 2.0,
-                    "text": "Hello world",
-                    "words": [
-                        {"word": "Hello", "start": 0.0, "end": 1.0},
-                        {"word": "world", "start": 1.0, "end": 2.0},
-                    ],
-                }
-            ]
-        }
-        transcript.write_text(json.dumps(data))
+@pytest.mark.parametrize("field", ["start", "end", "text", "confidence", "words"])
+def test_required_segment_fields(field):
+    data = create_transcript_with_words(["Hello"])
+    del data["segments"][0][field]
+    assert any(field in issue for issue in validate_canonical_schema(data))
 
+
+@pytest.mark.parametrize("field", ["start", "end", "word", "confidence"])
+def test_required_word_fields(field):
+    data = create_transcript_with_words(["Hello"])
+    del data["segments"][0]["words"][0][field]
+    assert any(field in issue for issue in validate_canonical_schema(data))
+
+
+@pytest.mark.parametrize("value", [[], None, "transcript", 1])
+def test_invalid_top_level_is_reported(value):
+    assert validate_canonical_schema(value)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("start", "zero"),
+        ("end", True),
+        ("confidence", "high"),
+        ("confidence", float("nan")),
+        ("confidence", 1.1),
+        ("text", 1),
+        ("words", {}),
+    ],
+)
+def test_invalid_segment_values_are_reported(field, value):
+    data = create_transcript_with_words(["Hello"])
+    data["segments"][0][field] = value
+    assert validate_canonical_schema(data)
+
+
+@pytest.mark.parametrize("value", [None, "word", 1])
+def test_nonobject_words_are_reported(value):
+    data = create_transcript_with_words(["Hello"])
+    data["segments"][0]["words"] = [value]
+    assert validate_canonical_schema(data)
+
+
+def test_silent_current_transcript_is_valid():
+    data = create_transcript_with_words(["Hello"])
+    data["segments"] = []
+    assert validate_canonical_schema(data) == []
+
+
+def test_segment_and_word_timing_remain_validated():
+    data = create_transcript_with_words(["Hello"])
+    data["segments"].append(copy.deepcopy(data["segments"][0]))
+    assert any("not monotonic" in issue for issue in validate_canonical_schema(data))
+    data["segments"] = data["segments"][:1]
+    data["segments"][0]["words"][0]["end"] = 2
+    assert any("segment bounds" in issue for issue in validate_canonical_schema(data))
+
+
+def test_cli_reports_missing_invalid_and_incomplete_files(tmp_path):
+    path = tmp_path / "transcript.json"
+    assert not validate_single_file(path, quiet=True)
+    for raw in ["not json", json.dumps({"segments": [{"start": 0, "end": 1, "text": "old"}]})]:
+        path.write_text(raw)
         summary = {}
-        result = validate_single_file(transcript, quiet=True, summary=summary)
+        assert not validate_single_file(path, quiet=True, summary=summary)
+        assert summary["status"] == "failed"
 
-        assert result is True
-        assert summary["status"] == "passed"
-        assert summary["segments"] == 1
-        assert summary["words"] == 2
+
+@pytest.mark.parametrize(
+    "data", [None, [], {"meta": []}, {"segments": [None]}, {"segments": "invalid"}]
+)
+def test_both_file_validators_report_malformed_shapes(tmp_path, data):
+    path = tmp_path / "transcript.json"
+    path.write_text(json.dumps(data))
+    assert not validate_single_file(path, quiet=True)
+    assert not quick_validate(path)[0]

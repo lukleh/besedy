@@ -236,28 +236,24 @@ RECORDINGS_LIST_VERSION = 1
 
 
 def load_recordings(path: Path) -> set[str]:
-    """Audio hashes from a ``{"version": 1, "audio_hashes": [...]}`` file, a JSON list or lines.
+    """Audio hashes from a ``{"version": 1, "audio_hashes": [...]}`` file.
 
     The one parser of that format: the catalog's ``test-recordings.json``, the
     trainer's ``dev-recordings.json`` and ``training-eval --recordings`` all
     read through here. A missing file raises FileNotFoundError, anything else
     wrong with it ValueError.
     """
-    raw = path.read_text(encoding="utf-8").strip()
-    if not raw:
-        return set()
-    if raw.startswith("{"):
-        document = json.loads(raw)
-        if document.get("version") != RECORDINGS_LIST_VERSION:
-            raise ValueError(
-                f"{path} is a recordings list of version {document.get('version')!r}, "
-                f"expected {RECORDINGS_LIST_VERSION}"
-            )
-        hashes = document.get("audio_hashes")
-        if not isinstance(hashes, list):
-            raise ValueError(f"{path} has no audio_hashes list")
-    else:
-        hashes = json.loads(raw) if raw.startswith("[") else raw.split()
+    document = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(document, dict) or type(document.get("version")) is not int:
+        raise ValueError(f"{path} must be a versioned recordings-list object")
+    if document["version"] != RECORDINGS_LIST_VERSION:
+        raise ValueError(
+            f"{path} is a recordings list of version {document['version']!r}, "
+            f"expected {RECORDINGS_LIST_VERSION}"
+        )
+    hashes = document.get("audio_hashes")
+    if not isinstance(hashes, list):
+        raise ValueError(f"{path} has no audio_hashes list")
     result = {str(value).strip() for value in hashes if str(value).strip()}
     for value in result:
         if not _AUDIO_HASH.match(value):

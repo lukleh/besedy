@@ -1,3 +1,4 @@
+import { normalizeWebVersion } from "@/lib/service-worker/version";
 import { NextRequest, NextResponse } from "next/server";
 import { WebUpdateEventType } from "@/generated/prisma/enums";
 import prisma from "@/lib/db";
@@ -12,7 +13,6 @@ const PER_CLIENT_RATE_LIMIT = 30;
 const GLOBAL_RATE_LIMIT = 1200;
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const RETENTION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
-const VERSION_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 const ATTEMPT_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const ROUTE_GROUPS = new Set([
   "home",
@@ -62,7 +62,7 @@ function browserFamily(userAgent: string | null): string | null {
 }
 
 function safeVersion(value: unknown): string | null {
-  return typeof value === "string" && VERSION_PATTERN.test(value) ? value : null;
+  return typeof value === "string" ? normalizeWebVersion(value) : null;
 }
 
 export async function POST(request: NextRequest) {

@@ -25,8 +25,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { FormatUpgradeNotice } from '@/components/offline/format-upgrade-notice';
-import { useAacUpgradeAvailable } from '@/hooks/use-aac-upgrade-available';
 import { useDownloadManager } from '@/hooks/use-downloads';
 import { useInstallPrompt } from '@/hooks/use-install-prompt';
 import { formatMediumDate, formatPartialDate } from '@/lib/date-format';
@@ -258,7 +256,7 @@ export function sortDownloadRecords(
 export function recordPageUrl(record: DownloadRecord): string {
   const eventId = record.eventKey
     ? Number(record.eventKey.slice(record.catalogId.length + 1))
-    : record.event?.id;
+    : undefined;
   const pageUrl =
     eventId !== undefined && Number.isSafeInteger(eventId) && eventId >= 0
       ? `/catalog/${record.catalogId}/event/${eventId}`
@@ -276,7 +274,6 @@ interface DownloadCardProps {
 
 function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
   const t = useTranslations('downloads');
-  const aacUpgrade = useAacUpgradeAvailable(record);
   const event = record.event;
   const recording = record.recording;
 
@@ -394,7 +391,6 @@ function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
               </span>
             )}
           </div>
-          {aacUpgrade && <FormatUpgradeNotice downloadKey={record.key} />}
           {(record.status === 'downloading' ||
             record.status === 'paused' ||
             record.status === 'queued') && (
@@ -414,7 +410,11 @@ function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <EventPlaybackProgress playback={playback} layout="inline" showLabel />
+          <EventPlaybackProgress
+            playback={playback}
+            layout="inline"
+            showLabel
+          />
           {record.status === 'complete' && (
             // A document navigation: Downloads lives in its own root layout,
             // and the worker serves the target from local packages offline.

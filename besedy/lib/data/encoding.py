@@ -1,27 +1,26 @@
 """Canonical JSON loading for transcript and diarization files.
 
 IMPORTANT: This module provides THE canonical way to load JSON files in besedy.
-Always use load_json_with_fallback() instead of json.load() or json.loads()
+Always use load_json_utf8() instead of json.load() or json.loads()
 when reading transcript or diarization JSON files.
 
 Why this exists:
-    Transcript JSON must be UTF-8. load_json_with_fallback() reads it strictly
+    Transcript JSON must be UTF-8. load_json_utf8() reads it strictly
     and turns both undecodable bytes and malformed JSON into a ValueError that
     names the file, so callers handle one exception type and never get silently
-    altered text. The name is historical: it once fell back to latin-1, which
-    dropped every byte that was not valid UTF-8.
+    altered text.
 
 Usage:
-    from besedy.lib.data.encoding import load_json_with_fallback
+    from besedy.lib.data.encoding import load_json_utf8
 
     # Instead of:
     #   data = json.loads(path.read_text(encoding="utf-8"))  # BAD: raw errors
     # Use:
-    data = load_json_with_fallback(path)  # GOOD: ValueError naming the file
+    data = load_json_utf8(path)  # GOOD: ValueError naming the file
 
 When returning None on failure (e.g., for optional files):
     try:
-        data = load_json_with_fallback(path)
+        data = load_json_utf8(path)
     except (ValueError, FileNotFoundError):
         data = None
 
@@ -37,11 +36,11 @@ from pathlib import Path
 from typing import Any
 
 __all__ = [
-    "load_json_with_fallback",
+    "load_json_utf8",
 ]
 
 
-def load_json_with_fallback(path: Path) -> dict[str, Any]:
+def load_json_utf8(path: Path) -> dict[str, Any]:
     """Load a UTF-8 JSON file.
 
     Args:

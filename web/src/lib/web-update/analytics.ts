@@ -53,10 +53,7 @@ export function formatWebVersion(version: string | null): string {
 }
 
 export function getCurrentWebVersion(): string | null {
-  return (
-    normalizeWebVersion(process.env.WEB_VERSION) ??
-    normalizeWebVersion(process.env.GIT_COMMIT)
-  );
+  return normalizeWebVersion(process.env.WEB_VERSION);
 }
 
 export async function getWebUpdateAnalytics(range: WebUpdateRange) {

@@ -267,7 +267,19 @@ def _load_vad_config(path: Path | None) -> dict:
     if not path.exists():
         raise FileNotFoundError(f"VAD config file not found: {path}")
     with path.open("r", encoding="utf-8") as handle:
-        return yaml.safe_load(handle) or {}
+        data = yaml.safe_load(handle) or {}
+    if not isinstance(data, dict):
+        raise ValueError("VAD config must be a mapping")
+    vad = data.get("vad", {})
+    if not isinstance(vad, dict) or not isinstance(vad.get("parameters", {}), dict):
+        raise ValueError("VAD parameters must be a mapping")
+    parameters = vad.get("parameters", {})
+    retired = sorted({"smoothing", "overlap"} & parameters.keys())
+    if "smoothing_out_dir" in data:
+        retired.append("smoothing_out_dir")
+    if retired:
+        raise ValueError(f"Unsupported frame-VAD settings: {', '.join(retired)}; remove them")
+    return data
 
 
 def _resolve_vad_parameters(args: argparse.Namespace) -> dict:

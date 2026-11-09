@@ -7,7 +7,6 @@ vi.mock("@/lib/db", () => ({ default: {} }));
 
 import {
   AUDIO_HASH_ALGORITHM,
-  countUnrecognizedHashAlgorithms,
   toArchivedPayload,
   toDuplicatePayload,
   toMetadataPayload,
@@ -42,9 +41,9 @@ function columnsRead(payload: object): string[] {
 describe("catalog CSV contract", () => {
   it("uses the shared required-header and nonblank-cell rules at runtime", () => {
     expect(CATALOG_CSV_VALIDATION).toEqual(contract.validation);
-    expect(contract.validation.metadata.requiredHeaders).not.toContain("Hash Algorithm");
-    expect(contract.validation.archived.requiredHeaders).not.toContain("Compressed AAC Path");
-    expect(contract.validation.duplicates.requiredHeaders).toContain("Original Path");
+    expect(contract.validation.metadata.requiredHeaders).toEqual([...contract.metadata.slice(0, 9), "added_at", ...contract.metadata.slice(9)]);
+    expect(contract.validation.archived.requiredHeaders).toEqual([...contract.archived, "added_at"]);
+    expect(contract.validation.duplicates.requiredHeaders).toEqual([...contract.duplicates.slice(0, 7), "added_at", ...contract.duplicates.slice(7)]);
     expect(contract.validation.duplicates.nonBlankCells).not.toContain("Original Path");
   });
   it("uses the hash algorithm Python writes", () => {
@@ -70,25 +69,5 @@ describe("catalog CSV contract", () => {
   it("reads exactly the duplicates columns of the contract", () => {
     const row = rowOf(contract.duplicates);
     expect(columnsRead(toDuplicatePayload(row))).toEqual([...contract.duplicates].sort());
-  });
-});
-
-describe("countUnrecognizedHashAlgorithms", () => {
-  const hash = "a".repeat(64);
-
-  it("counts rows whose algorithm is missing or not the contract's", () => {
-    const rows: Row[] = [
-      { Hash: hash, "Hash Algorithm": AUDIO_HASH_ALGORITHM },
-      { Hash: hash, "Hash Algorithm": ` ${AUDIO_HASH_ALGORITHM} ` },
-      { Hash: hash, "Hash Algorithm": "sha256-of-file" },
-      { Hash: hash, "Hash Algorithm": "" },
-      { Hash: hash },
-    ];
-    expect(countUnrecognizedHashAlgorithms(rows)).toBe(3);
-  });
-
-  it("ignores rows without a hash", () => {
-    expect(countUnrecognizedHashAlgorithms([{ Hash: "", "Hash Algorithm": "other" }])).toBe(0);
-    expect(countUnrecognizedHashAlgorithms([])).toBe(0);
   });
 });

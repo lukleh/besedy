@@ -119,8 +119,7 @@ def extract_run_info(csv_path: Path) -> tuple[str, str]:
 
     print(
         "Error: input catalog must be a timestamped normalized manifest.\n"
-        "Expected: audio_catalog_YYYYMMDD_HHMMSS_normalized.csv\n"
-        "(ASR manifests from the removed enhanced pipeline are no longer supported.)\n"
+        "Expected: audio_catalog_YYYYMMDD_HHMMSS_loudness_normalized.csv\n"
         f"Got: {csv_path.name}",
         file=sys.stderr,
     )

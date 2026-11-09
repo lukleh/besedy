@@ -116,7 +116,7 @@ def print_workflow_summary(
     if skipped:
         print(f"Skipped rows: {len(skipped)}")
         for entry in skipped:
-            print(f"  - {entry.sha256}: {entry.reason} ({entry.source})")
+            print(f"  - {entry.audio_hash}: {entry.reason} ({entry.source})")
     if workflow_failures:
         print("Workflow failures:")
         for label, code in workflow_failures:

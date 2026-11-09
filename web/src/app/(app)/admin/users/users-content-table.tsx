@@ -258,9 +258,6 @@ function PendingAdmissionRow({
   onRevokeAdmission: (admission: PendingPortalAdmission) => void;
 }) {
   const t = useTranslations("admin");
-  const catalogSummary =
-    summarizeCatalogNames(admission.catalogNames) ?? admission.catalogLabel;
-
   return (
     <TableRow>
       <TableCell>
@@ -298,33 +295,16 @@ function PendingAdmissionRow({
             </Badge>
             <PermissionIcons
               role={admission.role}
-              extraPermissions={
-                admission.pendingGrants[0]?.extraPermissions ?? []
-              }
+              extraPermissions={admission.extraPermissions}
             />
           </div>
-        ) : admission.pendingGrantCount > 1 ? (
-          <span className="text-sm text-muted-foreground">
-            {t("users.multipleCatalogRoles", {
-              count: admission.pendingGrantCount,
-            })}
-          </span>
         ) : (
           <span className="text-muted-foreground">-</span>
         )}
       </TableCell>
       <TableCell className="hidden lg:table-cell">
-        {catalogSummary ? (
-          <span
-            className="text-sm"
-            title={
-              admission.catalogNames.length > 0
-                ? admission.catalogNames.join(", ")
-                : undefined
-            }
-          >
-            {catalogSummary}
-          </span>
+        {admission.catalogLabel ? (
+          <span className="text-sm">{admission.catalogLabel}</span>
         ) : (
           <span className="text-muted-foreground">-</span>
         )}
@@ -344,13 +324,15 @@ function PendingAdmissionRow({
             </Button>
           </ResponsiveMenuTrigger>
           <ResponsiveMenuContent align="end" title={t("users.table.actions")}>
-            <>
-              <ResponsiveMenuItem onClick={() => onEditAdmission(admission)}>
-                <Pencil className="mr-2 h-4 w-4" />
-                {t("actions.editPendingAccess")}
-              </ResponsiveMenuItem>
-              <ResponsiveMenuSeparator />
-            </>
+            {admission.role && (
+              <>
+                <ResponsiveMenuItem onClick={() => onEditAdmission(admission)}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  {t("actions.editPendingAccess")}
+                </ResponsiveMenuItem>
+                <ResponsiveMenuSeparator />
+              </>
+            )}
             <ResponsiveMenuItem
               onClick={() => onRevokeAdmission(admission)}
               className="text-destructive focus:text-destructive"

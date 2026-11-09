@@ -320,11 +320,11 @@ describe("uploadRecording", () => {
 
     mockFetch(10, intakeDto({ sizeBytes: 3, receivedBytes: 3 }));
     chunkHandler = (xhr, index) => {
-      xhr.responseHeaders["X-Web-Version"] = "web-vnext";
+      xhr.responseHeaders["X-Web-Version"] = "web-v2-" + "c".repeat(40);
       xhr.respond(chunkAccepted(index, 3));
     };
 
     await uploadRecording({ catalogId: "20260201_120000", file });
-    expect(notifyWebVersionObserver).toHaveBeenCalledWith("web-vnext");
+    expect(notifyWebVersionObserver).toHaveBeenCalledWith("web-v2-" + "c".repeat(40));
   });
 });

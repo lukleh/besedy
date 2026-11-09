@@ -331,7 +331,6 @@ export function GrantAccessDialog({
                 <Label>{t("dialogs.grantAccess.searchLabel")}</Label>
                 <Combobox
                   value={selectedUserId}
-                  onValueChange={setSelectedUserId}
                   searchValue={searchValue}
                   onSearchChange={setSearchValue}
                   options={options}

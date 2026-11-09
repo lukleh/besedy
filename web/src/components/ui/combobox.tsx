@@ -26,7 +26,6 @@ export interface ComboboxOption {
 
 interface ComboboxProps {
   value: string;
-  onValueChange: (value: string) => void;
   searchValue: string;
   onSearchChange: (value: string) => void;
   options: ComboboxOption[];
@@ -51,7 +50,6 @@ interface ComboboxProps {
 
 export function Combobox({
   value,
-  onValueChange: _onValueChange, // eslint-disable-line @typescript-eslint/no-unused-vars -- API compat
   searchValue,
   onSearchChange,
   options,

@@ -112,7 +112,7 @@ def test_build_workflows_faster_whisper_docker_runtime_forwards_gpu_and_hf_token
     staged_audio.write_bytes(b"x")
     prepared = [
         PreparedEntry(
-            sha256="a" * 64,
+            audio_hash="a" * 64,
             source=staged_audio,
             staged=staged_audio,
             action="existing",
@@ -134,7 +134,7 @@ def test_build_workflows_faster_whisper_docker_runtime_forwards_gpu_and_hf_token
         transcription_jobs=[
             TranscriptionJob(
                 config=workflow,
-                hashes={hash_component_from_sha(prepared[0].sha256)},
+                hashes={hash_component_from_sha(prepared[0].audio_hash)},
             )
         ],
         hashes_for_pyannote_diarization=set(),
@@ -168,7 +168,7 @@ def test_build_workflows_faster_whisper_cpu_mode_sets_cpu_args(
     staged_audio.write_bytes(b"x")
     prepared = [
         PreparedEntry(
-            sha256="b" * 64,
+            audio_hash="b" * 64,
             source=staged_audio,
             staged=staged_audio,
             action="existing",
@@ -190,7 +190,7 @@ def test_build_workflows_faster_whisper_cpu_mode_sets_cpu_args(
             transcription_jobs=[
                 TranscriptionJob(
                     config=workflow,
-                    hashes={hash_component_from_sha(prepared[0].sha256)},
+                    hashes={hash_component_from_sha(prepared[0].audio_hash)},
                 )
             ],
             hashes_for_pyannote_diarization=set(),
@@ -210,7 +210,7 @@ def test_build_workflows_qwen3_asr_docker_runtime_forwards_gpu_and_hf_token(
     staged_audio.write_bytes(b"x")
     prepared = [
         PreparedEntry(
-            sha256="c" * 64,
+            audio_hash="c" * 64,
             source=staged_audio,
             staged=staged_audio,
             action="existing",
@@ -233,7 +233,7 @@ def test_build_workflows_qwen3_asr_docker_runtime_forwards_gpu_and_hf_token(
         transcription_jobs=[
             TranscriptionJob(
                 config=workflow,
-                hashes={hash_component_from_sha(prepared[0].sha256)},
+                hashes={hash_component_from_sha(prepared[0].audio_hash)},
             )
         ],
         hashes_for_pyannote_diarization=set(),
@@ -270,7 +270,7 @@ def test_build_workflows_whisperx_docker_runtime_forwards_gpu_and_hf_token(
     staged_audio.write_bytes(b"x")
     prepared = [
         PreparedEntry(
-            sha256="d" * 64,
+            audio_hash="d" * 64,
             source=staged_audio,
             staged=staged_audio,
             action="existing",
@@ -293,7 +293,7 @@ def test_build_workflows_whisperx_docker_runtime_forwards_gpu_and_hf_token(
         transcription_jobs=[
             TranscriptionJob(
                 config=workflow,
-                hashes={hash_component_from_sha(prepared[0].sha256)},
+                hashes={hash_component_from_sha(prepared[0].audio_hash)},
             )
         ],
         hashes_for_pyannote_diarization=set(),
@@ -329,7 +329,7 @@ def test_build_workflows_nemo_docker_runtime_forwards_gpu_and_nemo_env(
     staged_audio.write_bytes(b"x")
     prepared = [
         PreparedEntry(
-            sha256="e" * 64,
+            audio_hash="e" * 64,
             source=staged_audio,
             staged=staged_audio,
             action="existing",
@@ -351,7 +351,7 @@ def test_build_workflows_nemo_docker_runtime_forwards_gpu_and_nemo_env(
         transcription_jobs=[
             TranscriptionJob(
                 config=workflow,
-                hashes={hash_component_from_sha(prepared[0].sha256)},
+                hashes={hash_component_from_sha(prepared[0].audio_hash)},
             )
         ],
         hashes_for_pyannote_diarization=set(),
@@ -387,7 +387,7 @@ def test_build_workflows_nemo_beam_align_mounts_staged_audio_for_docker(
     staged_audio.write_bytes(b"x")
     prepared = [
         PreparedEntry(
-            sha256="f" * 64,
+            audio_hash="f" * 64,
             source=staged_audio,
             staged=staged_audio,
             action="existing",
@@ -404,7 +404,7 @@ def test_build_workflows_nemo_beam_align_mounts_staged_audio_for_docker(
         decode_strategy="beam",
         language="cs",
     )
-    hash_component = hash_component_from_sha(prepared[0].sha256)
+    hash_component = hash_component_from_sha(prepared[0].audio_hash)
 
     workflows = build_workflows(
         prepared,
@@ -439,7 +439,7 @@ def test_build_workflows_pyannote_docker_runtime_sets_checkpoint_load_override(
     staged_audio.write_bytes(b"x")
     prepared = [
         PreparedEntry(
-            sha256="9" * 64,
+            audio_hash="9" * 64,
             source=staged_audio,
             staged=staged_audio,
             action="existing",
@@ -454,7 +454,7 @@ def test_build_workflows_pyannote_docker_runtime_sets_checkpoint_load_override(
             enable_pyannote_diarization=True,
         ),
         transcription_jobs=[],
-        hashes_for_pyannote_diarization={hash_component_from_sha(prepared[0].sha256)},
+        hashes_for_pyannote_diarization={hash_component_from_sha(prepared[0].audio_hash)},
     )
 
     assert len(workflows) == 1

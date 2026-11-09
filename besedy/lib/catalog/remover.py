@@ -113,7 +113,7 @@ def normalize_audio_hash(value: str) -> str:
 
 @dataclass
 class RemovalPlan:
-    sha256: str
+    audio_hash: str
     catalog_csv: Path
     csv_paths: list[Path] = field(default_factory=list)
     csv_rows: dict[str, int] = field(default_factory=dict)
@@ -159,15 +159,15 @@ def derived_csv_paths(catalog_csv: Path) -> list[Path]:
     return [catalog_csv.with_name(f"{stem}{suffix}.csv") for suffix in CATALOG_CSV_SUFFIXES]
 
 
-def find_other_catalog_references(catalog_csv: Path, sha256: str) -> list[Path]:
-    """Return other base catalogs that still contain ``sha256``.
+def find_other_catalog_references(catalog_csv: Path, audio_hash: str) -> list[Path]:
+    """Return other base catalogs that still contain ``audio_hash``.
 
     Transcript generations are catalog-scoped, but the speaker embedding cache
     is shared by decoded-audio hash. Keep that cache while another catalog can
     still use the recording.
     """
-    sha256 = normalize_audio_hash(sha256)
-    return find_other_catalog_references_for(catalog_csv, [sha256])[sha256]
+    audio_hash = normalize_audio_hash(audio_hash)
+    return find_other_catalog_references_for(catalog_csv, [audio_hash])[audio_hash]
 
 
 def find_other_catalog_references_for(
@@ -192,7 +192,7 @@ def _hash_column(csv_path: Path, columns: Sequence[str]) -> str | None:
     if csv_path.resolve().name.endswith("_joined.csv"):
         return JOINED_HASH_COLUMN if JOINED_HASH_COLUMN in columns else None
     try:
-        return resolve_hash_column(columns, csv_path, preferred="Hash")
+        return resolve_hash_column(columns, csv_path)
     except ValueError:
         return None
 
@@ -209,12 +209,12 @@ def _csv_hashes(csv_path: Path) -> set[str]:
     return {_row_hash(row, hash_column) for row in rows}
 
 
-def _rows_for_hash(csv_path: Path, sha256: str) -> list[dict[str, str]]:
+def _rows_for_hash(csv_path: Path, audio_hash: str) -> list[dict[str, str]]:
     columns, rows = load_csv(csv_path, encoding="utf-8")
     hash_column = _hash_column(csv_path, columns)
     if hash_column is None:
         return []
-    return [row for row in rows if _row_hash(row, hash_column) == sha256]
+    return [row for row in rows if _row_hash(row, hash_column) == audio_hash]
 
 
 def _existing_paths(rows: Iterable[dict[str, str]], column: str) -> list[Path]:
@@ -241,22 +241,21 @@ def _archived_paths(rows: Sequence[dict[str, str]]) -> list[Path]:
     return paths
 
 
-def _shared_source_paths(catalogs: Sequence[Path], sha256: str) -> set[Path]:
+def _shared_source_paths(catalogs: Sequence[Path], audio_hash: str) -> set[Path]:
     return {
         source.resolve()
         for catalog in catalogs
-        for source in _existing_paths(_rows_for_hash(catalog, sha256), "Full Path")
+        for source in _existing_paths(_rows_for_hash(catalog, audio_hash), "Full Path")
     }
 
 
-def shared_derived_paths(catalogs: Sequence[Path], sha256: str) -> set[Path]:
-    """Staged and archived files of ``sha256`` that other catalogs' manifests list.
+def shared_derived_paths(catalogs: Sequence[Path], audio_hash: str) -> set[Path]:
+    """Staged and archived files of ``audio_hash`` that other catalogs' manifests list.
 
-    Staging and archive directories are per catalog generation, but an older
-    `stage-audio` reused whatever `audio_staged` pointed at, so two catalogs
-    can list the same staged WAV. Such a file stays while another catalog uses it.
+    Explicit shared output directories can make catalogs reference the same
+    staged or archived file. Keep that file while another catalog uses it.
     """
-    key = sha256.strip().lower()
+    key = audio_hash.strip().lower()
     return shared_derived_paths_for({key: list(catalogs)})[key]
 
 
@@ -266,9 +265,9 @@ def shared_derived_paths_for(references: dict[str, list[Path]]) -> dict[str, set
     Every manifest is parsed once, whatever the number of hashes.
     """
     wanted_by_catalog: dict[Path, set[str]] = {}
-    for sha256, catalogs in references.items():
+    for audio_hash, catalogs in references.items():
         for catalog in catalogs:
-            wanted_by_catalog.setdefault(catalog, set()).add(sha256.strip().lower())
+            wanted_by_catalog.setdefault(catalog, set()).add(audio_hash.strip().lower())
 
     paths_by_catalog: dict[Path, dict[str, set[Path]]] = {}
     for catalog, wanted in wanted_by_catalog.items():
@@ -280,17 +279,17 @@ def shared_derived_paths_for(references: dict[str, list[Path]]) -> dict[str, set
         for manifest, paths_of in manifests:
             if not manifest.is_file():
                 continue
-            for sha256, rows in _rows_by_hash(manifest, wanted).items():
-                found.setdefault(sha256, set()).update(path.resolve() for path in paths_of(rows))
+            for audio_hash, rows in _rows_by_hash(manifest, wanted).items():
+                found.setdefault(audio_hash, set()).update(path.resolve() for path in paths_of(rows))
         paths_by_catalog[catalog] = found
 
     return {
-        sha256.strip().lower(): {
+        audio_hash.strip().lower(): {
             path
             for catalog in catalogs
-            for path in paths_by_catalog[catalog].get(sha256.strip().lower(), set())
+            for path in paths_by_catalog[catalog].get(audio_hash.strip().lower(), set())
         }
-        for sha256, catalogs in references.items()
+        for audio_hash, catalogs in references.items()
     }
 
 
@@ -313,7 +312,7 @@ def _rows_by_hash(csv_path: Path, wanted: set[str]) -> dict[str, list[dict[str, 
 
 
 def find_embedding_dirs(
-    sha256: str, *, transcripts_root: Path, extra_roots: Sequence[Path] = ()
+    audio_hash: str, *, transcripts_root: Path, extra_roots: Sequence[Path] = ()
 ) -> list[Path]:
     """Locate `speaker_embeddings/<model>/file/<hash>/` under every known root."""
     roots: list[Path] = []
@@ -326,14 +325,14 @@ def find_embedding_dirs(
     found: list[Path] = []
     for cache_root in roots:
         for model_dir in cache_root.iterdir():
-            hash_dir = model_dir / "file" / sha256
+            hash_dir = model_dir / "file" / audio_hash
             if hash_dir.is_dir() and hash_dir not in found:
                 found.append(hash_dir)
     return found
 
 
 def build_removal_plan(
-    sha256: str,
+    audio_hash: str,
     *,
     catalog_csv: Path,
     transcripts_root: Path,
@@ -341,14 +340,14 @@ def build_removal_plan(
     delete_source: bool = False,
     shared_catalog_refs: Sequence[Path] = (),
 ) -> RemovalPlan:
-    sha256 = normalize_audio_hash(sha256)
+    audio_hash = normalize_audio_hash(audio_hash)
     plan = RemovalPlan(
-        sha256=sha256,
+        audio_hash=audio_hash,
         catalog_csv=catalog_csv,
         shared_catalog_refs=list(shared_catalog_refs),
     )
-    shared_sources = _shared_source_paths(plan.shared_catalog_refs, sha256)
-    shared_derived = shared_derived_paths(plan.shared_catalog_refs, sha256)
+    shared_sources = _shared_source_paths(plan.shared_catalog_refs, audio_hash)
+    shared_derived = shared_derived_paths(plan.shared_catalog_refs, audio_hash)
 
     def add_derived(target: list[Path], paths: Iterable[Path]) -> None:
         for path in paths:
@@ -360,7 +359,7 @@ def build_removal_plan(
     for csv_path in derived_csv_paths(catalog_csv):
         if not csv_path.is_file():
             continue
-        rows = _rows_for_hash(csv_path, sha256)
+        rows = _rows_for_hash(csv_path, audio_hash)
         plan.csv_paths.append(csv_path)
         plan.csv_rows[csv_path.name] = len(rows)
         if not rows:
@@ -379,18 +378,18 @@ def build_removal_plan(
         elif csv_path.name.endswith("_loudness_archived.csv"):
             add_derived(plan.archived_files, _archived_paths(rows))
 
-    plan.transcript_dirs = find_transcript_dirs(transcripts_root, sha256)
-    plan.diarization_dirs = find_diarization_dirs(transcripts_root, sha256)
+    plan.transcript_dirs = find_transcript_dirs(transcripts_root, audio_hash)
+    plan.diarization_dirs = find_diarization_dirs(transcripts_root, audio_hash)
     if not plan.shared_catalog_refs:
         plan.embedding_dirs = find_embedding_dirs(
-            sha256, transcripts_root=transcripts_root, extra_roots=embedding_roots
+            audio_hash, transcripts_root=transcripts_root, extra_roots=embedding_roots
         )
     return plan
 
 
-def remove_hash_from_csv(csv_path: Path, sha256: str) -> int:
+def remove_hash_from_csv(csv_path: Path, audio_hash: str) -> int:
     """Rewrite one catalog CSV without the hash's rows; atomic on success."""
-    return remove_hashes_from_csv(csv_path, {sha256})
+    return remove_hashes_from_csv(csv_path, {audio_hash})
 
 
 def remove_hashes_from_csv(csv_path: Path, hashes: Collection[str]) -> int:
@@ -458,7 +457,7 @@ def execute_removal(
 
     for csv_path in plan.csv_paths:
         try:
-            result.csv_rows_removed[csv_path.name] = remove_hash_from_csv(csv_path, plan.sha256)
+            result.csv_rows_removed[csv_path.name] = remove_hash_from_csv(csv_path, plan.audio_hash)
         except OSError as exc:
             result.errors.append(f"Failed to rewrite {csv_path}: {exc}")
 

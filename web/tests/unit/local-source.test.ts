@@ -26,7 +26,8 @@ vi.mock('@/lib/offline/download-manager', () => ({
 }));
 
 vi.mock('@/lib/offline/downloads-db', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/offline/downloads-db')>();
+  const actual =
+    await importOriginal<typeof import('@/lib/offline/downloads-db')>();
   return {
     ...actual,
     getDownloadBundle: vi.fn(async (key: string) => mocks.bundles.get(key)),
@@ -53,7 +54,12 @@ function record(overrides: Partial<DownloadRecord> = {}): DownloadRecord {
       dateMonth: 5,
       dateDay: 1,
       sessionIndex: 1,
-      publishedArtwork: { id: 'art-1', publishedAt: '2026-05-01T00:00:00.000Z' },
+      sessionOrdinal: 1,
+      sessionCount: 2,
+      publishedArtwork: {
+        id: 'art-1',
+        publishedAt: '2026-05-01T00:00:00.000Z',
+      },
     },
     recording: {
       title: 'Talk',
@@ -123,13 +129,32 @@ function eventDetail(): EventDetailResponse {
   };
 }
 
-function bundle(overrides: Partial<DownloadBundlePayload> = {}): DownloadBundlePayload {
+function bundle(
+  overrides: Partial<DownloadBundlePayload> = {},
+): DownloadBundlePayload {
   return {
     key: `${CATALOG}:${HASH}`,
-    transcriptBackend: null,
+    transcriptBackend: overrides.transcript?.backend ?? null,
     transcript: null,
     diarization: null,
     artwork: null,
+    eventDetail: eventDetail(),
+    entry: {
+      entry: {
+        hash: HASH,
+        title: 'Talk',
+        location: null,
+        hasArchived: true,
+        hasMetadata: true,
+        isActionable: true,
+        isPublished: true,
+        hasArchivedAudio: true,
+        hasOriginalAudio: false,
+      },
+      canViewTranscripts: true,
+      canEditMetadata: false,
+      canDownloadAudio: true,
+    },
     updatedAt: 1,
     ...overrides,
   };
@@ -150,7 +175,9 @@ describe('local content source', () => {
     it('returns the network answer when the request succeeds', async () => {
       const { withLocalFallback } = await loadSource();
       const local = vi.fn(async () => 'local');
-      await expect(withLocalFallback(async () => 'network', local)).resolves.toBe('network');
+      await expect(
+        withLocalFallback(async () => 'network', local),
+      ).resolves.toBe('network');
       expect(local).not.toHaveBeenCalled();
     });
 
@@ -192,7 +219,10 @@ describe('local content source', () => {
   describe('readLocalEventDetail', () => {
     it('serves the stored payload with server-only capabilities closed and its saved recording', async () => {
       mocks.records = [record()];
-      mocks.bundles.set(`${CATALOG}:${HASH}`, bundle({ eventDetail: eventDetail() }));
+      mocks.bundles.set(
+        `${CATALOG}:${HASH}`,
+        bundle({ eventDetail: eventDetail() }),
+      );
       const { readLocalEventDetail } = await loadSource();
 
       const detail = await readLocalEventDetail(CATALOG, 7);
@@ -205,12 +235,15 @@ describe('local content source', () => {
     });
 
     it('keeps the downloaded capture when another attached recording is also complete and now preferred', async () => {
-      mocks.records = [record(), record({
-        key: `${CATALOG}:${OTHER_HASH}`,
-        hash: OTHER_HASH,
-        eventKey: null,
-        event: null,
-      })];
+      mocks.records = [
+        record(),
+        record({
+          key: `${CATALOG}:${OTHER_HASH}`,
+          hash: OTHER_HASH,
+          eventKey: null,
+          event: null,
+        }),
+      ];
       const detail = eventDetail();
       detail.recordings = detail.recordings.map((recording) => ({
         ...recording,
@@ -222,53 +255,63 @@ describe('local content source', () => {
       const result = await readLocalEventDetail(CATALOG, 7);
 
       expect(result?.recordings).toHaveLength(1);
-      expect(result?.recordings[0]).toMatchObject({ audioHash: HASH, title: 'A' });
-    });
-
-    it('uses the saved recording snapshot when newer event data no longer lists that capture', async () => {
-      mocks.records = [record()];
-      const detail = eventDetail();
-      detail.recordings = detail.recordings.filter((recording) => recording.audioHash === OTHER_HASH);
-      mocks.bundles.set(`${CATALOG}:${HASH}`, bundle({ eventDetail: detail }));
-      const { readLocalEventDetail } = await loadSource();
-
-      const result = await readLocalEventDetail(CATALOG, 7);
-
-      expect(result?.description).toBe('About winter');
-      expect(result?.recordings).toHaveLength(1);
       expect(result?.recordings[0]).toMatchObject({
         audioHash: HASH,
-        title: 'Talk',
-        durationHms: '01:00:00',
-        recorder: { name: 'Zoom' },
+        title: 'A',
       });
     });
 
-    it('synthesizes a page from the snapshots of a package written before the payload was stored', async () => {
+    it('rejects an event payload that does not contain the saved capture', async () => {
+      mocks.records = [record()];
+      const detail = eventDetail();
+      detail.recordings = detail.recordings.filter(
+        (item) => item.audioHash === OTHER_HASH,
+      );
+      mocks.bundles.set(`${CATALOG}:${HASH}`, bundle({ eventDetail: detail }));
+      const { readLocalEventDetail } = await loadSource();
+      expect(await readLocalEventDetail(CATALOG, 7)).toBeNull();
+    });
+
+    it('does not reconstruct a missing event payload from registry snapshots', async () => {
       mocks.records = [record()];
       const { readLocalEventDetail } = await loadSource();
-
-      const detail = await readLocalEventDetail(CATALOG, 7);
-
-      expect(detail).toMatchObject({
-        id: 7,
-        title: 'Evening talk',
-        location: { name: 'Prague' },
-        sessionOrdinal: 1,
-        sessionCount: 1,
-      });
-      expect(detail?.recordings).toHaveLength(1);
-      expect(detail?.recordings[0]).toMatchObject({
-        audioHash: HASH,
-        recorder: { name: 'Zoom' },
-      });
-      expect(detail?.publishedArtwork?.id).toBe('art-1');
+      expect(await readLocalEventDetail(CATALOG, 7)).toBeNull();
     });
 
-    it('finds a legacy record through its event snapshot when no event key was stored', async () => {
+    it.each(['poster', 'inlineAudio'])(
+      'rejects a stored %s field without converting the package',
+      async (field) => {
+        mocks.records = [record()];
+        const stored = { ...bundle(), [field]: {} };
+        mocks.bundles.set(`${CATALOG}:${HASH}`, stored);
+        const before = structuredClone(stored);
+        const { readLocalEventDetail } = await loadSource();
+        expect(await readLocalEventDetail(CATALOG, 7)).toBeNull();
+        expect(stored).toEqual(before);
+      },
+    );
+
+    it('rejects an obsolete artwork variant even when the page payloads exist', async () => {
+      mocks.records = [record()];
+      mocks.bundles.set(
+        `${CATALOG}:${HASH}`,
+        bundle({
+          artwork: {
+            blob: new Blob(['artwork']),
+            contentType: 'image/jpeg',
+            artworkId: 'art-1',
+            variant: 'portrait' as never,
+          },
+        }),
+      );
+      const { readLocalEventDetail } = await loadSource();
+      expect(await readLocalEventDetail(CATALOG, 7)).toBeNull();
+    });
+
+    it('does not infer an event key from an unsupported snapshot-only record', async () => {
       mocks.records = [record({ eventKey: null })];
       const { readLocalEventDetail } = await loadSource();
-      expect((await readLocalEventDetail(CATALOG, 7))?.id).toBe(7);
+      expect(await readLocalEventDetail(CATALOG, 7)).toBeNull();
     });
 
     it('answers nothing for an event that was not downloaded or is not complete', async () => {
@@ -286,7 +329,12 @@ describe('local content source', () => {
         `${CATALOG}:${HASH}`,
         bundle({
           transcript: { backend: 'whisperx/large', segments: [] },
-          diarization: { hash: HASH, model: 'pyannote', numSpeakers: 1, segments: [] },
+          diarization: {
+            hash: HASH,
+            model: 'pyannote',
+            numSpeakers: 1,
+            segments: [],
+          },
           entry: {
             entry: {
               hash: HASH,
@@ -325,7 +373,12 @@ describe('local content source', () => {
         `${CATALOG}:${HASH}`,
         bundle({
           transcript: { backend: 'whisperx/large', segments: [] },
-          diarization: { hash: HASH, model: 'pyannote', numSpeakers: 1, segments: [] },
+          diarization: {
+            hash: HASH,
+            model: 'pyannote',
+            numSpeakers: 1,
+            segments: [],
+          },
         }),
       );
       const { readLocalRecordingEntry } = await loadSource();
@@ -334,23 +387,15 @@ describe('local content source', () => {
       expect(result?.canViewTranscripts).toBe(true);
     });
 
-    it('synthesizes a playable entry from the recording snapshot', async () => {
+    it('does not reconstruct a missing entry from the recording snapshot', async () => {
       mocks.records = [record()];
       const { readLocalRecordingEntry } = await loadSource();
-      const result = await readLocalRecordingEntry(CATALOG, HASH);
-      expect(result?.entry).toMatchObject({
-        hash: HASH,
-        title: 'Talk',
-        duration: '01:00:00',
-        isActionable: true,
-        recorder: { name: 'Zoom' },
-        location: { name: 'Prague' },
-      });
-      expect(result?.canViewTranscripts).toBe(false);
+      expect(await readLocalRecordingEntry(CATALOG, HASH)).toBeNull();
     });
 
     it('leaves the location empty for a download made outside an event', async () => {
       mocks.records = [record({ eventKey: null, event: null })];
+      mocks.bundles.set(`${CATALOG}:${HASH}`, bundle({ eventDetail: null }));
       const { readLocalRecordingEntry } = await loadSource();
       const result = await readLocalRecordingEntry(CATALOG, HASH);
       expect(result?.entry.location).toBeNull();
@@ -373,8 +418,16 @@ describe('local content source', () => {
         hash: HASH,
         backends: ['whisperx/large'],
       });
-      expect((await source.readLocalTranscript(CATALOG, HASH))?.backend).toBe('whisperx/large');
-      expect(await source.readLocalTranscriptFormats(CATALOG, HASH, 'whisperx/large')).toEqual({
+      expect((await source.readLocalTranscript(CATALOG, HASH))?.backend).toBe(
+        'whisperx/large',
+      );
+      expect(
+        await source.readLocalTranscriptFormats(
+          CATALOG,
+          HASH,
+          'whisperx/large',
+        ),
+      ).toEqual({
         hash: HASH,
         backend: 'whisperx/large',
         formats: [],

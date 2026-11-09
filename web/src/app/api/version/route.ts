@@ -1,3 +1,4 @@
+import { normalizeWebVersion } from "@/lib/service-worker/version";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: NextRequest) {
   const gitCommit = process.env.GIT_COMMIT || "unknown";
-  const webVersion = process.env.WEB_VERSION || gitCommit;
+  const webVersion = normalizeWebVersion(process.env.WEB_VERSION) ?? "unknown";
   const buildTime = process.env.BUILD_TIME || null;
   const appEnv = process.env.APP_ENV || "development";
   const etag = `"${webVersion}"`;
