@@ -19,13 +19,13 @@ import {
   buildCorrectionPublicationUrl,
   buildCorrectionUrl,
   buildEventPagePath,
-  buildRecordingEntryUrl,
 } from "@/lib/api/recording-urls";
 import { parseDuration } from "@/lib/catalog-filters";
 import { formatHoursMinutes } from "@/lib/correction/format";
 import { formatRecordingDate } from "@/lib/date-format";
 import { recordingDateParts } from "@/lib/date-utils";
 import type { CatalogEntryWithPermissions } from "@/types/catalog";
+import { recordingEntryQueryOptions } from "@/hooks/use-recording-entry";
 import { CorrectionConsentCard, useContributorConsent } from "./correction-consent-card";
 import { CorrectionSurface } from "./correction-surface";
 import { useLandscapeWorkspace } from "./use-landscape-workspace";
@@ -81,9 +81,7 @@ export function CorrectionWorkspace({
   // corrector with several in progress, or a curator about to publish, must
   // never have to trust the URL.
   const entryQuery = useQuery<CatalogEntryWithPermissions>({
-    queryKey: ["recording-entry", catalogId, hash],
-    queryFn: async () =>
-      fetchJson<CatalogEntryWithPermissions>(buildRecordingEntryUrl(catalogId, hash)),
+    ...recordingEntryQueryOptions(catalogId, hash),
     enabled: supported === true,
   });
   const recording = entryQuery.data?.entry;

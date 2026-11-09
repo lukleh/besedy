@@ -1,2 +1,0 @@
--- AlterEnum: Add LISTENER to AccessLevel before VIEWER
-ALTER TYPE "AccessLevel" ADD VALUE IF NOT EXISTS 'LISTENER' BEFORE 'VIEWER';

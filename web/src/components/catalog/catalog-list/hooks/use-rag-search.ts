@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useTranslations } from "next-intl";
 import { fetchJson, ApiError } from "@/lib/api/fetch-json";
+import { readStoredString, writeStoredString, removeStoredValue } from "@/lib/browser-storage";
 
 const RAG_SEARCH_SESSION_PREFIX = "besedy-rag-search-";
 
@@ -143,7 +144,7 @@ export function useRagSearch({
         setRagResults(results);
         setRagError(null);
         if (ragSessionKey) {
-          sessionStorage.setItem(ragSessionKey, JSON.stringify({ query }));
+          writeStoredString(ragSessionKey, JSON.stringify({ query }), "sessionStorage");
         }
       } catch (error) {
         if (requestId !== ragRequestIdRef.current) return;
@@ -172,7 +173,7 @@ export function useRagSearch({
       setRagSubmittedQuery("");
       if (clearQuery) setRagQuery("");
       if (ragSessionKey) {
-        sessionStorage.removeItem(ragSessionKey);
+        removeStoredValue(ragSessionKey, "sessionStorage");
       }
     },
     [ragSessionKey],
@@ -221,7 +222,7 @@ export function useRagSearch({
     if (!ragSessionKey || ragRestoreDoneRef.current) return;
 
     ragRestoreDoneRef.current = true;
-    const raw = sessionStorage.getItem(ragSessionKey);
+    const raw = readStoredString(ragSessionKey, "sessionStorage");
     if (!raw) return;
     const savedQuery = parseStoredRagQuery(raw, ragSessionKey);
     if (!savedQuery) return;

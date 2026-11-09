@@ -352,7 +352,6 @@ export const UpdateCatalogSchema = z
     archivedCatalogPath: z.string().min(1).max(500).optional(),
     metadataCatalogPath: z.string().min(1).max(500).optional(),
     duplicatesCatalogPath: z.string().max(500).nullable().optional(),
-    transcriptsPath: z.string().max(500).nullable().optional(),
   })
   .strict();
 

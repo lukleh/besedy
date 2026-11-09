@@ -51,7 +51,7 @@ def no_audio_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     def unexpected(*_args, **_kwargs):
         pytest.fail("ineligible or reused audio must not reach source preparation or audio tools")
 
-    monkeypatch.setattr(normalize, "resolve_analysis_binary", unexpected)
+    monkeypatch.setattr(normalize, "resolve_audio_executable", unexpected)
     monkeypatch.setattr(normalize_stage_helpers, "decode_to_temp_wav", unexpected)
     monkeypatch.setattr(normalize_stage_helpers.subprocess, "run", unexpected)
 
