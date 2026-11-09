@@ -6,6 +6,7 @@ import {
   POST,
 } from '@/app/api/catalogs/[id]/recordings/[hash]/correction/publication/route';
 import { POST as recover } from '@/app/api/catalogs/[id]/recordings/[hash]/correction/publication/recover/route';
+import { CorrectionError } from '@/lib/correction/errors';
 
 const mocks = vi.hoisted(() => ({
   requireCorrectionAccess: vi.fn(),
@@ -95,6 +96,38 @@ describe('correction publication routes', () => {
       }),
     );
   });
+
+  it('audits committed Unpublish when submitting its index sync fails', async () => {
+    mocks.unpublishTranscript.mockRejectedValue(new CorrectionError(
+      'INDEX_SYNC_UNAVAILABLE',
+      'Unpublish is recorded; retry to update search',
+    ));
+
+    const response = await DELETE(new NextRequest(url, { method: 'DELETE' }), context);
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'INDEX_SYNC_UNAVAILABLE' });
+    expect(mocks.logAuditEvent).toHaveBeenCalledExactlyOnceWith({
+      userId: 'publisher-1',
+      action: 'TRANSCRIPT_UNPUBLISHED',
+      resource: 'transcript_correction',
+      resourceId: AUDIO_HASH,
+      catalogId: CATALOG_ID,
+      payload: { pendingIndexSync: true },
+    });
+  });
+
+  it.each(['NO_WORKSPACE', 'PUBLICATION_IN_FLIGHT'] as const)(
+    'does not audit an Unpublish rejected with %s before it commits',
+    async (code) => {
+      mocks.unpublishTranscript.mockRejectedValue(new CorrectionError(code, 'Not changed'));
+
+      const response = await DELETE(new NextRequest(url, { method: 'DELETE' }), context);
+
+      expect(response.status).toBe(code === 'NO_WORKSPACE' ? 404 : 409);
+      expect(mocks.logAuditEvent).not.toHaveBeenCalled();
+    },
+  );
 
   it('returns one logical publication and its Unpublish controls', async () => {
     const response = await GET(new NextRequest(url), context);

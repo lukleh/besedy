@@ -3,12 +3,14 @@ import { validateParams } from "@/lib/api/validation";
 import { CatalogHashParamSchema } from "@/lib/validation/schemas";
 import { logAuditEvent } from "@/lib/audit/logger";
 import { requireCorrectionAccess } from "@/lib/correction/access";
+import { CorrectionError } from "@/lib/correction/errors";
 import { handleCorrectionRouteError } from "@/lib/correction/route-errors";
 import { getPublicationEligibility } from "@/lib/correction/publication-eligibility";
 import {
   listPublications,
   publishTranscript,
   unpublishTranscript,
+  type UnpublishResult,
 } from "@/lib/correction/publication-service";
 import { requireActiveWorkspace } from "@/lib/correction/workspace-service";
 
@@ -89,16 +91,26 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     const { id: catalogId, hash } = paramsResult.data;
 
     const { userId } = await requireCorrectionAccess(catalogId, hash, "publish");
-    const result = await unpublishTranscript({ catalogId, audioHash: hash, userId });
-
-    await logAuditEvent({
+    const auditUnpublish = (pendingIndexSync: boolean) => logAuditEvent({
       userId,
       action: "TRANSCRIPT_UNPUBLISHED",
       resource: "transcript_correction",
       resourceId: hash,
       catalogId,
-      payload: { pendingIndexSync: result.pendingIndexSync },
+      payload: { pendingIndexSync },
     });
+    let result: UnpublishResult;
+    try {
+      result = await unpublishTranscript({ catalogId, audioHash: hash, userId });
+    } catch (error) {
+      // Submission fails after the retraction is committed; keep its audit
+      // event even though the response still asks the publisher to retry.
+      if (error instanceof CorrectionError && error.code === "INDEX_SYNC_UNAVAILABLE") {
+        await auditUnpublish(true);
+      }
+      throw error;
+    }
+    await auditUnpublish(result.pendingIndexSync);
 
     return NextResponse.json(result);
   } catch (error) {
