@@ -25,8 +25,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { FormatUpgradeNotice } from '@/components/offline/format-upgrade-notice';
-import { useAacUpgradeAvailable } from '@/hooks/use-aac-upgrade-available';
 import { useDownloadManager } from '@/hooks/use-downloads';
 import { useInstallPrompt } from '@/hooks/use-install-prompt';
 import { formatMediumDate, formatPartialDate } from '@/lib/date-format';
@@ -276,7 +274,6 @@ interface DownloadCardProps {
 
 function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
   const t = useTranslations('downloads');
-  const aacUpgrade = useAacUpgradeAvailable(record);
   const event = record.event;
   const recording = record.recording;
 
@@ -394,7 +391,6 @@ function DownloadCard({ record, isActive, locale, href }: DownloadCardProps) {
               </span>
             )}
           </div>
-          {aacUpgrade && <FormatUpgradeNotice downloadKey={record.key} />}
           {(record.status === 'downloading' ||
             record.status === 'paused' ||
             record.status === 'queued') && (

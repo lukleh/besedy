@@ -1977,8 +1977,6 @@
     "eventLabel": "Event",
     "recordingLabel": "Recording",
     "errorIncompletePackage": "Downloaded audio is incomplete on this device. Download it again.",
-    "formatUpgrade": "Saved in an older format that this browser cannot play to the end offline. Download it again.",
-    "redownload": "Download again",
     "unavailableOffline": "Not available offline",
     "unavailableOfflineDescription": "This page needs a connection. Downloaded events open without one."
   },

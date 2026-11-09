@@ -17,12 +17,6 @@ export type OfflineCacheName =
 
 export const OFFLINE_CACHE_PREFIX = 'besedy-';
 
-/** Caches that hold protected content and must be cleared on sign-out. */
-export const PROTECTED_OFFLINE_CACHE_NAMES: readonly OfflineCacheName[] = [
-  OFFLINE_CACHE_NAMES.audio,
-  OFFLINE_CACHE_NAMES.shell,
-];
-
 /** Set on responses the service worker served from local storage. */
 export const OFFLINE_RESPONSE_HEADER = 'x-besedy-offline';
 

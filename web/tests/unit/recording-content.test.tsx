@@ -65,17 +65,6 @@ vi.mock("@/hooks/use-downloads", () => ({
   useDownloadRecord: (...args: unknown[]) => useDownloadRecordMock(...args),
 }));
 
-const aacUpgradeMock = vi.fn(() => false);
-vi.mock("@/hooks/use-aac-upgrade-available", () => ({
-  useAacUpgradeAvailable: () => aacUpgradeMock(),
-}));
-
-vi.mock("@/components/offline/format-upgrade-notice", () => ({
-  FormatUpgradeNotice: ({ downloadKey }: { downloadKey: string }) => (
-    <div data-testid="format-upgrade-notice">{downloadKey}</div>
-  ),
-}));
-
 vi.mock("@/app/(app)/catalog/[catalogId]/recording/[hash]/use-recording-playback", () => ({
   useRecordingPlayback: (...args: unknown[]) => useRecordingPlaybackMock(...args),
 }));
@@ -349,59 +338,24 @@ describe("RecordingContent", () => {
     useOnlineStatusMock.mockReturnValue({ isOnline: false });
     useDownloadRecordMock.mockReturnValue({
       status: "complete",
-      audioUrl: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`,
+      audioUrl: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?format=aac`,
     });
 
     render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
 
     expect(audioPlayerMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        src: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile&local=1`,
+        src: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?format=aac&local=1`,
         recordingHash: HASH,
       })
     );
-  });
-
-  it("offers the AAC copy above the player while a flagged WebM download plays", () => {
-    const url = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`;
-    useDownloadRecordMock.mockReturnValue({
-      key: `${CATALOG_ID}:${HASH}`,
-      status: "complete",
-      audioUrl: url,
-      audioCacheKey: new URL(url, window.location.origin).toString(),
-    });
-    aacUpgradeMock.mockReturnValue(true);
-    try {
-      render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
-      expect(screen.getByTestId("format-upgrade-notice")).toHaveTextContent(`${CATALOG_ID}:${HASH}`);
-      expect(audioPlayerMock).toHaveBeenCalledWith(expect.objectContaining({ src: `${url}?local=1` }));
-    } finally {
-      aacUpgradeMock.mockReturnValue(false);
-    }
-  });
-
-  it("shows no notice when the page streams instead of playing a download", () => {
-    // Not complete yet, so the page streams and no local package plays.
-    useDownloadRecordMock.mockReturnValue({
-      key: `${CATALOG_ID}:${HASH}`,
-      status: "downloading",
-      audioUrl: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio`,
-      audioCacheKey: null,
-    });
-    aacUpgradeMock.mockReturnValue(true);
-    try {
-      render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
-      expect(screen.queryByTestId("format-upgrade-notice")).toBeNull();
-    } finally {
-      aacUpgradeMock.mockReturnValue(false);
-    }
   });
 
   it("plays a download through the worker on an iPhone, with no inline read", () => {
     const IPHONE_UA =
       "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 Version/27.0 Mobile/15E148 Safari/604.1";
     Object.defineProperty(navigator, "userAgent", { value: IPHONE_UA, configurable: true });
-    const url = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?source=listening&variant=mobile`;
+    const url = `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?format=aac`;
     useOnlineStatusMock.mockReturnValue({ isOnline: false });
     useDownloadRecordMock.mockReturnValue({ key: "k", status: "complete", audioUrl: url });
     try {
@@ -492,7 +446,7 @@ describe("RecordingContent", () => {
     }
   });
 
-  it("keeps playing a WebM download on WebKit once the source also has an AAC copy", () => {
+  it("streams the selected AAC format while an online package has a different codec", () => {
     const iphone =
       "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1";
     const userAgent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue(iphone);
@@ -523,13 +477,8 @@ describe("RecordingContent", () => {
 
       render(<RecordingContent params={{ catalogId: CATALOG_ID, hash: HASH }} />);
 
-      // The local package, not a network request a previous release's
-      // service worker would answer with that same package's WebM.
       expect(audioPlayerMock).toHaveBeenCalledWith(
-        expect.objectContaining({ src: expect.stringContaining("local=1") })
-      );
-      expect(audioPlayerMock).not.toHaveBeenCalledWith(
-        expect.objectContaining({ src: expect.stringContaining("format=aac") })
+        expect.objectContaining({ src: `/api/catalogs/${CATALOG_ID}/recordings/${HASH}/audio?format=aac` })
       );
     } finally {
       userAgent.mockRestore();
