@@ -174,8 +174,10 @@ queries there.
   omit this variable and use the public JWKS URL.
 - Discovery: OAuth authorization-server and protected-resource metadata are
   published for remote MCP clients.
-- Transport: stateless Streamable HTTP using MCP 2026-07-28. The SDK handler
-  rejects previous protocol revisions; clients must use the current envelope.
+- Transport: stateless Streamable HTTP using MCP 2026-07-28, with the SDK's
+  built-in stateless serving for supported 2025-era clients. Both use the same
+  authenticated server factory and current Besedy tool/data contracts. No
+  sessions are created; authenticated GET and DELETE requests return 405.
 - Every tool call resolves the current user and current grants again. A token
   never freezes catalog permissions for its lifetime.
 - Production enablement is explicit: set `BESEDY_MCP_ENABLED=true` only with a

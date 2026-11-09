@@ -88,6 +88,7 @@ async function invokeMcp(
   method: string,
   params: Record<string, unknown> = {},
   connection = defaultConnection,
+  protocolVersion: '2026-07-28' | '2025-06-18' = '2026-07-28',
 ) {
   const handler = createMcpHandler(
     () =>
@@ -96,33 +97,39 @@ async function invokeMcp(
         accessProfile,
       }),
     {
-      legacy: 'reject',
+      legacy: 'stateless',
       responseMode: 'json',
     },
   );
+  const modern = protocolVersion === '2026-07-28';
   const name = typeof params.name === 'string' ? params.name : null;
   const response = await handler.fetch(
     new Request('http://localhost/api/mcp', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        accept: 'application/json',
-        'mcp-protocol-version': '2026-07-28',
-        'mcp-method': method,
-        ...(name ? { 'mcp-name': name } : {}),
+        accept: modern ? 'application/json' : 'application/json, text/event-stream',
+        'mcp-protocol-version': protocolVersion,
+        ...(modern ? { 'mcp-method': method } : {}),
+        ...(modern && name ? { 'mcp-name': name } : {}),
       },
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
         method,
-        params: { ...params, _meta: envelope },
+        params: modern ? { ...params, _meta: envelope } : params,
       }),
     }),
   );
-  return response.json() as Promise<{
+  const text = await response.text();
+  await handler.close();
+  const payload = response.headers.get('content-type')?.startsWith('text/event-stream')
+    ? text.split('\n').find((line) => line.startsWith('data: '))!.slice(6)
+    : text;
+  return JSON.parse(payload) as {
     result?: Record<string, unknown>;
     error?: { code: number; message: string };
-  }>;
+  };
 }
 
 function archiveToolCalls() {
@@ -165,6 +172,29 @@ describe('MCP personalized tool surface', () => {
       clientId: 'client-1',
       clientName: 'Test MCP client',
     });
+  });
+
+  it('initializes a supported 2025 client and lists the current tool surface', async () => {
+    const initialized = await invokeMcp('initialize', {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'connected-client-test', version: '1.0.0' },
+    }, defaultConnection, '2025-06-18');
+
+    expect(initialized.error).toBeUndefined();
+    expect(initialized.result).toMatchObject({
+      protocolVersion: '2025-06-18',
+      instructions: BESEDY_MCP_INSTRUCTIONS,
+      capabilities: { tools: {} },
+    });
+    const listed = await invokeMcp('tools/list', {}, defaultConnection, '2025-06-18');
+    expect(listed.error).toBeUndefined();
+    const tools = listed.result?.tools as Array<{ name: string }>;
+    expect(tools.map((tool) => tool.name)).toEqual([
+      'who_am_i', 'list_locations', 'list_recorders', 'list_events',
+      'get_event', 'get_recording', 'get_transcript', 'search_transcripts',
+      'find_transcript_mentions',
+    ]);
   });
 
   it('exposes every tool to an active user without catalog grants', async () => {
@@ -851,7 +881,8 @@ describe('MCP personalized tool surface', () => {
     ]);
   });
 
-  it('supports compact transcript defaults and explicit full mode', async () => {
+  it.each(['2026-07-28', '2025-06-18'] as const)(
+    'supports compact transcript defaults and explicit full mode over %s', async (protocolVersion) => {
     accessProfile = {
       userId: 'user-1',
       canEnterPortal: true,
@@ -885,7 +916,7 @@ describe('MCP personalized tool surface', () => {
     const body = await invokeMcp('tools/call', {
       name: 'get_transcript',
       arguments: { audioHash: 'a'.repeat(64), mode: 'page' },
-    });
+    }, defaultConnection, protocolVersion);
 
     expect(body.error).toBeUndefined();
     expect(body.result?.content).toEqual([
@@ -922,7 +953,7 @@ describe('MCP personalized tool surface', () => {
     await invokeMcp('tools/call', {
       name: 'get_transcript',
       arguments: { audioHash: 'a'.repeat(64), mode: 'full' },
-    });
+    }, defaultConnection, protocolVersion);
     expect(getMcpTranscript).toHaveBeenLastCalledWith(
       'viewer-catalog',
       'a'.repeat(64),
@@ -1209,9 +1240,10 @@ describe('MCP personalized tool surface', () => {
     expect(findMcpTranscriptMentions).not.toHaveBeenCalled();
   });
 
-  it('denies every archive read to an account without archive access', async () => {
+  it.each(['2026-07-28', '2025-06-18'] as const)(
+    'denies every archive read without archive access over %s', async (protocolVersion) => {
     for (const call of archiveToolCalls()) {
-      const body = await invokeMcp('tools/call', call);
+      const body = await invokeMcp('tools/call', call, defaultConnection, protocolVersion);
       expect(body.result).toMatchObject({
         isError: true,
         structuredContent: {

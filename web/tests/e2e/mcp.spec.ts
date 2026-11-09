@@ -65,6 +65,19 @@ interface McpResponse<T> {
   error?: { code: number; message: string };
 }
 
+function parseLegacyMcpResponse<T>(text: string, requestId: number): McpResponse<T> {
+  const events = text
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trimStart());
+  const messages = (events.length ? events : [text]).map(
+    (data) => JSON.parse(data) as McpResponse<T>,
+  );
+  const response = messages.find((message) => message.id === requestId);
+  expect(response, text).toBeDefined();
+  return response!;
+}
+
 interface McpToolResult<T> {
   isError?: boolean;
   content?: Array<{ type: string; text?: string }>;
@@ -494,11 +507,67 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
         },
       },
     });
-    expect(legacyInitializeResponse.status()).toBe(400);
-    expect(await legacyInitializeResponse.json()).toMatchObject({
-      error: { code: -32022,
-      data: { supported: [MCP_PROTOCOL_VERSION] } },
+    const legacyInitializeText = await legacyInitializeResponse.text();
+    expect(legacyInitializeResponse.ok(), legacyInitializeText).toBe(true);
+    expect(legacyInitializeResponse.headers()['mcp-session-id']).toBeUndefined();
+    expect(parseLegacyMcpResponse(legacyInitializeText, 100)).toMatchObject({
+      jsonrpc: '2.0',
+      id: 100,
+      result: {
+        protocolVersion: LEGACY_MCP_PROTOCOL_VERSION,
+        serverInfo: { name: 'besedy' },
+        capabilities: { tools: {} },
+      },
     });
+
+    const legacyToolHeaders = {
+      ...legacyHeaders,
+      'MCP-Protocol-Version': LEGACY_MCP_PROTOCOL_VERSION,
+    };
+    const legacyToolsResponse = await request.post(MCP_RESOURCE, {
+      headers: legacyToolHeaders,
+      data: {
+        jsonrpc: '2.0',
+        id: 101,
+        method: 'tools/list',
+        params: {},
+      },
+    });
+    const legacyToolsText = await legacyToolsResponse.text();
+    expect(legacyToolsResponse.ok(), legacyToolsText).toBe(true);
+    const legacyToolsBody = parseLegacyMcpResponse<{
+      tools: Array<{ name: string }>;
+    }>(legacyToolsText, 101);
+    expect(legacyToolsBody.error).toBeUndefined();
+
+    const legacyTranscriptResponse = await request.post(MCP_RESOURCE, {
+      headers: legacyToolHeaders,
+      data: {
+        jsonrpc: '2.0',
+        id: 102,
+        method: 'tools/call',
+        params: {
+          name: 'get_transcript',
+          arguments: { audioHash: MCP_FIXTURE_RECORDING.hash, mode: 'full' },
+        },
+      },
+    });
+    const legacyTranscriptText = await legacyTranscriptResponse.text();
+    expect(legacyTranscriptResponse.ok(), legacyTranscriptText).toBe(true);
+    const legacyTranscriptBody = parseLegacyMcpResponse<McpToolResult<{
+      catalogId: string;
+      audioHash: string;
+      segments: { items: Array<{ text: string }>; totalMatching: number };
+    }>>(legacyTranscriptText, 102);
+    expect(legacyTranscriptBody.error).toBeUndefined();
+    expect(legacyTranscriptBody.result?.isError, legacyTranscriptText).not.toBe(true);
+    expect(legacyTranscriptBody.result?.structuredContent).toMatchObject({
+      catalogId: TEST_CATALOG_ID,
+      audioHash: MCP_FIXTURE_RECORDING.hash,
+      segments: { totalMatching: 2 },
+    });
+    expect(legacyTranscriptBody.result?.structuredContent.segments.items[0]?.text)
+      .toBe('Besedy MCP transcript fixture opens the discussion.');
 
     const envelope = {
       'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,
@@ -543,6 +612,9 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
       'find_transcript_mentions',
       'list_bookmarks',
     ]);
+    expect(legacyToolsBody.result?.tools.map((tool) => tool.name)).toEqual(
+      toolsBody.result?.tools.map((tool) => tool.name),
+    );
 
     const identityResponse = await request.post(MCP_RESOURCE, {
       headers: {
