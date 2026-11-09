@@ -573,6 +573,64 @@ describe('download manager', () => {
     });
   });
 
+  it.each(['paused', 'error', 'queued'] as const)(
+    'finishes a version-4 %s download using fresh artwork metadata',
+    async (status) => {
+      const key = `${CATALOG}:${HASH}`;
+      await new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open('besedy-offline', 4);
+        open.onupgradeneeded = () => {
+          const database = open.result;
+          const downloads = database.createObjectStore('downloads', { keyPath: 'key' });
+          downloads.createIndex('byCatalog', 'catalogId');
+          downloads.createIndex('byEventKey', 'eventKey');
+          downloads.createIndex('byStatus', 'status');
+          database.createObjectStore('downloadBundles', { keyPath: 'key' });
+          database.createObjectStore('pendingPlaybackProgress', { keyPath: 'key' })
+            .createIndex('byUser', 'userId');
+        };
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const database = open.result;
+          const transaction = database.transaction('downloads', 'readwrite');
+          transaction.objectStore('downloads').put({
+            key, catalogId: CATALOG, catalogLabel: null, hash: HASH,
+            userId: null, eventKey: `${CATALOG}:7`,
+            event: { id: 7, sessionIndex: 1, publishedPoster: null },
+            recording: null, audioUrl: null, audioCacheKey: null,
+            status, progress: 0, bytesLoaded: 0, totalBytes: 0,
+            error: null, resumeOnReconnect: false, transcriptBackend: null,
+            hasPoster: false, createdAt: 0, updatedAt: 0, completedAt: null,
+          });
+          transaction.onerror = () => reject(transaction.error);
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+        };
+      });
+
+      const server = createFakeServer();
+      vi.stubGlobal('fetch', server.fetchMock);
+      const { downloadManager } = await loadManager();
+      await downloadManager.hydrate();
+      if (status !== 'queued') await downloadManager.resume(key);
+      await waitFor(() => {
+        const record = downloadManager.getSnapshot().records[0];
+        return server.audioRequests.length > 0 &&
+          (record?.status === 'complete' || record?.status === 'error');
+      });
+
+      const db = await import('@/lib/offline/downloads-db');
+      const record = await db.getDownload(key);
+      expect(record).toMatchObject({ status: 'complete', hasArtwork: true });
+      expect((await db.getDownloadsDB()).version).toBe(6);
+      const bundle = await db.getDownloadBundle(key);
+      expect(bundle?.artwork?.artworkId).toBeTruthy();
+      expect(db.isCurrentDownloadBundle(record!, bundle)).toBe(true);
+    },
+  );
+
   it('drops the stored speaker overlay once that permission is revoked', async () => {
     // The fake server's entry carries no canSeeSpeakers, i.e. revoked.
     const server = createFakeServer();

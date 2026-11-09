@@ -5,14 +5,14 @@ import { describe, expect, it } from 'vitest';
 const migration = readFileSync(
   resolve(
     process.cwd(),
-    'prisma/migrations/20260827120000_revoke_refresh_tokens_with_oauth_consent/migration.sql',
+    'prisma/migrations/20261108000000_current_schema/migration.sql',
   ),
   'utf8',
 );
 
 describe('OAuth consent revocation migration', () => {
   it('revokes the matching refresh family inside consent deletion', () => {
-    expect(migration).toContain('BEFORE INSERT OR DELETE ON "oauthConsent"');
+    expect(migration).toContain('BEFORE INSERT OR DELETE ON public."oauthConsent"');
     expect(migration).toContain('DELETE FROM "oauthRefreshToken"');
     expect(migration).toContain('family_client_id := OLD."clientId"');
     expect(migration).toContain('family_user_id := OLD."userId"');
