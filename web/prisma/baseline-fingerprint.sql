@@ -47,6 +47,19 @@ FROM (
   JOIN pg_namespace n ON n.oid = c.relnamespace
   WHERE n.nspname = 'public' AND NOT t.tgisinternal
   UNION ALL
+  -- PostgreSQL names internal RI triggers with catalog OIDs. Identify them by
+  -- their constraint, firing table and function so fresh and upgraded databases
+  -- agree while disabled foreign-key enforcement still changes the fingerprint.
+  SELECT 'constraint_trigger',
+    con.conrelid::regclass::text || '.' || con.conname || ':' ||
+      t.tgrelid::regclass::text || ':' || t.tgfoid::regprocedure::text,
+    jsonb_build_array(t.tgtype, t.tgenabled, t.tgdeferrable,
+                     t.tginitdeferred, t.tgconstrrelid::regclass::text)::text
+  FROM pg_trigger t JOIN pg_constraint con ON con.oid = t.tgconstraint
+  JOIN pg_class c ON c.oid = t.tgrelid
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public' AND t.tgisinternal
+  UNION ALL
   SELECT 'view', c.relname::text, pg_get_viewdef(c.oid)
   FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
   WHERE n.nspname = 'public' AND c.relkind IN ('v', 'm')

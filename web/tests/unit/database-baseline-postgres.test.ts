@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client } from 'pg';
+import { verifyBaselineFingerprint } from '../../scripts/adopt-database-baseline';
 
 // Explicit throwaway database only: these tests roll back catalog mutations.
 const connectionString = process.env.BASELINE_TEST_DATABASE_URL;
@@ -28,6 +29,23 @@ describe.skipIf(!connectionString)('database baseline structural guards', () => 
     try {
       await client.query('ALTER TABLE public."oauthConsent" DISABLE TRIGGER oauth_consent_revoke_refresh_tokens');
       expect(await fingerprint()).not.toBe(original);
+    } finally { await client.query('ROLLBACK'); }
+    expect(await fingerprint()).toBe(original);
+  });
+
+  it('rejects disabled internal foreign-key triggers using stable constraint identities', async () => {
+    const original = await fingerprint();
+    const manifest = { schema_fingerprint: original };
+    expect(() => verifyBaselineFingerprint(original, manifest)).not.toThrow();
+    await client.query('BEGIN');
+    try {
+      await client.query('ALTER TABLE public.audio_metadata DISABLE TRIGGER ALL');
+      // With RI triggers disabled this otherwise-invalid reference is accepted.
+      await client.query(`INSERT INTO audio_metadata(workflow_group_id,audio_hash,updated_at)
+        VALUES ('missing-group',repeat('a',64),now())`);
+      const disabled = await fingerprint();
+      expect(disabled).not.toBe(original);
+      expect(() => verifyBaselineFingerprint(disabled, manifest)).toThrow('Database structure differs');
     } finally { await client.query('ROLLBACK'); }
     expect(await fingerprint()).toBe(original);
   });

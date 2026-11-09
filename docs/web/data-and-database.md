@@ -269,7 +269,8 @@ verified-backup maintenance procedure:
 1. Select the production migrator `DATABASE_URL` explicitly, as `just prod-migrate`
    does. From `web/`, run `npm run db:baseline`. This is read-only and verifies
    all 69 completed migration records plus a schema fingerprint covering columns,
-   constraints, indexes, functions, triggers, views, enum values and sequences.
+   constraints, indexes, functions, triggers (including internal foreign-key
+   enforcement), views, enum values and sequences.
 2. Run `npm run db:baseline -- --apply`. It repeats the checks and uses
    `prisma migrate resolve --applied 20261108000000_current_schema`. It does not
    replay DDL, rewrite application rows or delete prior migration history.

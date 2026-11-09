@@ -42,6 +42,12 @@ export function verifyBaselineHistory(rows: AppliedMigration[], manifest: Manife
   return true;
 }
 
+export function verifyBaselineFingerprint(fingerprint: string | undefined, manifest: Pick<Manifest, 'schema_fingerprint'>): void {
+  if (fingerprint !== manifest.schema_fingerprint) {
+    throw new Error('Database structure differs from the reviewed baseline; investigate drift before adopting');
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   if (args.some(arg => arg !== '--apply')) throw new Error('Usage: adopt-database-baseline.ts [--apply]');
@@ -63,9 +69,7 @@ async function main() {
     }
     const fingerprintSql = readFileSync(resolve('prisma/baseline-fingerprint.sql'), 'utf8');
     const fingerprint = await client.query<{ fingerprint: string }>(fingerprintSql);
-    if (fingerprint.rows[0]?.fingerprint !== manifest.schema_fingerprint) {
-      throw new Error('Database structure differs from the reviewed baseline; investigate drift before adopting');
-    }
+    verifyBaselineFingerprint(fingerprint.rows[0]?.fingerprint, manifest);
     console.log(`Verified ${Object.keys(manifest.retired_migrations).length} migrations and the complete current schema`);
   } finally {
     await client.query('ROLLBACK');

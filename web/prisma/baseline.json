@@ -1,6 +1,6 @@
 {
   "baseline": "20261108000000_current_schema",
-  "schema_fingerprint": "eb00326645a69570ae19a158053cb69f792aaee1477a8d9b6e3759bef19d3249",
+  "schema_fingerprint": "fc50b698c2750904b9065e70542ed4d191b83341cd5dcf0a9adbd59979112a3a",
   "retired_migrations": {
     "20260419120000_add_event_publish_notifications": "49a6ff116af5110f053c7bdf8c29f29fce7896100d27bc3b790eb1da1e999713",
     "20260209143000_add_catalog_serving_tables": "9b3a35765ec318b4ae4c4bb194f712ff57be7e3c02f3443164c028d7ac09c36e",
