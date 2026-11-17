@@ -6,16 +6,23 @@ const mocks = vi.hoisted(() => {
   const tx = {
     audioMetadata: { upsert: vi.fn() },
     workflowGroup: { update: vi.fn() },
+    catalogEventRecording: { findUnique: vi.fn() },
   };
   return {
     tx,
+    findAssignment: vi.fn(),
     transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     createEventFromRecording: vi.fn(),
     logMetadataUpdated: vi.fn(),
   };
 });
 
-vi.mock("@/lib/db", () => ({ default: { $transaction: mocks.transaction } }));
+vi.mock("@/lib/db", () => ({
+  default: {
+    $transaction: mocks.transaction,
+    catalogEventRecording: { findUnique: mocks.findAssignment },
+  },
+}));
 vi.mock("@/lib/catalog-events/create-from-recording", () => ({
   createEventFromRecording: mocks.createEventFromRecording,
 }));
@@ -42,6 +49,8 @@ describe("assignIntakeEvent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.logMetadataUpdated.mockResolvedValue(undefined);
+    mocks.tx.catalogEventRecording.findUnique.mockResolvedValue(null);
+    mocks.findAssignment.mockResolvedValue(null);
   });
 
   it("does nothing for an upload without a place and date", async () => {
@@ -81,10 +90,30 @@ describe("assignIntakeEvent", () => {
     ]);
   });
 
-  it("keeps an existing assignment on a repeated completion", async () => {
-    mocks.createEventFromRecording.mockResolvedValue({ kind: "already_assigned", eventId: 42 });
+  it("keeps an existing assignment and its metadata untouched", async () => {
+    mocks.tx.catalogEventRecording.findUnique.mockResolvedValue({ eventId: 42 });
 
-    expect(await assignIntakeEvent(intake(), HASH)).toMatchObject({ eventId: 42, errorCode: null });
+    expect(await assignIntakeEvent(intake(), HASH)).toEqual({
+      eventId: 42,
+      errorCode: null,
+      errorMessage: null,
+    });
+    expect(mocks.tx.audioMetadata.upsert).not.toHaveBeenCalled();
+    expect(mocks.createEventFromRecording).not.toHaveBeenCalled();
+    expect(mocks.logMetadataUpdated).not.toHaveBeenCalled();
+  });
+
+  it("reports the event of a concurrent completion that assigned the recording first", async () => {
+    mocks.transaction.mockRejectedValueOnce(
+      Object.assign(new Error("Unique constraint failed"), { code: "P2002" })
+    );
+    mocks.findAssignment.mockResolvedValue({ eventId: 42 });
+
+    expect(await assignIntakeEvent(intake(), HASH)).toEqual({
+      eventId: 42,
+      errorCode: null,
+      errorMessage: null,
+    });
   });
 
   it("leaves the recording unassigned when events already cover the place and date", async () => {

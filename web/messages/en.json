@@ -527,7 +527,7 @@
         "location": "Location",
         "locationPlaceholder": "Select a location",
         "date": "Date",
-        "eventHint": "The recording gets an unreleased event for this place and date once it is processed. Leave both empty to create the event yourself later.",
+        "eventHint": "The recording gets an unreleased event for this place and date once it is processed. With several files, only the first one processed gets the event; attach the others on their recording pages. Leave both empty to create the event yourself later.",
         "eventIncomplete": "Choose both a location and a date, or leave both empty."
       },
       "jobs": {

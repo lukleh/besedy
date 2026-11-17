@@ -527,7 +527,7 @@
         "location": "Místo",
         "locationPlaceholder": "Vyberte místo",
         "date": "Datum",
-        "eventHint": "Po zpracování dostane nahrávka nevydanou událost pro toto místo a datum. Necháte-li obě pole prázdná, vytvoříte událost později sami.",
+        "eventHint": "Po zpracování dostane nahrávka nevydanou událost pro toto místo a datum. Při více souborech dostane událost jen první zpracovaný; ostatní připojte na stránkách jejich nahrávek. Necháte-li obě pole prázdná, vytvoříte událost později sami.",
         "eventIncomplete": "Vyberte místo i datum, nebo nechte obě pole prázdná."
       },
       "jobs": {
