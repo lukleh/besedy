@@ -161,42 +161,28 @@ Changing the switch or the timeout needs a worker restart
 (`systemctl --user restart besedy-ingest-worker`); changing the command does
 not.
 
-### Event artwork with Codex
+### Example: a host script per new event
 
-`jobs-service/host-worker/event-artwork-hook.sh <event-id> <prompt-file>` runs
-the reusable artwork prompt for a new event:
+The command is usually a script kept on the host, outside this repository,
+together with whatever it needs:
 
 ```text
-<worker checkout>/jobs-service/host-worker/event-artwork-hook.sh {event_id} <prompt file>
+/home/<user>/hooks/new-event.sh {event_id} {audio_hash}
 ```
 
-saved as the command on the ingest page, with absolute host paths for
-`<worker checkout>` and `<prompt file>`. The prompt file stays on the host,
-outside this repository. The worker env file sets:
+It receives the event and the hash of the ingested recording. For an event
+the upload created, that recording is its primary, so the script needs no
+lookup to find the transcript. Set `BESEDY_INGEST_POST_COMMAND_TIMEOUT` to cover its
+longest run. A script that needs tools missing from the worker's PATH (Node,
+for `just artwork`) has to load them itself.
 
-| Variable | Meaning |
-| --- | --- |
-| `BESEDY_INGEST_POST_COMMAND_ENABLED` | `1` |
-| `BESEDY_INGEST_POST_COMMAND_TIMEOUT` | for example `5400`; a Codex run takes long |
-| `BESEDY_ARTWORK_REPO` | required: the besedy checkout Codex works in. Not the worker's own checkout, because Codex writes files there and `just ingest-worker-deploy` refuses a checkout with local changes. |
-| `CODEX_BIN` | optional; default `codex` on the worker's PATH |
-
-It takes the first ``` ```text ``` block of the prompt file, replaces `<DOPLŇ_ID>`
-(`BESEDY_ARTWORK_EVENT_PLACEHOLDER`) with the event id, loads Node through nvm
-(`BESEDY_ARTWORK_NODE_VERSION`, default `24`; the worker PATH has none, and
-`just artwork` needs it), and pipes the prompt to
-`codex exec -C "$BESEDY_ARTWORK_REPO" --dangerously-bypass-approvals-and-sandbox`.
-Codex's final message is kept in
-`$XDG_STATE_HOME/lukleh/besedy/event-artwork/event-<id>_<timestamp>.md`
-(`~/.local/state` when unset) and printed into the log.
-
-Running Codex without approvals or its sandbox is deliberate: nobody is there
-to approve, and the prompt publishes through `just artwork ... --prod --yes`,
-which needs the network and the production database. It is also an agent
-acting with the worker user's full privileges on the production host while
+One use is event artwork: a script that hands a prompt to a coding agent,
+which reads the recording's transcript, generates the two images and uploads
+them with `just artwork create` and `just artwork publish` (see
+[Event artwork CLI](operations.md#event-artwork-cli)). Such an agent runs
+unattended with the worker user's privileges on the production host while
 reading transcript text, so enable it knowingly. The event is unreleased, so
-the published artwork is not public until an admin reviews and releases the
-event.
+published artwork is not public until an admin reviews and releases the event.
 
 ## Job records and recovery
 
@@ -274,7 +260,6 @@ containers. Source files:
 - `jobs-service/host-worker/besedy-ingest-worker.service` - systemd user unit
 - `jobs-service/host-worker/ingest-worker.env.example` - required environment
 - `jobs-service/host-worker/run-worker.sh` - the worker start command, shared by the unit and `just ingest-worker-run`
-- `jobs-service/host-worker/event-artwork-hook.sh` - optional post-ingest command for event artwork
 - `besedy/lib/prefect_jobs/flows/ingest_recording.py` - the flow
 
 The production worker runs from its own checkout,
