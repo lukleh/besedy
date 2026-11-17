@@ -10,6 +10,11 @@
 # the prompt's `just artwork ... --prod` needs the network and the database.
 # Codex's final message is kept under the state directory and printed.
 #
+# Host settings come from the environment (the worker's env file), never from
+# this repository: BESEDY_ARTWORK_REPO (required, a besedy checkout Codex may
+# write in), CODEX_BIN (default: `codex` on PATH), NVM_DIR,
+# BESEDY_ARTWORK_NODE_VERSION and BESEDY_ARTWORK_EVENT_PLACEHOLDER.
+#
 # Save it as the post-ingest command on Admin -> Ingest; see
 # docs/web/recording-ingest.md ("Post-ingest command").
 set -euo pipefail
@@ -25,11 +30,20 @@ if [[ ! "$event_id" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 
-repo="${BESEDY_ARTWORK_REPO:-$HOME/projects/besedy}"
-codex="${CODEX_BIN:-$HOME/.local/bin/codex}"
+repo="${BESEDY_ARTWORK_REPO:-}"
+codex="${CODEX_BIN:-codex}"
 placeholder="${BESEDY_ARTWORK_EVENT_PLACEHOLDER:-<DOPLŇ_ID>}"
 node_version="${BESEDY_ARTWORK_NODE_VERSION:-24}"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/lukleh/besedy/event-artwork"
+
+if [[ -z "$repo" || ! -d "$repo" ]]; then
+  echo "BESEDY_ARTWORK_REPO must name an existing besedy checkout (got: '${repo}')" >&2
+  exit 2
+fi
+if ! command -v "$codex" >/dev/null; then
+  echo "Codex not found: $codex (set CODEX_BIN or add it to PATH)" >&2
+  exit 1
+fi
 
 prompt="$(awk '/^```text[[:space:]]*$/ { inside = 1; next } inside && /^```[[:space:]]*$/ { exit } inside' "$prompt_file")"
 if [[ -z "$prompt" ]]; then

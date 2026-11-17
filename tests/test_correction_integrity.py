@@ -27,7 +27,7 @@ CONTRACT = json.loads(
 TRANSCRIPT = next(c for c in CONTRACT["cases"] if c["name"] == "split_at_one_second_gap")[
     "transcript"
 ]
-CATALOG = "20251222_144441"
+CATALOG = "20251224_093000"
 WORKSPACE = "11111111-2222-3333-4444-555555555555"
 
 

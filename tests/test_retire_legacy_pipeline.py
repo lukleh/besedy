@@ -35,7 +35,7 @@ def test_dry_run_changes_nothing_and_apply_invalidates_only_old_sidecars(tmp_pat
 
 
 def test_retirement_refuses_current_references_before_any_mutation(tmp_path):
-    active = tmp_path / "audio_catalog_20251222_144441.csv"
+    active = tmp_path / "audio_catalog_20251224_093000.csv"
     active.write_text("current")
     references = tmp_path / "references.json"
     references.write_text(json.dumps([str(active)]))
@@ -77,7 +77,7 @@ def test_retirement_moves_only_explicit_unreferenced_files(tmp_path):
 def test_retirement_destination_must_be_disjoint_from_active_artifacts(tmp_path):
     obsolete = tmp_path / "audio_catalog_merged_v2.csv"
     obsolete.write_text("old")
-    active = tmp_path / "transcripts_20251222_144441"
+    active = tmp_path / "transcripts_20251224_093000"
     active.mkdir()
     references = tmp_path / "references.json"
     references.write_text(json.dumps([str(active)]))

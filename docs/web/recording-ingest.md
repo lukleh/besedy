@@ -155,21 +155,28 @@ not.
 the reusable artwork prompt for a new event:
 
 ```text
-/home/<user>/worktrees/besedy/prod-ingest/jobs-service/host-worker/event-artwork-hook.sh {event_id} /home/<user>/docs/event-artwork-prompt.md
+<worker checkout>/jobs-service/host-worker/event-artwork-hook.sh {event_id} <prompt file>
 ```
 
-saved as the command on the ingest page, with
-`BESEDY_INGEST_POST_COMMAND_ENABLED=1` and
-`BESEDY_INGEST_POST_COMMAND_TIMEOUT=5400` in the worker env file.
+saved as the command on the ingest page, with absolute host paths for
+`<worker checkout>` and `<prompt file>`. The prompt file stays on the host,
+outside this repository. The worker env file sets:
+
+| Variable | Meaning |
+| --- | --- |
+| `BESEDY_INGEST_POST_COMMAND_ENABLED` | `1` |
+| `BESEDY_INGEST_POST_COMMAND_TIMEOUT` | for example `5400`; a Codex run takes long |
+| `BESEDY_ARTWORK_REPO` | required: the besedy checkout Codex works in. Not the worker's own checkout, because Codex writes files there and `just ingest-worker-deploy` refuses a checkout with local changes. |
+| `CODEX_BIN` | optional; default `codex` on the worker's PATH |
 
 It takes the first ``` ```text ``` block of the prompt file, replaces `<DOPLŇ_ID>`
 (`BESEDY_ARTWORK_EVENT_PLACEHOLDER`) with the event id, loads Node through nvm
 (`BESEDY_ARTWORK_NODE_VERSION`, default `24`; the worker PATH has none, and
 `just artwork` needs it), and pipes the prompt to
-`codex exec -C <repo> --dangerously-bypass-approvals-and-sandbox` in
-`BESEDY_ARTWORK_REPO` (default `~/projects/besedy`). Codex's final message is
-kept in `~/.local/state/lukleh/besedy/event-artwork/event-<id>_<timestamp>.md`
-and printed into the log.
+`codex exec -C "$BESEDY_ARTWORK_REPO" --dangerously-bypass-approvals-and-sandbox`.
+Codex's final message is kept in
+`$XDG_STATE_HOME/lukleh/besedy/event-artwork/event-<id>_<timestamp>.md`
+(`~/.local/state` when unset) and printed into the log.
 
 Running Codex without approvals or its sandbox is deliberate: nobody is there
 to approve, and the prompt publishes through `just artwork ... --prod --yes`,
@@ -210,7 +217,7 @@ whose catalog work already completed.
 
 | Where | Setting | Value |
 | --- | --- | --- |
-| Host `besedy.toml` (worker + CLI) | `[paths].uploads_dir` | host directory, e.g. `/mnt/data/besedy_uploads` |
+| Host `besedy.toml` (worker + CLI) | `[paths].uploads_dir` | host directory, e.g. `/srv/besedy/uploads` |
 | Web env file (`web.env.<mode>`) | `UPLOADS_DIR` | the same host directory; mounted rw at `/data/uploads` |
 | Web env file | `UPLOADS_GID` | numeric group shared by container UID 1001 and the host worker user |
 | Web env file | `BESEDY_PATH_MAPPINGS` | must include `<host uploads dir>=/data/uploads` because catalog rows point at the host path |

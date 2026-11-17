@@ -307,7 +307,7 @@ class TestFindTranscriptDirs:
     def test_finds_in_timestamped_directories(self, tmp_path):
         """Test finding transcripts in timestamped directories."""
         # Create timestamped transcript structure (common in production)
-        ts_dir = tmp_path / "transcripts_20251222_144441"
+        ts_dir = tmp_path / "transcripts_20251224_093000"
         dir1 = ts_dir / "canary-nemo" / "model1" / "abc123"
         dir1.mkdir(parents=True)
         dir2 = ts_dir / "faster-whisper" / "model2" / "abc123"
@@ -333,7 +333,7 @@ class TestFindTranscriptDirs:
         direct_dir.mkdir(parents=True)
 
         # Timestamped structure
-        ts_dir = tmp_path / "transcripts_20251222_144441"
+        ts_dir = tmp_path / "transcripts_20251224_093000"
         ts_transcript_dir = ts_dir / "faster-whisper" / "model" / "abc123"
         ts_transcript_dir.mkdir(parents=True)
 
@@ -377,7 +377,7 @@ class TestFindDiarizationDirs:
     def test_finds_in_timestamped_directories(self, tmp_path):
         """Test finding diarization in timestamped directories."""
         # Create timestamped diarization structure
-        ts_dir = tmp_path / "transcripts_20251222_144441"
+        ts_dir = tmp_path / "transcripts_20251224_093000"
         diar_dir1 = ts_dir / "speaker_diarization" / "pyannote" / "abc123"
         diar_dir1.mkdir(parents=True)
 

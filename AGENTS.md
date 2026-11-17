@@ -245,12 +245,12 @@ documentation call the shared content the catalog.
 
 - Create git worktrees under `~/worktrees/<repo>/<name>`, for example
   `git worktree add ~/worktrees/besedy/<name> -b <area>/<name> origin/main`,
-  never inside `~/projects` (not as a sibling like `~/projects/besedy-<name>`
-  and not in the repo's `worktrees/`). Everything under `~/projects` is
-  snapshotted nightly and synced off-host; per-worktree `node_modules` and
-  `.venv` trees overran that sync in September 2026. Commits stay backed up
-  because worktrees share the main repo's object store. Remove a worktree once
-  its branch is merged; `web/scripts/worktree-report.sh` lists the removable ones.
+  never next to or inside the main checkout (not as a sibling directory and
+  not in the repo's `worktrees/`). The main checkout's parent directory is
+  backed up, and per-worktree `node_modules` and `.venv` trees would bloat
+  that backup. Commits stay backed up because worktrees share the main repo's
+  object store. Remove a worktree once its branch is merged;
+  `web/scripts/worktree-report.sh` lists the removable ones.
 - Production web revision is exposed at `GET /api/version`.
 - Fast check command:
   `curl -s https://besedy.org/api/version | jq -r '.commit, .commitShort, .buildTime, .environment'`

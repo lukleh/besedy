@@ -200,7 +200,7 @@ def test_machine_baseline_scores_the_manifest_text_against_the_label() -> None:
 def _report(system: str, rows: list[dict], hyps: list[str] | None, **extra) -> dict:
     return ev.build_report(
         system=system,
-        dataset={"path": "/data/training_export", "catalog_id": "20251222_144441"},
+        dataset={"path": "/data/training_export", "catalog_id": "20251224_093000"},
         split="test",
         rows=rows,
         scores=ev.score_rows(rows, hyps) if hyps is not None else None,

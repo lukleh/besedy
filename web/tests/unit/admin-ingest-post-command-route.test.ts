@@ -32,7 +32,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 const CATALOG_ID = "20260201_120000";
-const COMMAND = "/home/u/event-artwork-hook.sh {event_id} /home/u/docs/prompt.md";
+const COMMAND = "/opt/hooks/event-artwork-hook.sh {event_id} /opt/hooks/prompt.md";
 
 function put(body: unknown, origin = "http://localhost") {
   return new NextRequest("http://localhost/api/admin/ingest/post-command", {

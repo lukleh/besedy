@@ -50,8 +50,8 @@ split and the revision IDs of every chunk), export.json (what the web listed,
 including excluded chunks and why) and dataset.json (policy and counts).
 
 Examples:
-  catalog training-export --catalog-id 20251222_144441
-  catalog training-export --catalog-id 20251222_144441 --audio-hash <hash> --audio-hash <hash>
+  catalog training-export --catalog-id <catalog-id>
+  catalog training-export --catalog-id <catalog-id> --audio-hash <hash> --audio-hash <hash>
   catalog training-export --export-json export.json --strip-fillers --test-recordings test.txt
 """,
         formatter_class=formatter_class,

@@ -27,7 +27,7 @@ vi.mock("@/lib/catalog/resolve-group", () => ({
   resolveCatalogWithAccess: vi.fn(),
 }));
 
-const collectionParams = { params: Promise.resolve({ id: "20251222_144441" }) };
+const collectionParams = { params: Promise.resolve({ id: "20251224_093000" }) };
 
 describe("album CRUD routes", () => {
   let requireAuth: ReturnType<typeof vi.fn>;
@@ -60,7 +60,7 @@ describe("album CRUD routes", () => {
   function inCatalog(canManageLookups: boolean) {
     vi.mocked(requireAuth).mockResolvedValue("user-1");
     vi.mocked(resolveCatalogWithAccess).mockResolvedValue({
-      group: { id: "20251222_144441" },
+      group: { id: "20251224_093000" },
       hasAccess: true,
     });
     vi.mocked(getCatalogCapability).mockResolvedValue({ canManageLookups });
@@ -69,7 +69,7 @@ describe("album CRUD routes", () => {
   it("GET /api/catalogs/:id/metadata/albums returns album list", async () => {
     vi.mocked(requireAuth).mockResolvedValue("user-1");
     vi.mocked(resolveCatalogWithAccess).mockResolvedValue({
-      group: { id: "20251222_144441" },
+      group: { id: "20251224_093000" },
       hasAccess: true,
     });
     prisma.album.findMany.mockResolvedValue([
@@ -84,7 +84,7 @@ describe("album CRUD routes", () => {
 
     vi.mocked(getCatalogCapability).mockResolvedValue({ canManageLookups: false });
 
-    const request = new NextRequest("http://localhost/api/catalogs/20251222_144441/metadata/albums");
+    const request = new NextRequest("http://localhost/api/catalogs/20251224_093000/metadata/albums");
     const response = await getAlbums(request, collectionParams);
 
     expect(response.status).toBe(200);
@@ -92,18 +92,18 @@ describe("album CRUD routes", () => {
     expect(body[0].name).toBe("Album A");
     expect(body[0]._count.audioMetadata).toBe(5);
     expect(prisma.album.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { workflowGroupId: "20251222_144441" } })
+      expect.objectContaining({ where: { workflowGroupId: "20251224_093000" } })
     );
   });
 
   it("GET /api/catalogs/:id/metadata/albums returns 403 without catalog access", async () => {
     vi.mocked(requireAuth).mockResolvedValue("user-1");
     vi.mocked(resolveCatalogWithAccess).mockResolvedValue({
-      group: { id: "20251222_144441" },
+      group: { id: "20251224_093000" },
       hasAccess: false,
     });
 
-    const request = new NextRequest("http://localhost/api/catalogs/20251222_144441/metadata/albums");
+    const request = new NextRequest("http://localhost/api/catalogs/20251224_093000/metadata/albums");
     const response = await getAlbums(request, collectionParams);
 
     expect(response.status).toBe(403);
@@ -115,11 +115,11 @@ describe("album CRUD routes", () => {
     vi.mocked(requireAuth).mockResolvedValue("user-1");
     vi.mocked(resolveCatalogWithAccess).mockResolvedValue({ group: null, hasAccess: false });
 
-    const request = new NextRequest("http://localhost/api/catalogs/20251222_144441/metadata/albums");
+    const request = new NextRequest("http://localhost/api/catalogs/20251224_093000/metadata/albums");
     const response = await getAlbums(request, collectionParams);
 
     expect(response.status).toBe(404);
-    expect(resolveCatalogWithAccess).toHaveBeenCalledWith("20251222_144441", "user-1");
+    expect(resolveCatalogWithAccess).toHaveBeenCalledWith("20251224_093000", "user-1");
     expect(prisma.album.findMany).not.toHaveBeenCalled();
   });
 
@@ -142,7 +142,7 @@ describe("album CRUD routes", () => {
       updatedAt: new Date(),
     });
 
-    const request = new NextRequest("http://localhost/api/catalogs/20251222_144441/metadata/albums", {
+    const request = new NextRequest("http://localhost/api/catalogs/20251224_093000/metadata/albums", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "  Album B  " }),
@@ -152,14 +152,14 @@ describe("album CRUD routes", () => {
 
     expect(response.status).toBe(201);
     expect(prisma.album.create).toHaveBeenCalledWith({
-      data: { name: "Album B", workflowGroupId: "20251222_144441" },
+      data: { name: "Album B", workflowGroupId: "20251224_093000" },
     });
   });
 
   it("POST /api/catalogs/:id/metadata/albums refuses a reader of the catalog", async () => {
     inCatalog(false);
 
-    const request = new NextRequest("http://localhost/api/catalogs/20251222_144441/metadata/albums", {
+    const request = new NextRequest("http://localhost/api/catalogs/20251224_093000/metadata/albums", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "Album C" }),
@@ -174,13 +174,13 @@ describe("album CRUD routes", () => {
   it("PUT /api/catalogs/:id/metadata/albums/:itemId rejects empty names", async () => {
     inCatalog(true);
 
-    const request = new NextRequest("http://localhost/api/catalogs/20251222_144441/metadata/albums/1", {
+    const request = new NextRequest("http://localhost/api/catalogs/20251224_093000/metadata/albums/1", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "   " }),
     });
 
-    const response = await putAlbum(request, { params: Promise.resolve({ id: "20251222_144441", itemId: "1" }) });
+    const response = await putAlbum(request, { params: Promise.resolve({ id: "20251224_093000", itemId: "1" }) });
 
     expect(response.status).toBe(400);
     const body = await response.json();
@@ -191,13 +191,13 @@ describe("album CRUD routes", () => {
     inCatalog(true);
     prisma.album.findFirst.mockResolvedValue(null);
 
-    const request = new NextRequest("http://localhost/api/catalogs/20251222_144441/metadata/albums/99", {
+    const request = new NextRequest("http://localhost/api/catalogs/20251224_093000/metadata/albums/99", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "Renamed" }),
     });
 
-    const response = await putAlbum(request, { params: Promise.resolve({ id: "20251222_144441", itemId: "99" }) });
+    const response = await putAlbum(request, { params: Promise.resolve({ id: "20251224_093000", itemId: "99" }) });
 
     expect(response.status).toBe(404);
     expect(prisma.album.update).not.toHaveBeenCalled();

@@ -52,7 +52,7 @@ def dataset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         json.dumps(
             {
                 "schema_version": 2,
-                "catalog_id": "20251222_144441",
+                "catalog_id": "20251224_093000",
                 "exported_at": "2026-11-02T00:00:00.000Z",
                 "policy": {"test_recordings": [TEST_HASH, OTHER_HASH], "strip_fillers": False},
             }
@@ -71,7 +71,7 @@ def test_without_a_model_the_machine_baseline_is_scored_on_the_host(dataset: Pat
     assert report["machine_baseline"]["rows"] == 3
     # "Dobrej den pane Novák" against "dobrý den pane novák": one word of eight.
     assert report["machine_baseline"]["wer"] == pytest.approx(1 / 8)
-    assert report["dataset"]["catalog_id"] == "20251222_144441"
+    assert report["dataset"]["catalog_id"] == "20251224_093000"
     assert report["dataset"]["test_recordings"] == [TEST_HASH, OTHER_HASH]
     assert report["git_commit"] is None or len(report["git_commit"]) >= 40
     hypotheses = (latest / "hypotheses.jsonl").read_text(encoding="utf-8").splitlines()
