@@ -529,7 +529,9 @@
         "locationPlaceholder": "Select a location",
         "date": "Date",
         "eventHint": "The recording gets an unreleased event for this place and date once it is processed. With several files, only the first one processed gets the event; attach the others on their recording pages. Leave both empty to create the event yourself later.",
-        "eventIncomplete": "Choose both a location and a date, or leave both empty."
+        "eventIncomplete": "Choose both a location and a date, or leave both empty.",
+        "recorder": "Recorder",
+        "recorderPlaceholder": "Select a recorder"
       },
       "jobs": {
         "title": "Ingest jobs",
@@ -538,6 +540,7 @@
         "empty": "No recordings have been uploaded yet.",
         "retrySubmit": "Retry submit",
         "event": "Event #{id}",
+        "recordedBy": "Recorded by {name}",
         "remove": "Remove recording",
         "loadError": "Ingest jobs could not be loaded.",
         "refreshError": "The list could not be refreshed; it shows the last state that loaded.",
@@ -590,7 +593,8 @@
         "derived_refresh_failed": "Removed, but the RAG/speaker refresh failed - run catalog run-pipeline",
         "sync_failed": "Processed, but catalog sync failed - run Sync catalog",
         "event_exists": "Processed; an event already covers this place and date - assign it on the recording page",
-        "event_not_created": "Processed, but the event could not be created"
+        "event_not_created": "Processed, but the event could not be created",
+        "metadata_not_saved": "Processed, but the recorder could not be saved"
       },
       "postCommand": {
         "title": "Post-ingest command",

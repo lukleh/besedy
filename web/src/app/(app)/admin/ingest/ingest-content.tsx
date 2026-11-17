@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useArchive } from "@/hooks/use-archive";
-import { useLocations } from "@/hooks/use-metadata-enums";
+import { useLocations, useRecorders } from "@/hooks/use-metadata-enums";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import { cn, formatBytes } from "@/lib/utils";
 import {
@@ -102,10 +102,12 @@ export default function IngestContent() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [locationId, setLocationId] = useState("");
   const [eventDate, setEventDate] = useState("");
+  const [recorderId, setRecorderId] = useState("");
 
   const { data: archive, isLoading: archiveLoading, error: archiveError } = useArchive();
   const catalogId = archive?.id ?? "";
   const { data: locations } = useLocations(catalogId || undefined);
+  const { data: recorders } = useRecorders(catalogId || undefined);
   const uploadEvent = parseUploadEvent(locationId, eventDate);
 
   const intakesQuery = useQuery({
@@ -124,9 +126,11 @@ export default function IngestContent() {
     mutationFn: async ({
       items,
       event,
+      recorder,
     }: {
       items: UploadItem[];
       event: UploadRecordingEvent | null;
+      recorder: number | null;
     }) => {
       const results: RecordingIntakeDto[] = [];
       for (const item of items) {
@@ -140,6 +144,7 @@ export default function IngestContent() {
             catalogId,
             file: item.file,
             event,
+            recorderId: recorder,
             onProgress: (sentBytes) =>
               setUploads((current) =>
                 current.map((entry) =>
@@ -169,9 +174,10 @@ export default function IngestContent() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: INTAKES_QUERY_KEY }),
     onSuccess: (results, { items }) => {
       if (results.length > 0) {
-        // The next upload is usually another talk; never carry its place and date over.
+        // The next upload is usually another talk; never carry its details over.
         setLocationId("");
         setEventDate("");
+        setRecorderId("");
       }
       if (results.length === items.length) {
         toast({ title: t("toasts.queued", { count: results.length }) });
@@ -303,13 +309,18 @@ export default function IngestContent() {
 
   const handleUpload = () => {
     if (!catalogId || pendingUploads.length === 0 || uploadEvent === "incomplete") return;
-    uploadMutation.mutate({ items: pendingUploads, event: uploadEvent });
+    uploadMutation.mutate({
+      items: pendingUploads,
+      event: uploadEvent,
+      recorder: recorderId ? Number(recorderId) : null,
+    });
   };
 
   const handleReset = () => {
     setUploads([]);
     setLocationId("");
     setEventDate("");
+    setRecorderId("");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -373,7 +384,7 @@ export default function IngestContent() {
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="ingest-location">{t("upload.location")}</Label>
               <Select
@@ -405,9 +416,29 @@ export default function IngestContent() {
                 data-testid="ingest-date"
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="ingest-recorder">{t("upload.recorder")}</Label>
+              <Select
+                value={recorderId || "none"}
+                onValueChange={(value) => setRecorderId(value === "none" ? "" : value)}
+                disabled={uploadMutation.isPending}
+              >
+                <SelectTrigger id="ingest-recorder" data-testid="ingest-recorder">
+                  <SelectValue placeholder={t("upload.recorderPlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{tCommon("none")}</SelectItem>
+                  {recorders?.map((recorder) => (
+                    <SelectItem key={recorder.id} value={recorder.id.toString()}>
+                      {recorder.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <p
               className={cn(
-                "text-xs md:col-span-2",
+                "text-xs md:col-span-3",
                 uploadEvent === "incomplete" ? "text-destructive" : "text-muted-foreground"
               )}
               data-testid="ingest-event-hint"
@@ -546,6 +577,11 @@ export default function IngestContent() {
                             {[intake.dateDay, intake.dateMonth, intake.dateYear]
                               .filter((part) => part != null)
                               .join(". ")}
+                          </div>
+                        )}
+                        {intake.recorderName && (
+                          <div className="text-xs text-muted-foreground" data-testid="ingest-intake-recorder">
+                            {t("jobs.recordedBy", { name: intake.recorderName })}
                           </div>
                         )}
                       </TableCell>

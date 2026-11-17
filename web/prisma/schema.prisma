@@ -638,11 +638,14 @@ model RecordingIntake {
   dateDay               Int?                  @map("date_day")
   /// Event the recording was assigned to when the ingest succeeded
   eventId               Int?                  @map("event_id")
+  /// Recorder entered on upload; becomes the recording's metadata on success
+  recorderId            Int?                  @map("recorder_id")
 
   workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
   requestedBy   User?         @relation("RecordingIntakeRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
   location      Location?     @relation(fields: [locationId], references: [id], onDelete: SetNull)
   event         CatalogEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  recorder      Recorder?     @relation(fields: [recorderId], references: [id], onDelete: SetNull)
 
   @@index([workflowGroupId, status])
   @@index([createdAt])
@@ -1622,8 +1625,9 @@ model Recorder {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
-  workflowGroup WorkflowGroup   @relation(fields: [workflowGroupId], references: [id])
-  audioMetadata AudioMetadata[]
+  workflowGroup    WorkflowGroup     @relation(fields: [workflowGroupId], references: [id])
+  audioMetadata    AudioMetadata[]
+  recordingIntakes RecordingIntake[]
 
   @@unique([workflowGroupId, name])
   @@index([workflowGroupId])

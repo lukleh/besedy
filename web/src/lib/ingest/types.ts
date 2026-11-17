@@ -73,6 +73,8 @@ export const recordingIntakeSchema = z.object({
   dateMonth: z.number().int().nullable().optional(),
   dateDay: z.number().int().nullable().optional(),
   eventId: z.number().int().nullable().optional(),
+  recorderId: z.number().int().nullable().optional(),
+  recorderName: z.string().nullable().optional(),
   prefectStateName: z.string().nullable().optional(),
   jobStateUnavailable: z.boolean().optional(),
 });

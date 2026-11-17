@@ -32,6 +32,8 @@ const CreateUploadSchema = z
     dateYear: z.number().int().min(1900).max(2100).nullable().optional(),
     dateMonth: z.number().int().min(1).max(12).nullable().optional(),
     dateDay: z.number().int().min(1).max(31).nullable().optional(),
+    // Who recorded it; stored in the recording's metadata, independent of the event.
+    recorderId: z.number().int().positive().nullable().optional(),
   })
   .refine((body) => (body.locationId == null) === (body.dateYear == null), {
     message: 'Location and year must be given together',
@@ -52,8 +54,8 @@ const CreateUploadSchema = z
 /**
  * POST /api/admin/ingest/uploads
  * Opens a chunked upload: creates the intake row and its incoming directory.
- * The optional place and date become the recording's metadata and event once
- * the ingest succeeds.
+ * The optional place and date become the recording's metadata and event, and
+ * the optional recorder its metadata, once the ingest succeeds.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -66,8 +68,17 @@ export async function POST(request: NextRequest) {
 
     const bodyResult = await validateRequestBody(request, CreateUploadSchema);
     if (!bodyResult.success) return bodyResult.response;
-    const { catalogId, filename, sizeBytes, mimeType, locationId, dateYear, dateMonth, dateDay } =
-      bodyResult.data;
+    const {
+      catalogId,
+      filename,
+      sizeBytes,
+      mimeType,
+      locationId,
+      dateYear,
+      dateMonth,
+      dateDay,
+      recorderId,
+    } = bodyResult.data;
     await assertArchiveCatalogId(catalogId);
 
     const extension = getAllowedIngestExtension(filename);
@@ -94,6 +105,15 @@ export async function POST(request: NextRequest) {
         return badRequest('Selected location does not belong to this catalog');
       }
     }
+    if (recorderId != null) {
+      const recorder = await prisma.recorder.findFirst({
+        where: { id: recorderId, workflowGroupId: catalogId },
+        select: { id: true },
+      });
+      if (!recorder) {
+        return badRequest('Selected recorder does not belong to this catalog');
+      }
+    }
 
     const intake = await prisma.recordingIntake.create({
       data: {
@@ -107,6 +127,7 @@ export async function POST(request: NextRequest) {
         dateYear: dateYear ?? null,
         dateMonth: dateYear != null ? (dateMonth ?? null) : null,
         dateDay: dateYear != null ? (dateDay ?? null) : null,
+        recorderId: recorderId ?? null,
       },
     });
 

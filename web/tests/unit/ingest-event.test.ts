@@ -40,6 +40,7 @@ function intake(overrides: Partial<IntakeRow> = {}): IntakeRow {
     dateYear: 2026,
     dateMonth: 11,
     dateDay: 17,
+    recorderId: null,
     eventId: null,
     ...overrides,
   } as IntakeRow;
@@ -88,6 +89,50 @@ describe("assignIntakeEvent", () => {
       "dateMonth",
       "dateDay",
     ]);
+  });
+
+  it("saves a recorder given without a place and date, and creates no event", async () => {
+    const outcome = await assignIntakeEvent(
+      intake({ locationId: null, dateYear: null, dateMonth: null, dateDay: null, recorderId: 3 }),
+      HASH
+    );
+
+    expect(outcome).toEqual({ eventId: null, errorCode: null, errorMessage: null });
+    expect(mocks.tx.audioMetadata.upsert).toHaveBeenCalledWith({
+      where: { workflowGroupId_audioHash: { workflowGroupId: CATALOG_ID, audioHash: HASH } },
+      update: { recorderId: 3 },
+      create: { workflowGroupId: CATALOG_ID, audioHash: HASH, tags: [], verified: false, recorderId: 3 },
+    });
+    expect(mocks.createEventFromRecording).not.toHaveBeenCalled();
+    expect(mocks.logMetadataUpdated).toHaveBeenCalledWith("admin-1", HASH, CATALOG_ID, ["recorderId"]);
+  });
+
+  it("saves the recorder together with the place and date", async () => {
+    mocks.createEventFromRecording.mockResolvedValue({
+      kind: "created",
+      eventId: 42,
+      title: "t",
+      sessionIndex: 1,
+    });
+
+    await assignIntakeEvent(intake({ recorderId: 3 }), HASH);
+
+    expect(mocks.tx.audioMetadata.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: { locationId: 7, dateYear: 2026, dateMonth: 11, dateDay: 17, recorderId: 3 },
+      })
+    );
+  });
+
+  it("reports a recorder-only failure as metadata_not_saved", async () => {
+    mocks.transaction.mockRejectedValueOnce(new Error("deadlock"));
+
+    const outcome = await assignIntakeEvent(
+      intake({ locationId: null, dateYear: null, recorderId: 3 }),
+      HASH
+    );
+
+    expect(outcome).toMatchObject({ eventId: null, errorCode: "metadata_not_saved" });
   });
 
   it("keeps an existing assignment and its metadata untouched", async () => {
@@ -155,10 +200,12 @@ describe("assignIntakeEvent", () => {
     expect(await assignIntakeEvent(intake(), HASH)).toMatchObject({ eventId: 42, errorCode: null });
   });
 
-  it("creates no event when the uploader no longer exists", async () => {
+  it("creates no event when the uploader no longer exists, but keeps the metadata", async () => {
     const outcome = await assignIntakeEvent(intake({ requestedById: null }), HASH);
 
     expect(outcome.errorCode).toBe("event_not_created");
-    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.tx.audioMetadata.upsert).toHaveBeenCalled();
+    expect(mocks.createEventFromRecording).not.toHaveBeenCalled();
+    expect(mocks.logMetadataUpdated).not.toHaveBeenCalled();
   });
 });
