@@ -25,6 +25,29 @@ export function unknownPostIngestPlaceholders(command: string): string[] {
   return [...unknown].sort();
 }
 
+/**
+ * Whether Python's `shlex.split` (POSIX mode, which the worker uses) can split
+ * the command: every quote is closed and no backslash ends the line.
+ */
+export function splitsLikeShell(command: string): boolean {
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+  for (const char of command) {
+    if (escaped) {
+      escaped = false;
+    } else if (quote === "'") {
+      if (char === "'") quote = null;
+    } else if (char === "\\") {
+      escaped = true;
+    } else if (quote === '"') {
+      if (char === '"') quote = null;
+    } else if (char === "'" || char === '"') {
+      quote = char;
+    }
+  }
+  return quote === null && !escaped;
+}
+
 /** Empty means no command; the worker splits the value like a shell, without one. */
 export const postIngestCommandSchema = z.object({
   command: z
@@ -33,6 +56,9 @@ export const postIngestCommandSchema = z.object({
     .max(POST_INGEST_COMMAND_MAX_LENGTH)
     .refine((command) => !/[\r\n\0]/.test(command), {
       message: "The command must be a single line",
+    })
+    .refine(splitsLikeShell, {
+      message: "Unclosed quote or a trailing backslash; the worker could not split the command",
     })
     .refine((command) => unknownPostIngestPlaceholders(command).length === 0, {
       message: `Unknown placeholder; use ${POST_INGEST_PLACEHOLDERS.map((name) => `{${name}}`).join(", ")}`,

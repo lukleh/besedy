@@ -117,7 +117,18 @@ describe("admin post-ingest command route", () => {
     expect(mocks.logCatalogLifecycleEvent).not.toHaveBeenCalled();
   });
 
+  it("accepts quoting the worker can split", async () => {
+    const response = await PUT(
+      put({ command: `/hook "{event_id}" 'a b' "it's" a\\ b 'x\\'` }),
+    );
+
+    expect(response.status).toBe(200);
+  });
+
   it.each([
+    ["/bin/true 'unclosed"],
+    ['/bin/true "unclosed'],
+    ["/bin/true trailing\\"],
     ["/bin/true {evnt_id}"],
     ["/bin/true\n/bin/false"],
     ["x".repeat(2001)],

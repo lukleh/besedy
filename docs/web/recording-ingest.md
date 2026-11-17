@@ -106,8 +106,10 @@ value.
 
 - Single line, at most 2000 characters. The worker splits it like a shell
   would split it, but never runs a shell; `{event_id}`, `{audio_hash}`,
-  `{catalog_id}` and `{intake_id}` are filled in, and any other `{name}` is
-  rejected on save.
+  `{catalog_id}` and `{intake_id}` are filled in. Any other `{name}`, an
+  unclosed quote or a trailing backslash is rejected on save.
+- The catalog settings route (`/api/catalogs/:id`), open to catalog admins,
+  leaves the command out.
 - The web app sends the saved command in its response to the worker's
   `SUCCEEDED` report (`postIngestCommand`), so the command that runs is the
   one saved when the ingest finished.
