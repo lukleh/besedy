@@ -176,14 +176,14 @@ the host; the audit log shows who saved which command.
 report, so the recording, its metadata and its event exist. `{event_id}` is
 only the event this recording created (it is the event's primary,
 `postIngestEventId` in the completion response); a recording that joined an
-existing event gets none, so a command that uses `{event_id}`, such as the
-artwork hook, runs once per event. It runs once per flow run. A retried report that the web app had already applied
-(`alreadyFinal`, typically after a lost response) still gets the command and
-runs it; a rerun of the whole flow cannot, because the upload is then a
-duplicate. It does not run when the result only reached the web app through
-the Prefect artifact. A
-command that uses `{event_id}` runs only when the upload created or found an
-event (see "Event on upload"). Its working directory is the worker user's
+existing event, or got none, has no `{event_id}`, so a command that uses it,
+such as an artwork script, runs once per event (see "Event on upload").
+
+It runs once per flow run. A retried report that the web app had already
+applied (`alreadyFinal`, typically after a lost response) still gets the
+command and runs it; a rerun of the whole flow cannot, because the upload is
+then a duplicate. It does not run when the result only reached the web app
+through the Prefect artifact. Its working directory is the worker user's
 home, and it gets the worker environment without `BESEDY_JOB_SERVICE_SECRET`
 and `HF_TOKEN`.
 
