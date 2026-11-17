@@ -869,7 +869,7 @@ describe('worktree-report.sh', () => {
           'Linked git worktrees: 1 (0 removable, 1 kept, 0 with missing directories)',
         );
         expect(result.stdout).toMatch(
-          new RegExp(`KEEP       ${idle}  \\[branch idle-branch.* -- some files are unreadable to this user`),
+          new RegExp(`KEEP       ${idle}  \\[branch idle-branch.* -- du could not read all of it`),
         );
       } finally {
         chmodSync(unreadable, 0o755);
