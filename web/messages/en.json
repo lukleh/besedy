@@ -523,7 +523,12 @@
           "uploading": "Uploading… {percent}%",
           "done": "Uploaded and queued",
           "error": "Upload failed"
-        }
+        },
+        "location": "Location",
+        "locationPlaceholder": "Select a location",
+        "date": "Date",
+        "eventHint": "The recording gets an unreleased event for this place and date once it is processed. Leave both empty to create the event yourself later.",
+        "eventIncomplete": "Choose both a location and a date, or leave both empty."
       },
       "jobs": {
         "title": "Ingest jobs",
@@ -531,6 +536,7 @@
         "refresh": "Refresh",
         "empty": "No recordings have been uploaded yet.",
         "retrySubmit": "Retry submit",
+        "event": "Event #{id}",
         "remove": "Remove recording",
         "loadError": "Ingest jobs could not be loaded.",
         "refreshError": "The list could not be refreshed; it shows the last state that loaded.",
@@ -581,7 +587,9 @@
         "completion_missing": "Worker finished but its report never arrived; catalog re-synced",
         "remove_failed": "Removal failed - the recording may be partially removed; check the worker log",
         "derived_refresh_failed": "Removed, but the RAG/speaker refresh failed - run catalog run-pipeline",
-        "sync_failed": "Processed, but catalog sync failed - run Sync catalog"
+        "sync_failed": "Processed, but catalog sync failed - run Sync catalog",
+        "event_exists": "Processed; an event already covers this place and date - assign it on the recording page",
+        "event_not_created": "Processed, but the event could not be created"
       },
       "remove": {
         "title": "Remove this recording?",

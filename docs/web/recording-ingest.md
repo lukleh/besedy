@@ -1,8 +1,8 @@
 # Recording Ingest (Admin Upload)
 
-> **Last Updated:** 2026-11-08
-> **Status:** Phase 1 - upload, process, auto-sync, status. Metadata/event
-> pre-fill is a follow-up.
+> **Last Updated:** 2026-11-17
+> **Status:** Upload, process, auto-sync, status, and an unreleased event
+> created from the place and date entered on upload.
 
 Admins upload recordings on **Admin -> Ingest** (`/admin/ingest`). The web app
 stores the file, submits an `INGEST` job to the jobs API, and a Prefect worker
@@ -40,7 +40,9 @@ host worker (work pool besedy-ingest-<env>, concurrency 1)
        (if this cannot be delivered the worker stores a structured result artifact
         in Prefect and fails the run; the web app applies that outcome later)
 
-web complete route: update recording_intake; on SUCCEEDED run syncCatalogGroup()
+web complete route: update recording_intake; on SUCCEEDED run syncCatalogGroup(),
+    then create the recording's event from the upload's place and date
+    (see "Event on upload")
 web progress route: records the step on a QUEUED/RUNNING/REMOVING row (never
     its status); the first report of a run sets started_at
 UI: shows "Step 4/9 · transcribe (…) · 12 min (total 18 min)", counted in the
@@ -57,6 +59,34 @@ non-path metadata (`original_filename` and `requested_by_id`), while removals
 carry the validated audio hash. The web container and the host see the uploads
 root under different paths (`/data/uploads` vs. the host directory), so no
 filesystem path is ever passed across.
+
+## Event on upload
+
+The upload form asks for the recording's **location** and **date**. Both are
+optional, but only together: leave both empty to create the event by hand
+later. They are stored on the `recording_intake` row (`location_id`,
+`date_year`, `date_month`, `date_day`) and apply to every file of that upload.
+
+When the ingest succeeds and the catalog sync has the new recording, the web
+app (`web/src/lib/ingest/event.ts`) writes them into the recording's metadata
+and creates an **unreleased** event for that place and date with the recording
+as its primary, through the same code as **Create event** on the recording
+page (`web/src/lib/catalog-events/create-from-recording.ts`). The event id is
+stored on the row (`event_id`), linked from the ingest page, and returned in
+the completion response. Releasing the event stays a manual step.
+
+The intake is `SUCCEEDED` either way; when no event was assigned the row says
+why:
+
+- `event_exists`: events already cover that place and date. The recording may
+  be a second capture of one of them, so it is left unassigned; attach it or
+  confirm a distinct event on the recording page.
+- `event_not_created`: anything else (the uploader was deleted, the recording
+  is not actionable, the transaction failed); the message has the detail.
+
+An undelivered outcome that a later admin poll applies goes through the same
+step. Removing the recording later detaches it from the event like any other
+removal; the now empty event is kept unreleased.
 
 ## Job records and recovery
 
@@ -261,7 +291,8 @@ file removed), `undecodable_audio`, `intake_missing`, `intake_invalid`,
 `worker_cancelled` (terminal Prefect state without a completion report),
 `job_missing`, `completion_missing` (Prefect finished but no report arrived; the
 catalog was re-synced), `sync_failed` (ingest succeeded but the projection sync
-failed - click **Sync catalog**).
+failed - click **Sync catalog**), `event_exists` / `event_not_created` (ingest
+succeeded but no event was assigned; see "Event on upload").
 
 If the jobs API is unreachable or misconfigured at finalize, the row stays
 `UPLOADING` with the file kept and the page shows **Retry submit**. If the
@@ -332,7 +363,7 @@ be retried; `derived_refresh_failed` means the recording is gone but the
 
 ## Follow-ups (phase 2)
 
-- Collect title/date/location/recorder/event on upload and apply them once the
-  hash is known (metadata upsert + `catalog-events/from-recording`).
+- Collect title/recorder on upload, and offer an existing event for the same
+  place and date instead of reporting `event_exists`.
 - Cancel from the web UI (needs process-group signalling verified end-to-end).
 - Scope `run-pipeline` to the uploaded hash instead of all pending rows.

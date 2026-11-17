@@ -17,9 +17,18 @@ import {
   type RecordingIntakeDto,
 } from "./types";
 
+/** Where and when the recording took place; the event is created from them. */
+export interface UploadRecordingEvent {
+  locationId: number;
+  dateYear: number;
+  dateMonth: number | null;
+  dateDay: number | null;
+}
+
 export interface UploadRecordingOptions {
   catalogId: string;
   file: File;
+  event?: UploadRecordingEvent | null;
   onProgress?: (sentBytes: number, totalBytes: number) => void;
 }
 
@@ -149,6 +158,7 @@ export async function finalizeUpload(intakeId: string): Promise<RecordingIntakeD
 export async function uploadRecording({
   catalogId,
   file,
+  event,
   onProgress,
 }: UploadRecordingOptions): Promise<RecordingIntakeDto> {
   const created = await fetchJson("/api/admin/ingest/uploads", {
@@ -159,6 +169,7 @@ export async function uploadRecording({
       filename: file.name,
       sizeBytes: file.size,
       mimeType: file.type || null,
+      ...(event ?? {}),
     }),
     schema: createUploadResponseSchema,
   });
