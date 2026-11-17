@@ -640,15 +640,25 @@ model RecordingIntake {
   eventId               Int?                  @map("event_id")
   /// Recorder entered on upload; becomes the recording's metadata on success
   recorderId            Int?                  @map("recorder_id")
+  /// Shared by the files of one upload; later files join the event the first
+  /// one got instead of reporting event_exists
+  uploadBatchId         String?               @map("upload_batch_id") @db.Uuid
+  /// Existing event chosen on upload for this place and date
+  targetEventId         Int?                  @map("target_event_id")
+  /// Chosen on upload: create a separate event even though others cover the
+  /// same place and date
+  createDistinctEvent   Boolean               @default(false) @map("create_distinct_event")
 
   workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
   requestedBy   User?         @relation("RecordingIntakeRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
   location      Location?     @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  event         CatalogEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  event         CatalogEvent? @relation("RecordingIntakeEvent", fields: [eventId], references: [id], onDelete: SetNull)
+  targetEvent   CatalogEvent? @relation("RecordingIntakeTargetEvent", fields: [targetEventId], references: [id], onDelete: SetNull)
   recorder      Recorder?     @relation(fields: [recorderId], references: [id], onDelete: SetNull)
 
   @@index([workflowGroupId, status])
   @@index([createdAt])
+  @@index([uploadBatchId])
   @@map("recording_intake")
 }
 
@@ -758,7 +768,8 @@ model CatalogEvent {
   eventNotifications EventNotification[]
   artworkCandidates  CatalogEventArtwork[]
   artworkPublication CatalogEventArtworkPublication?
-  recordingIntakes   RecordingIntake[]
+  recordingIntakes   RecordingIntake[] @relation("RecordingIntakeEvent")
+  targetedIntakes    RecordingIntake[] @relation("RecordingIntakeTargetEvent")
 
   @@unique([id, workflowGroupId])
   @@index([workflowGroupId, released])

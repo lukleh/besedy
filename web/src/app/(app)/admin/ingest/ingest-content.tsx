@@ -38,6 +38,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useArchive } from "@/hooks/use-archive";
 import { useLocations, useRecorders } from "@/hooks/use-metadata-enums";
+import { z } from "zod";
+import { EventCreationCandidateSchema } from "@/lib/catalog-events/create-conflict";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import { cn, formatBytes } from "@/lib/utils";
 import {
@@ -70,6 +72,26 @@ interface UploadItem {
 }
 
 /** The place and date for the upload's event; null when both are empty. */
+const eventCandidatesSchema = z.object({ candidates: z.array(EventCreationCandidateSchema) });
+
+/**
+ * A v4 UUID for the upload batch. `crypto.randomUUID` exists only in secure
+ * contexts, so the admin page opened over plain HTTP on a LAN address falls
+ * back to `getRandomValues`, which is available everywhere.
+ */
+function newUploadBatchId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** "new" for a separate new event, an event id, or "" when nothing is chosen. */
+type EventChoice = { key: string; value: string };
+const NO_EVENT_CHOICE: EventChoice = { key: "", value: "" };
+
 function parseUploadEvent(
   locationId: string,
   date: string
@@ -109,6 +131,32 @@ export default function IngestContent() {
   const { data: locations } = useLocations(catalogId || undefined);
   const { data: recorders } = useRecorders(catalogId || undefined);
   const uploadEvent = parseUploadEvent(locationId, eventDate);
+  const [eventChoiceState, setEventChoiceState] = useState<EventChoice>(NO_EVENT_CHOICE);
+  // A choice belongs to one place and date; changing either drops it.
+  const eventKey = uploadEvent && uploadEvent !== "incomplete" ? `${locationId}|${eventDate}` : "";
+  const eventChoice = eventChoiceState.key === eventKey ? eventChoiceState.value : "";
+  const candidatesQuery = useQuery({
+    queryKey: ["ingest-event-candidates", eventKey],
+    queryFn: () => {
+      const event = uploadEvent as UploadRecordingEvent;
+      const params = new URLSearchParams({
+        locationId: String(event.locationId),
+        dateYear: String(event.dateYear),
+        ...(event.dateMonth != null ? { dateMonth: String(event.dateMonth) } : {}),
+        ...(event.dateDay != null ? { dateDay: String(event.dateDay) } : {}),
+      });
+      return fetchJson(`/api/admin/ingest/event-candidates?${params}`, {
+        schema: eventCandidatesSchema,
+      });
+    },
+    enabled: eventKey !== "",
+  });
+  const eventCandidates = eventKey ? (candidatesQuery.data?.candidates ?? []) : [];
+  const needsEventChoice = eventCandidates.length > 0 && eventChoice === "";
+  // Until the lookup has answered, an upload could skip a choice it needs.
+  const candidatesPending = eventKey !== "" && (candidatesQuery.isFetching || !candidatesQuery.data);
+  const candidatesFailed = eventKey !== "" && candidatesQuery.isError && !candidatesQuery.isFetching;
+  const eventChoiceBlocked = needsEventChoice || candidatesPending || candidatesFailed;
 
   const intakesQuery = useQuery({
     queryKey: INTAKES_QUERY_KEY,
@@ -127,12 +175,16 @@ export default function IngestContent() {
       items,
       event,
       recorder,
+      choice,
     }: {
       items: UploadItem[];
       event: UploadRecordingEvent | null;
       recorder: number | null;
+      choice: string;
     }) => {
       const results: RecordingIntakeDto[] = [];
+      // One id for the whole upload: later files join the event the first one gets.
+      const uploadBatchId = event ? newUploadBatchId() : null;
       for (const item of items) {
         setUploads((current) =>
           current.map((entry) =>
@@ -145,6 +197,9 @@ export default function IngestContent() {
             file: item.file,
             event,
             recorderId: recorder,
+            uploadBatchId,
+            targetEventId: choice && choice !== "new" ? Number(choice) : null,
+            createDistinctEvent: choice === "new",
             onProgress: (sentBytes) =>
               setUploads((current) =>
                 current.map((entry) =>
@@ -178,6 +233,7 @@ export default function IngestContent() {
         setLocationId("");
         setEventDate("");
         setRecorderId("");
+        setEventChoiceState(NO_EVENT_CHOICE);
       }
       if (results.length === items.length) {
         toast({ title: t("toasts.queued", { count: results.length }) });
@@ -308,11 +364,19 @@ export default function IngestContent() {
   );
 
   const handleUpload = () => {
-    if (!catalogId || pendingUploads.length === 0 || uploadEvent === "incomplete") return;
+    if (
+      !catalogId ||
+      pendingUploads.length === 0 ||
+      uploadEvent === "incomplete" ||
+      eventChoiceBlocked
+    ) {
+      return;
+    }
     uploadMutation.mutate({
       items: pendingUploads,
       event: uploadEvent,
       recorder: recorderId ? Number(recorderId) : null,
+      choice: eventCandidates.length > 0 ? eventChoice : "",
     });
   };
 
@@ -321,6 +385,7 @@ export default function IngestContent() {
     setLocationId("");
     setEventDate("");
     setRecorderId("");
+    setEventChoiceState(NO_EVENT_CHOICE);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -445,6 +510,51 @@ export default function IngestContent() {
             >
               {uploadEvent === "incomplete" ? t("upload.eventIncomplete") : t("upload.eventHint")}
             </p>
+            {candidatesFailed && (
+              <p className="text-xs text-destructive md:col-span-3" data-testid="ingest-event-lookup-error">
+                {t("upload.eventLookupError")}{" "}
+                <button
+                  type="button"
+                  className="underline"
+                  onClick={() => candidatesQuery.refetch()}
+                >
+                  {t("upload.eventLookupRetry")}
+                </button>
+              </p>
+            )}
+            {eventCandidates.length > 0 && (
+              <div className="space-y-2 md:col-span-3" data-testid="ingest-event-choice">
+                <Label htmlFor="ingest-event-choice">{t("upload.eventChoice")}</Label>
+                <Select
+                  value={eventChoice || undefined}
+                  onValueChange={(value) => setEventChoiceState({ key: eventKey, value })}
+                  disabled={uploadMutation.isPending}
+                >
+                  <SelectTrigger id="ingest-event-choice" data-testid="ingest-event-choice-select">
+                    <SelectValue placeholder={t("upload.eventChoicePlaceholder")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {eventCandidates.map((candidate) => (
+                      <SelectItem key={candidate.id} value={candidate.id.toString()}>
+                        {t("upload.eventChoiceExisting", {
+                          title: candidate.title ?? `#${candidate.id}`,
+                          count: candidate.recordingCount,
+                        })}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="new">{t("upload.eventChoiceNew")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p
+                  className={cn(
+                    "text-xs",
+                    needsEventChoice ? "text-destructive" : "text-muted-foreground"
+                  )}
+                >
+                  {t("upload.eventChoiceHint")}
+                </p>
+              </div>
+            )}
           </div>
 
           {uploads.length > 0 && (
@@ -491,7 +601,8 @@ export default function IngestContent() {
                 uploadMutation.isPending ||
                 pendingUploads.length === 0 ||
                 !catalogId ||
-                uploadEvent === "incomplete"
+                uploadEvent === "incomplete" ||
+                eventChoiceBlocked
               }
               data-testid="ingest-upload-button"
             >

@@ -643,13 +643,27 @@ def run_post_ingest_command(
         return None
 
     intake = completion.get("intake")
-    event_id = intake.get("eventId") if isinstance(intake, dict) else None
+    assigned_event_id = intake.get("eventId") if isinstance(intake, dict) else None
+    # Only an event this recording created; a recording that joined an
+    # existing event gets none, so an event command runs once per event.
+    # Older web apps do not send the field; then the assigned event is used.
+    event_id = (
+        completion.get("postIngestEventId")
+        if "postIngestEventId" in completion
+        else assigned_event_id
+    )
     values = {"audio_hash": audio_hash, "catalog_id": catalog_id, "intake_id": intake_id}
-    if isinstance(event_id, int) and not isinstance(event_id, bool) and event_id > 0:
+    if _positive_int(event_id):
         values["event_id"] = str(event_id)
     command = render_post_ingest_command(template, values)
     if command is None:
-        log("[post_ingest] Not run: the command needs an event and this upload got none.")
+        if _positive_int(assigned_event_id):
+            log(
+                f"[post_ingest] Not run: the recording joined event {assigned_event_id}, "
+                "which an earlier recording created."
+            )
+        else:
+            log("[post_ingest] Not run: the command needs an event and this upload got none.")
         return None
 
     log(f"[post_ingest] $ {shlex.join(command)}")
@@ -722,6 +736,10 @@ def run_post_ingest_command(
     else:
         log(f"[post_ingest] Failed with exit code {return_code}; the ingest itself succeeded.")
     return return_code
+
+
+def _positive_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
 def _report_failure_best_effort(

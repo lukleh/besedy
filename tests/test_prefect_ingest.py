@@ -1159,6 +1159,28 @@ def test_post_ingest_command_does_not_wait_for_output_held_by_a_detached_child(
     assert any("still holds its output open" in line for line in lines)
 
 
+def test_post_ingest_command_skips_a_recording_that_joined_an_existing_event() -> None:
+    completion = _completion("/bin/true {event_id}", 42)
+    completion["postIngestEventId"] = None
+
+    result, lines = _run_post_ingest(completion, _post_ingest_env())
+
+    assert result is None
+    assert lines == [
+        "[post_ingest] Not run: the recording joined event 42, which an earlier recording created."
+    ]
+
+
+def test_post_ingest_command_uses_the_created_event_id() -> None:
+    completion = _completion(_child("import sys; print(sys.argv[1])") + " {event_id}", 42)
+    completion["postIngestEventId"] = 42
+
+    result, lines = _run_post_ingest(completion, _post_ingest_env())
+
+    assert result == 0
+    assert "[post_ingest] 42" in lines
+
+
 def test_post_ingest_command_without_event_placeholder_runs_without_event() -> None:
     command = _child("import sys; print(sys.argv[1])") + " {audio_hash}"
 

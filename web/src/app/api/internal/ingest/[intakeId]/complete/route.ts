@@ -35,6 +35,24 @@ const TERMINAL_STATUSES = new Set([
   'REMOVED',
 ]);
 
+/**
+ * The event a post-ingest command may act on: only one this recording created
+ * (it is the event's primary). A recording that joined an existing event gets
+ * none, so an event command such as artwork runs once per event.
+ */
+async function loadPostIngestEventId(
+  catalogId: string,
+  audioHash: string | null,
+  eventId: number | null,
+): Promise<number | null> {
+  if (!audioHash || eventId == null) return null;
+  const assignment = await prisma.catalogEventRecording.findUnique({
+    where: { workflowGroupId_audioHash: { workflowGroupId: catalogId, audioHash } },
+    select: { eventId: true, isPrimary: true },
+  });
+  return assignment?.eventId === eventId && assignment.isPrimary ? eventId : null;
+}
+
 async function loadPostIngestCommand(catalogId: string): Promise<string | null> {
   const group = await prisma.workflowGroup.findUnique({
     where: { id: catalogId },
@@ -85,6 +103,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         postIngestCommand:
           status === 'SUCCEEDED' && intake.status === 'SUCCEEDED'
             ? await loadPostIngestCommand(intake.workflowGroupId)
+            : null,
+        postIngestEventId:
+          status === 'SUCCEEDED' && intake.status === 'SUCCEEDED'
+            ? await loadPostIngestEventId(intake.workflowGroupId, intake.audioHash, intake.eventId)
             : null,
       });
     }
@@ -141,6 +163,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const postIngestCommand =
       status === 'SUCCEEDED' ? await loadPostIngestCommand(intake.workflowGroupId) : null;
+    const postIngestEventId =
+      status === 'SUCCEEDED'
+        ? await loadPostIngestEventId(updated.workflowGroupId, updated.audioHash, updated.eventId)
+        : null;
 
     return NextResponse.json({
       ok: sync ? sync.status !== 'error' : true,
@@ -149,6 +175,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       sync,
       removal,
       postIngestCommand,
+      postIngestEventId,
     });
   } catch (error) {
     return handlePrismaError(error, 'recording ingest completion', 'update');

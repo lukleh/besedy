@@ -528,10 +528,17 @@
         "location": "Location",
         "locationPlaceholder": "Select a location",
         "date": "Date",
-        "eventHint": "The recording gets an unreleased event for this place and date once it is processed. With several files, only the first one processed gets the event; attach the others on their recording pages. Leave both empty to create the event yourself later.",
+        "eventHint": "The recording gets an unreleased event for this place and date once it is processed. With several files, the first one processed gets the event and the others join it. Leave both empty to create the event yourself later.",
         "eventIncomplete": "Choose both a location and a date, or leave both empty.",
         "recorder": "Recorder",
-        "recorderPlaceholder": "Select a recorder"
+        "recorderPlaceholder": "Select a recorder",
+        "eventChoice": "Event",
+        "eventChoicePlaceholder": "Choose the event",
+        "eventChoiceExisting": "Add to {title} ({count, plural, one {# recording} other {# recordings}})",
+        "eventChoiceNew": "New, separate event",
+        "eventLookupError": "Could not check for existing events on this place and date, so uploading is blocked.",
+        "eventLookupRetry": "Try again",
+        "eventChoiceHint": "Events already cover this place and date. Choose the one these recordings belong to, or a separate new event. Adding to a released event publishes the recordings right away."
       },
       "jobs": {
         "title": "Ingest jobs",

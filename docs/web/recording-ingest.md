@@ -75,10 +75,16 @@ upload; the form clears them after an upload.
 When the ingest succeeds and the catalog sync has the new recording, the web
 app (`web/src/lib/ingest/event.ts`) writes the fields that were given into the
 recording's metadata (a recorder-only upload leaves place and date untouched)
-and, when a place and date were given, creates an **unreleased** event for
-them with the recording
-as its primary, through the same code as **Create event** on the recording
-page (`web/src/lib/catalog-events/create-from-recording.ts`). The event id is
+and, when a place and date were given, puts the recording on an event:
+
+- the event chosen on the form (see below), as a further recording;
+- otherwise the event an earlier file of the same upload got
+  (`upload_batch_id`), as a further recording;
+- otherwise a new **unreleased** event for that place and date, with the
+  recording as its primary, through the same code as **Create event** on the
+  recording page (`web/src/lib/catalog-events/create-from-recording.ts`).
+
+The event id is
 stored on the row (`event_id`), linked from the ingest page, and returned in
 the completion response. Releasing the event stays a manual step. A recording
 that already belongs to an event (an admin assigned it while the outcome
@@ -88,11 +94,13 @@ its metadata and reports that event.
 The intake is `SUCCEEDED` either way; when no event was assigned the row says
 why:
 
-- `event_exists`: events already cover that place and date. The recording may
-  be a second capture of one of them, so it is left unassigned; attach it or
-  confirm a distinct event on the recording page. Every file of one upload
-  gets the same place and date, so with several files only the first one
-  processed gets the event and the others end with `event_exists`.
+- `event_exists`: events already cover that place and date and no choice was
+  made, so the recording is left unassigned; attach it or confirm a distinct
+  event on the recording page. The form asks for the choice when it sees such
+  events, but an event can appear after the form checked: a second upload for
+  the same place and date queued while the first is still processing finds no
+  event yet, makes no choice, and ends with `event_exists` once the first has
+  created one.
 - `event_not_created`: anything else (the uploader was deleted, the recording
   is not actionable, the transaction failed); the message has the detail.
 - `metadata_not_saved`: only a recorder was given and saving it failed.
@@ -106,6 +114,32 @@ says so.
 An undelivered outcome that a later admin poll applies goes through the same
 step. Removing the recording later detaches it from the event like any other
 removal; the now empty event is kept unreleased.
+
+### Choosing an existing event
+
+Once a location and date are filled in, the form asks
+`GET /api/admin/ingest/event-candidates` (admin only) for the events that
+already cover them, the same match that would give `event_exists`. If there
+are any, the form requires a choice before uploading:
+
+- **Add to <event>** stores `target_event_id`; every file of the upload is
+  added to that event. Adding to a released event publishes the recordings
+  right away, as attaching on the recording page does.
+- **New, separate event** stores `create_distinct_event`; the first file
+  creates a new event at the next session index, and the rest join it.
+
+The form blocks the upload while that lookup is loading, and when it fails
+(with a retry).
+
+Attaching uses the same code as the event page
+(`web/src/lib/catalog-events/attach-recordings.ts`). An event without a
+primary recording (its only recording was removed) gets the joined recording
+as its primary, so it is also the recording a post-ingest event command runs
+for. If attaching fails (for example the recording is already on another
+event), the row reports `event_not_created` with the reason. A chosen event
+that is deleted before the ingest finishes is not reported:
+`target_event_id` is cleared with it, so the recording then joins its batch's
+event or creates a new one, as if no event had been chosen.
 
 ## Post-ingest command
 
@@ -139,14 +173,17 @@ as that user once the switch is on. The switch keeps that a decision made on
 the host; the audit log shows who saved which command.
 
 `ingest_recording_flow` runs it after the web app accepted the `SUCCEEDED`
-report, so the recording, its metadata and its event exist. It runs once per
-flow run. A retried report that the web app had already applied
-(`alreadyFinal`, typically after a lost response) still gets the command and
-runs it; a rerun of the whole flow cannot, because the upload is then a
-duplicate. It does not run when the result only reached the web app through
-the Prefect artifact. A
-command that uses `{event_id}` runs only when the upload created or found an
-event (see "Event on upload"). Its working directory is the worker user's
+report, so the recording, its metadata and its event exist. `{event_id}` is
+only the event this recording created (it is the event's primary,
+`postIngestEventId` in the completion response); a recording that joined an
+existing event, or got none, has no `{event_id}`, so a command that uses it,
+such as an artwork script, runs once per event (see "Event on upload").
+
+It runs once per flow run. A retried report that the web app had already
+applied (`alreadyFinal`, typically after a lost response) still gets the
+command and runs it; a rerun of the whole flow cannot, because the upload is
+then a duplicate. It does not run when the result only reached the web app
+through the Prefect artifact. Its working directory is the worker user's
 home, and it gets the worker environment without `BESEDY_JOB_SERVICE_SECRET`
 and `HF_TOKEN`.
 
