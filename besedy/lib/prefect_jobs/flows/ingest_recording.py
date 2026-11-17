@@ -10,12 +10,14 @@ from __future__ import annotations
 import fcntl
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
 import sys
+import threading
 from collections import deque
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,6 +76,15 @@ MAX_ERROR_MESSAGE_LENGTH = 2000
 _SAFE_EXTENSION_RE = re.compile(r"^\.[a-z0-9]{1,8}$")
 
 ProgressReporter = Callable[[IngestProgressReport], None]
+
+POST_INGEST_COMMAND_ENV = "BESEDY_INGEST_POST_COMMAND"
+POST_INGEST_TIMEOUT_ENV = "BESEDY_INGEST_POST_COMMAND_TIMEOUT"
+DEFAULT_POST_INGEST_TIMEOUT_SECONDS = 3600
+POST_INGEST_PLACEHOLDERS = frozenset({"event_id", "audio_hash", "catalog_id", "intake_id"})
+# Credentials the worker needs for its own callbacks and backends; the
+# post-ingest command gets the rest of the worker environment.
+POST_INGEST_WITHHELD_ENV = ("BESEDY_JOB_SERVICE_SECRET", "HF_TOKEN")
+_PLACEHOLDER_RE = re.compile(r"\{([a-z_]+)\}")
 
 
 class IngestFlowError(RuntimeError):
@@ -484,11 +495,18 @@ def ingest_recording_flow(
             _report_failure_best_effort(paths.intake_id, exc, audio_hash=audio_hash)
             raise
 
-    deliver_completion(paths.intake_id, outcome)
+    response = deliver_completion(paths.intake_id, outcome)
+    if outcome["status"] == IngestCompletionStatus.SUCCEEDED.value:
+        try:
+            run_post_ingest_command(
+                paths.catalog_id, paths.intake_id, str(outcome["audioHash"]), response
+            )
+        except Exception as exc:  # the ingest succeeded; the command never changes that
+            print(f"[post_ingest] Failed: {exc}")
     return outcome
 
 
-def deliver_completion(intake_id: str, outcome: JsonDict) -> None:
+def deliver_completion(intake_id: str, outcome: JsonDict) -> JsonDict:
     """Keep an undelivered outcome in Prefect, independent of exception prose.
 
     Artifacts live in the server database, so recovery needs no worker-local
@@ -496,7 +514,7 @@ def deliver_completion(intake_id: str, outcome: JsonDict) -> None:
     outcome if a later attempt fails before producing one.
     """
     try:
-        report_completion(intake_id, outcome)
+        return report_completion(intake_id, outcome)
     except Exception as exc:
         context = FlowRunContext.get()
         if context is None or context.flow_run is None:
@@ -522,6 +540,135 @@ def persist_terminal_result(flow_run_id: str, record: JsonDict) -> None:
         client.create_artifact(
             ArtifactCreate(type=JOB_RESULT_ARTIFACT_TYPE, flow_run_id=UUID(flow_run_id), data=record)
         )
+
+
+def post_ingest_command_template(env: Mapping[str, str] = os.environ) -> list[str] | None:
+    """The configured post-ingest argv with its placeholders, or None when unset.
+
+    The value is split like a shell would split it, but never run by a shell.
+    Each placeholder (``{event_id}``, ``{audio_hash}``, ``{catalog_id}``,
+    ``{intake_id}``) is replaced inside the argument it appears in.
+    """
+    raw = env.get(POST_INGEST_COMMAND_ENV, "").strip()
+    if not raw:
+        return None
+    argv = shlex.split(raw)
+    unknown = {
+        name
+        for argument in argv
+        for name in _PLACEHOLDER_RE.findall(argument)
+        if name not in POST_INGEST_PLACEHOLDERS
+    }
+    if unknown:
+        raise ValueError(
+            f"{POST_INGEST_COMMAND_ENV} uses unknown placeholders: {', '.join(sorted(unknown))}"
+        )
+    return argv
+
+
+def render_post_ingest_command(template: Sequence[str], values: Mapping[str, str]) -> list[str] | None:
+    """Fill the placeholders; None when the command needs a value this ingest lacks."""
+    needed = {name for argument in template for name in _PLACEHOLDER_RE.findall(argument)}
+    if any(name not in values for name in needed):
+        return None
+    return [
+        _PLACEHOLDER_RE.sub(lambda match: values[match.group(1)], argument)
+        for argument in template
+    ]
+
+
+def post_ingest_timeout_seconds(env: Mapping[str, str] = os.environ) -> int:
+    raw = env.get(POST_INGEST_TIMEOUT_ENV, "").strip()
+    if not raw:
+        return DEFAULT_POST_INGEST_TIMEOUT_SECONDS
+    value = int(raw)
+    if value <= 0:
+        raise ValueError(f"{POST_INGEST_TIMEOUT_ENV} must be a positive number of seconds")
+    return value
+
+
+def run_post_ingest_command(
+    catalog_id: str,
+    intake_id: str,
+    audio_hash: str,
+    completion: JsonDict,
+    *,
+    env: Mapping[str, str] = os.environ,
+    log: Callable[[str], None] = print,
+) -> int | None:
+    """Run the operator's post-ingest command once for a newly ingested recording.
+
+    It runs after the web app accepted the outcome (so the recording and its
+    event exist), only for the delivery that made the intake final, and never
+    affects the ingest result: its output goes to the flow log and a failure
+    is only logged. Returns the exit code, or None when nothing ran.
+    """
+    try:
+        template = post_ingest_command_template(env)
+        timeout = post_ingest_timeout_seconds(env)
+    except ValueError as exc:
+        log(f"[post_ingest] Not run: {exc}")
+        return None
+    if template is None:
+        return None
+    if not isinstance(completion, dict):
+        completion = {}
+    if completion.get("alreadyFinal"):
+        log("[post_ingest] Not run: the intake was already final, so it ran before.")
+        return None
+
+    intake = completion.get("intake")
+    event_id = intake.get("eventId") if isinstance(intake, dict) else None
+    values = {"audio_hash": audio_hash, "catalog_id": catalog_id, "intake_id": intake_id}
+    if isinstance(event_id, int) and not isinstance(event_id, bool) and event_id > 0:
+        values["event_id"] = str(event_id)
+    command = render_post_ingest_command(template, values)
+    if command is None:
+        log("[post_ingest] Not run: the command needs an event and this upload got none.")
+        return None
+
+    log(f"[post_ingest] $ {shlex.join(command)}")
+    child_env = {key: value for key, value in env.items() if key not in POST_INGEST_WITHHELD_ENV}
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=str(Path.home()),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            errors="replace",
+            start_new_session=True,
+            env=child_env,
+        )
+    except OSError as exc:
+        log(f"[post_ingest] Could not start the command: {exc}")
+        return None
+
+    timed_out = threading.Event()
+
+    def stop() -> None:
+        timed_out.set()
+        _terminate_process_group(process)
+
+    timer = threading.Timer(timeout, stop)
+    timer.start()
+    try:
+        assert process.stdout is not None
+        for line in process.stdout:
+            log(f"[post_ingest] {line.rstrip()}")
+        return_code = process.wait()
+    finally:
+        timer.cancel()
+        if process.poll() is None:
+            _terminate_process_group(process)
+    if timed_out.is_set():
+        log(f"[post_ingest] Stopped after the {timeout} s timeout (exit {return_code}).")
+    elif return_code == 0:
+        log("[post_ingest] Finished.")
+    else:
+        log(f"[post_ingest] Failed with exit code {return_code}; the ingest itself succeeded.")
+    return return_code
 
 
 def _report_failure_best_effort(

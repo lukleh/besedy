@@ -1041,3 +1041,165 @@ def test_ingest_client_from_env_requires_configuration(monkeypatch) -> None:
     monkeypatch.delenv("BESEDY_JOB_SERVICE_SECRET", raising=False)
     with pytest.raises(RuntimeError, match="BESEDY_INTERNAL_BASE_URL"):
         ingest_client_module.build_besedy_ingest_client_from_env()
+
+
+def _post_ingest_env(command: str, **extra: str) -> dict[str, str]:
+    return {
+        "PATH": "/usr/bin:/bin",
+        ingest_module.POST_INGEST_COMMAND_ENV: command,
+        "BESEDY_JOB_SERVICE_SECRET": "secret",
+        "HF_TOKEN": "token",
+        **extra,
+    }
+
+
+def _completion(event_id: object = 42, *, already_final: bool = False) -> dict[str, object]:
+    return {"ok": True, "alreadyFinal": already_final, "intake": {"eventId": event_id}}
+
+
+def _child(code: str) -> str:
+    """A post-ingest command that runs ``code`` with this interpreter."""
+    return f"{sys.executable} -c {code!r}"
+
+
+def test_post_ingest_command_gets_placeholders_and_no_worker_secrets() -> None:
+    lines: list[str] = []
+    code = (
+        "import os, sys; print('args', *sys.argv[1:]); "
+        "print('secret', os.environ.get('BESEDY_JOB_SERVICE_SECRET'), os.environ.get('HF_TOKEN'))"
+    )
+    env = _post_ingest_env(_child(code) + " {event_id} event-{event_id}.md {audio_hash} {catalog_id} {intake_id}")
+
+    code_returned = ingest_module.run_post_ingest_command(
+        CATALOG_ID, INTAKE_ID, NEW_HASH, _completion(), env=env, log=lines.append
+    )
+
+    assert code_returned == 0
+    assert f"[post_ingest] args 42 event-42.md {NEW_HASH} {CATALOG_ID} {INTAKE_ID}" in lines
+    assert "[post_ingest] secret None None" in lines
+    assert lines[-1] == "[post_ingest] Finished."
+
+
+def test_post_ingest_command_is_optional() -> None:
+    lines: list[str] = []
+
+    assert (
+        ingest_module.run_post_ingest_command(
+            CATALOG_ID, INTAKE_ID, NEW_HASH, _completion(), env={}, log=lines.append
+        )
+        is None
+    )
+    assert lines == []
+
+
+@pytest.mark.parametrize(
+    ("completion", "reason"),
+    [
+        (_completion(None), "needs an event"),
+        (_completion(True), "needs an event"),
+        (_completion(already_final=True), "already final"),
+    ],
+)
+def test_post_ingest_command_skips_without_event_or_on_replay(
+    completion: dict[str, object], reason: str
+) -> None:
+    lines: list[str] = []
+    env = _post_ingest_env(_child("raise SystemExit(9)") + " {event_id}")
+
+    result = ingest_module.run_post_ingest_command(
+        CATALOG_ID, INTAKE_ID, NEW_HASH, completion, env=env, log=lines.append
+    )
+
+    assert result is None
+    assert len(lines) == 1 and reason in lines[0]
+
+
+def test_post_ingest_command_without_event_placeholder_runs_without_event() -> None:
+    lines: list[str] = []
+    env = _post_ingest_env(_child("import sys; print(sys.argv[1])") + " {audio_hash}")
+
+    assert (
+        ingest_module.run_post_ingest_command(
+            CATALOG_ID, INTAKE_ID, NEW_HASH, _completion(None), env=env, log=lines.append
+        )
+        == 0
+    )
+    assert f"[post_ingest] {NEW_HASH}" in lines
+
+
+def test_post_ingest_command_failure_and_timeout_are_only_logged() -> None:
+    lines: list[str] = []
+    failing = _post_ingest_env(_child("raise SystemExit(3)"))
+    assert (
+        ingest_module.run_post_ingest_command(
+            CATALOG_ID, INTAKE_ID, NEW_HASH, _completion(), env=failing, log=lines.append
+        )
+        == 3
+    )
+    assert "exit code 3" in lines[-1]
+
+    lines.clear()
+    slow = _post_ingest_env(
+        _child("import time; print('started', flush=True); time.sleep(30)"),
+        **{ingest_module.POST_INGEST_TIMEOUT_ENV: "1"},
+    )
+    result = ingest_module.run_post_ingest_command(
+        CATALOG_ID, INTAKE_ID, NEW_HASH, _completion(), env=slow, log=lines.append
+    )
+    assert result is not None and result != 0
+    assert "[post_ingest] started" in lines
+    assert "timeout" in lines[-1]
+
+
+@pytest.mark.parametrize(
+    ("env", "message"),
+    [
+        ({ingest_module.POST_INGEST_COMMAND_ENV: "/bin/true {evnt_id}"}, "unknown placeholders: evnt_id"),
+        (
+            {ingest_module.POST_INGEST_COMMAND_ENV: "/bin/true", ingest_module.POST_INGEST_TIMEOUT_ENV: "0"},
+            "positive",
+        ),
+        ({ingest_module.POST_INGEST_COMMAND_ENV: "/nonexistent/command"}, "Could not start"),
+    ],
+)
+def test_post_ingest_command_reports_bad_configuration(env: dict[str, str], message: str) -> None:
+    lines: list[str] = []
+
+    assert (
+        ingest_module.run_post_ingest_command(
+            CATALOG_ID, INTAKE_ID, NEW_HASH, _completion(), env=env, log=lines.append
+        )
+        is None
+    )
+    assert message in lines[-1]
+
+
+def test_flow_runs_post_ingest_command_with_the_completion_response(
+    monkeypatch, tmp_path: Path
+) -> None:
+    paths = _layout(tmp_path, hashes=[KNOWN_HASH])
+    calls: list[tuple[object, ...]] = []
+
+    def fake_post_ingest(*args: object) -> None:
+        calls.append(args)
+        raise RuntimeError("must not fail the ingest")
+
+    monkeypatch.setattr(ingest_module, "run_post_ingest_command", fake_post_ingest)
+
+    result, _cli_calls, _reports = _run_flow(monkeypatch, paths, audio_hash=NEW_HASH)
+
+    assert result["status"] == "SUCCEEDED"
+    assert calls == [(CATALOG_ID, INTAKE_ID, NEW_HASH, {"ok": True})]
+
+
+def test_flow_does_not_run_post_ingest_command_for_a_duplicate(
+    monkeypatch, tmp_path: Path
+) -> None:
+    paths = _layout(tmp_path, hashes=[KNOWN_HASH])
+    calls: list[object] = []
+    monkeypatch.setattr(ingest_module, "run_post_ingest_command", lambda *a: calls.append(a))
+
+    result, _cli_calls, _reports = _run_flow(monkeypatch, paths, audio_hash=KNOWN_HASH)
+
+    assert result["status"] == "REJECTED"
+    assert calls == []
