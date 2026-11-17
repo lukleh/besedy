@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import queue
 import re
 import shlex
 import shutil
@@ -16,6 +17,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -82,6 +84,8 @@ ProgressReporter = Callable[[IngestProgressReport], None]
 POST_INGEST_ENABLED_ENV = "BESEDY_INGEST_POST_COMMAND_ENABLED"
 POST_INGEST_TIMEOUT_ENV = "BESEDY_INGEST_POST_COMMAND_TIMEOUT"
 DEFAULT_POST_INGEST_TIMEOUT_SECONDS = 3600
+# How long output may still arrive after the command's process ended.
+POST_INGEST_OUTPUT_GRACE_SECONDS = 5.0
 POST_INGEST_PLACEHOLDERS = frozenset({"event_id", "audio_hash", "catalog_id", "intake_id"})
 # Credentials the worker needs for its own callbacks and backends; the
 # post-ingest command gets the rest of the worker environment.
@@ -608,10 +612,18 @@ def run_post_ingest_command(
     The command comes from the completion response, so it is the one saved in
     the web app when the ingest finished, and runs only when the host env
     enables post-ingest commands. It runs after the web app accepted the
-    outcome (so the recording and its event exist), only for the delivery that
-    made the intake final, and never affects the ingest result: its output
-    goes to the flow log and a failure is only logged. Returns the exit code,
-    or None when nothing ran.
+    outcome (so the recording and its event exist), once per flow run, and
+    never affects the ingest result: its output goes to the flow log and a
+    failure is only logged. A replayed report (``alreadyFinal``) still runs
+    it, because the usual cause is a lost response to the report that was
+    applied, so the command has not run yet; a rerun of the whole flow cannot
+    reach this point, since the upload is then rejected as a duplicate.
+    Returns the exit code, or None when nothing ran.
+
+    Output is read on a separate thread and the wait is bounded by the
+    process, not the pipe: a descendant that left the process group can hold
+    stdout open after the command ended or was stopped, and must not keep the
+    single ingest worker busy.
     """
     if not isinstance(completion, dict):
         completion = {}
@@ -628,9 +640,6 @@ def run_post_ingest_command(
             f"[post_ingest] Not run: a command is set in the web app, but {POST_INGEST_ENABLED_ENV}=1"
             " is not set on this worker."
         )
-        return None
-    if completion.get("alreadyFinal"):
-        log("[post_ingest] Not run: the intake was already final, so it ran before.")
         return None
 
     intake = completion.get("intake")
@@ -661,24 +670,52 @@ def run_post_ingest_command(
         log(f"[post_ingest] Could not start the command: {exc}")
         return None
 
-    timed_out = threading.Event()
+    lines: queue.Queue[str | None] = queue.Queue()
 
-    def stop() -> None:
-        timed_out.set()
-        _terminate_process_group(process)
-
-    timer = threading.Timer(timeout, stop)
-    timer.start()
-    try:
+    def pump() -> None:
         assert process.stdout is not None
-        for line in process.stdout:
-            log(f"[post_ingest] {line.rstrip()}")
+        try:
+            for line in process.stdout:
+                lines.put(line.rstrip())
+        except (OSError, ValueError):
+            pass
+        finally:
+            lines.put(None)
+
+    reader = threading.Thread(target=pump, name="post-ingest-output", daemon=True)
+    reader.start()
+    deadline = time.monotonic() + timeout
+    drain_until: float | None = None
+    timed_out = False
+    output_closed = False
+    try:
+        while True:
+            now = time.monotonic()
+            if process.poll() is None and not timed_out and now >= deadline:
+                timed_out = True
+                _terminate_process_group(process)
+            if process.poll() is not None and drain_until is None:
+                drain_until = time.monotonic() + POST_INGEST_OUTPUT_GRACE_SECONDS
+            if drain_until is not None and time.monotonic() >= drain_until:
+                break
+            try:
+                line = lines.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if line is None:
+                output_closed = True
+                break
+            log(f"[post_ingest] {line}")
         return_code = process.wait()
     finally:
-        timer.cancel()
         if process.poll() is None:
             _terminate_process_group(process)
-    if timed_out.is_set():
+    if not output_closed:
+        log(
+            "[post_ingest] Stopped reading: a process the command started still holds its"
+            " output open."
+        )
+    if timed_out:
         log(f"[post_ingest] Stopped after the {timeout} s timeout (exit {return_code}).")
     elif return_code == 0:
         log("[post_ingest] Finished.")

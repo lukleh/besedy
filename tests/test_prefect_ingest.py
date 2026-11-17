@@ -5,6 +5,7 @@ import io
 import json
 import sys
 import threading
+import time
 from contextlib import redirect_stdout
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1118,16 +1119,44 @@ def test_post_ingest_command_needs_the_host_switch() -> None:
     [
         (_completion("/bin/true {event_id}", None), "needs an event"),
         (_completion("/bin/true {event_id}", True), "needs an event"),
-        (_completion("/bin/true {event_id}", already_final=True), "already final"),
     ],
 )
-def test_post_ingest_command_skips_without_event_or_on_replay(
+def test_post_ingest_command_skips_without_event(
     completion: dict[str, object], reason: str
 ) -> None:
     result, lines = _run_post_ingest(completion, _post_ingest_env())
 
     assert result is None
     assert len(lines) == 1 and reason in lines[0]
+
+
+def test_post_ingest_command_runs_for_a_replayed_report() -> None:
+    # The usual replay is a retry whose first response was lost, so it has not run yet.
+    command = _child("print('ran')") + " {event_id}"
+
+    result, lines = _run_post_ingest(_completion(command, already_final=True), _post_ingest_env())
+
+    assert result == 0
+    assert "[post_ingest] ran" in lines
+
+
+def test_post_ingest_command_does_not_wait_for_output_held_by_a_detached_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ingest_module, "POST_INGEST_OUTPUT_GRACE_SECONDS", 0.5)
+    code = (
+        "import subprocess, sys; "
+        "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(5)'], "
+        "start_new_session=True); print('parent done', flush=True)"
+    )
+    started = time.monotonic()
+
+    result, lines = _run_post_ingest(_completion(_child(code)), _post_ingest_env())
+
+    assert time.monotonic() - started < 10
+    assert result == 0
+    assert "[post_ingest] parent done" in lines
+    assert any("still holds its output open" in line for line in lines)
 
 
 def test_post_ingest_command_without_event_placeholder_runs_without_event() -> None:

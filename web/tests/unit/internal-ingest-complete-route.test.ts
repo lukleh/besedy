@@ -195,7 +195,7 @@ describe("internal ingest completion route", () => {
     );
   });
 
-  it("returns the archive's post-ingest command only for a new success", async () => {
+  it("returns the archive's post-ingest command for a success, also when replayed", async () => {
     prisma.workflowGroup.findUnique.mockResolvedValue({
       id: CATALOG_ID,
       isActive: true,
@@ -220,7 +220,16 @@ describe("internal ingest completion route", () => {
     const replay = await completeIngest(request({ status: "SUCCEEDED", audioHash: HASH }), {
       params: Promise.resolve({ intakeId: INTAKE_ID }),
     });
-    expect(await replay.json()).not.toHaveProperty("postIngestCommand");
+    expect(await replay.json()).toMatchObject({
+      alreadyFinal: true,
+      postIngestCommand: "/hook {event_id}",
+    });
+
+    prisma.recordingIntake.findUnique.mockResolvedValue(row({ status: "REMOVED", audioHash: HASH }));
+    const removed = await completeIngest(request({ status: "SUCCEEDED", audioHash: HASH }), {
+      params: Promise.resolve({ intakeId: INTAKE_ID }),
+    });
+    expect(await removed.json()).toMatchObject({ alreadyFinal: true, postIngestCommand: null });
   });
 
   it("records a rejection without syncing", async () => {

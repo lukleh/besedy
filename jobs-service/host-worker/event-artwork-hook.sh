@@ -42,13 +42,20 @@ if [[ "$prompt" != *"$placeholder"* ]]; then
 fi
 prompt="${prompt//"$placeholder"/$event_id}"
 
-# The worker's systemd PATH has no Node; `just artwork` needs nvm's.
+# The worker's systemd PATH has no Node; `just artwork` needs nvm's. nvm is not
+# written for errexit or nounset, so load it without them and check the result.
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-set +u
+set +eu
 # shellcheck source=/dev/null
 . "$NVM_DIR/nvm.sh"
 nvm use --silent "$node_version" >/dev/null
-set -u
+nvm_status=$?
+set -eu
+if [[ "$nvm_status" -ne 0 ]] || ! command -v node >/dev/null; then
+  echo "Node $node_version is not available through nvm in $NVM_DIR" >&2
+  exit 1
+fi
+echo "Using Node $(node --version)"
 
 mkdir -p "$state_dir"
 last_message="$state_dir/event-${event_id}_$(date +%Y%m%d_%H%M%S).md"
