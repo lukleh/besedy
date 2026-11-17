@@ -591,6 +591,18 @@
         "event_exists": "Processed; an event already covers this place and date - assign it on the recording page",
         "event_not_created": "Processed, but the event could not be created"
       },
+      "postCommand": {
+        "title": "Post-ingest command",
+        "description": "Runs on the host worker once after each successful ingest, with the worker user's privileges. Its output is in the worker log. A failure never changes the ingest result.",
+        "label": "Command",
+        "placeholder": "/path/to/command '{event_id}'",
+        "placeholders": "Split like a shell would split it, but never run by a shell. Filled in: {names}. A command that uses '{event_id}' runs only when the upload got an event.",
+        "hostSwitch": "The worker runs it only when BESEDY_INGEST_POST_COMMAND_ENABLED=1 is set in its env file on the host.",
+        "save": "Save",
+        "saved": "Command saved",
+        "cleared": "Command removed",
+        "loadError": "The command could not be loaded."
+      },
       "remove": {
         "title": "Remove this recording?",
         "descriptionCatalog": "\"{file}\" will be deleted from the catalog together with its audio, transcripts, diarization, speaker embeddings, RAG chunks, metadata and event assignment. If it is the primary recording of a released event, that event is unreleased. This cannot be undone.",

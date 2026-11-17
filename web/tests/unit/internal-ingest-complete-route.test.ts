@@ -195,6 +195,34 @@ describe("internal ingest completion route", () => {
     );
   });
 
+  it("returns the archive's post-ingest command only for a new success", async () => {
+    prisma.workflowGroup.findUnique.mockResolvedValue({
+      id: CATALOG_ID,
+      isActive: true,
+      ingestPostCommand: "/hook {event_id}",
+    });
+    prisma.recordingIntake.findUnique.mockResolvedValue(row());
+    prisma.recordingIntake.update.mockResolvedValue(row({ status: "SUCCEEDED", audioHash: HASH }));
+    syncCatalogGroup.mockResolvedValue({ groupId: CATALOG_ID, status: "success" });
+
+    const succeeded = await completeIngest(request({ status: "SUCCEEDED", audioHash: HASH }), {
+      params: Promise.resolve({ intakeId: INTAKE_ID }),
+    });
+    expect(await succeeded.json()).toMatchObject({ postIngestCommand: "/hook {event_id}" });
+
+    prisma.recordingIntake.update.mockResolvedValue(row({ status: "FAILED" }));
+    const failed = await completeIngest(request({ status: "FAILED", errorCode: "x" }), {
+      params: Promise.resolve({ intakeId: INTAKE_ID }),
+    });
+    expect(await failed.json()).toMatchObject({ postIngestCommand: null });
+
+    prisma.recordingIntake.findUnique.mockResolvedValue(row({ status: "SUCCEEDED", audioHash: HASH }));
+    const replay = await completeIngest(request({ status: "SUCCEEDED", audioHash: HASH }), {
+      params: Promise.resolve({ intakeId: INTAKE_ID }),
+    });
+    expect(await replay.json()).not.toHaveProperty("postIngestCommand");
+  });
+
   it("records a rejection without syncing", async () => {
     prisma.recordingIntake.findUnique.mockResolvedValue(row());
     prisma.recordingIntake.update.mockResolvedValue(

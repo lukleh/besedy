@@ -10,7 +10,7 @@
 # the prompt's `just artwork ... --prod` needs the network and the database.
 # Codex's final message is kept under the state directory and printed.
 #
-# Configure it as the worker's BESEDY_INGEST_POST_COMMAND; see
+# Save it as the post-ingest command on Admin -> Ingest; see
 # docs/web/recording-ingest.md ("Post-ingest command").
 set -euo pipefail
 

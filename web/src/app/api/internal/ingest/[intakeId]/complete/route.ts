@@ -125,12 +125,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       include: INTAKE_INCLUDE,
     });
 
+    // The worker runs this once, for the report that made the ingest succeed.
+    const postIngestCommand =
+      status === 'SUCCEEDED'
+        ? ((
+            await prisma.workflowGroup.findUnique({
+              where: { id: intake.workflowGroupId },
+              select: { ingestPostCommand: true },
+            })
+          )?.ingestPostCommand ?? null)
+        : null;
+
     return NextResponse.json({
       ok: sync ? sync.status !== 'error' : true,
       alreadyFinal: false,
       intake: serializeIntake(updated),
       sync,
       removal,
+      postIngestCommand,
     });
   } catch (error) {
     return handlePrismaError(error, 'recording ingest completion', 'update');

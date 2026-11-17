@@ -77,7 +77,9 @@ _SAFE_EXTENSION_RE = re.compile(r"^\.[a-z0-9]{1,8}$")
 
 ProgressReporter = Callable[[IngestProgressReport], None]
 
-POST_INGEST_COMMAND_ENV = "BESEDY_INGEST_POST_COMMAND"
+# The command itself is edited by admins in the web app and arrives in the
+# completion response; this host switch decides whether the worker runs it.
+POST_INGEST_ENABLED_ENV = "BESEDY_INGEST_POST_COMMAND_ENABLED"
 POST_INGEST_TIMEOUT_ENV = "BESEDY_INGEST_POST_COMMAND_TIMEOUT"
 DEFAULT_POST_INGEST_TIMEOUT_SECONDS = 3600
 POST_INGEST_PLACEHOLDERS = frozenset({"event_id", "audio_hash", "catalog_id", "intake_id"})
@@ -542,15 +544,22 @@ def persist_terminal_result(flow_run_id: str, record: JsonDict) -> None:
         )
 
 
-def post_ingest_command_template(env: Mapping[str, str] = os.environ) -> list[str] | None:
-    """The configured post-ingest argv with its placeholders, or None when unset.
+def post_ingest_enabled(env: Mapping[str, str] = os.environ) -> bool:
+    return env.get(POST_INGEST_ENABLED_ENV, "").strip() == "1"
+
+
+def parse_post_ingest_command(raw: object) -> list[str] | None:
+    """The post-ingest argv with its placeholders, or None when there is none.
 
     The value is split like a shell would split it, but never run by a shell.
     Each placeholder (``{event_id}``, ``{audio_hash}``, ``{catalog_id}``,
     ``{intake_id}``) is replaced inside the argument it appears in.
     """
-    raw = env.get(POST_INGEST_COMMAND_ENV, "").strip()
-    if not raw:
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise ValueError("the post-ingest command from the web app is not a string")
+    if not raw.strip():
         return None
     argv = shlex.split(raw)
     unknown = {
@@ -560,9 +569,7 @@ def post_ingest_command_template(env: Mapping[str, str] = os.environ) -> list[st
         if name not in POST_INGEST_PLACEHOLDERS
     }
     if unknown:
-        raise ValueError(
-            f"{POST_INGEST_COMMAND_ENV} uses unknown placeholders: {', '.join(sorted(unknown))}"
-        )
+        raise ValueError(f"unknown placeholders: {', '.join(sorted(unknown))}")
     return argv
 
 
@@ -596,23 +603,32 @@ def run_post_ingest_command(
     env: Mapping[str, str] = os.environ,
     log: Callable[[str], None] = print,
 ) -> int | None:
-    """Run the operator's post-ingest command once for a newly ingested recording.
+    """Run the admin's post-ingest command once for a newly ingested recording.
 
-    It runs after the web app accepted the outcome (so the recording and its
-    event exist), only for the delivery that made the intake final, and never
-    affects the ingest result: its output goes to the flow log and a failure
-    is only logged. Returns the exit code, or None when nothing ran.
+    The command comes from the completion response, so it is the one saved in
+    the web app when the ingest finished, and runs only when the host env
+    enables post-ingest commands. It runs after the web app accepted the
+    outcome (so the recording and its event exist), only for the delivery that
+    made the intake final, and never affects the ingest result: its output
+    goes to the flow log and a failure is only logged. Returns the exit code,
+    or None when nothing ran.
     """
+    if not isinstance(completion, dict):
+        completion = {}
     try:
-        template = post_ingest_command_template(env)
+        template = parse_post_ingest_command(completion.get("postIngestCommand"))
         timeout = post_ingest_timeout_seconds(env)
     except ValueError as exc:
         log(f"[post_ingest] Not run: {exc}")
         return None
     if template is None:
         return None
-    if not isinstance(completion, dict):
-        completion = {}
+    if not post_ingest_enabled(env):
+        log(
+            f"[post_ingest] Not run: a command is set in the web app, but {POST_INGEST_ENABLED_ENV}=1"
+            " is not set on this worker."
+        )
+        return None
     if completion.get("alreadyFinal"):
         log("[post_ingest] Not run: the intake was already final, so it ran before.")
         return None

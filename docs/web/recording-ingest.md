@@ -39,8 +39,8 @@ host worker (work pool besedy-ingest-<env>, concurrency 1)
     5. POST web /api/internal/ingest/<intake>/complete {status, audioHash, errorCode}
        (if this cannot be delivered the worker stores a structured result artifact
         in Prefect and fails the run; the web app applies that outcome later)
-    6. on SUCCEEDED, run the optional post-ingest command with the event id from
-       the completion response (see "Post-ingest command")
+    6. on SUCCEEDED, run the admin's post-ingest command from the completion
+       response with the event id (see "Post-ingest command")
 
 web complete route: update recording_intake; on SUCCEEDED run syncCatalogGroup(),
     then create the recording's event from the upload's place and date
@@ -92,18 +92,32 @@ removal; the now empty event is kept unreleased.
 
 ## Post-ingest command
 
-The host worker can run one operator command after an ingest succeeded, set in
-its env file (`~/.config/lukleh/besedy/ingest-worker.env`, template
-`jobs-service/host-worker/ingest-worker.env.example`):
+Admins set one command on **Admin -> Ingest** (card **Post-ingest command**)
+that the host worker runs after each successful ingest. It is stored on the
+archive (`workflow_group.ingest_post_command`), read and written through
+`GET`/`PUT /api/admin/ingest/post-command` (admin only, same-origin writes),
+and every change is audited as `CATALOG_UPDATED` with the previous and the new
+value.
 
-| Variable | Meaning |
+- Single line, at most 2000 characters. The worker splits it like a shell
+  would split it, but never runs a shell; `{event_id}`, `{audio_hash}`,
+  `{catalog_id}` and `{intake_id}` are filled in, and any other `{name}` is
+  rejected on save.
+- The web app sends the saved command in its response to the worker's
+  `SUCCEEDED` report (`postIngestCommand`), so the command that runs is the
+  one saved when the ingest finished.
+
+The worker runs it only when its host env file enables it:
+
+| Variable (`ingest-worker.env`) | Meaning |
 | --- | --- |
-| `BESEDY_INGEST_POST_COMMAND` | argv, split like a shell would split it but never run by a shell; `{event_id}`, `{audio_hash}`, `{catalog_id}` and `{intake_id}` are filled in. Quote the whole value. |
+| `BESEDY_INGEST_POST_COMMAND_ENABLED` | `1` to run the command from the web app; otherwise it is logged and skipped |
 | `BESEDY_INGEST_POST_COMMAND_TIMEOUT` | seconds before its process group is stopped; default `3600` |
 
-The command is configured on the host only, never from the web app: it runs
-with the worker user's privileges, so being able to change it from a browser
-would make any admin session a shell on the host.
+The command runs with the worker user's privileges on the host, so anyone who
+can save it (an admin, or someone holding an admin session) can run anything
+as that user once the switch is on. The switch keeps that a decision made on
+the host; the audit log shows who saved which command.
 
 `ingest_recording_flow` runs it after the web app accepted the `SUCCEEDED`
 report, so the recording, its metadata and its event exist. It runs once per
@@ -115,23 +129,25 @@ home, and it gets the worker environment without `BESEDY_JOB_SERVICE_SECRET`
 and `HF_TOKEN`.
 
 Output goes to the flow run log in Prefect and to the worker journal, prefixed
-`[post_ingest]`, with the exit code at the end. A failure, a timeout or a
-missing command is only logged: the intake stays `SUCCEEDED`. The worker runs
+`[post_ingest]`, with the exit code at the end. A failure, a timeout or an
+invalid command is only logged: the intake stays `SUCCEEDED`. The worker runs
 one flow at a time, so the next upload waits until the command finished.
-
-After changing the variable, restart the worker
-(`systemctl --user restart besedy-ingest-worker`, or `just ingest-worker-run`
-again); `just ingest-worker-deploy` restarts it too.
+Changing the switch or the timeout needs a worker restart
+(`systemctl --user restart besedy-ingest-worker`); changing the command does
+not.
 
 ### Event artwork with Codex
 
 `jobs-service/host-worker/event-artwork-hook.sh <event-id> <prompt-file>` runs
 the reusable artwork prompt for a new event:
 
-```bash
-BESEDY_INGEST_POST_COMMAND='/home/<user>/worktrees/besedy/prod-ingest/jobs-service/host-worker/event-artwork-hook.sh {event_id} /home/<user>/docs/event-artwork-prompt.md'
-BESEDY_INGEST_POST_COMMAND_TIMEOUT=5400
+```text
+/home/<user>/worktrees/besedy/prod-ingest/jobs-service/host-worker/event-artwork-hook.sh {event_id} /home/<user>/docs/event-artwork-prompt.md
 ```
+
+saved as the command on the ingest page, with
+`BESEDY_INGEST_POST_COMMAND_ENABLED=1` and
+`BESEDY_INGEST_POST_COMMAND_TIMEOUT=5400` in the worker env file.
 
 It takes the first ``` ```text ``` block of the prompt file, replaces `<DOPLŇ_ID>`
 (`BESEDY_ARTWORK_EVENT_PLACEHOLDER`) with the event id, loads Node through nvm

@@ -560,6 +560,9 @@ model WorkflowGroup {
   transcriptsPath       String?  @map("transcripts_path")
   /// Soft-delete flag
   isActive              Boolean  @default(true) @map("is_active")
+  /// Command the host ingest worker runs after a successful ingest (admin-edited;
+  /// the worker runs it only when its host env enables post-ingest commands)
+  ingestPostCommand     String?  @map("ingest_post_command")
   createdAt             DateTime @default(now()) @map("created_at")
   /// Last modification time (metadata changes, catalog updates)
   updatedAt             DateTime @default(now()) @updatedAt @map("updated_at")
