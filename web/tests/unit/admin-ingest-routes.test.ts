@@ -65,9 +65,14 @@ vi.mock('@/lib/catalog-sync', () => ({
   syncCatalogGroup: vi.fn(),
 }));
 
+vi.mock('@/lib/ingest/event', () => ({
+  assignIntakeEvent: vi.fn(),
+}));
+
 vi.mock('@/lib/db', () => ({
   default: {
     workflowGroup: { findFirst: vi.fn(), findUnique: vi.fn() },
+    location: { findFirst: vi.fn() },
     recordingIntake: {
       create: vi.fn(),
       findMany: vi.fn(),
@@ -150,8 +155,10 @@ describe('admin ingest routes', () => {
   let fetchJobsApi: ReturnType<typeof vi.fn>;
   let logContentEvent: ReturnType<typeof vi.fn>;
   let syncCatalogGroup: ReturnType<typeof vi.fn>;
+  let assignIntakeEvent: ReturnType<typeof vi.fn>;
   let prisma: {
     workflowGroup: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
+    location: { findFirst: ReturnType<typeof vi.fn> };
     recordingIntake: {
       create: ReturnType<typeof vi.fn>;
       findMany: ReturnType<typeof vi.fn>;
@@ -181,6 +188,9 @@ describe('admin ingest routes', () => {
       .logContentEvent as ReturnType<typeof vi.fn>;
     syncCatalogGroup = (await import('@/lib/catalog-sync'))
       .syncCatalogGroup as ReturnType<typeof vi.fn>;
+    assignIntakeEvent = (await import('@/lib/ingest/event'))
+      .assignIntakeEvent as ReturnType<typeof vi.fn>;
+    assignIntakeEvent.mockResolvedValue({ eventId: null, errorCode: null, errorMessage: null });
     prisma = (await import('@/lib/db')).default as unknown as typeof prisma;
     prisma.workflowGroup.findUnique.mockResolvedValue({ id: CATALOG_ID, isActive: true });
 
@@ -267,6 +277,10 @@ describe('admin ingest routes', () => {
         storedFilename: 'source.mp3',
         mimeType: 'audio/mpeg',
         expectedSizeBytes: BigInt(10),
+        locationId: null,
+        dateYear: null,
+        dateMonth: null,
+        dateDay: null,
       },
     });
     const incomingDir = path.join(
@@ -290,6 +304,59 @@ describe('admin ingest routes', () => {
     ]) {
       expect((await fs.stat(dir)).mode & 0o2777).toBe(0o2770);
     }
+  });
+
+  it('stores the place and date the event is created from', async () => {
+    prisma.workflowGroup.findFirst.mockResolvedValue({ id: CATALOG_ID });
+    prisma.location.findFirst.mockResolvedValue({ id: 7 });
+    prisma.recordingIntake.create.mockResolvedValue(baseRow());
+
+    const response = await createUpload(
+      jsonRequest('/api/admin/ingest/uploads', {
+        catalogId: CATALOG_ID,
+        filename: 'talk.mp3',
+        sizeBytes: 10,
+        locationId: 7,
+        dateYear: 2026,
+        dateMonth: 11,
+        dateDay: 17,
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(prisma.location.findFirst).toHaveBeenCalledWith({
+      where: { id: 7, workflowGroupId: CATALOG_ID },
+      select: { id: true },
+    });
+    expect(prisma.recordingIntake.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        locationId: 7,
+        dateYear: 2026,
+        dateMonth: 11,
+        dateDay: 17,
+      }),
+    });
+  });
+
+  it('rejects an incomplete or invalid place and date, and a foreign location', async () => {
+    prisma.workflowGroup.findFirst.mockResolvedValue({ id: CATALOG_ID });
+    const base = { catalogId: CATALOG_ID, filename: 'talk.mp3', sizeBytes: 10 };
+    for (const body of [
+      { ...base, locationId: 7 },
+      { ...base, dateYear: 2026 },
+      { ...base, locationId: 7, dateYear: 2026, dateDay: 3 },
+      { ...base, locationId: 7, dateYear: 2026, dateMonth: 2, dateDay: 30 },
+    ]) {
+      const response = await createUpload(jsonRequest('/api/admin/ingest/uploads', body));
+      expect(response.status).toBe(400);
+    }
+
+    prisma.location.findFirst.mockResolvedValue(null);
+    const foreign = await createUpload(
+      jsonRequest('/api/admin/ingest/uploads', { ...base, locationId: 99, dateYear: 2026 }),
+    );
+    expect(foreign.status).toBe(400);
+    expect(prisma.recordingIntake.create).not.toHaveBeenCalled();
   });
 
   it('rejects unsupported extensions, oversized files and inactive catalogs', async () => {
@@ -667,6 +734,7 @@ describe('admin ingest routes', () => {
       },
       prefectStateName: 'Failed',
     });
+    assignIntakeEvent.mockResolvedValue({ eventId: 42, errorCode: null, errorMessage: null });
 
     const response = await listIntakes(
       new NextRequest('http://localhost/api/admin/ingest'),
@@ -679,10 +747,12 @@ describe('admin ingest routes', () => {
         data: expect.objectContaining({
           status: 'SUCCEEDED',
           audioHash: 'b'.repeat(64),
+          eventId: 42,
         }),
       }),
     );
     expect(syncCatalogGroup).toHaveBeenCalledWith(CATALOG_ID);
+    expect(assignIntakeEvent).toHaveBeenCalledWith(running, 'b'.repeat(64));
   });
 
   it.each([

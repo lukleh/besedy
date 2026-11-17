@@ -16,6 +16,10 @@ vi.mock("@/lib/catalog-sync", () => ({
   syncCatalogGroup: vi.fn(),
 }));
 
+vi.mock("@/lib/ingest/event", () => ({
+  assignIntakeEvent: vi.fn(),
+}));
+
 vi.mock("@/lib/db", () => ({
   default: {
     workflowGroup: { findUnique: vi.fn() },
@@ -69,6 +73,7 @@ function row(overrides: Record<string, unknown> = {}) {
 
 describe("internal ingest completion route", () => {
   let syncCatalogGroup: ReturnType<typeof vi.fn>;
+  let assignIntakeEvent: ReturnType<typeof vi.fn>;
   let prisma: {
     workflowGroup: { findUnique: ReturnType<typeof vi.fn> };
     recordingIntake: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
@@ -81,6 +86,10 @@ describe("internal ingest completion route", () => {
     syncCatalogGroup = (await import("@/lib/catalog-sync")).syncCatalogGroup as ReturnType<
       typeof vi.fn
     >;
+    assignIntakeEvent = (await import("@/lib/ingest/event")).assignIntakeEvent as ReturnType<
+      typeof vi.fn
+    >;
+    assignIntakeEvent.mockResolvedValue({ eventId: null, errorCode: null, errorMessage: null });
     prisma = (await import("@/lib/db")).default as unknown as typeof prisma;
     prisma.workflowGroup.findUnique.mockResolvedValue({ id: CATALOG_ID, isActive: true });
   });
@@ -132,6 +141,58 @@ describe("internal ingest completion route", () => {
       })
     );
     expect(syncCatalogGroup).toHaveBeenCalledWith(CATALOG_ID);
+  });
+
+  it("assigns the event after the sync and stores it on the intake", async () => {
+    const intake = row({ locationId: 7, dateYear: 2026, dateMonth: 11, dateDay: 17 });
+    prisma.recordingIntake.findUnique.mockResolvedValue(intake);
+    prisma.recordingIntake.update.mockResolvedValue(
+      row({ status: "SUCCEEDED", audioHash: HASH, eventId: 42 })
+    );
+    syncCatalogGroup.mockResolvedValue({ groupId: CATALOG_ID, status: "success" });
+    assignIntakeEvent.mockResolvedValue({ eventId: 42, errorCode: null, errorMessage: null });
+
+    const response = await completeIngest(request({ status: "SUCCEEDED", audioHash: HASH }), {
+      params: Promise.resolve({ intakeId: INTAKE_ID }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ intake: { eventId: 42 } });
+    expect(assignIntakeEvent).toHaveBeenCalledWith(intake, HASH);
+    expect(syncCatalogGroup.mock.invocationCallOrder[0]).toBeLessThan(
+      assignIntakeEvent.mock.invocationCallOrder[0]
+    );
+    expect(prisma.recordingIntake.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "SUCCEEDED", eventId: 42, errorCode: null }),
+      })
+    );
+  });
+
+  it("keeps SUCCEEDED and reports why no event was assigned", async () => {
+    prisma.recordingIntake.findUnique.mockResolvedValue(row({ locationId: 7, dateYear: 2026 }));
+    prisma.recordingIntake.update.mockResolvedValue(row({ status: "SUCCEEDED", audioHash: HASH }));
+    syncCatalogGroup.mockResolvedValue({ groupId: CATALOG_ID, status: "success" });
+    assignIntakeEvent.mockResolvedValue({
+      eventId: null,
+      errorCode: "event_exists",
+      errorMessage: "Events already cover this place and date: A.",
+    });
+
+    await completeIngest(request({ status: "SUCCEEDED", audioHash: HASH }), {
+      params: Promise.resolve({ intakeId: INTAKE_ID }),
+    });
+
+    expect(prisma.recordingIntake.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "SUCCEEDED",
+          eventId: null,
+          errorCode: "event_exists",
+          errorMessage: "Events already cover this place and date: A.",
+        }),
+      })
+    );
   });
 
   it("records a rejection without syncing", async () => {
@@ -189,6 +250,7 @@ describe("internal ingest completion route", () => {
       ok: false,
       intake: { status: "SUCCEEDED", errorCode: "sync_failed" },
     });
+    expect(assignIntakeEvent).not.toHaveBeenCalled();
     expect(prisma.recordingIntake.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

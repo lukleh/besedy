@@ -12,6 +12,7 @@ import { syncCatalogGroup, type CatalogSyncResult } from '@/lib/catalog-sync';
 import { authorizeJobServiceRequest } from '@/lib/security/job-service-auth';
 import { CuidSchema, HashSchema } from '@/lib/validation/schemas';
 import { removeRecordingWebState } from '@/lib/ingest/removal';
+import { assignIntakeEvent, type IntakeEventOutcome } from '@/lib/ingest/event';
 import { INTAKE_INCLUDE, serializeIntake } from '@/lib/ingest/server';
 
 export const runtime = 'nodejs';
@@ -41,7 +42,8 @@ interface RouteParams {
 /**
  * POST /api/internal/ingest/:intakeId/complete
  * Called by the host ingest worker when a flow run finishes. On success the
- * catalog projection is re-synced so the new recording appears immediately; on
+ * catalog projection is re-synced so the new recording appears immediately and
+ * its event is created from the place and date entered on upload; on
  * REMOVED the web-owned rows for the recording are deleted before the re-sync.
  * Idempotent: a terminal intake accepts repeated reports without re-syncing.
  */
@@ -88,15 +90,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
       sync = await syncCatalogGroup(intake.workflowGroupId);
     }
+    let event: IntakeEventOutcome | null = null;
     if (status === 'SUCCEEDED') {
       sync = await syncCatalogGroup(intake.workflowGroupId);
+      // The event needs the synced catalog row of the new recording.
+      if (sync.status !== 'error' && resolvedHash) {
+        event = await assignIntakeEvent(intake, resolvedHash);
+      }
     }
 
     const syncError =
       sync?.status === 'error'
         ? `Catalog sync failed: ${sync.error ?? 'unknown error'}`
         : null;
-    const resolvedErrorMessage = [errorMessage, syncError]
+    const resolvedErrorMessage = [errorMessage, syncError, event?.errorMessage]
       .filter((message): message is string => Boolean(message))
       .join('\n')
       .slice(0, 4000);
@@ -110,9 +117,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             : audioHash
               ? audioHash.toLowerCase()
               : null,
-        errorCode: syncError ? 'sync_failed' : (errorCode ?? null),
+        errorCode: syncError ? 'sync_failed' : (errorCode ?? event?.errorCode ?? null),
         errorMessage: resolvedErrorMessage || null,
         finishedAt: new Date(),
+        ...(event ? { eventId: event.eventId } : {}),
       },
       include: INTAKE_INCLUDE,
     });

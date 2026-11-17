@@ -17,6 +17,7 @@ import {
   JobsApiError,
 } from '@/lib/jobs-api/server';
 import { HashSchema } from '@/lib/validation/schemas';
+import { assignIntakeEvent } from './event';
 import { removeRecordingWebState } from './removal';
 import type { RecordingIntakeDto, RecordingIntakeStatus } from './types';
 
@@ -28,6 +29,7 @@ const SHARED_INTAKE_DIR_MODE = 0o2770;
 export const INTAKE_INCLUDE = {
   workflowGroup: { select: { label: true } },
   requestedBy: { select: { id: true, name: true, email: true } },
+  location: { select: { name: true } },
 } satisfies Prisma.RecordingIntakeInclude;
 
 export type IntakeRow = Prisma.RecordingIntakeGetPayload<{
@@ -257,6 +259,12 @@ export function serializeIntake(
     progressStepStartedAt: row.progressStepStartedAt
       ? row.progressStepStartedAt.toISOString()
       : null,
+    locationId: row.locationId,
+    locationName: row.location?.name ?? null,
+    dateYear: row.dateYear,
+    dateMonth: row.dateMonth,
+    dateDay: row.dateDay,
+    eventId: row.eventId,
     prefectStateName: extra?.prefectStateName ?? null,
     jobStateUnavailable: extra?.jobStateUnavailable ?? false,
   };
@@ -321,23 +329,43 @@ async function applyOutcome(
       await removeRecordingWebState(row.workflowGroupId, audioHash);
     }
   }
+  let eventId: number | null | undefined;
   if (outcome.status === 'REMOVED' || outcome.status === 'SUCCEEDED') {
     const sync = await syncCatalogGroup(row.workflowGroupId);
     if (sync.status === 'error') {
       resolvedOutcome = {
         ...outcome,
         errorCode: 'sync_failed',
-        errorMessage: [
+        errorMessage: joinMessages(
           outcome.errorMessage,
           `Catalog sync failed: ${sync.error ?? 'unknown error'}`,
-        ]
-          .filter((message): message is string => Boolean(message))
-          .join('\n')
-          .slice(0, 4000),
+        ),
       };
+    } else if (outcome.status === 'SUCCEEDED') {
+      const audioHash = outcome.audioHash ?? row.audioHash;
+      if (audioHash) {
+        const event = await assignIntakeEvent(row, audioHash);
+        eventId = event.eventId;
+        resolvedOutcome = {
+          ...outcome,
+          errorCode: outcome.errorCode ?? event.errorCode,
+          errorMessage: joinMessages(outcome.errorMessage, event.errorMessage),
+        };
+      }
     }
   }
-  return transitionIntake(row, terminalData(resolvedOutcome));
+  return transitionIntake(row, {
+    ...terminalData(resolvedOutcome),
+    ...(eventId !== undefined ? { eventId } : {}),
+  });
+}
+
+function joinMessages(...messages: (string | null | undefined)[]): string | null {
+  const joined = messages
+    .filter((message): message is string => Boolean(message))
+    .join('\n')
+    .slice(0, 4000);
+  return joined || null;
 }
 
 async function applyJobState(

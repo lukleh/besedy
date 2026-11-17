@@ -21,16 +21,39 @@ import { getAllowedIngestExtension } from '@/lib/ingest/types';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const CreateUploadSchema = z.object({
-  catalogId: TimestampIdSchema,
-  filename: z.string().trim().min(1).max(255),
-  sizeBytes: z.number().int().positive(),
-  mimeType: z.string().trim().max(200).nullable().optional(),
-});
+const CreateUploadSchema = z
+  .object({
+    catalogId: TimestampIdSchema,
+    filename: z.string().trim().min(1).max(255),
+    sizeBytes: z.number().int().positive(),
+    mimeType: z.string().trim().max(200).nullable().optional(),
+    // Where and when the recording took place; the event is created from them.
+    locationId: z.number().int().positive().nullable().optional(),
+    dateYear: z.number().int().min(1900).max(2100).nullable().optional(),
+    dateMonth: z.number().int().min(1).max(12).nullable().optional(),
+    dateDay: z.number().int().min(1).max(31).nullable().optional(),
+  })
+  .refine((body) => (body.locationId == null) === (body.dateYear == null), {
+    message: 'Location and year must be given together',
+  })
+  .refine((body) => body.dateDay == null || body.dateMonth != null, {
+    message: 'A day needs a month',
+  })
+  .refine(
+    (body) =>
+      body.dateYear == null ||
+      body.dateMonth == null ||
+      body.dateDay == null ||
+      new Date(Date.UTC(body.dateYear, body.dateMonth - 1, body.dateDay)).getUTCDate() ===
+        body.dateDay,
+    { message: 'Invalid date' },
+  );
 
 /**
  * POST /api/admin/ingest/uploads
  * Opens a chunked upload: creates the intake row and its incoming directory.
+ * The optional place and date become the recording's metadata and event once
+ * the ingest succeeds.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -43,7 +66,8 @@ export async function POST(request: NextRequest) {
 
     const bodyResult = await validateRequestBody(request, CreateUploadSchema);
     if (!bodyResult.success) return bodyResult.response;
-    const { catalogId, filename, sizeBytes, mimeType } = bodyResult.data;
+    const { catalogId, filename, sizeBytes, mimeType, locationId, dateYear, dateMonth, dateDay } =
+      bodyResult.data;
     await assertArchiveCatalogId(catalogId);
 
     const extension = getAllowedIngestExtension(filename);
@@ -61,6 +85,15 @@ export async function POST(request: NextRequest) {
     if (!catalog) {
       return badRequest('Catalog not found or inactive');
     }
+    if (locationId != null) {
+      const location = await prisma.location.findFirst({
+        where: { id: locationId, workflowGroupId: catalogId },
+        select: { id: true },
+      });
+      if (!location) {
+        return badRequest('Selected location does not belong to this catalog');
+      }
+    }
 
     const intake = await prisma.recordingIntake.create({
       data: {
@@ -70,6 +103,10 @@ export async function POST(request: NextRequest) {
         storedFilename: `source${extension}`,
         mimeType: mimeType ?? null,
         expectedSizeBytes: BigInt(sizeBytes),
+        locationId: locationId ?? null,
+        dateYear: dateYear ?? null,
+        dateMonth: dateYear != null ? (dateMonth ?? null) : null,
+        dateDay: dateYear != null ? (dateDay ?? null) : null,
       },
     });
 

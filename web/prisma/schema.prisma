@@ -627,9 +627,19 @@ model RecordingIntake {
   progressTotal         Int?                  @map("progress_total")
   progressLabel         String?               @map("progress_label")
   progressStepStartedAt DateTime?             @map("progress_step_started_at")
+  /// Where and when the recording took place, entered on upload. Once the
+  /// recording is in the catalog they become its metadata and its event.
+  locationId            Int?                  @map("location_id")
+  dateYear              Int?                  @map("date_year")
+  dateMonth             Int?                  @map("date_month")
+  dateDay               Int?                  @map("date_day")
+  /// Event the recording was assigned to when the ingest succeeded
+  eventId               Int?                  @map("event_id")
 
   workflowGroup WorkflowGroup @relation(fields: [workflowGroupId], references: [id], onDelete: Cascade)
   requestedBy   User?         @relation("RecordingIntakeRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  location      Location?     @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  event         CatalogEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
   @@index([workflowGroupId, status])
   @@index([createdAt])
@@ -742,6 +752,7 @@ model CatalogEvent {
   eventNotifications EventNotification[]
   artworkCandidates  CatalogEventArtwork[]
   artworkPublication CatalogEventArtworkPublication?
+  recordingIntakes   RecordingIntake[]
 
   @@unique([id, workflowGroupId])
   @@index([workflowGroupId, released])
@@ -1626,8 +1637,9 @@ model Location {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   workflowGroup WorkflowGroup   @relation(fields: [workflowGroupId], references: [id])
-  audioMetadata AudioMetadata[]
-  catalogEvents CatalogEvent[]
+  audioMetadata    AudioMetadata[]
+  catalogEvents    CatalogEvent[]
+  recordingIntakes RecordingIntake[]
 
   @@unique([workflowGroupId, name])
   @@index([workflowGroupId])

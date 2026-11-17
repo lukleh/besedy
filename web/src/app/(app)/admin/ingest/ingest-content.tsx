@@ -19,6 +19,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -30,6 +37,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useArchive } from "@/hooks/use-archive";
+import { useLocations } from "@/hooks/use-metadata-enums";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import { cn, formatBytes } from "@/lib/utils";
 import {
@@ -40,7 +48,11 @@ import {
   recordingIntakeListSchema,
   type RecordingIntakeDto,
 } from "@/lib/ingest/types";
-import { finalizeUpload, uploadRecording } from "@/lib/ingest/upload-client";
+import {
+  finalizeUpload,
+  uploadRecording,
+  type UploadRecordingEvent,
+} from "@/lib/ingest/upload-client";
 import { IntakeStatus } from "./intake-status";
 
 const INTAKES_QUERY_KEY = ["admin-ingest-intakes"];
@@ -54,6 +66,23 @@ interface UploadItem {
   phase: UploadPhase;
   sentBytes: number;
   error?: string;
+}
+
+/** The place and date for the upload's event; null when both are empty. */
+function parseUploadEvent(
+  locationId: string,
+  date: string
+): UploadRecordingEvent | null | "incomplete" {
+  if (!locationId && !date) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const location = Number(locationId);
+  if (!match || !Number.isInteger(location) || location <= 0) return "incomplete";
+  return {
+    locationId: location,
+    dateYear: Number(match[1]),
+    dateMonth: Number(match[2]),
+    dateDay: Number(match[3]),
+  };
 }
 
 function isFileDrag(event: { dataTransfer: DataTransfer | null }): boolean {
@@ -70,9 +99,13 @@ export default function IngestContent() {
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [removeTarget, setRemoveTarget] = useState<RecordingIntakeDto | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [locationId, setLocationId] = useState("");
+  const [eventDate, setEventDate] = useState("");
 
   const { data: archive, isLoading: archiveLoading, error: archiveError } = useArchive();
   const catalogId = archive?.id ?? "";
+  const { data: locations } = useLocations(catalogId || undefined);
+  const uploadEvent = parseUploadEvent(locationId, eventDate);
 
   const intakesQuery = useQuery({
     queryKey: INTAKES_QUERY_KEY,
@@ -87,7 +120,13 @@ export default function IngestContent() {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async (items: UploadItem[]) => {
+    mutationFn: async ({
+      items,
+      event,
+    }: {
+      items: UploadItem[];
+      event: UploadRecordingEvent | null;
+    }) => {
       const results: RecordingIntakeDto[] = [];
       for (const item of items) {
         setUploads((current) =>
@@ -99,6 +138,7 @@ export default function IngestContent() {
           const intake = await uploadRecording({
             catalogId,
             file: item.file,
+            event,
             onProgress: (sentBytes) =>
               setUploads((current) =>
                 current.map((entry) =>
@@ -126,7 +166,12 @@ export default function IngestContent() {
       return results;
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: INTAKES_QUERY_KEY }),
-    onSuccess: (results, items) => {
+    onSuccess: (results, { items }) => {
+      if (results.length > 0) {
+        // The next upload is usually another talk; never carry its place and date over.
+        setLocationId("");
+        setEventDate("");
+      }
       if (results.length === items.length) {
         toast({ title: t("toasts.queued", { count: results.length }) });
       } else {
@@ -256,12 +301,14 @@ export default function IngestContent() {
   );
 
   const handleUpload = () => {
-    if (!catalogId || pendingUploads.length === 0) return;
-    uploadMutation.mutate(pendingUploads);
+    if (!catalogId || pendingUploads.length === 0 || uploadEvent === "incomplete") return;
+    uploadMutation.mutate({ items: pendingUploads, event: uploadEvent });
   };
 
   const handleReset = () => {
     setUploads([]);
+    setLocationId("");
+    setEventDate("");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -325,6 +372,49 @@ export default function IngestContent() {
             </div>
           </div>
 
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="ingest-location">{t("upload.location")}</Label>
+              <Select
+                value={locationId || "none"}
+                onValueChange={(value) => setLocationId(value === "none" ? "" : value)}
+                disabled={uploadMutation.isPending}
+              >
+                <SelectTrigger id="ingest-location" data-testid="ingest-location">
+                  <SelectValue placeholder={t("upload.locationPlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{tCommon("none")}</SelectItem>
+                  {locations?.map((location) => (
+                    <SelectItem key={location.id} value={location.id.toString()}>
+                      {location.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ingest-date">{t("upload.date")}</Label>
+              <Input
+                id="ingest-date"
+                type="date"
+                value={eventDate}
+                onChange={(event) => setEventDate(event.target.value)}
+                disabled={uploadMutation.isPending}
+                data-testid="ingest-date"
+              />
+            </div>
+            <p
+              className={cn(
+                "text-xs md:col-span-2",
+                uploadEvent === "incomplete" ? "text-destructive" : "text-muted-foreground"
+              )}
+              data-testid="ingest-event-hint"
+            >
+              {uploadEvent === "incomplete" ? t("upload.eventIncomplete") : t("upload.eventHint")}
+            </p>
+          </div>
+
           {uploads.length > 0 && (
             <ul className="space-y-2 text-sm" data-testid="ingest-upload-list">
               {uploads.map((item) => {
@@ -366,7 +456,10 @@ export default function IngestContent() {
               type="button"
               onClick={handleUpload}
               disabled={
-                uploadMutation.isPending || pendingUploads.length === 0 || !catalogId
+                uploadMutation.isPending ||
+                pendingUploads.length === 0 ||
+                !catalogId ||
+                uploadEvent === "incomplete"
               }
               data-testid="ingest-upload-button"
             >
@@ -446,6 +539,14 @@ export default function IngestContent() {
                         <div className="text-xs text-muted-foreground">
                           {formatBytes(intake.sizeBytes) ?? ""}
                         </div>
+                        {intake.locationName && intake.dateYear != null && (
+                          <div className="text-xs text-muted-foreground" data-testid="ingest-intake-event">
+                            {intake.locationName} ·{" "}
+                            {[intake.dateDay, intake.dateMonth, intake.dateYear]
+                              .filter((part) => part != null)
+                              .join(". ")}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>{intake.catalogLabel || intake.catalogId}</TableCell>
                       <TableCell className="text-sm">
@@ -468,6 +569,15 @@ export default function IngestContent() {
                                 {intake.audioHash.slice(0, 12)}…
                               </Link>
                             )}
+                          {intake.eventId != null && intake.status === "SUCCEEDED" && (
+                            <Link
+                              href={`/catalog/${intake.catalogId}/event/${intake.eventId}`}
+                              className="block text-xs underline"
+                              data-testid="ingest-event-link"
+                            >
+                              {t("jobs.event", { id: intake.eventId })}
+                            </Link>
+                          )}
                           {intake.errorCode && (
                             <div className="text-destructive">
                               <div>

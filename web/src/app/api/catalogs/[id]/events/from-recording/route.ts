@@ -5,23 +5,9 @@ import { conflict, badRequest, handlePrismaError, notFound, validateParams } fro
 import { validateRequestBody } from "@/lib/api/validation";
 import { CreateCatalogEventFromRecordingSchema } from "@/lib/catalog-events/validation";
 import { TimestampIdParamSchema } from "@/lib/validation/schemas";
-import { deriveEventTitle } from "@/lib/catalog-events/utils";
-import { loadEventCreationContext } from "@/lib/catalog-events/create-candidates";
-import {
-  buildEventCreationConflictDetails,
-  CREATE_DISTINCT_EVENT_INTENT,
-  type EventCreationConflictDetails,
-} from "@/lib/catalog-events/create-conflict";
+import { createEventFromRecording } from "@/lib/catalog-events/create-from-recording";
 
 export const dynamic = "force-dynamic";
-
-type CreateFromRecordingResult =
-  | { kind: "created"; eventId: number; title: string; sessionIndex: number }
-  | { kind: "recording_not_found" }
-  | { kind: "non_actionable" }
-  | { kind: "already_assigned"; eventId: number }
-  | { kind: "needs_destination_decision"; details: EventCreationConflictDetails }
-  | { kind: "missing_metadata" };
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -43,128 +29,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
 
     try {
-      const result = await prisma.$transaction<CreateFromRecordingResult>(async (tx) => {
-        const [entry, metadata, existingAssignment] = await Promise.all([
-          tx.catalogEntry.findFirst({
-            where: {
-              workflowGroupId: workflowGroupId,
-              audioHash: body.audioHash,
-            },
-            select: {
-              audioHash: true,
-              isActionable: true,
-            },
-          }),
-          tx.audioMetadata.findFirst({
-            where: {
-              workflowGroupId: workflowGroupId,
-              audioHash: body.audioHash,
-            },
-            select: {
-              dateYear: true,
-              dateMonth: true,
-              dateDay: true,
-              location: {
-                select: {
-                  id: true,
-                  name: true,
-                },
-              },
-            },
-          }),
-          tx.catalogEventRecording.findUnique({
-            where: {
-              workflowGroupId_audioHash: {
-                workflowGroupId: workflowGroupId,
-                audioHash: body.audioHash,
-              },
-            },
-            select: {
-              eventId: true,
-            },
-          }),
-        ]);
-
-        if (!entry) {
-          return { kind: "recording_not_found" };
-        }
-        if (!entry.isActionable) {
-          return { kind: "non_actionable" };
-        }
-        if (existingAssignment) {
-          return { kind: "already_assigned", eventId: existingAssignment.eventId };
-        }
-        if (!metadata?.location || metadata.dateYear == null) {
-          return { kind: "missing_metadata" };
-        }
-
-        const creationContext = await loadEventCreationContext(tx, {
-          workflowGroupId: workflowGroupId,
-          locationId: metadata.location.id,
-          dateYear: metadata.dateYear,
-          dateMonth: metadata.dateMonth ?? null,
-          dateDay: metadata.dateDay ?? null,
-        });
-
-        if (
-          creationContext.candidates.length > 0 &&
-          body.intent !== CREATE_DISTINCT_EVENT_INTENT
-        ) {
-          return {
-            kind: "needs_destination_decision",
-            details: buildEventCreationConflictDetails(
-              creationContext.candidates
-            ),
-          };
-        }
-
-        // The browser confirms semantic intent, never a storage index. Re-read
-        // the current candidates and allocate the index in this transaction.
-        const sessionIndex = creationContext.nextSessionIndex;
-
-        const title = deriveEventTitle(
-          metadata.location.name,
-          metadata.dateYear,
-          metadata.dateMonth ?? null,
-          metadata.dateDay ?? null,
-          sessionIndex
-        );
-
-        const createdEvent = await tx.catalogEvent.create({
-          data: {
-            workflowGroupId: workflowGroupId,
-            title,
-            locationId: metadata.location.id,
-            dateYear: metadata.dateYear,
-            dateMonth: metadata.dateMonth ?? null,
-            dateDay: metadata.dateDay ?? null,
-            sessionIndex,
-            released: false,
-            createdById: userId,
-            updatedById: userId,
-          },
-          select: {
-            id: true,
-            title: true,
-          },
-        });
-
-        await tx.catalogEventRecording.create({
-          data: {
-            eventId: createdEvent.id,
-            workflowGroupId: workflowGroupId,
-            audioHash: body.audioHash,
-            isPrimary: true,
-          },
-        });
-
-        return {
-          kind: "created",
-          eventId: createdEvent.id,
-          title: createdEvent.title ?? title,
-          sessionIndex,
-        };
-      });
+      const result = await prisma.$transaction((tx) =>
+        createEventFromRecording(tx, {
+          workflowGroupId,
+          audioHash: body.audioHash,
+          userId,
+          intent: body.intent,
+        })
+      );
 
       if (result.kind === "recording_not_found") {
         return notFound("catalog recording");

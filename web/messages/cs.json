@@ -524,7 +524,12 @@
           "uploading": "Nahrávání… {percent} %",
           "done": "Nahráno a zařazeno",
           "error": "Nahrání selhalo"
-        }
+        },
+        "location": "Místo",
+        "locationPlaceholder": "Vyberte místo",
+        "date": "Datum",
+        "eventHint": "Po zpracování dostane nahrávka nevydanou událost pro toto místo a datum. Při více souborech dostane událost jen první zpracovaný; ostatní připojte na stránkách jejich nahrávek. Necháte-li obě pole prázdná, vytvoříte událost později sami.",
+        "eventIncomplete": "Vyberte místo i datum, nebo nechte obě pole prázdná."
       },
       "jobs": {
         "title": "Zpracování",
@@ -532,6 +537,7 @@
         "refresh": "Obnovit",
         "empty": "Zatím nebyly nahrány žádné nahrávky.",
         "retrySubmit": "Znovu odeslat",
+        "event": "Událost #{id}",
         "remove": "Odebrat nahrávku",
         "loadError": "Seznam zpracování se nepodařilo načíst.",
         "refreshError": "Seznam se nepodařilo obnovit; zobrazuje poslední načtený stav.",
@@ -582,7 +588,9 @@
         "completion_missing": "Zpracování doběhlo, ale hlášení nedorazilo; katalog byl synchronizován",
         "remove_failed": "Odebrání selhalo - nahrávka může být odebrána jen částečně; zkontrolujte log workeru",
         "derived_refresh_failed": "Odebráno, ale obnova RAG/mluvčích selhala - spusťte catalog run-pipeline",
-        "sync_failed": "Zpracováno, ale synchronizace katalogu selhala - spusťte Synchronizovat katalog"
+        "sync_failed": "Zpracováno, ale synchronizace katalogu selhala - spusťte Synchronizovat katalog",
+        "event_exists": "Zpracováno; toto místo a datum už má událost - přiřaďte ji na stránce nahrávky",
+        "event_not_created": "Zpracováno, ale událost se nepodařilo vytvořit"
       },
       "remove": {
         "title": "Odebrat tuto nahrávku?",

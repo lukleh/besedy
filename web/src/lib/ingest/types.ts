@@ -67,6 +67,12 @@ export const recordingIntakeSchema = z.object({
   progressTotal: z.number().int().nullable().optional(),
   progressLabel: z.string().nullable().optional(),
   progressStepStartedAt: z.string().nullable().optional(),
+  locationId: z.number().int().nullable().optional(),
+  locationName: z.string().nullable().optional(),
+  dateYear: z.number().int().nullable().optional(),
+  dateMonth: z.number().int().nullable().optional(),
+  dateDay: z.number().int().nullable().optional(),
+  eventId: z.number().int().nullable().optional(),
   prefectStateName: z.string().nullable().optional(),
   jobStateUnavailable: z.boolean().optional(),
 });
