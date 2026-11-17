@@ -29,6 +29,7 @@ export interface UploadRecordingOptions {
   catalogId: string;
   file: File;
   event?: UploadRecordingEvent | null;
+  recorderId?: number | null;
   onProgress?: (sentBytes: number, totalBytes: number) => void;
 }
 
@@ -159,6 +160,7 @@ export async function uploadRecording({
   catalogId,
   file,
   event,
+  recorderId,
   onProgress,
 }: UploadRecordingOptions): Promise<RecordingIntakeDto> {
   const created = await fetchJson("/api/admin/ingest/uploads", {
@@ -170,6 +172,7 @@ export async function uploadRecording({
       sizeBytes: file.size,
       mimeType: file.type || null,
       ...(event ?? {}),
+      ...(recorderId != null ? { recorderId } : {}),
     }),
     schema: createUploadResponseSchema,
   });

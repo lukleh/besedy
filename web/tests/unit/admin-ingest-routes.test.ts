@@ -73,6 +73,7 @@ vi.mock('@/lib/db', () => ({
   default: {
     workflowGroup: { findFirst: vi.fn(), findUnique: vi.fn() },
     location: { findFirst: vi.fn() },
+    recorder: { findFirst: vi.fn() },
     recordingIntake: {
       create: vi.fn(),
       findMany: vi.fn(),
@@ -159,6 +160,7 @@ describe('admin ingest routes', () => {
   let prisma: {
     workflowGroup: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
     location: { findFirst: ReturnType<typeof vi.fn> };
+    recorder: { findFirst: ReturnType<typeof vi.fn> };
     recordingIntake: {
       create: ReturnType<typeof vi.fn>;
       findMany: ReturnType<typeof vi.fn>;
@@ -281,6 +283,7 @@ describe('admin ingest routes', () => {
         dateYear: null,
         dateMonth: null,
         dateDay: null,
+        recorderId: null,
       },
     });
     const incomingDir = path.join(
@@ -336,6 +339,34 @@ describe('admin ingest routes', () => {
         dateDay: 17,
       }),
     });
+  });
+
+  it('stores the recorder on its own, and rejects a foreign one', async () => {
+    prisma.workflowGroup.findFirst.mockResolvedValue({ id: CATALOG_ID });
+    prisma.recorder.findFirst.mockResolvedValue({ id: 3 });
+    prisma.recordingIntake.create.mockResolvedValue(baseRow());
+    const base = { catalogId: CATALOG_ID, filename: 'talk.mp3', sizeBytes: 10 };
+
+    const response = await createUpload(
+      jsonRequest('/api/admin/ingest/uploads', { ...base, recorderId: 3 }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(prisma.recorder.findFirst).toHaveBeenCalledWith({
+      where: { id: 3, workflowGroupId: CATALOG_ID },
+      select: { id: true },
+    });
+    expect(prisma.recordingIntake.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ recorderId: 3, locationId: null, dateYear: null }),
+    });
+
+    prisma.recordingIntake.create.mockClear();
+    prisma.recorder.findFirst.mockResolvedValue(null);
+    const foreign = await createUpload(
+      jsonRequest('/api/admin/ingest/uploads', { ...base, recorderId: 99 }),
+    );
+    expect(foreign.status).toBe(400);
+    expect(prisma.recordingIntake.create).not.toHaveBeenCalled();
   });
 
   it('rejects an incomplete or invalid place and date, and a foreign location', async () => {

@@ -66,12 +66,17 @@ filesystem path is ever passed across.
 
 The upload form asks for the recording's **location** and **date**. Both are
 optional, but only together: leave both empty to create the event by hand
-later. They are stored on the `recording_intake` row (`location_id`,
-`date_year`, `date_month`, `date_day`) and apply to every file of that upload.
+later. It also asks for the **recorder**, which is optional on its own and
+goes only into the recording's metadata, never into the event. All of them are
+stored on the `recording_intake` row (`location_id`, `date_year`,
+`date_month`, `date_day`, `recorder_id`) and apply to every file of that
+upload; the form clears them after an upload.
 
 When the ingest succeeds and the catalog sync has the new recording, the web
-app (`web/src/lib/ingest/event.ts`) writes them into the recording's metadata
-and creates an **unreleased** event for that place and date with the recording
+app (`web/src/lib/ingest/event.ts`) writes the fields that were given into the
+recording's metadata (a recorder-only upload leaves place and date untouched)
+and, when a place and date were given, creates an **unreleased** event for
+them with the recording
 as its primary, through the same code as **Create event** on the recording
 page (`web/src/lib/catalog-events/create-from-recording.ts`). The event id is
 stored on the row (`event_id`), linked from the ingest page, and returned in
@@ -90,6 +95,13 @@ why:
   processed gets the event and the others end with `event_exists`.
 - `event_not_created`: anything else (the uploader was deleted, the recording
   is not actionable, the transaction failed); the message has the detail.
+- `metadata_not_saved`: only a recorder was given and saving it failed.
+
+If the uploading user was deleted, nothing is written (every metadata change
+is audited under its actor), and the row reports `event_not_created` or
+`metadata_not_saved`. When creating the event fails, the place, date and
+recorder written in the same transaction are rolled back too, and the message
+says so.
 
 An undelivered outcome that a later admin poll applies goes through the same
 step. Removing the recording later detaches it from the event like any other
@@ -391,7 +403,8 @@ file removed), `undecodable_audio`, `intake_missing`, `intake_invalid`,
 `job_missing`, `completion_missing` (Prefect finished but no report arrived; the
 catalog was re-synced), `sync_failed` (ingest succeeded but the projection sync
 failed - click **Sync catalog**), `event_exists` / `event_not_created` (ingest
-succeeded but no event was assigned; see "Event on upload").
+succeeded but no event was assigned; see "Event on upload"),
+`metadata_not_saved` (ingest succeeded but the recorder was not saved).
 
 If the jobs API is unreachable or misconfigured at finalize, the row stays
 `UPLOADING` with the file kept and the page shows **Retry submit**. If the

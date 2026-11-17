@@ -6,12 +6,13 @@ import type { IntakeRow } from './server';
 
 const logger = createServerLogger('ingest-event');
 
-const METADATA_FIELDS = ['locationId', 'dateYear', 'dateMonth', 'dateDay'];
-
 export interface IntakeEventOutcome {
   eventId: number | null;
-  /** Set when the upload named a place and date but no event was assigned. */
-  errorCode: 'event_exists' | 'event_not_created' | null;
+  /**
+   * Set when the upload named a place and date but no event was assigned, or
+   * when only a recorder was given and it could not be saved.
+   */
+  errorCode: 'event_exists' | 'event_not_created' | 'metadata_not_saved' | null;
   errorMessage: string | null;
 }
 
@@ -22,10 +23,12 @@ const NO_EVENT: IntakeEventOutcome = {
 };
 
 /**
- * After a successful ingest and catalog sync, store the place and date entered
- * on upload as the recording's metadata and create its unreleased event.
+ * After a successful ingest and catalog sync, store the place, date and
+ * recorder entered on upload as the recording's metadata, and create its
+ * unreleased event from the place and date.
  *
- * An upload without a place and date gets no event. When events already cover
+ * An upload without a place and date gets no event; its recorder is still
+ * saved. When events already cover
  * that place and date, the recording may belong to one of them, so it is left
  * unassigned for the admin to decide on the recording page. A recording that
  * already belongs to an event keeps its metadata, since an admin may have
@@ -36,21 +39,37 @@ export async function assignIntakeEvent(
   row: IntakeRow,
   audioHash: string,
 ): Promise<IntakeEventOutcome> {
-  if (row.locationId == null || row.dateYear == null) return NO_EVENT;
+  const wantsEvent = row.locationId != null && row.dateYear != null;
+  if (!wantsEvent && row.recorderId == null) return NO_EVENT;
   const userId = row.requestedById;
   if (!userId) {
-    return {
-      eventId: null,
-      errorCode: 'event_not_created',
-      errorMessage: 'The uploading user no longer exists, so no event was created.',
-    };
+    // Every metadata change is audited under its actor; without the uploader
+    // there is none, so nothing is written and an admin enters it by hand.
+    return wantsEvent
+      ? {
+          eventId: null,
+          errorCode: 'event_not_created',
+          errorMessage:
+            'The uploading user no longer exists, so no event was created and the metadata was not saved.',
+        }
+      : {
+          eventId: null,
+          errorCode: 'metadata_not_saved',
+          errorMessage: 'The uploading user no longer exists, so the recorder was not saved.',
+        };
   }
   const workflowGroupId = row.workflowGroupId;
+  // Only what the upload named; a recorder-only upload leaves place and date alone.
   const metadata = {
-    locationId: row.locationId,
-    dateYear: row.dateYear,
-    dateMonth: row.dateMonth,
-    dateDay: row.dateDay,
+    ...(wantsEvent
+      ? {
+          locationId: row.locationId,
+          dateYear: row.dateYear,
+          dateMonth: row.dateMonth,
+          dateDay: row.dateDay,
+        }
+      : {}),
+    ...(row.recorderId != null ? { recorderId: row.recorderId } : {}),
   };
 
   try {
@@ -73,11 +92,12 @@ export async function assignIntakeEvent(
         data: { updatedAt: new Date() },
       });
       metadataWritten = true;
+      if (!wantsEvent) return { kind: 'no_event' as const };
       return createEventFromRecording(tx, { workflowGroupId, audioHash, userId });
     });
     if (metadataWritten) {
       // The writes are committed; a failed audit entry must not report them as failed.
-      await logMetadataUpdated(userId, audioHash, workflowGroupId, METADATA_FIELDS).catch(
+      await logMetadataUpdated(userId, audioHash, workflowGroupId, Object.keys(metadata)).catch(
         (error: unknown) =>
           logger.warn('Audit entry for ingest metadata failed', {
             intakeId: row.id,
@@ -87,6 +107,8 @@ export async function assignIntakeEvent(
     }
 
     switch (result.kind) {
+      case 'no_event':
+        return NO_EVENT;
       case 'created':
       case 'already_assigned':
         return { eventId: result.eventId, errorCode: null, errorMessage: null };
@@ -121,14 +143,24 @@ export async function assignIntakeEvent(
     if (winner) {
       return { eventId: winner.eventId, errorCode: null, errorMessage: null };
     }
-    logger.error('Creating the event for an ingested recording failed', {
+    const detail = error instanceof Error ? error.message : String(error);
+    logger.error('Saving the upload metadata or event for an ingested recording failed', {
       intakeId: row.id,
-      error: error instanceof Error ? error.message : String(error),
+      error: detail,
     });
-    return {
-      eventId: null,
-      errorCode: 'event_not_created',
-      errorMessage: `No event was created: ${error instanceof Error ? error.message : String(error)}`,
-    };
+    return wantsEvent
+      ? {
+          eventId: null,
+          errorCode: 'event_not_created',
+          // The metadata was written in the same transaction, so it is gone too.
+          errorMessage: `No event was created and the upload's ${
+            row.recorderId != null ? 'place, date and recorder were' : 'place and date were'
+          } not saved: ${detail}`,
+        }
+      : {
+          eventId: null,
+          errorCode: 'metadata_not_saved',
+          errorMessage: `The recorder was not saved: ${detail}`,
+        };
   }
 }

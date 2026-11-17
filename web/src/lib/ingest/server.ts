@@ -30,6 +30,7 @@ export const INTAKE_INCLUDE = {
   workflowGroup: { select: { label: true } },
   requestedBy: { select: { id: true, name: true, email: true } },
   location: { select: { name: true } },
+  recorder: { select: { name: true } },
 } satisfies Prisma.RecordingIntakeInclude;
 
 export type IntakeRow = Prisma.RecordingIntakeGetPayload<{
@@ -265,6 +266,8 @@ export function serializeIntake(
     dateMonth: row.dateMonth,
     dateDay: row.dateDay,
     eventId: row.eventId,
+    recorderId: row.recorderId,
+    recorderName: row.recorder?.name ?? null,
     prefectStateName: extra?.prefectStateName ?? null,
     jobStateUnavailable: extra?.jobStateUnavailable ?? false,
   };
