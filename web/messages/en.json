@@ -26,7 +26,7 @@
     "downloads": "Downloads",
     "admin": "Admin",
     "enums": "Catalog Enums",
-    "catalogSettings": "Archive Settings",
+    "catalogSettings": "Manage catalog",
     "signIn": "Sign In",
     "signOut": "Sign Out",
     "toggleTheme": "Toggle theme",
@@ -70,15 +70,16 @@
     "actionable": "actionable",
     "verified": "verified",
     "loading": "Loading catalog...",
-    "loadingDescription": "Fetching recordings from the active workflow group.",
+    "loadingDescription": "Fetching recordings from the catalog.",
     "loadingCatalogName": "Loading {name}...",
     "errorTitle": "Unable to load catalog",
-    "errorDescription": "Make sure a workflow group is configured in",
+    "errorDescription": "Check the catalog configuration and try again.",
+    "configurationHelp": "Check the catalog configuration in",
     "invalidTitle": "Catalog not found",
     "invalidDescription": "The catalog \"{id}\" doesn't exist or is inactive.",
     "emptyTitle": "No recordings found",
-    "emptyDescription": "The catalog is empty or no workflow group is selected.",
-    "configureGroups": "Configure groups",
+    "emptyDescription": "The catalog has no recordings yet. Check its sources in",
+    "configureGroups": "Manage catalog",
     "manageAccess": "Manage Access",
     "status": {
       "placeholder": "Status",
@@ -743,7 +744,7 @@
     },
     "dashboard": {
       "title": "Admin Dashboard",
-      "description": "Manage users and catalogs",
+      "description": "Manage users and the catalog",
       "loading": "Loading...",
       "attention": {
         "title": "Needs Attention",
@@ -767,8 +768,8 @@
         "addUserDesc": "Invite a new user to the platform",
         "manageUsers": "Manage Users",
         "manageUsersDesc": "View and manage all users",
-        "catalogSettings": "Archive Settings",
-        "catalogSettingsDesc": "Configure the archive and access"
+        "catalogSettings": "Manage catalog",
+        "catalogSettingsDesc": "Manage catalog access, metadata, and configuration"
       },
       "recentActivity": {
         "title": "Recent Activity",
@@ -1685,9 +1686,9 @@
     }
   },
   "catalogSettings": {
-    "title": "{name} Settings",
-    "titleDefault": "Catalog Settings",
-    "description": "Manage catalog configuration and access",
+    "title": "Manage catalog: {name}",
+    "titleDefault": "Manage catalog",
+    "description": "Manage catalog access, metadata, and configuration",
     "lookups": {
       "title": "Catalog lookups",
       "description": "Recorders, locations and albums that this catalog's metadata picks from."
@@ -1697,7 +1698,7 @@
     "notFound": {
       "title": "Catalog not found",
       "description": "The catalog {catalogId} does not exist or is inactive.",
-      "goToCatalogs": "Go to Catalogs"
+      "goToCatalogs": "Go to catalog"
     },
     "accessDenied": {
       "title": "Access Denied",
@@ -1705,8 +1706,8 @@
       "goBack": "Go Back"
     },
     "configuration": {
-      "title": "Catalog configuration",
-      "description": "Paths and status for this workflow group.",
+      "title": "Source configuration",
+      "description": "Source paths and synchronization status for the catalog.",
       "loadError": "Failed to load catalog configuration.",
       "catalogId": "Catalog ID",
       "label": "Label",
@@ -1982,7 +1983,7 @@
   "errors": {
     "notFound": "Page not found",
     "notFoundDescription": "The page you're looking for doesn't exist.",
-    "goToCatalogs": "Go to catalogs",
+    "goToCatalogs": "Go to catalog",
     "unauthorized": "Unauthorized",
     "unauthorizedDescription": "You don't have permission to access this page.",
     "serverError": "Server error",

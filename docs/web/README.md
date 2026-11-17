@@ -8,6 +8,7 @@ Documentation for the Besedy web app and adjacent service architecture.
 - [jobs-prefect.md](jobs-prefect.md) -- Prefect jobs API, host worker, and asynchronous ingest and correction indexing
 - [recording-ingest.md](recording-ingest.md) -- admin upload -> host Prefect worker -> catalog pipeline -> auto-sync; paths, worker install, statuses
 - [docker-container-topology.md](docker-container-topology.md) -- Docker container, network, volume, and environment-sharing map for web, shared Prefect, jobs runtimes, and RAG
+- [single-archive.md](single-archive.md) -- catalog terminology, deployment source binding, registration and membership
 - [data-and-database.md](data-and-database.md) -- web data model, migration safety, configuration
 - [security.md](security.md) -- auth model, access control, deployment hardening
 - [egress-isolation.md](egress-isolation.md) -- container egress policy: design, host install, `just egress-check`

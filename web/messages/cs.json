@@ -26,7 +26,7 @@
     "downloads": "Stažené",
     "admin": "Administrace",
     "enums": "Číselníky katalogu",
-    "catalogSettings": "Nastavení archivu",
+    "catalogSettings": "Správa katalogu",
     "signIn": "Přihlásit",
     "signOut": "Odhlásit",
     "toggleTheme": "Přepnout téma",
@@ -70,15 +70,16 @@
     "actionable": "k akci",
     "verified": "ověřeno",
     "loading": "Načítání katalogu...",
-    "loadingDescription": "Získávání nahrávek z aktivní pracovní skupiny.",
+    "loadingDescription": "Získávání nahrávek z katalogu.",
     "loadingCatalogName": "Načítání {name}...",
     "errorTitle": "Nelze načíst katalog",
-    "errorDescription": "Ujistěte se, že je nakonfigurovaná pracovní skupina v",
+    "errorDescription": "Zkontrolujte nastavení katalogu a zkuste to znovu.",
+    "configurationHelp": "Zkontrolujte konfiguraci katalogu v části",
     "invalidTitle": "Katalog nenalezen",
     "invalidDescription": "Katalog „{id}“ neexistuje nebo je neaktivní.",
     "emptyTitle": "Žádné nahrávky nenalezeny",
-    "emptyDescription": "Katalog je prázdný nebo není vybrána pracovní skupina.",
-    "configureGroups": "Nastavit skupiny",
+    "emptyDescription": "Katalog zatím neobsahuje žádné nahrávky. Zkontrolujte jeho zdroje v části",
+    "configureGroups": "Správa katalogu",
     "manageAccess": "Spravovat přístup",
     "status": {
       "placeholder": "Stav",
@@ -743,7 +744,7 @@
     },
     "dashboard": {
       "title": "Administrace",
-      "description": "Správa uživatelů a katalogů",
+      "description": "Správa uživatelů a katalogu",
       "loading": "Načítání...",
       "attention": {
         "title": "Vyžaduje pozornost",
@@ -767,8 +768,8 @@
         "addUserDesc": "Pozvat nového uživatele",
         "manageUsers": "Spravovat uživatele",
         "manageUsersDesc": "Zobrazit a spravovat všechny uživatele",
-        "catalogSettings": "Nastavení archivu",
-        "catalogSettingsDesc": "Nastavit archiv a přístup"
+        "catalogSettings": "Správa katalogu",
+        "catalogSettingsDesc": "Správa přístupu, metadat a nastavení katalogu"
       },
       "recentActivity": {
         "title": "Nedávná aktivita",
@@ -1684,9 +1685,9 @@
     }
   },
   "catalogSettings": {
-    "title": "Nastavení {name}",
-    "titleDefault": "Nastavení katalogu",
-    "description": "Správa konfigurace katalogu a přístupů",
+    "title": "Správa katalogu: {name}",
+    "titleDefault": "Správa katalogu",
+    "description": "Správa přístupu, metadat a nastavení katalogu",
     "lookups": {
       "title": "Číselníky katalogu",
       "description": "Zvukaři, místa a alba, ze kterých vybírají metadata tohoto katalogu."
@@ -1696,7 +1697,7 @@
     "notFound": {
       "title": "Katalog nenalezen",
       "description": "Katalog {catalogId} neexistuje nebo je neaktivní.",
-      "goToCatalogs": "Přejít na katalogy"
+      "goToCatalogs": "Přejít na katalog"
     },
     "accessDenied": {
       "title": "Přístup odepřen",
@@ -1704,8 +1705,8 @@
       "goBack": "Zpět"
     },
     "configuration": {
-      "title": "Konfigurace katalogu",
-      "description": "Cesty a stav této pracovní skupiny.",
+      "title": "Nastavení zdrojů",
+      "description": "Cesty ke zdrojům a stav synchronizace katalogu.",
       "loadError": "Nepodařilo se načíst konfiguraci katalogu.",
       "catalogId": "ID katalogu",
       "label": "Název",
@@ -1985,7 +1986,7 @@
   "errors": {
     "notFound": "Stránka nenalezena",
     "notFoundDescription": "Stránka, kterou hledáte, neexistuje.",
-    "goToCatalogs": "Přejít na katalogy",
+    "goToCatalogs": "Přejít na katalog",
     "unauthorized": "Neoprávněný přístup",
     "unauthorizedDescription": "Nemáte oprávnění k přístupu na tuto stránku.",
     "serverError": "Chyba serveru",

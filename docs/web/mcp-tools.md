@@ -9,7 +9,7 @@ authoritative contract is the code: input schemas live in each registrar under
 `tools/list`. When this page and the code disagree, the code wins; update this
 page in the same change.
 
-For authentication, the access matrix, archive binding, telemetry, and the
+For authentication, the access matrix, catalog binding, telemetry, and the
 architectural rules behind these tools, see [mcp-server.md](mcp-server.md).
 
 ## Conventions
@@ -53,24 +53,24 @@ every matching segment in one response.
 
 | Tool                       | Use it to                                                        | Required data access                       |
 | -------------------------- | ---------------------------------------------------------------- | ------------------------------------------ |
-| `who_am_i`                 | Inspect the account, OAuth client, scopes, and archive access   | Active portal user                         |
-| `list_locations`           | Discover location IDs used by listener-visible events            | Archive membership                         |
-| `list_recorders`           | Discover recorder IDs used by listener-visible recordings        | Archive membership                         |
-| `list_events`              | Page and filter released events                                  | Archive membership                         |
-| `get_event`                | Read one released event and its visible recordings               | Archive membership and listener visibility |
-| `get_recording`            | Read one published, ready recording linked to a released event   | Archive membership and listener visibility |
-| `get_transcript`           | Read its transcript when linked to a released event              | Archive membership and listener visibility |
-| `search_transcripts`       | Find event-scoped passages by meaning, including different words | Archive membership and listener visibility |
-| `find_transcript_mentions` | Exhaustively find event-scoped indexed wording                   | Archive membership and listener visibility |
-| `list_bookmarks`           | List the user's own bookmarks and their comments                 | `besedy:bookmarks` scope, archive membership, and listener visibility |
+| `who_am_i`                 | Inspect the account, OAuth client, scopes, and catalog access   | Active portal user                         |
+| `list_locations`           | Discover location IDs used by listener-visible events            | Catalog membership                         |
+| `list_recorders`           | Discover recorder IDs used by listener-visible recordings        | Catalog membership                         |
+| `list_events`              | Page and filter released events                                  | Catalog membership                         |
+| `get_event`                | Read one released event and its visible recordings               | Catalog membership and listener visibility |
+| `get_recording`            | Read one published, ready recording linked to a released event   | Catalog membership and listener visibility |
+| `get_transcript`           | Read its transcript when linked to a released event              | Catalog membership and listener visibility |
+| `search_transcripts`       | Find event-scoped passages by meaning, including different words | Catalog membership and listener visibility |
+| `find_transcript_mentions` | Exhaustively find event-scoped indexed wording                   | Catalog membership and listener visibility |
+| `list_bookmarks`           | List the user's own bookmarks and their comments                 | `besedy:bookmarks` scope, catalog membership, and listener visibility |
 
 All tools except `list_bookmarks` are discoverable by an active portal user;
 `list_bookmarks` is listed only to a client granted the `besedy:bookmarks`
 scope. Discovery is only a
-usability surface: every content call checks live access to the bound archive and applies listener
+usability surface: every content call checks live access to the bound catalog and applies listener
 visibility again.
 
-All content tools use the deployment's explicit archive binding. They do not
+All content tools use the deployment's explicit catalog binding. They do not
 accept `catalogId`, and there is no `list_catalogs` tool or default-selection
 chain. Input objects reject unknown fields, including retired catalog-selection
 arguments. Clients must refresh their tool schemas after this change.
@@ -78,12 +78,12 @@ arguments. Clients must refresh their tool schemas after this change.
 Result `catalogId` values, source URLs and opaque cursors retain the existing
 pipeline source identity for provenance. Callable transcript requests and
 continuations omit that field and can be passed directly to `get_transcript`.
-Cursors from a different archive remain invalid.
+Cursors from a different catalog remain invalid.
 
 ## `who_am_i`
 
 Use this tool to confirm which account and OAuth application a client is using,
-especially when diagnosing missing archive access or a missing tool. It takes
+especially when diagnosing missing catalog access or a missing tool. It takes
 no arguments.
 
 The response has two objects:
@@ -94,8 +94,11 @@ The response has two objects:
 - `authorization` contains `clientId`, `clientName`, the effective
   `grantedScopes`, and `archive` (`id` and nullable `label`, or `null` without access).
 
+The `archive` property is the existing wire name for the configured catalog;
+clients must continue to read that property.
+
 This tool reports authorization state; it does not grant access or change the
-archive binding.
+catalog binding.
 
 Example return value:
 
@@ -417,7 +420,7 @@ Page mode has the same top-level shape and may return a continuation descriptor:
 
 Use this tool for literal words, proper names, quotations, fixed phrases, and
 prefixes. It searches every indexed chunk belonging to visible recordings under
-released events authorized by the bound archive and filters. Its
+released events authorized by the bound catalog and filters. Its
 `totalMatches` is the number of matching indexed chunks before `limit` and
 `maxPerRecording` reduce the returned list; it is not a count of distinct events.
 Numeric text-match scores are not exposed.
@@ -445,7 +448,7 @@ object with the applied `matchMode` and the complete `totalMatches`. Use
 `get_transcript` to verify important matches, widening the request's time window
 because the unchanged request only replays the matched passage. A zero result
 establishes only that the chosen literal token pattern is absent under the
-archive, authorization scope, filters, and match mode; it does not
+catalog, authorization scope, filters, and match mode; it does not
 establish conceptual absence. Rendered text repeats that scope, distinguishes
 the complete indexed `totalMatches` count from capped returned passages, and
 includes event date and location plus each non-null `transcriptRequest` for
@@ -561,7 +564,7 @@ structured response before requesting the next one. Use the maximum of `200`
 when the question requires wider coverage rather than lowering the limit merely
 to shorten tool output. Meaning-based retrieval remains non-exhaustive even at
 the maximum.
-`search_not_configured` means the archive has no search bundle and is
+`search_not_configured` means the catalog has no search bundle and is
 not retryable. `search_unavailable` means the search service is temporarily
 unavailable and is retryable.
 
@@ -691,7 +694,7 @@ Expected tool failures set `isError: true` and return the same object in
 {
   "error": {
     "code": "not_found",
-    "message": "Archive not found or inaccessible",
+    "message": "Catalog not found or inaccessible",
     "retryable": false
   }
 }
@@ -700,12 +703,12 @@ Expected tool failures set `isError: true` and return the same object in
 | Code                    | Meaning                                                                            |
 | ----------------------- | ---------------------------------------------------------------------------------- |
 | `invalid_cursor`        | A list cursor is malformed, stale, or does not match the current request           |
-| `not_found`             | The archive, event, or recording is absent or deliberately hidden by access policy |
+| `not_found`             | The catalog, event, or recording is absent or deliberately hidden by access policy |
 | `identity_unavailable`  | The authenticated account disappeared before identity serialization                |
 | `transcript_not_found`  | The recording has no readable transcript                                           |
 | `invalid_window`        | `endSec` is not greater than `startSec`                                            |
 | `response_too_large`    | A full transcript window exceeds the hard response ceiling                         |
-| `search_not_configured` | The archive has no transcript search bundle                                        |
+| `search_not_configured` | The catalog has no transcript search bundle                                        |
 | `search_unavailable`    | The transcript search service is temporarily unavailable                           |
 | `internal_error`        | An unexpected server failure was logged without exposing its details               |
 

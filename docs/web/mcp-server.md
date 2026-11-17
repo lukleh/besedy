@@ -5,7 +5,7 @@
 > Last updated: 2026-11-07
 
 This document covers the design of the MCP server: scope, architecture,
-authentication, access rules, archive binding, telemetry, testing, and the
+authentication, access rules, catalog binding, telemetry, testing, and the
 change checklist. The per-tool contract lives in [mcp-tools.md](mcp-tools.md).
 Deferred work is tracked in [mcp-follow-ups.md](mcp-follow-ups.md). Client
 setup instructions live in the [repository README](../../README.md#ai-agent-access-mcp).
@@ -13,7 +13,7 @@ setup instructions live in the [repository README](../../README.md#ai-agent-acce
 ## Purpose and scope
 
 Besedy exposes a remote, read-only Model Context Protocol (MCP) server from the
-web service. It lets an authenticated AI client discover events in the deployment’s single archive,
+web service. It lets an authenticated AI client discover events in the deployment’s single catalog,
 read event/recording metadata and transcripts, and use Besedy transcript search.
 
 The first version deliberately does **not** expose audio bytes, storage paths,
@@ -63,16 +63,16 @@ serialization:
    access. For consented clients, effective scopes are the intersection of the
    token claims and live consent, so an old token cannot preserve a scope the
    user has revoked. Current portal access is required for every client.
-2. **Use the bound archive membership.** `getMcpAccessProfile` resolves
+2. **Use the bound catalog membership.** `getMcpAccessProfile` resolves
    `requireArchive()` and checks the actor's active grant for that exact source.
-   Existing system-admin authority still reaches that archive. No preference,
+   Existing system-admin authority still reaches that catalog. No preference,
    catalog enumeration or default-selection fallback participates.
 3. **Keep identity data separate from authorization.** `getMcpIdentity` loads
-   only account and OAuth-client display data. `who_am_i` takes archive access
+   only account and OAuth-client display data. `who_am_i` takes catalog access
    from the access profile rather than treating identity fields as
    permission facts.
-4. **Gate archive access and returned fields.** Every active account receives every
-   tool, but each invocation must still authorize the bound archive and apply
+4. **Gate catalog access and returned fields.** Every active account receives every
+   tool, but each invocation must still authorize the bound catalog and apply
    listener visibility. Response serialization must also enforce OAuth scopes:
    `profile` controls the account name, while `email` controls the email field.
    The one tool that returns the user's private data, `list_bookmarks`, is
@@ -98,7 +98,7 @@ denied catalog or hidden resource, and the tool's structured failure paths.
 
 Each tool lives in its own registrar module under
 `web/src/lib/mcp/tools/`. `server.ts` only creates the server and registers the
-uniform tool set. Shared archive binding and structured success/error
+uniform tool set. Shared catalog binding and structured success/error
 handling live in `tools/shared.ts` so tools cannot drift into different
 not-found or retry semantics.
 Keep tool-specific schemas, defaults, service calls, and response rendering in
@@ -208,12 +208,12 @@ into the client configuration.
 ## Access matrix
 
 The table is the intended MCP read surface for an active user with membership
-in the configured archive. System `admin`/`superadmin` authority reaches that
-archive without a membership row; it does not select another source. Every
+in the configured catalog. System `admin`/`superadmin` authority reaches that
+catalog without a membership row; it does not select another source. Every
 active account receives the corpus tools (`list_bookmarks` additionally needs
 its OAuth scope), while membership determines whether content can be read.
 
-| Relationship to bound archive | List/get event | See unreleased event | Get recording metadata | Get transcript | Search transcripts |
+| Relationship to bound catalog | List/get event | See unreleased event | Get recording metadata | Get transcript | Search transcripts |
 | --- | --- | --- | --- | --- | --- |
 | No active membership | No | No | No | No | No |
 | `listener`, `reader`, `corrector`, `host`, `curator`, `catalog_admin` | Released/ready only | No | Published/ready only | Published/ready recordings | Released events with published/ready recordings |
@@ -238,7 +238,7 @@ all. Every MCP call — including `search_transcripts` and
 grant equivalent to the `listener` role (`MCP_VISIBILITY_GRANT` in
 `web/src/lib/mcp/read-service.ts`), never against the caller's real role or
 permissions. `getMcpAccessProfile` and `BesedyMcpRequestContext` carry only
-the bound archive's ID and label, or no access; no per-catalog role or permission
+the bound catalog's ID and label, or no access; no per-catalog role or permission
 ever reaches the MCP layer, so no tool has the information to differentiate a
 `catalog_admin` from a `listener` even in principle.
 
@@ -252,7 +252,7 @@ authoritative for what MCP currently does.
 
 Portal status is evaluated before catalog role. Unauthenticated, `PENDING`, and
 `BLOCKED` users receive no protected MCP tools or data. An active user with no
-archive membership receives the corpus tools but `who_am_i` reports no archive
+catalog membership receives the corpus tools but `who_am_i` reports no catalog
 access and every content read returns `not_found`.
 
 ### Design decision: listener transcript access through MCP
@@ -289,7 +289,7 @@ Consequences to keep in mind when changing either surface:
 ## Tool discovery and per-call authorization
 
 Every active user receives all corpus tools. Tool discovery does not authorize
-an invocation: every content call checks the archive access profile rebuilt
+an invocation: every content call checks the catalog access profile rebuilt
 for the authenticated HTTP request. Inactive membership uses not-found semantics;
 material reads still apply listener visibility independently.
 
@@ -309,8 +309,10 @@ not through the user's web grant, so a curator's bookmark on an unreleased
 recording stays hidden from MCP even though the bookmarks page shows it. The
 tool is read-only; agents cannot create or change bookmarks.
 
-`who_am_i` reports the bound archive (`id` and nullable `label`) only when
+`who_am_i` reports the bound catalog (`id` and nullable `label`) only when
 this actor may access it. No default, catalog list or selection state is exposed.
+Its response retains the existing `authorization.archive` property name for
+that catalog.
 
 ## Tool reference
 
@@ -322,14 +324,14 @@ authoritative: input schemas sit in each registrar under
 `tools/list`. Change the code, the tool reference, and the tests in the same
 pull request.
 
-## One explicit archive
+## One explicit catalog
 
 All content tools use `requireArchive()` through their request access profile.
 The deployment must configure `BESEDY_ARCHIVE_ID`; a missing or invalid binding
 fails rather than selecting a preference, default or newest source. Clients do
 not pass `catalogId`, and `list_catalogs` is removed. Tool input schemas reject
 unknown properties, so retired selection arguments do not silently choose the
-archive. Clients must refresh their tool schemas after this contract change.
+catalog. Clients must refresh their tool schemas after this contract change.
 
 Result `catalogId` fields and opaque cursors retain the existing pipeline source
 identity. Cursor validation still rejects another source's cursor. Callable
@@ -402,7 +404,7 @@ The first signs in as the seeded catalog owner through the mock OAuth UI,
 accepts the MCP consent screen, exchanges an authorization code with PKCE,
 validates the audience-bound JWT, exercises stored-token issue and revocation,
 sends MCP 2026-07-28 `tools/list`, and calls every corpus tool. It verifies
-default-archive binding, uniform MCP tool availability, listener-scoped
+configured catalog binding, uniform MCP tool availability, listener-scoped
 metadata reads, complete transcript retrieval, exact result key sets, and a
 grounded RAG result from a deterministic test-only ColBERT mock. Catalog-scoped
 calls do not supply `catalogId`, and retired selection arguments are rejected.
@@ -414,10 +416,10 @@ tool, and that a released transcript and a grounded search result are still
 available, which asserts the documented listener transcript-access decision.
 It also inserts a bookmark on a released and on a hidden recording and checks
 that `list_bookmarks` returns only the released one.
-It then signs in as the seeded account with no catalog grant and checks for an
-null archive access in `who_am_i`, `not_found` for content calls, and schema
-rejection for retired `catalogId` inputs. Each sign-in uses a fresh browser context so one user's session cookie
-cannot leak into the next.
+It then signs in as the seeded account with no catalog grant and checks for
+null catalog access in `who_am_i`, `not_found` for content calls, and schema
+rejection for retired `catalogId` inputs. Each sign-in uses a fresh browser
+context so one user's session cookie cannot leak into the next.
 
 The suite keeps its own `test-mcp-*` Compose project and volume, then removes
 both on exit. It resolves the test env file itself; inherited production

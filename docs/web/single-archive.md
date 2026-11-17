@@ -1,9 +1,36 @@
-# Deployment archive binding
+# Deployment catalog binding
 
-Each deployment serves one explicitly configured archive, following the
-[single-archive rollout](https://github.com/lukleh/besedy/pull/478).
+Each deployment serves one explicitly configured catalog, following the
+[single-catalog rollout](https://github.com/lukleh/besedy/pull/478).
 The existing `workflow_group` row remains the source binding. Memberships,
 source identifiers, authored records and artifact paths are not copied or renamed.
+
+## Terminology
+
+**Catalog** (**Katalog** in Czech) is the shared body of events, recordings and
+transcripts that people browse, listen to, read and search. Each deployment
+serves one catalog. The **Manage catalog** / **Správa katalogu** page brings
+together access management, metadata lookups, transcript exports, correction
+guidance, event checks and source configuration, as permitted by each role.
+Personal **Settings** remain separate from catalog management and system
+**Administration**.
+
+An **event** is the authored browsing and listening object. A **recording** is
+an exact audio capture; an event may have several recordings and offers its
+preferred one for ordinary listening. **Transcripts** belong to recordings.
+A **source** is the pipeline catalog/generation identified by its timestamped ID;
+it binds the website to its input CSVs and derived artifacts, preserving provenance.
+
+Earlier documentation called the shared catalog an "archive". Existing technical
+names such as `BESEDY_ARCHIVE_ID`, `GET /api/archive`, `requireArchive()`,
+`npm run archive:register`, the MCP `archive` response field and this document's
+filename retain that spelling. They refer to the configured catalog; this
+terminology change does not rename their contracts or stored identifiers.
+
+The pipeline's **archived audio** means prepared listening renditions and their
+manifest, including the `catalog archive` command. Backup archives and archived
+correction workspaces have separate storage or historical-state meanings. Those
+uses of "archive" remain distinct from the catalog product term.
 
 ## Required configuration
 
@@ -14,7 +41,7 @@ user preferences, global defaults and source recency cannot override it.
 Web and deployment jobs require this value. Missing, blank or malformed
 configuration fails closed; there is no unconfigured multi-catalog mode:
 
-- Public archive access is scoped to the selected source while
+- Public catalog access is scoped to the selected source while
   existing actor, role, material and revocation checks remain authoritative.
 - Startup/admin synchronization and browser ingestion refuse other sources.
   Existing upload operations and worker callbacks also check the intake's source.
@@ -30,10 +57,10 @@ inactive. Startup sync, transcript-backend discovery, upload progress and lists,
 and development user seeding all use that source. Configure it before starting
 the application; never infer an ID from preferences, defaults or database order.
 
-The website has one archive-settings entry instead of catalog discovery and
-creation controls. Browser uploads use the server-selected archive without a
+The website has one **Manage catalog** entry instead of catalog discovery and
+creation controls. Browser uploads use the server-selected catalog without a
 catalog picker. Source IDs remain in existing URLs and download snapshots;
-unknown IDs are not rewritten onto the archive. Display settings still use
+unknown IDs are not rewritten onto the catalog. Display settings still use
 `/api/preferences`, whose API no longer accepts an active-catalog selection.
 The old catalog list/create/discover and source deactivation APIs are removed.
 Source settings retain label and CSV path updates with their existing permission
@@ -54,7 +81,7 @@ cd web
 BESEDY_ARCHIVE_ID=YYYYMMDD_HHMMSS npm run archive:register -- \
   --archived-catalog-path /data/text/catalogs/audio_catalog_YYYYMMDD_HHMMSS_loudness_archived.csv \
   --metadata-catalog-path /data/text/catalogs/audio_catalog_YYYYMMDD_HHMMSS.csv \
-  --label Archive
+  --label Besedy
 ```
 
 Optional flags are `--label` and `--duplicates-catalog-path`. The required metadata and archived paths use the
@@ -79,23 +106,23 @@ revoked bound grant. Active system administrators and the superadmin bootstrap
 retain their existing exception; blocked and pending accounts remain denied.
 
 The existing `(user_id, catalog_id)` unique key already supplies one membership
-per person for the selected archive. Keep those rows, their role/extras, actor
+per person for the selected catalog. Keep those rows, their role/extras, actor
 and revocation fields, source foreign keys and stable identifiers. Other-source
 grants remain historical records; this change neither copies nor unions them.
 No new membership table or physical permission migration is needed. Account
 identities, authored state and audit evidence survive loss of access.
 
 Before activation, review the preflight's users without access to the selected
-source. Resolve any intended grants explicitly; selecting the archive does not
+source. Resolve any intended grants explicitly; selecting the catalog does not
 grant permissions to those accounts automatically.
 
-Every ordinary invitation needs a role and authorized extras for that archive.
+Every ordinary invitation needs a role and authorized extras for that catalog.
 Acceptance consumes only its bound pending grant and activates the pending
 account atomically. Existing other-source grants remain historical records.
 Roleless admissions came from the former sign-in-only invitation flow. They
 remain visible for revocation but cannot be claimed or edited, including notes
 or in-place role assignment. Revoke an old admission and create a new invitation
-with an explicit archive role. Development and test seeders also require a role
+with an explicit catalog role. Development and test seeders also require a role
 for every invitation. The per-email administrator-denial record, blocking and
 protected-role checks remain authoritative.
 
@@ -104,7 +131,7 @@ former multi-catalog grant arrays and counts are retired. Historical source,
 claim and revocation fields remain provenance. In particular, `STANDALONE` alone
 does not identify an unusable invitation: a subsequently assigned bound grant
 can make that admission valid. The preflight identifies pending admissions
-without a pending grant for the configured archive.
+without a pending grant for the configured catalog.
 
 ## Read-only preflight
 
@@ -140,7 +167,7 @@ No preflight result authorizes an automatic merge, grant or deletion.
 2. Set the same source ID in the selected web env file, matching jobs env file,
    and host worker environment. Keep development, test and production resources
    isolated. The Docker wrappers forward the value from their resolved env
-   files; a shell preference does not select the web archive.
+   files; a shell preference does not select the web catalog.
 3. Restart the matching services through their existing deployment procedures.
    Verify web readiness and ordinary user/admin access. No production ID is
    supplied by this change; choosing it is an operator action after preflight.

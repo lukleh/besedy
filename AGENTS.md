@@ -169,12 +169,21 @@ npm run test:e2e:generate   # Regenerate test fixtures
 
 **Test Fixtures:** Generated automatically in `web/tests/e2e/fixtures/` (gitignored). Requires `ffmpeg`.
 
-**Web API naming note:** `GET /api/archive` resolves the configured archive.
+**Product terminology:** Use **catalog** (Czech **katalog**) for the shared body
+of events, recordings and transcripts. Its management page is **Manage catalog**
+(**Správa katalogu**); personal preferences remain **Settings** (**Nastavení**).
+Keep this distinct from pipeline archived audio, backup archives and archived
+correction workspaces.
+
+**Web API naming note:** `GET /api/archive` resolves the configured catalog.
 Existing content routes retain its source ID in the path, e.g.
 `GET /api/catalogs/:id/recordings` for paginated recording entries. Catalog
 list/create/discover and source deactivation APIs are retired; initial source
 registration uses `npm run archive:register` (see `docs/web/single-archive.md`).
 No route picks a catalog from `?group=` or a saved preference.
+Existing technical `archive` names, including that endpoint, command and
+`BESEDY_ARCHIVE_ID`, remain the current contract. Interface text and
+documentation call the shared content the catalog.
 
 ## CLI Output Conventions (Required)
 

@@ -63,7 +63,7 @@
 - Use React Query for client-side fetch and mutation flows.
 - Keep shareable UI state in the URL; local display preferences in `localStorage` only when established.
 - Optional enrichment should fail soft instead of breaking the primary page.
-- Prefer explicit fallback chains for runtime choices (audio sources, locale, active-catalog resolution).
+- Keep runtime choices explicit (audio sources, locale); the catalog comes only from deployment configuration.
 - Use the typed capability layer for access control -- no ad hoc policy logic.
 - When catalog data includes host paths, rewrite through `BESEDY_PATH_MAPPINGS` before validation and access checks.
 - The backend never accepts file paths from clients; it only reads paths stored in the DB or CSVs.
@@ -102,18 +102,22 @@ Access tiers: Public (`/api/auth/*`, `/api/health`, `/api/csp-report`) -- Authen
 
 Per-catalog authorization no longer uses an ordered access-level scale. An actor holds a `CatalogRole` (`listener`, `reader`, `corrector`, `host`, `curator`, `catalog_admin`) plus additive `extraPermissions`; every gate below asks whether a specific permission (e.g. `browse_recordings`, `edit_metadata`, `manage_access`) is present rather than whether a level is high enough. See [ADR 0005](../adr/0005-catalog-permission-model.md) for the full permission catalogue and role table, and `web/src/lib/policy/*.ts` for the gates themselves.
 
-### Website archive selection
+### Website catalog binding
 
-The website uses the deployment's explicit `BESEDY_ARCHIVE_ID`. An authenticated
-`GET /api/archive` returns only its ID and label after the existing content-access
-check. The header, user menu and catalog-page validation use that response;
+The website serves one shared catalog of events, recordings and transcripts,
+bound to the deployment's explicit `BESEDY_ARCHIVE_ID`. An authenticated
+`GET /api/archive` returns only the configured catalog's ID and label after the
+existing content-access check. The header, user menu and catalog-page validation use that response;
 opening a page never reads or saves an active-catalog preference. `/catalog`
-opens this archive directly, and PWA resume ignores saved URLs for other sources.
-`/admin/catalogs` opens the archive's existing source-settings page. Website
-catalog discovery, creation, default selection and activation controls are gone.
+opens this catalog directly, and PWA resume ignores saved URLs for other sources.
+`/admin/catalogs` opens the catalog management page (**Manage catalog** /
+**Správa katalogu**). Website catalog discovery, creation, default selection and
+activation controls are gone.
 Source IDs remain in recording/event URLs and stored data. Display preferences
-remain available; the retired active-catalog database column awaits schema
-cleanup after MCP and membership migration.
+remain available; the active-catalog preference and obsolete default-source
+flag have been removed from storage. The existing `/api/archive` endpoint and
+`BESEDY_ARCHIVE_ID` configuration name retain their technical spelling; both
+refer to the catalog. See [catalog configuration](single-archive.md).
 
 ### Catalog Endpoints
 
@@ -238,7 +242,7 @@ reader-only publication controls are not exposed.
 
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
-| GET | `/api/archive` | Auth and archive access | Resolve the configured archive |
+| GET | `/api/archive` | Auth and catalog access | Resolve the configured catalog |
 | GET/PUT | `/api/catalogs/:id` | `manage_catalog_config`; changing source paths needs system admin | Read or update the bound source settings |
 | GET/POST | `/api/catalogs/:id/access` | `manage_access` | List/grant access |
 | PUT/DELETE | `/api/catalogs/:id/access/:userId` | `manage_access` | Update/revoke access |
@@ -247,7 +251,7 @@ reader-only publication controls are not exposed.
 
 Catalog list/create/discover and source deactivation APIs are retired. Initial
 source registration is an explicit operator command; see
-[archive bootstrap](single-archive.md#registering-a-source-on-a-new-database).
+[catalog bootstrap](single-archive.md#registering-a-source-on-a-new-database).
 
 - POST pending-catalog-grants: if the email belongs to an existing user, access is granted directly.
 - `manage_access` is carried by `host` and `catalog_admin` only (not `curator`). Two permissions are protected: `manage_access` and `see_unreleased`. A holder of `manage_access` may grant, update, restore, or revoke only a role that carries neither protected permission -- today `listener`, `reader`, or `corrector` -- and the same protected-permission test applies to the role being replaced; revocation ignores extras on the existing grant, so a `host` can still cut off a `reader` carrying an administrator-assigned extra. Only `catalog_admin` (or a system admin/superadmin) may grant a role carrying a protected permission (`host`, `curator`) or assign extra permissions, and nobody may change their own access. See `canGrantCatalogGrant` / `mayPassOnGrant` in `web/src/lib/policy/catalog.ts` and the "Granting rule" section of [ADR 0005](../adr/0005-catalog-permission-model.md) for the full rule.
@@ -289,7 +293,7 @@ See [recording-ingest.md](recording-ingest.md) for the end-to-end flow.
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
 | * | `/api/auth/*` | Public | Better Auth (session, signin, callback) |
-| GET | `/api/archive` | Auth + archive access | Configured archive ID and label |
+| GET | `/api/archive` | Auth + catalog access | Configured catalog ID and label |
 | GET/PATCH | `/api/preferences` | Auth | Get/update display preferences; no active-catalog selection |
 | GET | `/api/me/permissions` | Auth | Current user's permission flags |
 | GET | `/api/health` | Public | Health check |
