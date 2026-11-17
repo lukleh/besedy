@@ -245,7 +245,7 @@ describe('MCP personalized tool surface', () => {
       {
         type: 'text',
         text: expect.stringMatching(
-          /Account ID: user-1[\s\S]*Archive: viewer-catalog[\s\S]*Scopes: openid, profile, email, besedy:read/,
+          /Account ID: user-1[\s\S]*Catalog: viewer-catalog[\s\S]*Scopes: openid, profile, email, besedy:read/,
         ),
       },
     ]);
@@ -1247,7 +1247,7 @@ describe('MCP personalized tool surface', () => {
       expect(body.result).toMatchObject({
         isError: true,
         structuredContent: {
-          error: { code: 'not_found', message: 'Archive not found or inaccessible' },
+          error: { code: 'not_found', message: 'Catalog not found or inaccessible' },
         },
       });
     }

@@ -373,8 +373,8 @@ test.describe("User Workflows", () => {
     await page.goto(URLS.catalogSettings);
     await waitForPageReady(page);
 
-    // Settings page loads
-    const heading = page.getByRole("heading", { name: /catalog settings/i });
+    // Catalog management page loads
+    const heading = page.getByRole("heading", { name: /catalog management/i });
     await expect(heading).toBeVisible({ timeout: 10000 });
 
     // Access table shows users (use specific testid since there are now 2 tables)

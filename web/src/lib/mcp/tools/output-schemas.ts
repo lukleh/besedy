@@ -4,7 +4,7 @@ import { HashSchema } from '@/lib/validation/schemas';
 
 const CatalogIdSchema = z
   .string()
-  .describe('Stable pipeline source ID of this deployment’s Besedy archive.');
+  .describe('Stable pipeline source ID of this deployment’s Besedy catalog.');
 const WebUrlSchema = z
   .string()
   .url()
