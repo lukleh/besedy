@@ -2,6 +2,7 @@ import prisma from '@/lib/db';
 import { logMetadataUpdated } from '@/lib/audit/logger';
 import { attachRecordingsToEvent } from '@/lib/catalog-events/attach-recordings';
 import { CREATE_DISTINCT_EVENT_INTENT } from '@/lib/catalog-events/create-conflict';
+import { replaceLostPrimaryRecording } from '@/lib/catalog-events/primary-succession';
 import { createEventFromRecording } from '@/lib/catalog-events/create-from-recording';
 import { createServerLogger } from '@/lib/log/server';
 import type { IntakeRow } from './server';
@@ -122,16 +123,20 @@ export async function assignIntakeEvent(
           eventId: joinEventId,
           audioHashes: [audioHash],
         });
-        return attached.kind === 'success' && attached.attachedAudioHashes.length === 1
-          ? { kind: 'attached' as const, eventId: joinEventId }
-          : {
-              kind: 'attach_failed' as const,
-              eventId: joinEventId,
-              reason:
-                attached.kind === 'event_not_found'
-                  ? 'the event no longer exists'
-                  : (attached.errors[0]?.reason ?? 'unknown'),
-            };
+        if (attached.kind === 'success' && attached.attachedAudioHashes.length === 1) {
+          // An event left without recordings (its recording was removed) gets
+          // this one as primary; attach holds the event lock this needs.
+          await replaceLostPrimaryRecording(tx, workflowGroupId, joinEventId);
+          return { kind: 'attached' as const, eventId: joinEventId };
+        }
+        return {
+          kind: 'attach_failed' as const,
+          eventId: joinEventId,
+          reason:
+            attached.kind === 'event_not_found'
+              ? 'the event no longer exists'
+              : (attached.errors[0]?.reason ?? 'unknown'),
+        };
       }
       return createEventFromRecording(tx, {
         workflowGroupId,

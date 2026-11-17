@@ -536,6 +536,8 @@
         "eventChoicePlaceholder": "Vyberte událost",
         "eventChoiceExisting": "Přidat k {title} ({count, plural, one {# nahrávka} few {# nahrávky} other {# nahrávek}})",
         "eventChoiceNew": "Nová, samostatná událost",
+        "eventLookupError": "Nepodařilo se ověřit existující události pro toto místo a datum, nahrávání je proto zablokované.",
+        "eventLookupRetry": "Zkusit znovu",
         "eventChoiceHint": "Toto místo a datum už má událost. Vyberte, ke které nahrávky patří, nebo novou samostatnou událost. Přidání k vydané události nahrávky hned zveřejní."
       },
       "jobs": {

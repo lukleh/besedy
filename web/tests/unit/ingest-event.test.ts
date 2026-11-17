@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
     tx,
     findAssignment: vi.fn(),
     attachRecordingsToEvent: vi.fn(),
+    replaceLostPrimaryRecording: vi.fn(),
     transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     createEventFromRecording: vi.fn(),
     logMetadataUpdated: vi.fn(),
@@ -31,6 +32,9 @@ vi.mock("@/lib/catalog-events/create-from-recording", () => ({
 vi.mock("@/lib/audit/logger", () => ({ logMetadataUpdated: mocks.logMetadataUpdated }));
 vi.mock("@/lib/catalog-events/attach-recordings", () => ({
   attachRecordingsToEvent: mocks.attachRecordingsToEvent,
+}));
+vi.mock("@/lib/catalog-events/primary-succession", () => ({
+  replaceLostPrimaryRecording: mocks.replaceLostPrimaryRecording,
 }));
 
 const CATALOG_ID = "20260201_120000";
@@ -79,6 +83,11 @@ describe("assignIntakeEvent", () => {
     });
     expect(mocks.createEventFromRecording).not.toHaveBeenCalled();
     expect(mocks.tx.audioMetadata.upsert).toHaveBeenCalled();
+    // An event left without a primary gets the joined recording as primary.
+    expect(mocks.replaceLostPrimaryRecording).toHaveBeenCalledWith(mocks.tx, CATALOG_ID, 9);
+    expect(mocks.replaceLostPrimaryRecording.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mocks.attachRecordingsToEvent.mock.invocationCallOrder[0]
+    );
   });
 
   it("adds a later file of the same upload to the event the first one got", async () => {
@@ -130,6 +139,7 @@ describe("assignIntakeEvent", () => {
 
     expect(outcome).toMatchObject({ eventId: null, errorCode: "event_not_created" });
     expect(outcome.errorMessage).toContain("event #9");
+    expect(mocks.replaceLostPrimaryRecording).not.toHaveBeenCalled();
   });
 
   it("does nothing for an upload without a place and date", async () => {

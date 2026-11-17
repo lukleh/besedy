@@ -96,8 +96,11 @@ why:
 
 - `event_exists`: events already cover that place and date and no choice was
   made, so the recording is left unassigned; attach it or confirm a distinct
-  event on the recording page. The form asks for the choice, so this happens
-  only for API callers that skip it.
+  event on the recording page. The form asks for the choice when it sees such
+  events, but an event can appear after the form checked: a second upload for
+  the same place and date queued while the first is still processing finds no
+  event yet, makes no choice, and ends with `event_exists` once the first has
+  created one.
 - `event_not_created`: anything else (the uploader was deleted, the recording
   is not actionable, the transaction failed); the message has the detail.
 - `metadata_not_saved`: only a recorder was given and saving it failed.
@@ -125,10 +128,18 @@ are any, the form requires a choice before uploading:
 - **New, separate event** stores `create_distinct_event`; the first file
   creates a new event at the next session index, and the rest join it.
 
+The form blocks the upload while that lookup is loading, and when it fails
+(with a retry).
+
 Attaching uses the same code as the event page
-(`web/src/lib/catalog-events/attach-recordings.ts`). If it fails (the event
-was deleted, or the recording is already on another event), the row reports
-`event_not_created` with the reason.
+(`web/src/lib/catalog-events/attach-recordings.ts`). An event without a
+primary recording (its only recording was removed) gets the joined recording
+as its primary, so it is also the recording a post-ingest event command runs
+for. If attaching fails (for example the recording is already on another
+event), the row reports `event_not_created` with the reason. A chosen event
+that is deleted before the ingest finishes is not reported:
+`target_event_id` is cleared with it, so the recording then joins its batch's
+event or creates a new one, as if no event had been chosen.
 
 ## Post-ingest command
 

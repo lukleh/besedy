@@ -536,6 +536,8 @@
         "eventChoicePlaceholder": "Choose the event",
         "eventChoiceExisting": "Add to {title} ({count, plural, one {# recording} other {# recordings}})",
         "eventChoiceNew": "New, separate event",
+        "eventLookupError": "Could not check for existing events on this place and date, so uploading is blocked.",
+        "eventLookupRetry": "Try again",
         "eventChoiceHint": "Events already cover this place and date. Choose the one these recordings belong to, or a separate new event. Adding to a released event publishes the recordings right away."
       },
       "jobs": {
