@@ -73,12 +73,13 @@
     "loadingDescription": "Fetching recordings from the catalog.",
     "loadingCatalogName": "Loading {name}...",
     "errorTitle": "Unable to load catalog",
-    "errorDescription": "Check the catalog configuration in",
+    "errorDescription": "Check the catalog configuration and try again.",
+    "configurationHelp": "Check the catalog configuration in",
     "invalidTitle": "Catalog not found",
     "invalidDescription": "The catalog \"{id}\" doesn't exist or is inactive.",
     "emptyTitle": "No recordings found",
     "emptyDescription": "The catalog has no recordings yet. Check its sources in",
-    "configureGroups": "Catalog management",
+    "configureGroups": "Manage catalog",
     "manageAccess": "Manage Access",
     "status": {
       "placeholder": "Status",
@@ -1685,8 +1686,8 @@
     }
   },
   "catalogSettings": {
-    "title": "Catalog management: {name}",
-    "titleDefault": "Catalog management",
+    "title": "Manage catalog: {name}",
+    "titleDefault": "Manage catalog",
     "description": "Manage catalog access, metadata, and configuration",
     "lookups": {
       "title": "Catalog lookups",
