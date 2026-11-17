@@ -24,10 +24,10 @@ fi
 : "${EXTRA_SNAPSHOT_ROOT:?is not set — add it to ops.env (see web/setup/backup/ops.env.example)}"
 : "${PROJECT_LOG_FILE:?is not set — add it to ops.env (see web/setup/backup/ops.env.example)}"
 : "${EXTRA_LOG_FILE:?is not set — add it to ops.env (see web/setup/backup/ops.env.example)}"
+: "${PROJECT_REQUIRED_PATHS:?is not set — add it to ops.env (see web/setup/backup/ops.env.example)}"
 EXTRA_MAP_FILE="${EXTRA_MAP_FILE:-$COMPOSE_DIR/setup/backup/besedy-extra.paths}"
 MAX_AGE_HOURS="${MAX_AGE_HOURS:-30}"
 REMOTE_SYNC_MAX_AGE_HOURS="${REMOTE_SYNC_MAX_AGE_HOURS:-$MAX_AGE_HOURS}"
-PROJECT_REQUIRED_PATHS="${PROJECT_REQUIRED_PATHS:-projects/besedy,projects/besedy_data,projects/besedy_artwork,projects/besedy_sources}"
 DB_DUMP_PATTERN="${DB_DUMP_PATTERN:-besedy_[0-9]*_[0-9]*.sql.gz}"
 # Early-warning thresholds for the remote sync trend (see check_remote_sync_trend).
 REMOTE_SYNC_MAX_DURATION_MINUTES="${REMOTE_SYNC_MAX_DURATION_MINUTES:-120}"

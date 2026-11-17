@@ -25,7 +25,7 @@ vi.mock('@/lib/catalog-sync', () => ({
   syncActiveCatalogs: mocks.syncAll,
 }));
 
-const groupId = '20251222_144441';
+const groupId = '20251224_093000';
 const request = (query = `groupId=${groupId}`) =>
   new NextRequest(`http://localhost/api/admin/catalog-sync?${query}`);
 

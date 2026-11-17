@@ -26,7 +26,7 @@ vi.mock('@/lib/api/fetch-json', async (importOriginal) => ({
   fetchJson: vi.fn(),
 }));
 
-const groupId = '20251222_144441';
+const groupId = '20251224_093000';
 const successAt = '2026-11-05T10:00:00Z';
 const source = {
   sourceKey: 'metadata',

@@ -2,10 +2,12 @@
 
 Besedy uses two host-side rsnapshot roots.
 
-- `rsnapshot_projects` at `/mnt/data/<user>/Backups/rsnapshot`
-  - generic backup of `/home/<user>/projects`
-  - includes `projects/besedy`, `projects/besedy_data`, `projects/besedy_artwork`, and `projects/besedy_sources`
-- `rsnapshot_besedy_extra` at `/mnt/data/<user>/Backups/rsnapshot_besedy_extra`
+- `rsnapshot_projects` at `<backup root>/rsnapshot`
+  - generic backup of the operator's project directory, which holds the
+    checkout and the data, artwork and source directories; list them in
+    `PROJECT_REQUIRED_PATHS` in the ops env file so the health check verifies
+    every snapshot contains them
+- `rsnapshot_besedy_extra` at `<backup root>/rsnapshot_besedy_extra`
   - Besedy-specific non-project paths that are not covered by the generic project backup
 
 The extra snapshot root is driven by [rsnapshot-backup.sh](../../scripts/rsnapshot-backup.sh) with
@@ -51,7 +53,7 @@ Current labels inside `rsnapshot_besedy_extra/<interval>.N/`:
 Example tree:
 
 ```text
-/mnt/data/<user>/Backups/rsnapshot_besedy_extra/
+<backup root>/rsnapshot_besedy_extra/
   daily.0/
     audio/
       besedy_audio/
@@ -74,7 +76,8 @@ run time grows with the file count per snapshot times the number of snapshots.
 `host-backup-health-check.sh` warns when that sync gets slow or the synced file
 count jumps; `web/scripts/backup-growth-report.sh` shows which top-level
 directories caused it. Keep regenerable trees (dependency folders, caches,
-throwaway git worktrees) out of `~/projects` or in the backup exclude file.
+throwaway git worktrees) out of the backed-up project directory or in the backup
+exclude file.
 
 ## Host runner configuration
 

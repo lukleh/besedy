@@ -864,7 +864,7 @@ read-only helpers (also embedded in the weekly report). The growth report
 compares per-directory file counts between the oldest and newest daily project
 snapshot; hard-linked files count under every directory that holds one, as
 `rsync -H` syncs them. The worktree report lists every linked worktree of the
-git repos under `~/projects` and marks it `REMOVABLE` only when it is clean,
+git repos in the directory that holds the main checkout and marks it `REMOVABLE` only when it is clean,
 unlocked, idle for `WORKTREE_MIN_IDLE_DAYS` (default 3), holds no gitignored
 files beyond regenerable build/dependency trees (`git worktree remove` deletes
 ignored files without `--force`), has no detached-HEAD commits missing from
@@ -927,12 +927,11 @@ after the rollback window closes.
 
 Host-side rsnapshot coverage is intentionally split:
 
-- **Generic project root:** `/mnt/data/<user>/Backups/rsnapshot`
-  - backs up `/home/<user>/projects`
-  - includes `projects/besedy`, `projects/besedy_data`, `projects/besedy_artwork`, and `projects/besedy_sources`
-    (`projects/besedy_artwork` is the renamed `projects/besedy_posters`; see the
-    ADR 0011 cutover steps above)
-- **Besedy extra root:** `/mnt/data/<user>/Backups/rsnapshot_besedy_extra`
+- **Generic project root:** `<backup root>/rsnapshot`
+  - backs up the operator's project directory: the checkout and the data,
+    artwork and source directories, which `PROJECT_REQUIRED_PATHS` in the ops
+    env file lists for the health check
+- **Besedy extra root:** `<backup root>/rsnapshot_besedy_extra`
   - backs up non-project Besedy paths via [web/setup/backup/besedy-extra.paths.example](../../web/setup/backup/besedy-extra.paths.example) (copy to the gitignored `besedy-extra.paths`)
   - includes `audio/besedy_audio`, `audio/original`, `state/db_dumps`, `config/lukleh_besedy`, and `state/web_logs`
 

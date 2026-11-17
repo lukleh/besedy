@@ -24,7 +24,7 @@ from besedy.lib.correction_training import test_recordings_path as listed_path
 
 SR = 16000
 HASH = "a" * 64
-CATALOG = "20251222_144441"
+CATALOG = "20251224_093000"
 WORKSPACE = "11111111-2222-3333-4444-555555555555"
 # Three regions of one chunk, the last after a 1 s pause: spans [0-1] and [2].
 REGIONS = [(0, 4 * SR), (int(4.5 * SR), int(8.5 * SR)), (int(9.5 * SR), int(13.5 * SR))]

@@ -24,10 +24,10 @@ def test_audio_selection_preserves_generations_and_aliases_without_unknown_trees
     source = tmp_path / "audio"
     source.mkdir()
     selected = {
-        "audio_archived_20251222_144441/hash/recording.webm": "archived recording",
+        "audio_archived_20251224_093000/hash/recording.webm": "archived recording",
         "audio_archived_20260221_120320/hash/recording.m4a": "second generation",
         "audio_archived_20301231_235959/nested/hash.webm": "future archive",
-        "audio_staged_20251222_144441/hash.wav": "staged audio",
+        "audio_staged_20251224_093000/hash.wav": "staged audio",
         "audio_staged_20301231_235959/nested/hash.audiohash": "future sidecar",
     }
     omitted = {

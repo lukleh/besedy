@@ -509,7 +509,7 @@ override it with `BESEDY_CORRECTIONS_ROOT`.
 `BESEDY_PATH_MAPPINGS` rewrites host paths found in CSV entries to container-accessible paths at runtime:
 
 ```
-BESEDY_PATH_MAPPINGS=/mnt/data/audio=/data/original,/mnt/data/text=/data/text
+BESEDY_PATH_MAPPINGS=/srv/besedy/audio=/data/original,/srv/besedy/text=/data/text
 ```
 
 Each entry is `<host_prefix>=<container_prefix>`, comma-separated, split on the first `=` (a container path may contain one). The app applies these rewrites before path validation. Rules:
