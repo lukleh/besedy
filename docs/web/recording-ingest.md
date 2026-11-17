@@ -99,7 +99,7 @@ removal; the now empty event is kept unreleased.
 
 Admins set one command on **Admin -> Ingest** (card **Post-ingest command**)
 that the host worker runs after each successful ingest. It is stored on the
-archive (`workflow_group.ingest_post_command`), read and written through
+catalog (`workflow_group.ingest_post_command`), read and written through
 `GET`/`PUT /api/admin/ingest/post-command` (admin only, same-origin writes),
 and every change is audited as `CATALOG_UPDATED` with the previous and the new
 value.

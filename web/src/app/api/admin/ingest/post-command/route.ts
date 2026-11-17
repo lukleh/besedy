@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/admin/ingest/post-command
- * The command the host worker runs after a successful ingest of the archive.
+ * The command the host worker runs after a successful ingest of the catalog.
  */
 export async function GET() {
   try {
