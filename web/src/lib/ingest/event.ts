@@ -27,7 +27,9 @@ const NO_EVENT: IntakeEventOutcome = {
  *
  * An upload without a place and date gets no event. When events already cover
  * that place and date, the recording may belong to one of them, so it is left
- * unassigned for the admin to decide on the recording page. Never throws: the
+ * unassigned for the admin to decide on the recording page. A recording that
+ * already belongs to an event keeps its metadata, since an admin may have
+ * corrected it while the outcome waited to be applied. Never throws: the
  * recording is in the catalog either way, so the ingest still succeeds.
  */
 export async function assignIntakeEvent(
@@ -52,7 +54,15 @@ export async function assignIntakeEvent(
   };
 
   try {
+    let metadataWritten = false;
     const result = await prisma.$transaction(async (tx) => {
+      const assigned = await tx.catalogEventRecording.findUnique({
+        where: { workflowGroupId_audioHash: { workflowGroupId, audioHash } },
+        select: { eventId: true },
+      });
+      if (assigned) {
+        return { kind: 'already_assigned' as const, eventId: assigned.eventId };
+      }
       await tx.audioMetadata.upsert({
         where: { workflowGroupId_audioHash: { workflowGroupId, audioHash } },
         update: metadata,
@@ -62,16 +72,19 @@ export async function assignIntakeEvent(
         where: { id: workflowGroupId },
         data: { updatedAt: new Date() },
       });
+      metadataWritten = true;
       return createEventFromRecording(tx, { workflowGroupId, audioHash, userId });
     });
-    // The writes are committed; a failed audit entry must not report them as failed.
-    await logMetadataUpdated(userId, audioHash, workflowGroupId, METADATA_FIELDS).catch(
-      (error: unknown) =>
-        logger.warn('Audit entry for ingest metadata failed', {
-          intakeId: row.id,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-    );
+    if (metadataWritten) {
+      // The writes are committed; a failed audit entry must not report them as failed.
+      await logMetadataUpdated(userId, audioHash, workflowGroupId, METADATA_FIELDS).catch(
+        (error: unknown) =>
+          logger.warn('Audit entry for ingest metadata failed', {
+            intakeId: row.id,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+      );
+    }
 
     switch (result.kind) {
       case 'created':
@@ -96,6 +109,18 @@ export async function assignIntakeEvent(
         };
     }
   } catch (error) {
+    // A concurrent completion of the same intake may have assigned the
+    // recording first, which makes this transaction fail on the assignment's
+    // key. Report the winner's event rather than overwrite it with a failure.
+    const winner = await prisma.catalogEventRecording
+      .findUnique({
+        where: { workflowGroupId_audioHash: { workflowGroupId, audioHash } },
+        select: { eventId: true },
+      })
+      .catch(() => null);
+    if (winner) {
+      return { eventId: winner.eventId, errorCode: null, errorMessage: null };
+    }
     logger.error('Creating the event for an ingested recording failed', {
       intakeId: row.id,
       error: error instanceof Error ? error.message : String(error),

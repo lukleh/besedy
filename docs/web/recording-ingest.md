@@ -75,14 +75,19 @@ and creates an **unreleased** event for that place and date with the recording
 as its primary, through the same code as **Create event** on the recording
 page (`web/src/lib/catalog-events/create-from-recording.ts`). The event id is
 stored on the row (`event_id`), linked from the ingest page, and returned in
-the completion response. Releasing the event stays a manual step.
+the completion response. Releasing the event stays a manual step. A recording
+that already belongs to an event (an admin assigned it while the outcome
+waited, or a concurrent completion of the same intake got there first) keeps
+its metadata and reports that event.
 
 The intake is `SUCCEEDED` either way; when no event was assigned the row says
 why:
 
 - `event_exists`: events already cover that place and date. The recording may
   be a second capture of one of them, so it is left unassigned; attach it or
-  confirm a distinct event on the recording page.
+  confirm a distinct event on the recording page. Every file of one upload
+  gets the same place and date, so with several files only the first one
+  processed gets the event and the others end with `event_exists`.
 - `event_not_created`: anything else (the uploader was deleted, the recording
   is not actionable, the transaction failed); the message has the detail.
 

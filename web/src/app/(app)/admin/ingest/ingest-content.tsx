@@ -168,6 +168,11 @@ export default function IngestContent() {
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: INTAKES_QUERY_KEY }),
     onSuccess: (results, { items }) => {
+      if (results.length > 0) {
+        // The next upload is usually another talk; never carry its place and date over.
+        setLocationId("");
+        setEventDate("");
+      }
       if (results.length === items.length) {
         toast({ title: t("toasts.queued", { count: results.length }) });
       } else {
@@ -303,6 +308,8 @@ export default function IngestContent() {
 
   const handleReset = () => {
     setUploads([]);
+    setLocationId("");
+    setEventDate("");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
