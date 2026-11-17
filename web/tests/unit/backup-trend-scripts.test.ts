@@ -659,6 +659,8 @@ describe('worktree-report.sh', () => {
     expect(result.stdout).toContain(
       'Linked git worktrees: 6 (1 removable, 4 kept, 1 with missing directories)',
     );
+    // A wrong derived default must be visible in the weekly report.
+    expect(result.stdout).toContain(`Backup tree: ${join(root, 'wt')}`);
     expect(result.stdout).toMatch(new RegExp(`REMOVABLE  ${clean} .*\\(inside backup tree\\)`));
     expect(result.stdout).toMatch(new RegExp(`KEEP       ${dirty} .*uncommitted changes`));
     expect(result.stdout).toMatch(

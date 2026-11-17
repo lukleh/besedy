@@ -28,7 +28,8 @@
 #                            WORKTREE_BACKUP_TREE)
 #   WORKTREE_BACKUP_TREE   - directory backed up nightly; worktrees inside it are
 #                            flagged (default: the directory that holds this
-#                            repository's main checkout)
+#                            repository's main checkout; the report prints the
+#                            tree it used)
 #   WORKTREE_REPORT_DOCKER - docker command used to find compose working dirs
 #                            (default: docker; skipped when not installed)
 #   WORKTREE_MIN_IDLE_DAYS - days without git activity before a clean, pushed
@@ -306,6 +307,7 @@ done
 
 total=$((removable + kept + prunable))
 echo "Linked git worktrees: $total ($removable removable, $kept kept, $prunable with missing directories)"
+echo "Backup tree: $WORKTREE_BACKUP_TREE"
 if [ "$docker_state" = "failed" ]; then
     echo "Note: '$WORKTREE_REPORT_DOCKER ps' failed, so no worktree is marked removable."
 fi

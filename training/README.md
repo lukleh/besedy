@@ -98,7 +98,7 @@ model on identical chunks with identical normalization. Reports scored on
 different rows are refused.
 
 ```
-test split of /mnt/data/.../training_export_20261102_120000 (412 chunks, 2.1 h)
+test split of <text data>/training_export_20261102_120000 (412 chunks, 2.1 h)
 | system                                                  | rows | ref words | WER raw | WER norm | CER norm |
 |---------------------------------------------------------|------|-----------|---------|----------|----------|
 | machine text (production transcript, from the manifest) |  412 |     31204 | 21.37 % |  12.04 % |   4.81 % |
