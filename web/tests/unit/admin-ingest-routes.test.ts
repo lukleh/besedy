@@ -74,6 +74,7 @@ vi.mock('@/lib/db', () => ({
     workflowGroup: { findFirst: vi.fn(), findUnique: vi.fn() },
     location: { findFirst: vi.fn() },
     recorder: { findFirst: vi.fn() },
+    catalogEvent: { findFirst: vi.fn() },
     recordingIntake: {
       create: vi.fn(),
       findMany: vi.fn(),
@@ -161,6 +162,7 @@ describe('admin ingest routes', () => {
     workflowGroup: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
     location: { findFirst: ReturnType<typeof vi.fn> };
     recorder: { findFirst: ReturnType<typeof vi.fn> };
+    catalogEvent: { findFirst: ReturnType<typeof vi.fn> };
     recordingIntake: {
       create: ReturnType<typeof vi.fn>;
       findMany: ReturnType<typeof vi.fn>;
@@ -284,6 +286,9 @@ describe('admin ingest routes', () => {
         dateMonth: null,
         dateDay: null,
         recorderId: null,
+        uploadBatchId: null,
+        targetEventId: null,
+        createDistinctEvent: false,
       },
     });
     const incomingDir = path.join(
@@ -364,6 +369,50 @@ describe('admin ingest routes', () => {
     prisma.recorder.findFirst.mockResolvedValue(null);
     const foreign = await createUpload(
       jsonRequest('/api/admin/ingest/uploads', { ...base, recorderId: 99 }),
+    );
+    expect(foreign.status).toBe(400);
+    expect(prisma.recordingIntake.create).not.toHaveBeenCalled();
+  });
+
+  it('stores the upload batch and the chosen event, and checks the event', async () => {
+    prisma.workflowGroup.findFirst.mockResolvedValue({ id: CATALOG_ID });
+    prisma.location.findFirst.mockResolvedValue({ id: 7 });
+    prisma.catalogEvent.findFirst.mockResolvedValue({ id: 9 });
+    prisma.recordingIntake.create.mockResolvedValue(baseRow());
+    const batch = '0b9c6c1e-5a61-4b7e-9d32-3c6f5f1a2b3c';
+    const base = {
+      catalogId: CATALOG_ID,
+      filename: 'talk.mp3',
+      sizeBytes: 10,
+      locationId: 7,
+      dateYear: 2026,
+      uploadBatchId: batch,
+    };
+
+    const chosen = await createUpload(
+      jsonRequest('/api/admin/ingest/uploads', { ...base, targetEventId: 9 }),
+    );
+    expect(chosen.status).toBe(201);
+    expect(prisma.recordingIntake.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        uploadBatchId: batch,
+        targetEventId: 9,
+        createDistinctEvent: false,
+      }),
+    });
+
+    prisma.recordingIntake.create.mockClear();
+    for (const body of [
+      { ...base, targetEventId: 9, createDistinctEvent: true },
+      { catalogId: CATALOG_ID, filename: 'talk.mp3', sizeBytes: 10, targetEventId: 9 },
+      { ...base, uploadBatchId: 'not-a-uuid' },
+    ]) {
+      const response = await createUpload(jsonRequest('/api/admin/ingest/uploads', body));
+      expect(response.status).toBe(400);
+    }
+    prisma.catalogEvent.findFirst.mockResolvedValue(null);
+    const foreign = await createUpload(
+      jsonRequest('/api/admin/ingest/uploads', { ...base, targetEventId: 99 }),
     );
     expect(foreign.status).toBe(400);
     expect(prisma.recordingIntake.create).not.toHaveBeenCalled();

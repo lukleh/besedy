@@ -30,6 +30,10 @@ export interface UploadRecordingOptions {
   file: File;
   event?: UploadRecordingEvent | null;
   recorderId?: number | null;
+  /** Shared by the files of one upload, so later files join the first one's event. */
+  uploadBatchId?: string | null;
+  targetEventId?: number | null;
+  createDistinctEvent?: boolean;
   onProgress?: (sentBytes: number, totalBytes: number) => void;
 }
 
@@ -161,6 +165,9 @@ export async function uploadRecording({
   file,
   event,
   recorderId,
+  uploadBatchId,
+  targetEventId,
+  createDistinctEvent,
   onProgress,
 }: UploadRecordingOptions): Promise<RecordingIntakeDto> {
   const created = await fetchJson("/api/admin/ingest/uploads", {
@@ -173,6 +180,9 @@ export async function uploadRecording({
       mimeType: file.type || null,
       ...(event ?? {}),
       ...(recorderId != null ? { recorderId } : {}),
+      ...(uploadBatchId ? { uploadBatchId } : {}),
+      ...(targetEventId != null ? { targetEventId } : {}),
+      ...(createDistinctEvent ? { createDistinctEvent: true } : {}),
     }),
     schema: createUploadResponseSchema,
   });

@@ -7,10 +7,12 @@ const mocks = vi.hoisted(() => {
     audioMetadata: { upsert: vi.fn() },
     workflowGroup: { update: vi.fn() },
     catalogEventRecording: { findUnique: vi.fn() },
+    recordingIntake: { findFirst: vi.fn() },
   };
   return {
     tx,
     findAssignment: vi.fn(),
+    attachRecordingsToEvent: vi.fn(),
     transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     createEventFromRecording: vi.fn(),
     logMetadataUpdated: vi.fn(),
@@ -27,6 +29,9 @@ vi.mock("@/lib/catalog-events/create-from-recording", () => ({
   createEventFromRecording: mocks.createEventFromRecording,
 }));
 vi.mock("@/lib/audit/logger", () => ({ logMetadataUpdated: mocks.logMetadataUpdated }));
+vi.mock("@/lib/catalog-events/attach-recordings", () => ({
+  attachRecordingsToEvent: mocks.attachRecordingsToEvent,
+}));
 
 const CATALOG_ID = "20260201_120000";
 const HASH = "c".repeat(64);
@@ -41,6 +46,9 @@ function intake(overrides: Partial<IntakeRow> = {}): IntakeRow {
     dateMonth: 11,
     dateDay: 17,
     recorderId: null,
+    uploadBatchId: null,
+    targetEventId: null,
+    createDistinctEvent: false,
     eventId: null,
     ...overrides,
   } as IntakeRow;
@@ -52,6 +60,76 @@ describe("assignIntakeEvent", () => {
     mocks.logMetadataUpdated.mockResolvedValue(undefined);
     mocks.tx.catalogEventRecording.findUnique.mockResolvedValue(null);
     mocks.findAssignment.mockResolvedValue(null);
+    mocks.tx.recordingIntake.findFirst.mockResolvedValue(null);
+    mocks.attachRecordingsToEvent.mockResolvedValue({
+      kind: "success",
+      attachedAudioHashes: [HASH],
+      errors: [],
+    });
+  });
+
+  it("adds the recording to the event chosen on upload", async () => {
+    const outcome = await assignIntakeEvent(intake({ targetEventId: 9 }), HASH);
+
+    expect(outcome).toEqual({ eventId: 9, errorCode: null, errorMessage: null });
+    expect(mocks.attachRecordingsToEvent).toHaveBeenCalledWith(mocks.tx, {
+      catalogId: CATALOG_ID,
+      eventId: 9,
+      audioHashes: [HASH],
+    });
+    expect(mocks.createEventFromRecording).not.toHaveBeenCalled();
+    expect(mocks.tx.audioMetadata.upsert).toHaveBeenCalled();
+  });
+
+  it("adds a later file of the same upload to the event the first one got", async () => {
+    const batch = "0b9c6c1e-5a61-4b7e-9d32-3c6f5f1a2b3c";
+    mocks.tx.recordingIntake.findFirst.mockResolvedValue({ eventId: 42 });
+
+    const outcome = await assignIntakeEvent(intake({ uploadBatchId: batch }), HASH);
+
+    expect(outcome.eventId).toBe(42);
+    expect(mocks.tx.recordingIntake.findFirst).toHaveBeenCalledWith({
+      where: {
+        workflowGroupId: CATALOG_ID,
+        uploadBatchId: batch,
+        id: { not: "intake-1" },
+        eventId: { not: null },
+      },
+      orderBy: { finishedAt: "asc" },
+      select: { eventId: true },
+    });
+    expect(mocks.createEventFromRecording).not.toHaveBeenCalled();
+  });
+
+  it("creates the event for the first file of an upload, separate when chosen", async () => {
+    mocks.createEventFromRecording.mockResolvedValue({
+      kind: "created",
+      eventId: 43,
+      title: "t",
+      sessionIndex: 2,
+    });
+
+    const outcome = await assignIntakeEvent(
+      intake({ uploadBatchId: "0b9c6c1e-5a61-4b7e-9d32-3c6f5f1a2b3c", createDistinctEvent: true }),
+      HASH
+    );
+
+    expect(outcome.eventId).toBe(43);
+    expect(mocks.createEventFromRecording).toHaveBeenCalledWith(mocks.tx, {
+      workflowGroupId: CATALOG_ID,
+      audioHash: HASH,
+      userId: "admin-1",
+      intent: "create_distinct",
+    });
+  });
+
+  it("reports a recording that could not be added to the chosen event", async () => {
+    mocks.attachRecordingsToEvent.mockResolvedValue({ kind: "event_not_found" });
+
+    const outcome = await assignIntakeEvent(intake({ targetEventId: 9 }), HASH);
+
+    expect(outcome).toMatchObject({ eventId: null, errorCode: "event_not_created" });
+    expect(outcome.errorMessage).toContain("event #9");
   });
 
   it("does nothing for an upload without a place and date", async () => {
@@ -82,6 +160,7 @@ describe("assignIntakeEvent", () => {
       workflowGroupId: CATALOG_ID,
       audioHash: HASH,
       userId: "admin-1",
+      intent: undefined,
     });
     expect(mocks.logMetadataUpdated).toHaveBeenCalledWith("admin-1", HASH, CATALOG_ID, [
       "locationId",

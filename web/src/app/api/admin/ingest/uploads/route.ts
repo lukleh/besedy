@@ -34,12 +34,24 @@ const CreateUploadSchema = z
     dateDay: z.number().int().min(1).max(31).nullable().optional(),
     // Who recorded it; stored in the recording's metadata, independent of the event.
     recorderId: z.number().int().positive().nullable().optional(),
+    // Shared by the files of one upload, so later files join the first one's event.
+    uploadBatchId: z.string().uuid().nullable().optional(),
+    // An existing event for this place and date, or a separate new one.
+    targetEventId: z.number().int().positive().nullable().optional(),
+    createDistinctEvent: z.boolean().optional(),
   })
   .refine((body) => (body.locationId == null) === (body.dateYear == null), {
     message: 'Location and year must be given together',
   })
   .refine((body) => body.dateDay == null || body.dateMonth != null, {
     message: 'A day needs a month',
+  })
+  .refine(
+    (body) => (body.targetEventId == null && !body.createDistinctEvent) || body.locationId != null,
+    { message: 'An event choice needs a location and date' },
+  )
+  .refine((body) => !(body.targetEventId != null && body.createDistinctEvent), {
+    message: 'Choose an existing event or a separate new one, not both',
   })
   .refine(
     (body) =>
@@ -78,6 +90,9 @@ export async function POST(request: NextRequest) {
       dateMonth,
       dateDay,
       recorderId,
+      uploadBatchId,
+      targetEventId,
+      createDistinctEvent,
     } = bodyResult.data;
     await assertArchiveCatalogId(catalogId);
 
@@ -114,6 +129,15 @@ export async function POST(request: NextRequest) {
         return badRequest('Selected recorder does not belong to this catalog');
       }
     }
+    if (targetEventId != null) {
+      const event = await prisma.catalogEvent.findFirst({
+        where: { id: targetEventId, workflowGroupId: catalogId },
+        select: { id: true },
+      });
+      if (!event) {
+        return badRequest('Selected event does not belong to this catalog');
+      }
+    }
 
     const intake = await prisma.recordingIntake.create({
       data: {
@@ -128,6 +152,9 @@ export async function POST(request: NextRequest) {
         dateMonth: dateYear != null ? (dateMonth ?? null) : null,
         dateDay: dateYear != null ? (dateDay ?? null) : null,
         recorderId: recorderId ?? null,
+        uploadBatchId: uploadBatchId ?? null,
+        targetEventId: targetEventId ?? null,
+        createDistinctEvent: createDistinctEvent ?? false,
       },
     });
 

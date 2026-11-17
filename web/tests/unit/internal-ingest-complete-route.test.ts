@@ -27,6 +27,7 @@ vi.mock("@/lib/db", () => ({
       findUnique: vi.fn(),
       update: vi.fn(),
     },
+    catalogEventRecording: { findUnique: vi.fn() },
   },
 }));
 
@@ -193,6 +194,29 @@ describe("internal ingest completion route", () => {
         }),
       })
     );
+  });
+
+  it("gives post-ingest commands only an event this recording created", async () => {
+    prisma.recordingIntake.findUnique.mockResolvedValue(row());
+    syncCatalogGroup.mockResolvedValue({ groupId: CATALOG_ID, status: "success" });
+    const recordings = (prisma as unknown as {
+      catalogEventRecording: { findUnique: ReturnType<typeof vi.fn> };
+    }).catalogEventRecording;
+
+    prisma.recordingIntake.update.mockResolvedValue(
+      row({ status: "SUCCEEDED", audioHash: HASH, eventId: 42 })
+    );
+    recordings.findUnique.mockResolvedValue({ eventId: 42, isPrimary: true });
+    const created = await completeIngest(request({ status: "SUCCEEDED", audioHash: HASH }), {
+      params: Promise.resolve({ intakeId: INTAKE_ID }),
+    });
+    expect(await created.json()).toMatchObject({ postIngestEventId: 42 });
+
+    recordings.findUnique.mockResolvedValue({ eventId: 42, isPrimary: false });
+    const joined = await completeIngest(request({ status: "SUCCEEDED", audioHash: HASH }), {
+      params: Promise.resolve({ intakeId: INTAKE_ID }),
+    });
+    expect(await joined.json()).toMatchObject({ postIngestEventId: null });
   });
 
   it("returns the archive's post-ingest command for a success, also when replayed", async () => {

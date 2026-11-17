@@ -528,10 +528,15 @@
         "location": "Místo",
         "locationPlaceholder": "Vyberte místo",
         "date": "Datum",
-        "eventHint": "Po zpracování dostane nahrávka nevydanou událost pro toto místo a datum. Při více souborech dostane událost jen první zpracovaný; ostatní připojte na stránkách jejich nahrávek. Necháte-li obě pole prázdná, vytvoříte událost později sami.",
+        "eventHint": "Po zpracování dostane nahrávka nevydanou událost pro toto místo a datum. Při více souborech dostane událost první zpracovaný a ostatní se k ní připojí. Necháte-li obě pole prázdná, vytvoříte událost později sami.",
         "eventIncomplete": "Vyberte místo i datum, nebo nechte obě pole prázdná.",
         "recorder": "Zvukař",
-        "recorderPlaceholder": "Vyberte zvukaře"
+        "recorderPlaceholder": "Vyberte zvukaře",
+        "eventChoice": "Událost",
+        "eventChoicePlaceholder": "Vyberte událost",
+        "eventChoiceExisting": "Přidat k {title} ({count, plural, one {# nahrávka} few {# nahrávky} other {# nahrávek}})",
+        "eventChoiceNew": "Nová, samostatná událost",
+        "eventChoiceHint": "Toto místo a datum už má událost. Vyberte, ke které nahrávky patří, nebo novou samostatnou událost. Přidání k vydané události nahrávky hned zveřejní."
       },
       "jobs": {
         "title": "Zpracování",
