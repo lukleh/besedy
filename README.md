@@ -1,16 +1,16 @@
 # Besedy
 
-**Turn recordings into an archive you can listen to, read, and search.**
+**Turn recordings into a catalog you can listen to, read, and search.**
 
 Besedy takes care of the work between raw audio and something people can
 actually use. It catalogs recordings, prepares the audio, creates multilingual
 transcripts, identifies speakers, and indexes spoken content for search. The
 companion web app lets people listen, read along, and find moments across the
-archive.
+catalog.
 
 Besedy is self-hosted and was built with Czech spoken-word collections in mind.
 Languages and transcription backends are configurable, so the same workflow can
-support multilingual archives.
+support multilingual catalogs.
 
 [Maintainer deployment (sign-in required)](https://besedy.org) ·
 [Get started](#get-started) ·
@@ -55,7 +55,7 @@ This repository contains two parts:
 
 - **Processing toolkit** (`besedy/`) — a Python CLI for cataloging, preparing,
   transcribing, diarizing, and indexing recordings.
-- **Web app** (`web/`) — a Next.js interface for browsing the resulting archive,
+- **Web app** (`web/`) — a Next.js interface for browsing the resulting catalog,
   listening to recordings, searching transcripts, and serving the authenticated
   MCP endpoint. See
   [web/README.md](web/README.md) for setup.
@@ -82,10 +82,11 @@ https://besedy.org/api/mcp
 
 Access uses the same Google sign-in and preallowed-user admission as the Besedy
 web app. Every active account receives the complete MCP tool set. An active grant
-decides access to the deployment's configured archive, and MCP data is limited to released
-events and published, ready recordings; transcript tools are available for those
-recordings at every archive access level. Content tools take no catalog-selection
-argument and use the explicit archive binding described in the MCP server reference below.
+decides access to the deployment's configured catalog, and MCP data is limited to
+released events and published, ready recordings; transcript tools are available
+for those recordings with every catalog role. Content tools take no
+catalog-selection argument and use the explicit catalog binding described in
+the MCP server reference below.
 
 Besedy is a standalone remote MCP server. Client machines do not need a Besedy
 package, plugin, repository checkout, or access to the deployment host.
@@ -146,7 +147,7 @@ codex mcp login besedy
 
 The connection uses the same Besedy OAuth flow described above. Each active user
 receives every MCP tool but sees content only with live access to the bound
-archive. Standalone skills are supported in the ChatGPT desktop app,
+catalog. Standalone skills are supported in the ChatGPT desktop app,
 Codex CLI, and the Codex IDE extension.
 
 ## Get started

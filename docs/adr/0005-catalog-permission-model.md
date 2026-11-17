@@ -93,7 +93,7 @@ and this conversation use.
 | `catalog_admin` | catalogAdmin |
 
 `curator` rather than `editor` deliberately. The retired `EDITOR` level meant
-metadata editing alone, while this role runs the archive's editorial work;
+metadata editing alone, while this role runs the catalog's editorial work;
 reusing the word for a wider meaning is the kind of collision that misleads a
 reader a year from now.
 
@@ -117,7 +117,7 @@ transcript — in the web application, or through an agent asking questions of t
 corpus. That is what roles are for.
 
 Taking audio or transcript files out of the application serves specific,
-occasional purposes. Those permissions belong to the roles that run the archive
+occasional purposes. Those permissions belong to the roles that run the catalog
 — `redaktor` and `catalogAdmin`. Ordinary delivery permissions may also belong
 to **individually named accounts** below them; privileged original-transcript
 delivery may not. No role that describes an ordinary participant carries one.

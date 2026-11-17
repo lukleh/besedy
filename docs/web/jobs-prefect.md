@@ -72,7 +72,7 @@ The shared control plane uses `.env.prefect.example`; the host worker uses
 
 Set `BESEDY_ARCHIVE_ID` to the same explicit `YYYYMMDD_HHMMSS` source ID in the
 web, jobs API and host worker environments. The jobs API refuses startup when
-the value is missing, blank or malformed. Lists always select that archive;
+the value is missing, blank or malformed. Lists always select that catalog;
 read, history, cancel and submission requests cannot target another source.
 Worker ingest, removal and correction paths validate the same binding before
 resolving artifacts or running the pipeline. The web application validates that

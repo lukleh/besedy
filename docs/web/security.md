@@ -26,18 +26,18 @@ self-register.
 
 ### Portal Admission Flow (OAuth)
 
-1. An administrator creates an invitation for the deployment's bound archive,
+1. An administrator creates an invitation for the deployment's bound catalog,
    with a required role and optional permission extras. Delegated access managers
-   can invite through the existing archive-scoped endpoint within their role and
+   can invite through the existing catalog-scoped endpoint within their role and
    extras limits. Both paths require an existing active `BESEDY_ARCHIVE_ID`.
 2. OAuth first signup requires both a `PENDING` portal admission and a `PENDING`
-   grant for that bound archive. A standalone admission or a grant on another
+   grant for that bound catalog. A standalone admission or a grant on another
    source does not authorize signup.
 3. A single transaction conditionally claims the admission, consumes only its
-   bound grant, activates the pending user and creates that archive access with
+   bound grant, activates the pending user and creates that catalog access with
    the exact authorized role/extras. A competing revoke or claim fails closed;
    partial claims roll back. Other source grants remain untouched.
-4. Normal portal entry requires an active bound archive grant for ordinary users.
+4. Normal portal entry requires an active bound catalog grant for ordinary users.
    System administrators retain their existing exception; blocked and pending
    accounts cannot enter.
 
@@ -47,7 +47,7 @@ provenance and historical rows stay in place. No membership table, permission
 copying or automatic migration is required. Existing unbacked admissions remain
 visible to administrators for cancellation, but cannot be claimed or edited.
 Their former notes-only and in-place role-assignment paths are retired: revoke
-the admission and create a new invitation with explicit archive access. All
+the admission and create a new invitation with explicit catalog access. All
 edits to role-backed invitations, including notes, use the same conditional
 admission/grant transition and cannot reopen a revoked admission.
 
@@ -56,7 +56,7 @@ exist on other sources. An `ADMIN_DENIED` tombstone can only be reopened by an
 explicit authorized administrator invitation. Pending edits cannot reopen any
 revoked or claimed invitation, and their grant writes are conditional on the role
 and extras authorized before the edit. Reset requires a deleted claimed account
-and a consumed grant for the active bound archive; only that grant is reopened.
+and a consumed grant for the active bound catalog; only that grant is reopened.
 Role/extras delegation, protected grants, self-grant restrictions and blocking
 remain authoritative.
 
@@ -259,7 +259,7 @@ wildcard; system admins resolve the same way.
 
 Source paths need system authority: `PUT /api/catalogs/:id` refuses a path
 change, with an `ACCESS_DENIED` audit entry, unless the caller is a system admin.
-A path decides which files the archive imports and serves, so an ordinary
+A path decides which files the catalog imports and serves, so an ordinary
 catalog grant cannot authorize changing it. The settings form disables those
 fields for catalog administrators. The API rejects the retired default and
 active selection flags; source creation, discovery and deactivation are absent
@@ -451,7 +451,7 @@ renders the recording page inside itself for an event's recordings, search
 results link straight to a recording at a timestamp. Those
 answer to `canAccessRecording`, `stream_audio` and `read_transcripts` as before.
 What the permission decides is whether the whole catalog is browsable as a list
-of recordings, which is the editorial view of the archive rather than the way it
+of recordings, which is the editorial view of the catalog rather than the way it
 is listened to.
 
 Of the roles, only `curator` and `catalog_admin` carry it, so the catalog is
