@@ -50,7 +50,7 @@ branches. Only the current `main` receives security fixes; there are no backport
 
 ## Accepted Dependency Advisories
 
-Two upstream advisories are currently accepted with narrow threat models:
+Three upstream advisories are currently accepted with narrow threat models:
 
 - **`brace-expansion` — `GHSA-mh99-v99m-4gvg` (high).** This denial-of-service
   advisory is reachable only through development-time ESLint dependencies.
@@ -69,6 +69,15 @@ Two upstream advisories are currently accepted with narrow threat models:
   release exists. CI allows this advisory on any path, because the
   `next-intl` path is not dev-only. Remove the exception when upstream
   publishes a fix.
+- **`picomatch` — `GHSA-fc5q-39xc-vjpf` (high).** A regular-expression denial
+  of service on patterns with single-branch repeated extglobs. `picomatch`
+  reaches the web app through the ESLint, Vite and Vitest tooling (dev-only)
+  and through `micromatch` under `@parcel/watcher` under `next-intl`, a
+  production dependency, the same path as `braces` above. All of them match
+  only developer-written globs; the app's own code uses no glob library, and
+  no request input reaches a pattern. No patched `picomatch` release exists.
+  CI allows this advisory on any path, because the `next-intl` path is not
+  dev-only. Remove the exception when upstream publishes a fix.
 
 These exceptions are documented in CI next to the audit commands so dependency
 updates cannot silently broaden them.

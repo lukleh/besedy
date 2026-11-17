@@ -23,6 +23,17 @@ const ALLOWED_ADVISORIES = [
       '(ESLint config, and the next-intl extractor watcher, which is not enabled), ' +
       'never request input; remove this exception when braces publishes a fix.',
   },
+  {
+    source: 1247710,
+    id: 'GHSA-fc5q-39xc-vjpf',
+    package: 'picomatch',
+    devOnly: false,
+    reason:
+      'No patched picomatch release exists. It matches only developer-written globs ' +
+      '(ESLint, Vite and Vitest tooling, and the next-intl extractor watcher, which is ' +
+      'not enabled), never request input; remove this exception when picomatch ' +
+      'publishes a fix.',
+  },
 ];
 
 const audit = spawnSync('npm', ['audit', '--json'], {
@@ -57,7 +68,14 @@ const lock = JSON.parse(
 const vulnerabilities = report.vulnerabilities ?? {};
 
 function advisorySources(name, path = new Set()) {
-  if (path.has(name) || !vulnerabilities[name]) {
+  // A dependency cycle (vitest and @vitest/coverage-v8 name each other) adds
+  // no source of its own; the advisories reached through the other causes
+  // still decide. A package whose only cause is a cycle has no sources and
+  // is rejected below.
+  if (path.has(name)) {
+    return new Set();
+  }
+  if (!vulnerabilities[name]) {
     return new Set([`unresolved:${name}`]);
   }
 
