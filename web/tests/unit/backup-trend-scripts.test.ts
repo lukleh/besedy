@@ -850,6 +850,33 @@ describe('worktree-report.sh', () => {
     expect(result.stdout).toContain(`KEEP       ${bare}`);
   });
 
+  // Root reads every directory, so du cannot fail there.
+  it.skipIf(process.getuid?.() === 0)(
+    'keeps reporting when du cannot read part of a worktree',
+    () => {
+      const repo = setUpRepo();
+      const idle = addBranchWorktree(repo, 'idle-branch');
+      // Like a cache directory a container created as root inside node_modules.
+      const unreadable = join(idle, 'node_modules', 'cache');
+      writeFiles(unreadable, 1);
+      chmodSync(unreadable, 0o000);
+      backdateGitActivity(idle);
+      try {
+        const result = runWorktreeReport(repo);
+
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain(
+          'Linked git worktrees: 1 (0 removable, 1 kept, 0 with missing directories)',
+        );
+        expect(result.stdout).toMatch(
+          new RegExp(`KEEP       ${idle}  \\[branch idle-branch.* -- some files are unreadable to this user`),
+        );
+      } finally {
+        chmodSync(unreadable, 0o755);
+      }
+    },
+  );
+
   it('does not suggest pruning a locked worktree whose directory is gone', () => {
     const repo = setUpRepo();
     const offline = addWorktree(repo, 'offline');

@@ -249,7 +249,12 @@ report_worktree() {
         active="$(date -d "@$active_epoch" +%F)"
     fi
 
-    files="$(du --inodes -s -- "$path" 2>/dev/null | cut -f1)"
+    # du exits non-zero when it cannot read part of the tree (e.g. a directory a
+    # container created as root); under pipefail that must not end the report.
+    # It still prints a count, and `git worktree remove` would fail there too.
+    if ! files="$(du --inodes -s -- "$path" 2>/dev/null | cut -f1)"; then
+        why+=("some files are unreadable to this user")
+    fi
     if [ "$path" = "$WORKTREE_BACKUP_TREE" ] || [[ "$path" == "$WORKTREE_BACKUP_TREE"/* ]]; then
         where="  (inside backup tree)"
     fi
