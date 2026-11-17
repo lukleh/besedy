@@ -592,6 +592,18 @@
         "event_exists": "Zpracováno; toto místo a datum už má událost - přiřaďte ji na stránce nahrávky",
         "event_not_created": "Zpracováno, ale událost se nepodařilo vytvořit"
       },
+      "postCommand": {
+        "title": "Příkaz po nahrání",
+        "description": "Spustí se na serverovém workeru jednou po každém úspěšném zpracování, s právy uživatele workeru. Jeho výstup je v logu workeru. Selhání nikdy nemění výsledek zpracování.",
+        "label": "Příkaz",
+        "placeholder": "/cesta/k/prikazu '{event_id}'",
+        "placeholders": "Rozdělí se jako v shellu, ale shell ho nikdy nespouští. Doplní se: {names}. Příkaz s '{event_id}' se spustí, jen když nahrávka dostala událost.",
+        "hostSwitch": "Worker ho spustí, jen když je v jeho env souboru na serveru BESEDY_INGEST_POST_COMMAND_ENABLED=1.",
+        "save": "Uložit",
+        "saved": "Příkaz uložen",
+        "cleared": "Příkaz odstraněn",
+        "loadError": "Příkaz se nepodařilo načíst."
+      },
       "remove": {
         "title": "Odebrat tuto nahrávku?",
         "descriptionCatalog": "\"{file}\" bude smazána z katalogu včetně zvuku, přepisů, diarizace, embeddingů mluvčích, RAG úseků, metadat a přiřazení k události. Pokud je hlavní nahrávkou zveřejněné události, událost bude stažena ze zveřejnění. Akci nelze vrátit.",

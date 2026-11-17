@@ -63,8 +63,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return access.response;
     }
 
+    // The post-ingest command is admin-only (/api/admin/ingest/post-command);
+    // catalog admins without the admin capability can read these settings.
     const group = await prisma.workflowGroup.findUnique({
       where: { id },
+      omit: { ingestPostCommand: true },
     });
 
     if (!group) {
@@ -151,6 +154,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const group = await prisma.workflowGroup.update({
       where: { id },
       data,
+      omit: { ingestPostCommand: true },
     });
 
     if (Object.keys(changes).length > 0) {

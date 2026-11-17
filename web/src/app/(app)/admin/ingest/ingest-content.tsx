@@ -54,6 +54,7 @@ import {
   type UploadRecordingEvent,
 } from "@/lib/ingest/upload-client";
 import { IntakeStatus } from "./intake-status";
+import { PostCommandCard } from "./post-command-card";
 
 const INTAKES_QUERY_KEY = ["admin-ingest-intakes"];
 const ACTIVE_POLL_INTERVAL_MS = 5000;
@@ -638,6 +639,8 @@ export default function IngestContent() {
           )}
         </CardContent>
       </Card>
+
+      <PostCommandCard />
 
       <AlertDialog
         open={removeTarget !== null}

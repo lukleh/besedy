@@ -35,6 +35,14 @@ const TERMINAL_STATUSES = new Set([
   'REMOVED',
 ]);
 
+async function loadPostIngestCommand(catalogId: string): Promise<string | null> {
+  const group = await prisma.workflowGroup.findUnique({
+    where: { id: catalogId },
+    select: { ingestPostCommand: true },
+  });
+  return group?.ingestPostCommand ?? null;
+}
+
 interface RouteParams {
   params: Promise<{ intakeId: string }>;
 }
@@ -68,10 +76,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     await assertArchiveCatalogId(intake.workflowGroupId);
 
     if (TERMINAL_STATUSES.has(intake.status)) {
+      // A retried report whose first attempt was applied but whose response
+      // was lost still needs the command; the worker runs it once per flow.
       return NextResponse.json({
         ok: true,
         alreadyFinal: true,
         intake: serializeIntake(intake),
+        postIngestCommand:
+          status === 'SUCCEEDED' && intake.status === 'SUCCEEDED'
+            ? await loadPostIngestCommand(intake.workflowGroupId)
+            : null,
       });
     }
 
@@ -125,12 +139,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       include: INTAKE_INCLUDE,
     });
 
+    const postIngestCommand =
+      status === 'SUCCEEDED' ? await loadPostIngestCommand(intake.workflowGroupId) : null;
+
     return NextResponse.json({
       ok: sync ? sync.status !== 'error' : true,
       alreadyFinal: false,
       intake: serializeIntake(updated),
       sync,
       removal,
+      postIngestCommand,
     });
   } catch (error) {
     return handlePrismaError(error, 'recording ingest completion', 'update');

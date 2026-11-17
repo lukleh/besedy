@@ -177,6 +177,11 @@ describe("catalog config route", () => {
       label: "Test Catalog",
       transcriptsPath: `/data/text/transcripts/transcripts_${catalogId}`,
     });
+    // Catalog admins may read these settings; the post-ingest command is admin-only.
+    expect(prisma.workflowGroup.findUnique).toHaveBeenCalledWith({
+      where: { id: catalogId },
+      omit: { ingestPostCommand: true },
+    });
   });
 
   it("logs catalog updates with the actor resolved through catalog policy access", async () => {
@@ -221,6 +226,7 @@ describe("catalog config route", () => {
       expect(prisma.workflowGroup.update).toHaveBeenCalledWith({
         where: { id: catalogId },
         data: { label: "Renamed" },
+        omit: { ingestPostCommand: true },
       });
       expect(logAccessDenied).not.toHaveBeenCalled();
     });
