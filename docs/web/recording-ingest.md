@@ -126,15 +126,21 @@ the host; the audit log shows who saved which command.
 
 `ingest_recording_flow` runs it after the web app accepted the `SUCCEEDED`
 report, so the recording, its metadata and its event exist. It runs once per
-ingest: not for a report the web app had already applied (`alreadyFinal`), and
-not when the result only reached the web app through the Prefect artifact. A
+flow run. A retried report that the web app had already applied
+(`alreadyFinal`, typically after a lost response) still gets the command and
+runs it; a rerun of the whole flow cannot, because the upload is then a
+duplicate. It does not run when the result only reached the web app through
+the Prefect artifact. A
 command that uses `{event_id}` runs only when the upload created or found an
 event (see "Event on upload"). Its working directory is the worker user's
 home, and it gets the worker environment without `BESEDY_JOB_SERVICE_SECRET`
 and `HF_TOKEN`.
 
 Output goes to the flow run log in Prefect and to the worker journal, prefixed
-`[post_ingest]`, with the exit code at the end. A failure, a timeout or an
+`[post_ingest]`, with the exit code at the end. The worker waits for the
+command's process, not its output: if a process it started leaves the process
+group and keeps the output open, the worker stops reading 5 s after the
+command ended and logs that. A failure, a timeout or an
 invalid command is only logged: the intake stays `SUCCEEDED`. The worker runs
 one flow at a time, so the next upload waits until the command finished.
 Changing the switch or the timeout needs a worker restart
