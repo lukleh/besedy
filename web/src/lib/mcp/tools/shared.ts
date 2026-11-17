@@ -125,7 +125,7 @@ export function resolveToolArchive(
   if (!profile.archive) {
     return {
       code: 'not_found',
-      error: 'Archive not found or inaccessible',
+      error: 'Catalog not found or inaccessible',
     };
   }
   return profile.archive;

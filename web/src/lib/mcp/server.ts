@@ -26,7 +26,7 @@ export const BESEDY_MCP_INSTRUCTIONS = [
   TRANSCRIPT_VERIFICATION_GUIDANCE,
   "Search results include authoritative event IDs, dates, and locations; dates may be partial. Searches cover each event's primary recording; its other recordings are parallel captures, not independent evidence. Support recurring themes with distinct events.",
   "Recordings are discussions without speaker labels, so a passage may be an audience question or one participant's view rather than a settled claim. Attribute accordingly.",
-  'Cite bounded segment webUrl values. Tools use one deployment archive; use who_am_i only to diagnose identity or access.',
+  'Cite bounded segment webUrl values. Tools use one deployment catalog; use who_am_i only to diagnose identity or access.',
   'Begin the first reply that uses Besedy evidence with a short caution in the same language as that reply: the answer is an AI interpretation of AI-generated transcripts of Besedy recordings, so read it carefully.',
 ].join(' ');
 

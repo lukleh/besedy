@@ -1,7 +1,7 @@
 # Web Data Model and Database
 
 For the staged deployment binding and read-only migration inventory, see
-[single-archive configuration](single-archive.md).
+[single-catalog configuration](single-archive.md).
 
 > **Last Updated:** 2026-04-04
 
@@ -24,11 +24,13 @@ Optional artifacts: `audio_catalog_<id>_duplicates.csv` (duplicates), `transcrip
 
 ### Source registration
 
-The website uses the explicitly configured archive. For a new database, register
+The website uses the explicitly configured catalog. For a new database, register
 that source with `npm run archive:register`, supplying its paths as seen by the
 web container. The command creates only the `BESEDY_ARCHIVE_ID` row and refuses
 an existing ID; it does not discover sources, change grants or synchronize CSVs.
-See [archive bootstrap](single-archive.md#registering-a-source-on-a-new-database).
+The command and configuration retain their existing `archive` names and refer
+to the catalog's source binding. See
+[catalog bootstrap](single-archive.md#registering-a-source-on-a-new-database).
 The browser catalog-list, creation, discovery and deactivation endpoints have
 been retired. Existing source records and their historical references remain.
 
@@ -62,7 +64,7 @@ Sync triggers:
 `--force` bypasses fingerprint checks and rebuilds all tracked sources for the scope.
 
 System administrators can inspect each source's latest sync result, last successful
-sync, and error in catalog settings beside **Sync Catalog**. The status endpoint,
+sync, and error in catalog management beside **Sync Catalog**. The status endpoint,
 `GET /api/admin/catalog-sync?groupId=<id>`, returns at most three source snapshots
 for that catalog. It shares the sync command's system-admin authorization because
 errors may name source paths. Catalog administrators do not receive these details

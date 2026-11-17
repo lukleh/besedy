@@ -19,7 +19,7 @@ export function CatalogNotFoundState({ catalogId }: CatalogNotFoundStateProps) {
         {t("invalidDescription", { id: catalogId ?? "" })}
       </p>
       <p className="text-sm text-muted-foreground mt-1">
-        {t("errorDescription")}{" "}
+        {t("configurationHelp")}{" "}
         <Link href="/admin/catalogs" className="text-primary underline hover:text-primary/80">
           {t("configureGroups")}
         </Link>.
@@ -42,7 +42,7 @@ export function CatalogErrorState({ error }: CatalogErrorStateProps) {
         {error instanceof Error ? error.message : t("noResultsDescription")}
       </p>
       <p className="text-sm text-muted-foreground mt-1">
-        {t("errorDescription")}{" "}
+        {t("configurationHelp")}{" "}
         <Link href="/admin/catalogs" className="text-primary underline hover:text-primary/80">
           {t("configureGroups")}
         </Link>.
