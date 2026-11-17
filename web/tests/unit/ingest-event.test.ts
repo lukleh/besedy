@@ -179,13 +179,16 @@ describe("assignIntakeEvent", () => {
     expect(outcome.errorMessage).toContain("Praha 17. 11. 2026");
   });
 
-  it("reports a failed transaction without throwing", async () => {
+  it("reports a failed transaction without throwing, naming the lost metadata", async () => {
     mocks.transaction.mockRejectedValueOnce(new Error("deadlock"));
+    const placeAndDate = await assignIntakeEvent(intake(), HASH);
+    mocks.transaction.mockRejectedValueOnce(new Error("deadlock"));
+    const withRecorder = await assignIntakeEvent(intake({ recorderId: 3 }), HASH);
 
-    const outcome = await assignIntakeEvent(intake(), HASH);
-
-    expect(outcome).toMatchObject({ eventId: null, errorCode: "event_not_created" });
-    expect(outcome.errorMessage).toContain("deadlock");
+    expect(placeAndDate).toMatchObject({ eventId: null, errorCode: "event_not_created" });
+    expect(placeAndDate.errorMessage).toContain("place and date were not saved");
+    expect(placeAndDate.errorMessage).toContain("deadlock");
+    expect(withRecorder.errorMessage).toContain("place, date and recorder were not saved");
   });
 
   it("does not report a committed event as failed when the audit entry fails", async () => {
@@ -200,12 +203,16 @@ describe("assignIntakeEvent", () => {
     expect(await assignIntakeEvent(intake(), HASH)).toMatchObject({ eventId: 42, errorCode: null });
   });
 
-  it("creates no event when the uploader no longer exists, but keeps the metadata", async () => {
-    const outcome = await assignIntakeEvent(intake({ requestedById: null }), HASH);
+  it("writes nothing when the uploader no longer exists, so no change goes unaudited", async () => {
+    const withEvent = await assignIntakeEvent(intake({ requestedById: null, recorderId: 3 }), HASH);
+    const recorderOnly = await assignIntakeEvent(
+      intake({ requestedById: null, locationId: null, dateYear: null, recorderId: 3 }),
+      HASH
+    );
 
-    expect(outcome.errorCode).toBe("event_not_created");
-    expect(mocks.tx.audioMetadata.upsert).toHaveBeenCalled();
-    expect(mocks.createEventFromRecording).not.toHaveBeenCalled();
+    expect(withEvent.errorCode).toBe("event_not_created");
+    expect(recorderOnly.errorCode).toBe("metadata_not_saved");
+    expect(mocks.transaction).not.toHaveBeenCalled();
     expect(mocks.logMetadataUpdated).not.toHaveBeenCalled();
   });
 });

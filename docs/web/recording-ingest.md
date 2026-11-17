@@ -97,6 +97,12 @@ why:
   is not actionable, the transaction failed); the message has the detail.
 - `metadata_not_saved`: only a recorder was given and saving it failed.
 
+If the uploading user was deleted, nothing is written (every metadata change
+is audited under its actor), and the row reports `event_not_created` or
+`metadata_not_saved`. When creating the event fails, the place, date and
+recorder written in the same transaction are rolled back too, and the message
+says so.
+
 An undelivered outcome that a later admin poll applies goes through the same
 step. Removing the recording later detaches it from the event like any other
 removal; the now empty event is kept unreleased.

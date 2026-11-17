@@ -42,6 +42,22 @@ export async function assignIntakeEvent(
   const wantsEvent = row.locationId != null && row.dateYear != null;
   if (!wantsEvent && row.recorderId == null) return NO_EVENT;
   const userId = row.requestedById;
+  if (!userId) {
+    // Every metadata change is audited under its actor; without the uploader
+    // there is none, so nothing is written and an admin enters it by hand.
+    return wantsEvent
+      ? {
+          eventId: null,
+          errorCode: 'event_not_created',
+          errorMessage:
+            'The uploading user no longer exists, so no event was created and the metadata was not saved.',
+        }
+      : {
+          eventId: null,
+          errorCode: 'metadata_not_saved',
+          errorMessage: 'The uploading user no longer exists, so the recorder was not saved.',
+        };
+  }
   const workflowGroupId = row.workflowGroupId;
   // Only what the upload named; a recorder-only upload leaves place and date alone.
   const metadata = {
@@ -77,10 +93,9 @@ export async function assignIntakeEvent(
       });
       metadataWritten = true;
       if (!wantsEvent) return { kind: 'no_event' as const };
-      if (!userId) return { kind: 'no_user' as const };
       return createEventFromRecording(tx, { workflowGroupId, audioHash, userId });
     });
-    if (metadataWritten && userId) {
+    if (metadataWritten) {
       // The writes are committed; a failed audit entry must not report them as failed.
       await logMetadataUpdated(userId, audioHash, workflowGroupId, Object.keys(metadata)).catch(
         (error: unknown) =>
@@ -94,12 +109,6 @@ export async function assignIntakeEvent(
     switch (result.kind) {
       case 'no_event':
         return NO_EVENT;
-      case 'no_user':
-        return {
-          eventId: null,
-          errorCode: 'event_not_created',
-          errorMessage: 'The uploading user no longer exists, so no event was created.',
-        };
       case 'created':
       case 'already_assigned':
         return { eventId: result.eventId, errorCode: null, errorMessage: null };
@@ -143,7 +152,10 @@ export async function assignIntakeEvent(
       ? {
           eventId: null,
           errorCode: 'event_not_created',
-          errorMessage: `No event was created: ${detail}`,
+          // The metadata was written in the same transaction, so it is gone too.
+          errorMessage: `No event was created and the upload's ${
+            row.recorderId != null ? 'place, date and recorder were' : 'place and date were'
+          } not saved: ${detail}`,
         }
       : {
           eventId: null,
