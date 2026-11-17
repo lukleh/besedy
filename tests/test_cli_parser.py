@@ -68,7 +68,7 @@ class TestTrainingExportCommand:
 
     def test_hash_verification_is_the_default(self):
         parser = build_parser()
-        args = parser.parse_args(["training-export", "--catalog-id", "20251222_144441"])
+        args = parser.parse_args(["training-export", "--catalog-id", "20251224_093000"])
         assert args.skip_audio_hash is False
         assert args.audio_hash == [] and args.test_recordings is None
         assert args.no_test_recordings is False
@@ -77,7 +77,7 @@ class TestTrainingExportCommand:
                 [
                     "training-export",
                     "--catalog-id",
-                    "20251222_144441",
+                    "20251224_093000",
                     "--test-recordings",
                     "t.json",
                     "--no-test-recordings",
@@ -85,7 +85,7 @@ class TestTrainingExportCommand:
             )
         with pytest.raises(SystemExit):
             parser.parse_args(
-                ["training-export", "--catalog-id", "20251222_144441", "--verify-audio-hash"]
+                ["training-export", "--catalog-id", "20251224_093000", "--verify-audio-hash"]
             )
 
     def test_audio_hash_repeats(self):
@@ -93,7 +93,7 @@ class TestTrainingExportCommand:
             [
                 "training-export",
                 "--catalog-id",
-                "20251222_144441",
+                "20251224_093000",
                 "--audio-hash",
                 "a" * 64,
                 "--audio-hash",

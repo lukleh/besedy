@@ -24,9 +24,12 @@
 #
 # Configuration (environment):
 #   WORKTREE_REPORT_REPOS  - colon-separated repo paths to scan
-#                            (default: every git repo directly under ~/projects)
+#                            (default: every git repo directly under
+#                            WORKTREE_BACKUP_TREE)
 #   WORKTREE_BACKUP_TREE   - directory backed up nightly; worktrees inside it are
-#                            flagged (default: ~/projects)
+#                            flagged (default: the directory that holds this
+#                            repository's main checkout; the report prints the
+#                            tree it used)
 #   WORKTREE_REPORT_DOCKER - docker command used to find compose working dirs
 #                            (default: docker; skipped when not installed)
 #   WORKTREE_MIN_IDLE_DAYS - days without git activity before a clean, pushed
@@ -34,7 +37,17 @@
 
 set -euo pipefail
 
-WORKTREE_BACKUP_TREE="${WORKTREE_BACKUP_TREE:-$HOME/projects}"
+if [ -z "${WORKTREE_BACKUP_TREE:-}" ]; then
+    # <parent>/<main checkout>/.git -> <parent>, also when run from a linked worktree.
+    common_git_dir="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    if [ -n "$common_git_dir" ]; then
+        WORKTREE_BACKUP_TREE="$(dirname "$(dirname "$common_git_dir")")"
+    fi
+fi
+if [ -z "${WORKTREE_BACKUP_TREE:-}" ]; then
+    echo "Set WORKTREE_BACKUP_TREE: this script is not inside a git checkout to derive it from" >&2
+    exit 1
+fi
 WORKTREE_REPORT_DOCKER="${WORKTREE_REPORT_DOCKER:-docker}"
 WORKTREE_MIN_IDLE_DAYS="${WORKTREE_MIN_IDLE_DAYS:-3}"
 
@@ -56,7 +69,7 @@ declare -a repos=()
 if [ -n "${WORKTREE_REPORT_REPOS:-}" ]; then
     IFS=':' read -r -a repos <<< "$WORKTREE_REPORT_REPOS"
 else
-    for candidate in "$HOME"/projects/*/; do
+    for candidate in "$WORKTREE_BACKUP_TREE"/*/; do
         # A .git directory marks a main checkout; linked worktrees have a .git file.
         [ -d "$candidate/.git" ] && repos+=("${candidate%/}")
     done
@@ -299,6 +312,7 @@ done
 
 total=$((removable + kept + prunable))
 echo "Linked git worktrees: $total ($removable removable, $kept kept, $prunable with missing directories)"
+echo "Backup tree: $WORKTREE_BACKUP_TREE"
 if [ "$docker_state" = "failed" ]; then
     echo "Note: '$WORKTREE_REPORT_DOCKER ps' failed, so no worktree is marked removable."
 fi

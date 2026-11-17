@@ -26,11 +26,11 @@ OTHER = "b" * 64
 def write_manifest(
     root: Path, workspace: str, staged: Path, status: str = "active", **extra
 ) -> Path:
-    path = root / "corrections_20251222_144441" / workspace / "workspace.json"
+    path = root / "corrections_20251224_093000" / workspace / "workspace.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "schema_version": 1,
-        "workflow_group_id": "20251222_144441",
+        "workflow_group_id": "20251224_093000",
         "audio_hash": HASH,
         "workspace_id": workspace,
         "status": status,
@@ -45,7 +45,7 @@ def write_manifest(
 
 @pytest.fixture
 def staged(tmp_path: Path) -> tuple[Path, Path, Path]:
-    staging = tmp_path / "audio_staged_20251222_144441"
+    staging = tmp_path / "audio_staged_20251224_093000"
     staging.mkdir()
     protected_file = staging / f"{HASH}.wav"
     other_file = staging / f"{OTHER}.wav"
@@ -161,7 +161,7 @@ def test_a_broken_manifest_in_another_catalog_stops_the_command(tmp_path: Path, 
                 staged_exists=True,
             )
         ],
-        catalog_csv=tmp_path / "catalog_20251222_144441.csv",
+        catalog_csv=tmp_path / "catalog_20251224_093000.csv",
         normalized_csv=None,
     )
     with pytest.raises(CorrectionManifestError):

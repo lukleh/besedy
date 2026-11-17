@@ -23,11 +23,11 @@
 # Base directory for staged and archived audio artifacts.
 # Required for staging, archiving, and joining audio: an empty value fails with
 # "Audio artifacts root is required" unless BESEDY_AUDIO_ARTIFACTS_ROOT is set.
-# Example: "/mnt/data/besedy_audio"
+# Example: "/srv/besedy/audio"
 audio_artifacts_dir = ""
 # Directory for joined audio files from `catalog join`.
 # Relative path: resolved under audio_artifacts_dir (e.g., "joined_audio" -> audio_artifacts_dir/joined_audio/)
-# Absolute path: used directly (e.g., "/mnt/data/joined" -> /mnt/data/joined/)
+# Absolute path: used directly (e.g., "/srv/besedy/joined" -> /srv/besedy/joined/)
 joined_audio_dir = "joined_audio"
 # Directory for backing up original source audio after `catalog join`.
 # Leave empty to keep originals in place.
@@ -37,7 +37,7 @@ original_audio_dir = ""
 # Creates catalogs/, transcripts/, and transcripts_parquet/ subdirectories.
 # Required: an empty value fails with "Text data root is required" unless
 # BESEDY_TEXT_DATA_ROOT is set in the environment.
-# Example: "/mnt/data/besedy_text"
+# Example: "/srv/besedy/text"
 text_data_dir = ""
 # Directory for recording sources (URLs/files) managed by the web app.
 # Required for the Sources feature in the web app.

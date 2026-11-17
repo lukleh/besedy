@@ -33,7 +33,7 @@ describe('lockWorkspace', () => {
       txReturning([
         {
           id: WORKSPACE,
-          workflow_group_id: '20251222_144441',
+          workflow_group_id: '20251224_093000',
           status: 'ACTIVE',
           segmentation_version: 'chunks-v1',
         },
@@ -41,7 +41,7 @@ describe('lockWorkspace', () => {
       WORKSPACE,
     );
     expect(completeStartingManifest).toHaveBeenCalledWith(
-      '20251222_144441',
+      '20251224_093000',
       WORKSPACE,
     );
   });

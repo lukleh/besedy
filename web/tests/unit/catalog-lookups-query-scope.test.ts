@@ -23,7 +23,7 @@ vi.mock("@/lib/access/capabilities", () => ({
   getCatalogCapability: vi.fn(async () => ({ canManageLookups: true })),
 }));
 vi.mock("@/lib/catalog/resolve-group", () => ({
-  resolveCatalogWithAccess: vi.fn(async () => ({ group: { id: "20251222_144441" }, hasAccess: true })),
+  resolveCatalogWithAccess: vi.fn(async () => ({ group: { id: "20251224_093000" }, hasAccess: true })),
 }));
 
 import {
@@ -33,7 +33,7 @@ import {
 } from "@/lib/api/crud-factory";
 import { getCatalogCapability } from "@/lib/access/capabilities";
 
-const CATALOG = "20251222_144441";
+const CATALOG = "20251224_093000";
 const resources = [
   { name: "recorder", collection: recorderCollectionHandlers, item: recorderItemHandlers },
   { name: "location", collection: locationCollectionHandlers, item: locationItemHandlers },

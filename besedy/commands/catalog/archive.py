@@ -852,11 +852,11 @@ def compute_output_path(
         with 8-character hash suffix to prevent filename collisions.
 
     Example:
-        source_path: /mnt/data/Besedy/folder/file.mp3
-        scan_root:   /mnt/data/Besedy
-        output_dir:  /mnt/data/Besedy-archive
+        source_path: /srv/besedy/recordings/folder/file.mp3
+        scan_root:   /srv/besedy/recordings
+        output_dir:  /srv/besedy/archive
         audio_hash:      2cb6f452b62cb491...
-        → output:    /mnt/data/Besedy-archive/folder/file_2cb6f452.webm
+        → output:    /srv/besedy/archive/folder/file_2cb6f452.webm
     """
     source_abs = source_path.resolve()
     relative = Path(source_abs.name)

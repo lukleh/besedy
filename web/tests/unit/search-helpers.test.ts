@@ -256,7 +256,7 @@ describe("catalog search route helpers", () => {
     const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}"));
       expect(body).toMatchObject({
-        workflow_group_id: "20251222_144441",
+        workflow_group_id: "20251224_093000",
         backend_key: "faster-whisper/large-v3@silero_vad_v6",
         colbert_model: "jinaai/jina-colbert-v2",
         colbert_root_dir: "/workspace/besedy/tmp/rag_colbert",
@@ -266,7 +266,7 @@ describe("catalog search route helpers", () => {
         ok: true,
         json: async () => ({
           colbert_index_dir:
-            "/workspace/besedy/tmp/rag_colbert/20251222_144441/faster-whisper_large-v3_silero_vad_v6/v2/jinaai_jina-colbert-v2/index/colbert_index",
+            "/workspace/besedy/tmp/rag_colbert/20251224_093000/faster-whisper_large-v3_silero_vad_v6/v2/jinaai_jina-colbert-v2/index/colbert_index",
         }),
       };
     });
@@ -274,7 +274,7 @@ describe("catalog search route helpers", () => {
 
     await expect(
       resolveColbertIndexDir({
-        workflowGroupId: "20251222_144441",
+        workflowGroupId: "20251224_093000",
         backendKey: "faster-whisper/large-v3@silero_vad_v6",
         colbertModel: "jinaai/jina-colbert-v2",
         colbertRootDir: "/workspace/besedy/tmp/rag_colbert",
@@ -282,7 +282,7 @@ describe("catalog search route helpers", () => {
         timeoutMs: 5000,
       }),
     ).resolves.toBe(
-      "/workspace/besedy/tmp/rag_colbert/20251222_144441/faster-whisper_large-v3_silero_vad_v6/v2/jinaai_jina-colbert-v2/index/colbert_index",
+      "/workspace/besedy/tmp/rag_colbert/20251224_093000/faster-whisper_large-v3_silero_vad_v6/v2/jinaai_jina-colbert-v2/index/colbert_index",
     );
   });
 
@@ -298,7 +298,7 @@ describe("catalog search route helpers", () => {
 
     await expect(
       resolveColbertIndexDir({
-        workflowGroupId: "20251222_144441",
+        workflowGroupId: "20251224_093000",
         backendKey: "faster-whisper/large-v3@silero_vad_v6",
         colbertModel: "jinaai/jina-colbert-v2",
         colbertRootDir: "/workspace/besedy/tmp/rag_colbert",

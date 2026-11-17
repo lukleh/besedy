@@ -138,7 +138,7 @@ them afterward according to the normal backup policy.
 
 ## Production inventory checked on 8 November 2026
 
-The active `20251222_144441` generation already has current catalog headers,
+The active catalog generation already has current catalog headers,
 256 complete loudness rows, full hash leaves and language-suffixed ASR model
 directories. No `transcript_original.json` files were found. The four standalone
 `curated`, `metadata`, `merged` and `merged_v2` CSVs were outside the database's

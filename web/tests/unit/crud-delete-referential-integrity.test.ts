@@ -47,9 +47,9 @@ const db = prisma as unknown as {
 };
 
 function deleteRequest() {
-  return new NextRequest("http://localhost/api/catalogs/20251222_144441/metadata/x/5", { method: "DELETE" });
+  return new NextRequest("http://localhost/api/catalogs/20251224_093000/metadata/x/5", { method: "DELETE" });
 }
-const params = () => ({ params: Promise.resolve({ id: "20251222_144441", itemId: "5" }) });
+const params = () => ({ params: Promise.resolve({ id: "20251224_093000", itemId: "5" }) });
 
 describe("CRUD delete referential-integrity guards", () => {
   beforeEach(async () => {
@@ -62,7 +62,7 @@ describe("CRUD delete referential-integrity guards", () => {
     // under test are referential, not authorizational.
     asMock(requireAuth).mockResolvedValue("user-1");
     asMock(resolveCatalogWithAccess).mockResolvedValue({
-      group: { id: "20251222_144441" },
+      group: { id: "20251224_093000" },
       hasAccess: true,
     });
     asMock(getCatalogCapability).mockResolvedValue({ canManageLookups: true });

@@ -120,7 +120,7 @@ describe('catalog-sync', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubEnv('BESEDY_ARCHIVE_ID', '20251222_144441');
+    vi.stubEnv('BESEDY_ARCHIVE_ID', '20251224_093000');
 
     mockAccess.mockResolvedValue(undefined);
     mockReadFile.mockResolvedValue(emptyCsv);
@@ -140,7 +140,7 @@ describe('catalog-sync', () => {
 
   it('uses tx-scoped advisory lock and skips sources whose bytes are unchanged', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441', isActive: true,
+      id: '20251224_093000', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -167,7 +167,7 @@ describe('catalog-sync', () => {
     ]);
 
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-    const result = await syncCatalogGroup('20251222_144441');
+    const result = await syncCatalogGroup('20251224_093000');
 
     expect(result.status).toBe('skipped');
     expect(result.changedSources).toEqual([]);
@@ -188,7 +188,7 @@ describe('catalog-sync', () => {
 
   it('recaptures files when another sync commits while hashing', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441', isActive: true,
+      id: '20251224_093000', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -224,7 +224,7 @@ describe('catalog-sync', () => {
       .mockResolvedValue(currentStates);
 
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-    const result = await syncCatalogGroup('20251222_144441');
+    const result = await syncCatalogGroup('20251224_093000');
 
     expect(result.status).toBe('skipped');
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(3);
@@ -234,7 +234,7 @@ describe('catalog-sync', () => {
 
   it('does not mark sources as failed when snapshot retries are exhausted', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441', isActive: true,
+      id: '20251224_093000', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -267,7 +267,7 @@ describe('catalog-sync', () => {
       .mockResolvedValueOnce(statesFor('v3:concurrent-2'));
 
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-    const result = await syncCatalogGroup('20251222_144441');
+    const result = await syncCatalogGroup('20251224_093000');
 
     expect(result).toMatchObject({
       status: 'error',
@@ -281,7 +281,7 @@ describe('catalog-sync', () => {
 
   it('runs orphan event-recording cleanup after metadata/archived sync success and repairs events that lost their primary', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441', isActive: true,
+      id: '20251224_093000', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -328,7 +328,7 @@ describe('catalog-sync', () => {
 
     try {
       const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-      const result = await syncCatalogGroup('20251222_144441');
+      const result = await syncCatalogGroup('20251224_093000');
 
       expect(result.status).toBe('success');
       expect(result.changedSources).toEqual(['metadata', 'archived']);
@@ -342,12 +342,12 @@ describe('catalog-sync', () => {
       expect(mockReplaceLostPrimaryRecording).toHaveBeenCalledTimes(2);
       expect(mockReplaceLostPrimaryRecording).toHaveBeenCalledWith(
         mockTx,
-        '20251222_144441',
+        '20251224_093000',
         7,
       );
       expect(mockReplaceLostPrimaryRecording).toHaveBeenCalledWith(
         mockTx,
-        '20251222_144441',
+        '20251224_093000',
         8,
       );
       expect(warn).toHaveBeenCalledWith(
@@ -357,7 +357,7 @@ describe('catalog-sync', () => {
         expect.stringContaining(`7 -> ${promotedHash}`),
       );
       expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('without a playable recording in 20251222_144441: 8'),
+        expect.stringContaining('without a playable recording in 20251224_093000: 8'),
       );
     } finally {
       warn.mockRestore();
@@ -370,7 +370,7 @@ describe('catalog-sync', () => {
       status: 'SUCCESS' | 'ERROR'; syncedAt: Date; lastSuccessfulAt: Date | null; lastError: string | null;
     };
     const states = new Map<string, State>();
-    const groupId = '20251222_144441';
+    const groupId = '20251224_093000';
     const hash = 'a'.repeat(64);
     let broken = false;
     mockTx.workflowGroup.findUnique.mockResolvedValue({
@@ -457,7 +457,7 @@ describe('catalog-sync', () => {
 
     try {
       const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-      const first = await syncCatalogGroup('20251222_144441');
+      const first = await syncCatalogGroup('20251224_093000');
       expect(first.status).toBe('error');
       expect(first.error).toContain('Orphan cleanup failed');
       expect(first.error).toContain('temporary database failure');
@@ -477,12 +477,12 @@ describe('catalog-sync', () => {
       mockParse.mockClear();
       mockTx.catalogSyncState.upsert.mockClear();
 
-      const retry = await syncCatalogGroup('20251222_144441');
+      const retry = await syncCatalogGroup('20251224_093000');
 
       expect(retry.status).toBe('skipped');
       expect(mockParse).not.toHaveBeenCalled();
       expect(mockTx.catalogSyncState.upsert).not.toHaveBeenCalled();
-      expect(mockReplaceLostPrimaryRecording).toHaveBeenCalledWith(mockTx, '20251222_144441', 7);
+      expect(mockReplaceLostPrimaryRecording).toHaveBeenCalledWith(mockTx, '20251224_093000', 7);
     } finally {
       errorLog.mockRestore();
       warnLog.mockRestore();
@@ -493,7 +493,7 @@ describe('catalog-sync', () => {
     const withCopy = 'a'.repeat(64);
     const blankCopy = 'b'.repeat(64);
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441', isActive: true,
+      id: '20251224_093000', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -524,7 +524,7 @@ describe('catalog-sync', () => {
     readCsvRows(rowsByFile);
 
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-    const result = await syncCatalogGroup('20251222_144441');
+    const result = await syncCatalogGroup('20251224_093000');
 
     expect(result.status).toBe('success');
     const entries = mockTx.catalogEntry.createMany.mock.calls[0][0].data;
@@ -553,7 +553,7 @@ describe('catalog-sync', () => {
     // was synced then, so its bytes match what is stored. Only the version
     // prefix tells the new release to read it again.
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441', isActive: true,
+      id: '20251224_093000', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -564,7 +564,7 @@ describe('catalog-sync', () => {
       { sourceKey: 'duplicates', filePath: '', fingerprint: '<missing>' },
     ]);
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-    const result = await syncCatalogGroup('20251222_144441');
+    const result = await syncCatalogGroup('20251224_093000');
 
     const { SOURCE_FINGERPRINT_VERSION } = await import('@/lib/catalog-sync/source-snapshot');
     expect(SOURCE_FINGERPRINT_VERSION).toBe(FINGERPRINT_VERSION);
@@ -574,7 +574,7 @@ describe('catalog-sync', () => {
 
   it('detects source changes from bytes even when paths and file metadata are unchanged', async () => {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441', isActive: true,
+      id: '20251224_093000', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -599,7 +599,7 @@ describe('catalog-sync', () => {
     ]);
 
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-    const result = await syncCatalogGroup('20251222_144441');
+    const result = await syncCatalogGroup('20251224_093000');
 
     expect(result.status).toBe('success');
     expect(result.changedSources).toEqual(['metadata', 'archived']);
@@ -607,7 +607,7 @@ describe('catalog-sync', () => {
       expect.objectContaining({
         where: {
           workflowGroupId_sourceKey: {
-            workflowGroupId: '20251222_144441',
+            workflowGroupId: '20251224_093000',
             sourceKey: 'metadata',
           },
         },
@@ -620,7 +620,7 @@ describe('catalog-sync', () => {
 
   function setupBaseChangedWithBaseline(rowCount: number) {
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441', isActive: true,
+      id: '20251224_093000', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: null,
@@ -661,7 +661,7 @@ describe('catalog-sync', () => {
     parseBaseRows(0);
 
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-    const result = await syncCatalogGroup('20251222_144441');
+    const result = await syncCatalogGroup('20251224_093000');
 
     expect(result.status).toBe('error');
     expect(result.error).toMatch(/source CSV is empty/i);
@@ -673,7 +673,7 @@ describe('catalog-sync', () => {
     parseBaseRows(10);
 
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-    const result = await syncCatalogGroup('20251222_144441');
+    const result = await syncCatalogGroup('20251224_093000');
 
     expect(result.status).toBe('error');
     expect(result.error).toMatch(/row count dropped from 100 to 10/i);
@@ -685,7 +685,7 @@ describe('catalog-sync', () => {
     parseBaseRows(10);
 
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-    const result = await syncCatalogGroup('20251222_144441', {
+    const result = await syncCatalogGroup('20251224_093000', {
       allowRowCountDrop: true,
     });
 
@@ -718,7 +718,7 @@ describe('catalog-sync', () => {
   ])('rejects invalid %s CSV before touching the live projection (%s)', async (kind, content, detail) => {
     setupBaseChangedWithBaseline(100);
     const group = {
-      id: '20251222_144441', isActive: true,
+      id: '20251224_093000', isActive: true,
       metadataCatalogPath: '/data/metadata.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: '/data/duplicates.csv',
@@ -761,7 +761,7 @@ describe('catalog-sync', () => {
     setupBaseChangedWithBaseline(100);
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
 
-    const result = await syncCatalogGroup('20251222_144441', { allowRowCountDrop: true });
+    const result = await syncCatalogGroup('20251224_093000', { allowRowCountDrop: true });
 
     expect(result.status).toBe('success');
     expect(result.rowCounts).toEqual({ metadata: 0, archived: 0 });
@@ -778,7 +778,7 @@ describe('catalog-sync', () => {
     const warnLog = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-      const result = await syncCatalogGroup('20251222_144441');
+      const result = await syncCatalogGroup('20251224_093000');
 
       expect(result.status).toBe('success');
       expect(mockTx.catalogEntry.createMany).toHaveBeenCalledWith({
@@ -805,7 +805,7 @@ describe('catalog-sync', () => {
     });
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
 
-    const result = await syncCatalogGroup('20251222_144441');
+    const result = await syncCatalogGroup('20251224_093000');
 
     expect(result.status).toBe('error');
     expect(result.error).toContain('Duplicate Hash in metadata catalog');
@@ -815,7 +815,7 @@ describe('catalog-sync', () => {
   it('does not clear duplicate rows when only the duplicates source changed and is invalid', async () => {
     setupBaseChangedWithBaseline(1);
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441', isActive: true,
+      id: '20251224_093000', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: '/data/duplicates.csv',
@@ -832,7 +832,7 @@ describe('catalog-sync', () => {
     );
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
 
-    const result = await syncCatalogGroup('20251222_144441');
+    const result = await syncCatalogGroup('20251224_093000');
 
     expect(result.status).toBe('error');
     expect(result.changedSources).toEqual(['duplicates']);
@@ -850,7 +850,7 @@ describe('catalog-sync', () => {
   it('accepts several duplicate paths for the same recording', async () => {
     setupBaseChangedWithBaseline(0);
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441', isActive: true,
+      id: '20251224_093000', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: '/data/duplicates.csv',
@@ -866,7 +866,7 @@ describe('catalog-sync', () => {
     });
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
 
-    const result = await syncCatalogGroup('20251222_144441');
+    const result = await syncCatalogGroup('20251224_093000');
 
     expect(result.status).toBe('success');
     expect(result.rowCounts).toEqual({ metadata: 1, archived: 1, duplicates: 2 });
@@ -877,7 +877,7 @@ describe('catalog-sync', () => {
   it('syncs Python duplicate output while skipping rows whose original is unknown', async () => {
     setupBaseChangedWithBaseline(0);
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441', isActive: true,
+      id: '20251224_093000', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: '/data/duplicates.csv',
@@ -891,7 +891,7 @@ describe('catalog-sync', () => {
     );
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
 
-    const result = await syncCatalogGroup('20251222_144441');
+    const result = await syncCatalogGroup('20251224_093000');
 
     expect(result.status).toBe('success');
     expect(result.rowCounts).toEqual({ metadata: 2, archived: 2, duplicates: 2 });
@@ -905,7 +905,7 @@ describe('catalog-sync', () => {
     ]);
     expect(mockTx.catalogSyncState.upsert).toHaveBeenCalledWith(expect.objectContaining({
       update: expect.objectContaining({ status: 'SUCCESS', rowCount: 2, lastSuccessfulAt: expect.any(Date) }),
-      where: { workflowGroupId_sourceKey: { workflowGroupId: '20251222_144441', sourceKey: 'duplicates' } },
+      where: { workflowGroupId_sourceKey: { workflowGroupId: '20251224_093000', sourceKey: 'duplicates' } },
     }));
     for (const [input] of mockTx.catalogSyncState.upsert.mock.calls) {
       expect(input.update.lastSuccessfulAt).toBe(input.update.syncedAt);
@@ -916,7 +916,7 @@ describe('catalog-sync', () => {
   it('clears projected duplicate counts when the changed source only has unknown originals', async () => {
     setupBaseChangedWithBaseline(1);
     mockTx.workflowGroup.findUnique.mockResolvedValue({
-      id: '20251222_144441', isActive: true,
+      id: '20251224_093000', isActive: true,
       metadataCatalogPath: '/data/meta.csv',
       archivedCatalogPath: '/data/archived.csv',
       duplicatesCatalogPath: '/data/duplicates.csv',
@@ -933,15 +933,15 @@ describe('catalog-sync', () => {
     );
     const { syncCatalogGroup } = await import('@/lib/catalog-sync');
 
-    const result = await syncCatalogGroup('20251222_144441');
+    const result = await syncCatalogGroup('20251224_093000');
 
     expect(result.status).toBe('success');
     expect(result.changedSources).toEqual(['duplicates']);
     expect(result.rowCounts).toEqual({ duplicates: 0 });
-    expect(mockTx.catalogDuplicate.deleteMany).toHaveBeenCalledWith({ where: { workflowGroupId: '20251222_144441' } });
+    expect(mockTx.catalogDuplicate.deleteMany).toHaveBeenCalledWith({ where: { workflowGroupId: '20251224_093000' } });
     expect(mockTx.catalogDuplicate.createMany).not.toHaveBeenCalled();
     expect(mockTx.catalogEntry.updateMany).toHaveBeenCalledExactlyOnceWith({
-      where: { workflowGroupId: '20251222_144441' },
+      where: { workflowGroupId: '20251224_093000' },
       data: { duplicateCount: 0 },
     });
   });
@@ -955,7 +955,7 @@ describe('catalog-sync', () => {
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const { syncCatalogGroup } = await import('@/lib/catalog-sync');
-      const result = await syncCatalogGroup('20251222_144441');
+      const result = await syncCatalogGroup('20251224_093000');
       expect(result).toMatchObject({ status: 'error', error: expect.stringContaining('must use Hash Algorithm pcm-s16le-16000hz-mono-sha256-v1') });
       expect(mockTx.catalogEntry.deleteMany).not.toHaveBeenCalled();
       expect(mockTx.catalogEntry.createMany).not.toHaveBeenCalled();
