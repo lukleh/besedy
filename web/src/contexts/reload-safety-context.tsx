@@ -24,6 +24,10 @@ export interface ReloadBlocker {
   kind: ReloadBlockerKind;
   blocksAutomatic: boolean;
   blocksManual: boolean;
+  /** Where the unsaved work is, when it may be on another page of this tab. */
+  href?: string;
+  /** Set on blockers reported by another tab; their work is not reachable from here. */
+  otherTab?: boolean;
 }
 
 export interface ReloadSafetySnapshot {
@@ -59,7 +63,8 @@ function isReloadBlocker(value: unknown): value is ReloadBlocker {
     typeof blocker.id === "string" &&
     isReloadBlockerKind(blocker.kind) &&
     typeof blocker.blocksAutomatic === "boolean" &&
-    typeof blocker.blocksManual === "boolean"
+    typeof blocker.blocksManual === "boolean" &&
+    (blocker.href === undefined || typeof blocker.href === "string")
   );
 }
 
@@ -209,6 +214,8 @@ export function ReloadSafetyProvider({ children }: { children: ReactNode }) {
         blockers.map((blocker) => ({
           ...blocker,
           id: `${tabId}:${blocker.id}`,
+          href: undefined,
+          otherTab: true,
         }))
       ),
     ];
@@ -249,15 +256,16 @@ export function useReloadSafety(): ReloadSafetyContextValue {
 
 export function useReloadBlocker(blocker: ReloadBlocker, active: boolean) {
   const { registerBlocker } = useReloadSafety();
-  const { id, kind, blocksAutomatic, blocksManual } = blocker;
+  const { id, kind, blocksAutomatic, blocksManual, href } = blocker;
 
   useEffect(() => {
     if (!active) return;
-    return registerBlocker({ id, kind, blocksAutomatic, blocksManual });
+    return registerBlocker({ id, kind, blocksAutomatic, blocksManual, href });
   }, [
     active,
     blocksAutomatic,
     blocksManual,
+    href,
     id,
     kind,
     registerBlocker,

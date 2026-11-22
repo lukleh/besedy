@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { RefreshCw, X } from "lucide-react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { useReloadSafety } from "@/contexts/reload-safety-context";
 import { useServiceWorker } from "@/contexts/service-worker-context";
 import { useSession } from "@/contexts/session-context";
 import { Button } from "@/components/ui/button";
@@ -15,6 +17,8 @@ interface UpdateBannerNoticeProps {
   dismissLabel: string;
   updateDisabled: boolean;
   dismissDisabled: boolean;
+  /** Unsaved work on another page of this tab: a link to it replaces the update button. */
+  unsavedLink?: { href: string; label: string };
   onUpdate: () => void;
   onDismiss?: () => void;
 }
@@ -26,6 +30,7 @@ function UpdateBannerNotice({
   dismissLabel,
   updateDisabled,
   dismissDisabled,
+  unsavedLink,
   onUpdate,
   onDismiss,
 }: UpdateBannerNoticeProps) {
@@ -44,9 +49,15 @@ function UpdateBannerNotice({
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button size="sm" onClick={onUpdate} className="h-8" disabled={updateDisabled}>
-            {updateLabel}
-          </Button>
+          {unsavedLink ? (
+            <Button size="sm" className="h-8" asChild>
+              <Link href={unsavedLink.href}>{unsavedLink.label}</Link>
+            </Button>
+          ) : (
+            <Button size="sm" onClick={onUpdate} className="h-8" disabled={updateDisabled}>
+              {updateLabel}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -83,6 +94,7 @@ export function UpdateBanner() {
     cancelPendingApply,
     dismissUpdate,
   } = useServiceWorker();
+  const { manualBlockers } = useReloadSafety();
   const { session } = useSession();
   const isLoggedIn = Boolean(session);
   const isAuthPage = pathname?.startsWith("/auth");
@@ -103,6 +115,17 @@ export function UpdateBanner() {
   const isWaitingForConnection = applyState === "waiting-for-connection";
   const canManuallyOverrideBlock =
     applyState === "blocked" && blockedReasons.every((reason) => reason === "audio");
+  // Unsaved work blocks the update from every page and every tab, so the
+  // banner says where it is: a link when it is elsewhere in this tab, and a
+  // plain statement when another tab holds it.
+  const unsaved = manualBlockers.filter((blocker) => blocker.kind === "unsaved-changes");
+  const blockedByUnsaved = applyState === "blocked" && blockedReasons.includes("unsaved-changes");
+  const unsavedOnlyInOtherTabs = unsaved.length > 0 && unsaved.every((blocker) => blocker.otherTab);
+  const unsavedHref = unsaved.find((blocker) => blocker.href)?.href;
+  const unsavedLink =
+    blockedByUnsaved && unsavedHref && unsavedHref.split("?")[0] !== pathname
+      ? { href: unsavedHref, label: t("update.showChanges") }
+      : undefined;
   const descriptionKey = isActivationDelayed
     ? "update.banner.delayedDescription"
     : applyState === "checking"
@@ -113,7 +136,9 @@ export function UpdateBanner() {
           ? "update.banner.connectionDescription"
           : applyState === "blocked"
             ? blockedReasons.includes("unsaved-changes")
-              ? "update.banner.unsavedDescription"
+              ? unsavedOnlyInOtherTabs
+                ? "update.banner.unsavedOtherTabDescription"
+                : "update.banner.unsavedDescription"
               : blockedReasons.includes("critical-mutation")
                 ? "update.banner.savingDescription"
                 : "update.banner.audioDescription"
@@ -128,6 +153,7 @@ export function UpdateBanner() {
       description={t(descriptionKey)}
       updateLabel={t(isApplying ? "update.working" : "update.refresh")}
       dismissLabel={t("notifications.promptDismiss")}
+      unsavedLink={unsavedLink}
       updateDisabled={
         isApplying || (applyState === "blocked" && !canManuallyOverrideBlock)
       }

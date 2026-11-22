@@ -419,7 +419,10 @@ Behavior with non-obvious rules (UI in `components/pwa/install-banner.tsx`,
   tab is hidden or the user is idle (default 5min, checked every 30s). An update
   arriving mid-playback waits until audio stops (1s delay). Unsaved edits and
   in-flight mutations block both manual and automatic reloads, with blockers
-  shared across tabs through `BroadcastChannel`. Every activation first proves
+  shared across tabs through `BroadcastChannel`. Correction drafts block from
+  every page of their tab, so their blocker carries a link to the segment and
+  the banner offers it in place of the update button; work held by another tab
+  is named as such. Every activation first proves
   `/api/version` is reachable instead of trusting `navigator.onLine`, and a
   failed probe retries every 30 seconds. A manually requested retry falls back
   to automatic blocker policy until the user explicitly requests it again; the

@@ -2089,6 +2089,7 @@
     "available": "Update available - click to refresh",
     "refresh": "Refresh to update",
     "working": "Updating…",
+    "showChanges": "Show changes",
     "banner": {
       "title": "Update available",
       "description": "A newer version was found. Refresh to load it.",
@@ -2098,6 +2099,7 @@
       "delayedDescription": "The update is taking longer than expected. You can close this message and continue; the app will reload when ready.",
       "connectionDescription": "The update server cannot be reached yet. We will retry when the connection returns.",
       "unsavedDescription": "Save or discard your changes before updating.",
+      "unsavedOtherTabDescription": "Another tab has unsaved changes. Save or discard them there before updating.",
       "savingDescription": "A change is still being saved. The update will continue when it finishes.",
       "audioDescription": "Playback is active in this or another tab. The update will continue when it stops."
     }

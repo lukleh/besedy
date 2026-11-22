@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { z } from "zod";
 import { useReloadBlocker } from "@/contexts/reload-safety-context";
+import { buildCorrectionPagePath } from "@/lib/api/recording-urls";
 
 const textDraftSchema = z.object({
   text: z.string(),
@@ -18,10 +19,15 @@ type TextDraft = z.infer<typeof textDraftSchema>;
 type Drafts = z.infer<typeof draftsSchema>;
 type SpanDraft = Drafts[string];
 type DraftScopes = Record<string, Drafts>;
+/** The recording a set of drafts belongs to, so the app can lead back to them. */
+interface DraftPlace {
+  catalogId: string;
+  hash: string;
+}
 
 interface CorrectionDraftsContextValue {
   scopes: DraftScopes;
-  restore: (key: string, drafts: Drafts) => void;
+  restore: (key: string, drafts: Drafts, place: DraftPlace) => void;
   update: (key: string, spanId: string, change: (current: SpanDraft) => SpanDraft) => void;
 }
 
@@ -36,8 +42,22 @@ function readDrafts(key: string): Drafts {
   }
 }
 
-function DraftPersistence({ storageKey, drafts }: { storageKey: string; drafts: Drafts }) {
-  const hasDrafts = Object.keys(drafts).length > 0;
+function DraftPersistence({
+  storageKey,
+  drafts,
+  place,
+}: {
+  storageKey: string;
+  drafts: Drafts;
+  place: DraftPlace | undefined;
+}) {
+  const firstSpanId = Object.keys(drafts)[0];
+  const hasDrafts = firstSpanId !== undefined;
+  // The drafts block an update from every page of the tab, so the blocker
+  // says where the first of them is.
+  const href = place && hasDrafts
+    ? buildCorrectionPagePath(place.catalogId, place.hash, firstSpanId)
+    : undefined;
 
   useEffect(() => {
     try {
@@ -50,7 +70,7 @@ function DraftPersistence({ storageKey, drafts }: { storageKey: string; drafts: 
   }, [drafts, hasDrafts, storageKey]);
 
   useReloadBlocker(
-    { id: storageKey, kind: "unsaved-changes", blocksAutomatic: true, blocksManual: true },
+    { id: storageKey, kind: "unsaved-changes", blocksAutomatic: true, blocksManual: true, href },
     hasDrafts
   );
 
@@ -70,9 +90,15 @@ function DraftPersistence({ storageKey, drafts }: { storageKey: string; drafts: 
 /** Own drafts above route and responsive layout changes, including the storage fallback. */
 export function CorrectionDraftsProvider({ children }: { children: ReactNode }) {
   const [scopes, setScopes] = useState<DraftScopes>({});
+  const [places, setPlaces] = useState<Record<string, DraftPlace>>({});
 
-  const restore = useCallback((key: string, drafts: Drafts) => {
+  const restore = useCallback((key: string, drafts: Drafts, place: DraftPlace) => {
     setScopes((current) => current[key] ? current : { ...current, [key]: drafts });
+    setPlaces((current) =>
+      current[key]?.catalogId === place.catalogId && current[key]?.hash === place.hash
+        ? current
+        : { ...current, [key]: place }
+    );
   }, []);
 
   const update = useCallback((key: string, spanId: string, change: (current: SpanDraft) => SpanDraft) => {
@@ -91,7 +117,7 @@ export function CorrectionDraftsProvider({ children }: { children: ReactNode }) 
   return (
     <CorrectionDraftsContext.Provider value={value}>
       {Object.entries(scopes).map(([key, drafts]) => (
-        <DraftPersistence key={key} storageKey={key} drafts={drafts} />
+        <DraftPersistence key={key} storageKey={key} drafts={drafts} place={places[key]} />
       ))}
       {children}
     </CorrectionDraftsContext.Provider>
@@ -99,7 +125,7 @@ export function CorrectionDraftsProvider({ children }: { children: ReactNode }) 
 }
 
 /** Local drafts survive navigation and reloads; only explicit commands save to the server. */
-export function useCorrectionDrafts(userId: string, workspaceId: string) {
+export function useCorrectionDrafts(userId: string, workspaceId: string, catalogId: string, hash: string) {
   const context = useContext(CorrectionDraftsContext);
   if (!context) throw new Error("useCorrectionDrafts must be used within a CorrectionDraftsProvider");
   const { scopes, restore, update } = context;
@@ -108,15 +134,16 @@ export function useCorrectionDrafts(userId: string, workspaceId: string) {
   const drafts = scopes[key] ?? storedDrafts;
 
   useEffect(() => {
-    restore(key, storedDrafts);
-  }, [key, restore, storedDrafts]);
+    restore(key, storedDrafts, { catalogId, hash });
+  }, [key, restore, storedDrafts, catalogId, hash]);
 
   const setText = useCallback((spanId: string, text: TextDraft | undefined) => {
     update(key, spanId, (draft) => ({ ...draft, text }));
   }, [key, update]);
 
   const setComment = useCallback((spanId: string, comment: string) => {
-    update(key, spanId, (draft) => ({ ...draft, comment: comment || undefined }));
+    // A note of nothing but spaces looks empty and is no unsaved work.
+    update(key, spanId, (draft) => ({ ...draft, comment: comment.trim() ? comment : undefined }));
   }, [key, update]);
 
   const clearText = useCallback((spanId: string, submittedText: string) => {
