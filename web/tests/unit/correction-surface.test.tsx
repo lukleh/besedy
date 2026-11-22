@@ -107,8 +107,13 @@ function page(offset: number, count: number, total: number, spans = Array.from({
 }
 
 function ReloadSafetyStatus() {
-  const { blocksAutomatic, blocksManual } = useReloadSafety();
-  return <output data-testid="reload-safety">{JSON.stringify({ blocksAutomatic, blocksManual })}</output>;
+  const { blocksAutomatic, blocksManual, manualBlockers } = useReloadSafety();
+  return (
+    <>
+      <output data-testid="reload-safety">{JSON.stringify({ blocksAutomatic, blocksManual })}</output>
+      <output data-testid="reload-href">{manualBlockers.map((blocker) => blocker.href ?? "").join(" ")}</output>
+    </>
+  );
 }
 
 function renderSurface(resume: { spanId: string; ordinal: number } | null, initialUserId = "user-1") {
@@ -193,6 +198,34 @@ async function disapproveButton() {
 }
 
 describe("CorrectionSurface", () => {
+  // Drafts block an app update from every page of the tab, so they must be
+  // findable: the blocker names the segment, a note of only spaces is no
+  // draft, and a note being written cannot be folded away.
+  it("keeps a draft note findable and ignores a blank one", async () => {
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 1, 1);
+      if (/\/spans\/span-0$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+
+    const note = await noteBox();
+    await userEvent.type(note, "   ");
+    expect(screen.getByTestId("reload-safety")).toHaveTextContent('"blocksManual":false');
+
+    await userEvent.type(note, "unclear");
+    expect(screen.getByTestId("reload-safety")).toHaveTextContent('"blocksManual":true');
+    expect(screen.getByTestId("reload-href")).toHaveTextContent(
+      `/catalog/${CATALOG_ID}/recording/${HASH}/correction?segment=span-0`
+    );
+
+    await userEvent.click(screen.getByTestId("correction-disapprove-open"));
+    expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("   unclear");
+  });
+
   function serveDraftSpans(readPage = () => page(0, 2, 2)) {
     fetchJsonMock.mockImplementation(async (input) => {
       const url = String(input);

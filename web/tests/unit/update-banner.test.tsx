@@ -5,11 +5,16 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { usePathname } from "next/navigation";
 import { NextIntlClientProvider } from "next-intl";
 import { UpdateBanner } from "@/components/update-banner";
+import { useReloadSafety, type ReloadBlocker } from "@/contexts/reload-safety-context";
 import { useServiceWorker } from "@/contexts/service-worker-context";
 import { useSession } from "@/contexts/session-context";
 
 vi.mock("@/contexts/service-worker-context", () => ({
   useServiceWorker: vi.fn(),
+}));
+
+vi.mock("@/contexts/reload-safety-context", () => ({
+  useReloadSafety: vi.fn(),
 }));
 
 vi.mock("@/contexts/session-context", () => ({
@@ -27,10 +32,12 @@ const messages = {
       delayedDescription: "Taking longer than expected; close this and continue",
       connectionDescription: "Waiting for connection",
       unsavedDescription: "Save your changes",
+      unsavedOtherTabDescription: "Another tab has changes",
       savingDescription: "Saving a change",
       audioDescription: "Playback is active",
     },
     refresh: "Refresh",
+    showChanges: "Show changes",
     working: "Updating",
   },
   notifications: {
@@ -81,6 +88,18 @@ function setServiceWorkerState(overrides: Partial<typeof baseServiceWorkerState>
   });
 }
 
+function setUnsavedBlockers(blockers: Array<Partial<ReloadBlocker>> = []) {
+  vi.mocked(useReloadSafety).mockReturnValue({
+    manualBlockers: blockers.map((blocker, index) => ({
+      id: `draft-${index}`,
+      kind: "unsaved-changes",
+      blocksAutomatic: true,
+      blocksManual: true,
+      ...blocker,
+    })),
+  } as ReturnType<typeof useReloadSafety>);
+}
+
 function setSession(overrides: Partial<typeof baseSession> = {}) {
   vi.mocked(useSession).mockReturnValue({
     ...baseSession,
@@ -101,7 +120,45 @@ describe("UpdateBanner", () => {
     vi.clearAllMocks();
     vi.mocked(usePathname).mockReturnValue("/catalog");
     setServiceWorkerState();
+    setUnsavedBlockers();
     setSession();
+  });
+
+  // Unsaved work blocks the update from every page of the tab. The banner
+  // leads to it instead of showing a button that cannot be pressed.
+  it("links to unsaved work that is on another page", () => {
+    setServiceWorkerState({ applyState: "blocked", blockedReasons: ["unsaved-changes"] });
+    setUnsavedBlockers([{ href: "/catalog/c1/recording/h1/correction?segment=s1" }]);
+
+    renderBanner();
+
+    expect(screen.getByRole("link", { name: "Show changes" })).toHaveAttribute(
+      "href",
+      "/catalog/c1/recording/h1/correction?segment=s1"
+    );
+    expect(screen.queryByRole("button", { name: "Refresh" })).toBeNull();
+  });
+
+  it("keeps the plain message on the page that holds the unsaved work", () => {
+    vi.mocked(usePathname).mockReturnValue("/catalog/c1/recording/h1/correction");
+    setServiceWorkerState({ applyState: "blocked", blockedReasons: ["unsaved-changes"] });
+    setUnsavedBlockers([{ href: "/catalog/c1/recording/h1/correction?segment=s1" }]);
+
+    renderBanner();
+
+    expect(screen.getByText("Save your changes")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Show changes" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled();
+  });
+
+  it("says when the unsaved work is in another tab", () => {
+    setServiceWorkerState({ applyState: "blocked", blockedReasons: ["unsaved-changes"] });
+    setUnsavedBlockers([{ otherTab: true }]);
+
+    renderBanner();
+
+    expect(screen.getByText("Another tab has changes")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Show changes" })).toBeNull();
   });
 
   it("renders when logged in and update available", () => {

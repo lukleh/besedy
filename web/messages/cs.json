@@ -2088,6 +2088,7 @@
     "available": "Aktualizace dostupná - klikněte pro obnovení",
     "refresh": "Obnovit pro aktualizaci",
     "working": "Aktualizace…",
+    "showChanges": "Zobrazit změny",
     "banner": {
       "title": "Aktualizace dostupná",
       "description": "Byla nalezena novější verze. Obnovte stránku pro její načtení.",
@@ -2097,6 +2098,7 @@
       "delayedDescription": "Aktualizace trvá déle, než se očekávalo. Toto oznámení můžete zavřít a pokračovat; aplikace se po dokončení znovu načte.",
       "connectionDescription": "Server s aktualizací zatím není dostupný. Zkusíme to znovu po obnovení připojení.",
       "unsavedDescription": "Před aktualizací uložte nebo zahoďte své změny.",
+      "unsavedOtherTabDescription": "V jiné záložce jsou neuložené změny. Před aktualizací je tam uložte nebo zahoďte.",
       "savingDescription": "Změna se stále ukládá. Aktualizace bude pokračovat po dokončení.",
       "audioDescription": "V této nebo jiné kartě probíhá přehrávání. Aktualizace bude pokračovat po jeho zastavení."
     }

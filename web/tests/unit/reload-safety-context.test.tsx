@@ -55,6 +55,7 @@ function UnsavedBlocker() {
       kind: "unsaved-changes",
       blocksAutomatic: true,
       blocksManual: true,
+      href: "/somewhere",
     },
     true
   );
@@ -68,6 +69,8 @@ function SafetyProbe() {
       data-testid="safety"
       data-automatic={safety.automaticBlockerKinds.join(",")}
       data-manual={safety.manualBlockerKinds.join(",")}
+      data-other-tab={String(safety.manualBlockers.some((blocker) => blocker.otherTab))}
+      data-href={safety.manualBlockers.map((blocker) => blocker.href ?? "").join("")}
     />
   );
 }
@@ -118,5 +121,8 @@ describe("ReloadSafetyProvider", () => {
         "unsaved-changes"
       );
     });
+    // Another tab's work cannot be reached from here, so its link is dropped.
+    expect(screen.getByTestId("safety")).toHaveAttribute("data-other-tab", "true");
+    expect(screen.getByTestId("safety")).toHaveAttribute("data-href", "");
   });
 });

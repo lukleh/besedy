@@ -238,7 +238,7 @@ export function CorrectionSurface({
   const format = useFormatter();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const localDrafts = useCorrectionDrafts(userId, workspace.id);
+  const localDrafts = useCorrectionDrafts(userId, workspace.id, catalogId, hash);
   // The span the surface just moved to after a decision, whose audio starts
   // as soon as it is on screen. Listening comes first anyway, so this saves
   // a click on every span.
@@ -1226,7 +1226,7 @@ export function CorrectionSurface({
                 <Button
                   variant="outline"
                   className="gap-2"
-                  aria-expanded={noteOpen}
+                  aria-expanded={noteOpen || commentBody.trim() !== ""}
                   aria-controls="correction-note"
                   onClick={() => setNoteOpen((open) => !open)}
                   data-testid="correction-disapprove-open"
@@ -1282,7 +1282,8 @@ export function CorrectionSurface({
               onPlay={() => toggleSpanPlayback(selected)}
             />
 
-            {noteOpen && (
+            {/* A note being written stays in view: it is unsaved work. */}
+            {(noteOpen || commentBody.trim() !== "") && (
               <div id="correction-note" className="space-y-2 rounded-md border p-3" data-testid="correction-note">
                 <Textarea
                   // Opened by a click, the box takes the cursor; restored with
