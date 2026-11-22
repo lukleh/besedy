@@ -146,6 +146,7 @@
     },
     "browserslist": "4.28.8",
     "deepmerge-ts": "8.0.2",
+    "effect": "3.22.5",
     "find-my-way": "9.7.0",
     "mysql2": "3.24.2",
     "postcss": "8.5.23",
