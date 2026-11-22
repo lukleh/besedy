@@ -19,24 +19,16 @@ const REMOTE_STATE_TTL_MS = 45_000;
 
 export type { ReloadBlockerKind } from "@/lib/service-worker/reload-safety";
 
+/** Something running in a tab that an automatic update must not interrupt. */
 export interface ReloadBlocker {
   id: string;
   kind: ReloadBlockerKind;
-  blocksAutomatic: boolean;
-  blocksManual: boolean;
-  /** Where the unsaved work is, when it may be on another page of this tab. */
-  href?: string;
-  /** Set on blockers reported by another tab; their work is not reachable from here. */
-  otherTab?: boolean;
 }
 
 export interface ReloadSafetySnapshot {
   automaticBlockers: ReloadBlocker[];
-  manualBlockers: ReloadBlocker[];
   automaticBlockerKinds: ReloadBlockerKind[];
-  manualBlockerKinds: ReloadBlockerKind[];
   blocksAutomatic: boolean;
-  blocksManual: boolean;
 }
 
 type ReloadSafetyMessage =
@@ -59,13 +51,7 @@ function createTabId(): string {
 function isReloadBlocker(value: unknown): value is ReloadBlocker {
   if (!value || typeof value !== "object") return false;
   const blocker = value as Partial<ReloadBlocker>;
-  return (
-    typeof blocker.id === "string" &&
-    isReloadBlockerKind(blocker.kind) &&
-    typeof blocker.blocksAutomatic === "boolean" &&
-    typeof blocker.blocksManual === "boolean" &&
-    (blocker.href === undefined || typeof blocker.href === "string")
-  );
+  return typeof blocker.id === "string" && isReloadBlockerKind(blocker.kind);
 }
 
 function uniqueKinds(blockers: ReloadBlocker[]): ReloadBlockerKind[] {
@@ -145,12 +131,7 @@ export function ReloadSafetyProvider({ children }: { children: ReactNode }) {
           existing?.length === message.blockers!.length &&
           existing.every((blocker, index) => {
             const next = message.blockers![index];
-            return (
-              blocker.id === next.id &&
-              blocker.kind === next.kind &&
-              blocker.blocksAutomatic === next.blocksAutomatic &&
-              blocker.blocksManual === next.blocksManual
-            );
+            return blocker.id === next.id && blocker.kind === next.kind;
           })
         ) {
           return current;
@@ -208,29 +189,20 @@ export function ReloadSafetyProvider({ children }: { children: ReactNode }) {
   }, [localBlockers, publishState]);
 
   const snapshot = useMemo<ReloadSafetySnapshot>(() => {
-    const blockers = [
+    const automaticBlockers = [
       ...localBlockers,
       ...Array.from(remoteTabs.entries()).flatMap(([tabId, blockers]) =>
         blockers.map((blocker) => ({
           ...blocker,
           id: `${tabId}:${blocker.id}`,
-          href: undefined,
-          otherTab: true,
         }))
       ),
     ];
-    const automaticBlockers = blockers.filter(
-      (blocker) => blocker.blocksAutomatic
-    );
-    const manualBlockers = blockers.filter((blocker) => blocker.blocksManual);
 
     return {
       automaticBlockers,
-      manualBlockers,
       automaticBlockerKinds: uniqueKinds(automaticBlockers),
-      manualBlockerKinds: uniqueKinds(manualBlockers),
       blocksAutomatic: automaticBlockers.length > 0,
-      blocksManual: manualBlockers.length > 0,
     };
   }, [localBlockers, remoteTabs]);
 
@@ -256,18 +228,10 @@ export function useReloadSafety(): ReloadSafetyContextValue {
 
 export function useReloadBlocker(blocker: ReloadBlocker, active: boolean) {
   const { registerBlocker } = useReloadSafety();
-  const { id, kind, blocksAutomatic, blocksManual, href } = blocker;
+  const { id, kind } = blocker;
 
   useEffect(() => {
     if (!active) return;
-    return registerBlocker({ id, kind, blocksAutomatic, blocksManual, href });
-  }, [
-    active,
-    blocksAutomatic,
-    blocksManual,
-    href,
-    id,
-    kind,
-    registerBlocker,
-  ]);
+    return registerBlocker({ id, kind });
+  }, [active, id, kind, registerBlocker]);
 }

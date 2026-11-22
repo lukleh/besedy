@@ -36,7 +36,6 @@ describe("recording playback reload safety", () => {
     expect(result.current.playback.isRecordingPlaying).toBe(true);
     expect(result.current.safety.automaticBlockerKinds).toEqual(["audio"]);
     expect(result.current.safety.blocksAutomatic).toBe(true);
-    expect(result.current.safety.blocksManual).toBe(false);
     expect(result.current.playback.setRecordingPlaying).toBe(reportPlaying);
 
     act(() => reportPlaying(false));

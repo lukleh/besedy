@@ -107,13 +107,8 @@ function page(offset: number, count: number, total: number, spans = Array.from({
 }
 
 function ReloadSafetyStatus() {
-  const { blocksAutomatic, blocksManual, manualBlockers } = useReloadSafety();
-  return (
-    <>
-      <output data-testid="reload-safety">{JSON.stringify({ blocksAutomatic, blocksManual })}</output>
-      <output data-testid="reload-href">{manualBlockers.map((blocker) => blocker.href ?? "").join(" ")}</output>
-    </>
-  );
+  const { blocksAutomatic } = useReloadSafety();
+  return <output data-testid="reload-safety">{JSON.stringify({ blocksAutomatic })}</output>;
 }
 
 function renderSurface(resume: { spanId: string; ordinal: number } | null, initialUserId = "user-1") {
@@ -149,9 +144,15 @@ function renderSurface(resume: { spanId: string; ordinal: number } | null, initi
 
 const fetchJsonMock = vi.mocked(fetchJson);
 
+// The shared setup replaces localStorage with bare mocks; drafts need one that remembers.
+const stored = new Map<string, string>();
+
 beforeEach(() => {
   window.history.replaceState(null, "", `/catalog/${CATALOG_ID}/recording/${HASH}/correction`);
-  sessionStorage.clear();
+  stored.clear();
+  vi.mocked(localStorage.getItem).mockImplementation((key) => stored.get(key) ?? null);
+  vi.mocked(localStorage.setItem).mockImplementation((key, value) => void stored.set(key, value));
+  vi.mocked(localStorage.removeItem).mockImplementation((key) => void stored.delete(key));
   fetchJsonMock.mockReset();
   mocks.audioPlayer.mockClear();
   mocks.toast.mockReset();
@@ -198,34 +199,6 @@ async function disapproveButton() {
 }
 
 describe("CorrectionSurface", () => {
-  // Drafts block an app update from every page of the tab, so they must be
-  // findable: the blocker names the segment, a note of only spaces is no
-  // draft, and a note being written cannot be folded away.
-  it("keeps a draft note findable and ignores a blank one", async () => {
-    fetchJsonMock.mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
-      if (url.includes("/spans?offset=0")) return page(0, 1, 1);
-      if (/\/spans\/span-0$/.test(url)) return { spanId: "span-0", history: [] };
-      throw new Error(`unexpected ${url}`);
-    });
-    renderSurface(null);
-    await screen.findByDisplayValue("machine 0");
-
-    const note = await noteBox();
-    await userEvent.type(note, "   ");
-    expect(screen.getByTestId("reload-safety")).toHaveTextContent('"blocksManual":false');
-
-    await userEvent.type(note, "unclear");
-    expect(screen.getByTestId("reload-safety")).toHaveTextContent('"blocksManual":true');
-    expect(screen.getByTestId("reload-href")).toHaveTextContent(
-      `/catalog/${CATALOG_ID}/recording/${HASH}/correction?segment=span-0`
-    );
-
-    await userEvent.click(screen.getByTestId("correction-disapprove-open"));
-    expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("   unclear");
-  });
-
   function serveDraftSpans(readPage = () => page(0, 2, 2)) {
     fetchJsonMock.mockImplementation(async (input) => {
       const url = String(input);
@@ -531,23 +504,22 @@ describe("CorrectionSurface", () => {
     expect(await screen.findByDisplayValue("private unfinished correction")).toBeInTheDocument();
   });
 
-  it("warns before unloading even when the draft is on another span", async () => {
+  // Drafts are stored, so nothing holds a reload or an app update back.
+  it("does not hold back a reload or an update for a draft", async () => {
     serveDraftSpans();
-    const view = renderSurface(null);
+    renderSurface(null);
     const editor = await screen.findByDisplayValue("machine 0");
     await userEvent.type(editor, " unfinished");
     await userEvent.click(screen.getByText("machine 1"));
     const beforeUnload = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(beforeUnload);
-    expect(beforeUnload.defaultPrevented).toBe(true);
-    view.unmount();
-    const afterUnmount = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(afterUnmount);
-    expect(afterUnmount.defaultPrevented).toBe(false);
+    expect(beforeUnload.defaultPrevented).toBe(false);
+    expect(screen.getByTestId("reload-safety")).toHaveTextContent('{"blocksAutomatic":false}');
+    expect(localStorage.getItem("besedy-correction-drafts:v1:user-1:ws-1")).toContain("machine 0 unfinished");
   });
 
-  it("keeps drafts usable when session storage cannot be written", async () => {
-    const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+  it("keeps drafts usable when browser storage cannot be written", async () => {
+    const storage = vi.mocked(localStorage.setItem).mockImplementation(() => {
       throw new DOMException("Storage disabled", "SecurityError");
     });
     try {
@@ -563,8 +535,8 @@ describe("CorrectionSurface", () => {
     }
   });
 
-  it.each(["QuotaExceededError", "SecurityError"])("keeps drafts and reload protection across surface remounts after %s", async (errorName) => {
-    const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+  it.each(["QuotaExceededError", "SecurityError"])("keeps drafts across surface remounts after %s", async (errorName) => {
+    const storage = vi.mocked(localStorage.setItem).mockImplementation(() => {
       throw new DOMException("Storage unavailable", errorName);
     });
     try {
@@ -576,10 +548,6 @@ describe("CorrectionSurface", () => {
       await userEvent.type((await noteBox()), "unfinished note");
       view.showSurface(false);
       expect(screen.queryByDisplayValue("unfinished correction")).not.toBeInTheDocument();
-      const beforeUnload = new Event("beforeunload", { cancelable: true });
-      window.dispatchEvent(beforeUnload);
-      expect(beforeUnload.defaultPrevented).toBe(true);
-      expect(screen.getByTestId("reload-safety")).toHaveTextContent('{"blocksAutomatic":true,"blocksManual":true}');
       view.showSurface();
       expect(await screen.findByDisplayValue("unfinished correction")).toBeInTheDocument();
       expect((await noteBox())).toHaveValue("unfinished note");
@@ -621,15 +589,11 @@ describe("CorrectionSurface", () => {
     await listenThrough(0);
     await userEvent.click(screen.getByRole("button", { name: "approve" }));
     await screen.findByDisplayValue("machine 1");
-    const beforeUnload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(beforeUnload);
-    expect(beforeUnload.defaultPrevented).toBe(false);
-    expect(screen.getByTestId("reload-safety")).toHaveTextContent('{"blocksAutomatic":false,"blocksManual":false}');
-    expect(sessionStorage.getItem("besedy-correction-drafts:v1:user-1:ws-1")).toBeNull();
+    expect(localStorage.getItem("besedy-correction-drafts:v1:user-1:ws-1")).toBeNull();
   });
 
   it.each(["", " plus newer typing"])("preserves an unsent comment and subsequent typing after plain approval: %j", async (newerText) => {
-    sessionStorage.setItem("besedy-correction-drafts:v1:user-1:ws-1", JSON.stringify({
+    localStorage.setItem("besedy-correction-drafts:v1:user-1:ws-1", JSON.stringify({
       "span-0": { text: { text: "machine 0", baseText: "older text", revisionId: "older-rev" }, comment: "unsent note" },
     }));
     serveDraftSpans();
@@ -1622,7 +1586,7 @@ describe("CorrectionSurface", () => {
 
     expect(editor).toHaveValue("machine 0");
     expect(screen.queryByTestId("correction-discard-draft")).not.toBeInTheDocument();
-    expect(sessionStorage.getItem("besedy-correction-drafts:v1:user-1:ws-1")).toBeNull();
+    expect(localStorage.getItem("besedy-correction-drafts:v1:user-1:ws-1")).toBeNull();
     expect(screen.getByRole("button", { name: "approve" })).toBeInTheDocument();
   });
 

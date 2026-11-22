@@ -238,7 +238,7 @@ export function CorrectionSurface({
   const format = useFormatter();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const localDrafts = useCorrectionDrafts(userId, workspace.id, catalogId, hash);
+  const localDrafts = useCorrectionDrafts(userId, workspace.id);
   // The span the surface just moved to after a decision, whose audio starts
   // as soon as it is on screen. Listening comes first anyway, so this saves
   // a click on every span.
@@ -494,7 +494,7 @@ export function CorrectionSurface({
 
   // A kept draft that says what the span now says is no unsaved work any
   // more: somebody saved that wording meanwhile, or this person's own save
-  // landed after they moved on. Dropping it ends its badge and reload warning.
+  // landed after they moved on. Dropping it ends its badge.
   const clearLocalText = localDrafts.clearText;
   const selectedDraftText = selected ? localDrafts.drafts[selected.id]?.text?.text : undefined;
   useEffect(() => {

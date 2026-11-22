@@ -40,22 +40,6 @@ function AudioBlocker() {
     {
       id: "audio-player",
       kind: "audio",
-      blocksAutomatic: true,
-      blocksManual: false,
-    },
-    true
-  );
-  return null;
-}
-
-function UnsavedBlocker() {
-  useReloadBlocker(
-    {
-      id: "event-draft",
-      kind: "unsaved-changes",
-      blocksAutomatic: true,
-      blocksManual: true,
-      href: "/somewhere",
     },
     true
   );
@@ -68,9 +52,6 @@ function SafetyProbe() {
     <div
       data-testid="safety"
       data-automatic={safety.automaticBlockerKinds.join(",")}
-      data-manual={safety.manualBlockerKinds.join(",")}
-      data-other-tab={String(safety.manualBlockers.some((blocker) => blocker.otherTab))}
-      data-href={safety.manualBlockers.map((blocker) => blocker.href ?? "").join("")}
     />
   );
 }
@@ -85,7 +66,7 @@ describe("ReloadSafetyProvider", () => {
     vi.unstubAllGlobals();
   });
 
-  it("allows a manual update during playback but blocks automatic updates", async () => {
+  it("holds automatic updates back during playback", async () => {
     render(
       <ReloadSafetyProvider>
         <AudioBlocker />
@@ -96,14 +77,13 @@ describe("ReloadSafetyProvider", () => {
     await waitFor(() => {
       expect(screen.getByTestId("safety")).toHaveAttribute("data-automatic", "audio");
     });
-    expect(screen.getByTestId("safety")).toHaveAttribute("data-manual", "");
   });
 
-  it("shares unsaved-change blockers with other tabs", async () => {
+  it("shares blockers with other tabs", async () => {
     render(
       <>
         <ReloadSafetyProvider>
-          <UnsavedBlocker />
+          <AudioBlocker />
         </ReloadSafetyProvider>
         <ReloadSafetyProvider>
           <SafetyProbe />
@@ -112,17 +92,7 @@ describe("ReloadSafetyProvider", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("safety")).toHaveAttribute(
-        "data-automatic",
-        "unsaved-changes"
-      );
-      expect(screen.getByTestId("safety")).toHaveAttribute(
-        "data-manual",
-        "unsaved-changes"
-      );
+      expect(screen.getByTestId("safety")).toHaveAttribute("data-automatic", "audio");
     });
-    // Another tab's work cannot be reached from here, so its link is dropped.
-    expect(screen.getByTestId("safety")).toHaveAttribute("data-other-tab", "true");
-    expect(screen.getByTestId("safety")).toHaveAttribute("data-href", "");
   });
 });

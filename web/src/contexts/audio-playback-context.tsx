@@ -35,8 +35,6 @@ export function AudioPlaybackProvider({ children }: { children: ReactNode }) {
     {
       id: "audio-playback",
       kind: "audio",
-      blocksAutomatic: true,
-      blocksManual: false,
     },
     isRecordingPlaying
   );

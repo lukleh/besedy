@@ -16,8 +16,7 @@ import { reportWebUpdateEvent } from "@/lib/service-worker/telemetry";
 
 vi.mock("@/contexts/reload-safety-context", () => ({
   useReloadSafety: () => ({
-    automaticBlockerKinds: [],
-    manualBlockerKinds: []
+    automaticBlockerKinds: []
   })
 }));
 
@@ -1000,7 +999,7 @@ describe("ServiceWorkerProvider", () => {
     stop();
   });
 
-  it("does not activate an update while unsaved changes are present", async () => {
+  it("applies an update the person asks for even while playback runs", async () => {
     const waitingWorker = { postMessage: vi.fn() };
     const registrationMock = {
       waiting: waitingWorker,
@@ -1019,13 +1018,18 @@ describe("ServiceWorkerProvider", () => {
       value: serviceWorkerMock,
       configurable: true
     });
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
+      })
+    );
 
     const runtime = createServiceWorkerRuntime();
     runtime.setReloadSafety({
-      automaticBlockerKinds: ["unsaved-changes"],
-      manualBlockerKinds: ["unsaved-changes"]
+      automaticBlockerKinds: ["audio"]
     });
     runtime.setAppShellMode({
       isAuthenticatedAppShell: true,
@@ -1036,76 +1040,10 @@ describe("ServiceWorkerProvider", () => {
     await waitFor(() => {
       expect(runtime.getSnapshot().updateReady).toBe(true);
     });
-    await expect(runtime.applyUpdate()).resolves.toBe(false);
+    await expect(runtime.applyUpdate()).resolves.toBe(true);
 
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(waitingWorker.postMessage).not.toHaveBeenCalledWith({
+    expect(waitingWorker.postMessage).toHaveBeenCalledWith({
       type: "SKIP_WAITING"
-    });
-    expect(runtime.getSnapshot()).toMatchObject({
-      applyState: "blocked",
-      blockedReasons: ["unsaved-changes"]
-    });
-    stop();
-  });
-
-  it("downgrades a blocked manual request before retrying it", async () => {
-    const waitingWorker = { postMessage: vi.fn() };
-    const registrationMock = {
-      waiting: waitingWorker,
-      active: {},
-      update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn()
-    };
-    Object.defineProperty(navigator, "serviceWorker", {
-      value: {
-        controller: {},
-        register: vi.fn().mockResolvedValue(registrationMock),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn()
-      },
-      configurable: true
-    });
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const runtime = createServiceWorkerRuntime();
-    runtime.setReloadSafety({
-      automaticBlockerKinds: ["audio", "unsaved-changes"],
-      manualBlockerKinds: ["unsaved-changes"]
-    });
-    runtime.setAppShellMode({
-      isAuthenticatedAppShell: true,
-      shouldSilentlyActivateWaitingWorker: false
-    });
-    const stop = runtime.start();
-
-    await waitFor(() => expect(runtime.getSnapshot().updateReady).toBe(true));
-    await expect(runtime.applyUpdate()).resolves.toBe(false);
-    expect(runtime.getSnapshot().blockedReasons).toEqual(["unsaved-changes"]);
-
-    runtime.setReloadSafety({
-      automaticBlockerKinds: ["audio"],
-      manualBlockerKinds: []
-    });
-    expect(runtime.getSnapshot()).toMatchObject({
-      applyState: "blocked",
-      blockedReasons: ["audio"]
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
-
-    runtime.setReloadSafety({
-      automaticBlockerKinds: [],
-      manualBlockerKinds: []
-    });
-    await waitFor(() => {
-      expect(waitingWorker.postMessage).toHaveBeenCalledWith({
-        type: "SKIP_WAITING"
-      });
     });
     stop();
   });
@@ -1195,8 +1133,7 @@ describe("ServiceWorkerProvider", () => {
 
     const runtime = createServiceWorkerRuntime();
     runtime.setReloadSafety({
-      automaticBlockerKinds: ["audio"],
-      manualBlockerKinds: []
+      automaticBlockerKinds: ["audio"]
     });
     runtime.setAppShellMode({
       isAuthenticatedAppShell: true,
@@ -1216,8 +1153,7 @@ describe("ServiceWorkerProvider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     runtime.setReloadSafety({
-      automaticBlockerKinds: [],
-      manualBlockerKinds: []
+      automaticBlockerKinds: []
     });
     await vi.advanceTimersByTimeAsync(0);
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -1479,72 +1415,6 @@ describe("ServiceWorkerProvider", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(reloadPage).toHaveBeenCalledTimes(1);
-    expect(reportWebUpdateEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ event: "activation_complete" })
-    );
-    stop();
-  });
-
-  it("defers controllerchange reloads while another tab has unsaved work", async () => {
-    const listeners = new Map<string, Set<() => void>>();
-    const waitingWorker = { postMessage: vi.fn() };
-    const registrationMock = {
-      waiting: waitingWorker,
-      active: {},
-      update: vi.fn().mockResolvedValue(undefined),
-      addEventListener: vi.fn()
-    };
-    const serviceWorkerMock = {
-      controller: {},
-      register: vi.fn().mockResolvedValue(registrationMock),
-      addEventListener: vi.fn((event: string, handler: () => void) => {
-        if (!listeners.has(event)) listeners.set(event, new Set());
-        listeners.get(event)?.add(handler);
-      }),
-      removeEventListener: vi.fn()
-    };
-
-    Object.defineProperty(navigator, "serviceWorker", {
-      value: serviceWorkerMock,
-      configurable: true
-    });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: vi.fn().mockResolvedValue({ webVersion: "web-v2-a0579c5ea5cfb3e8d67eea3865751aff64ff6326" })
-      })
-    );
-    const reloadPage = vi.fn();
-    const runtime = createServiceWorkerRuntime({ reloadPage });
-    runtime.setAppShellMode({
-      isAuthenticatedAppShell: true,
-      shouldSilentlyActivateWaitingWorker: false
-    });
-    const stop = runtime.start();
-
-    await waitFor(() => expect(runtime.getSnapshot().updateReady).toBe(true));
-    await expect(runtime.applyUpdate()).resolves.toBe(true);
-
-    runtime.setReloadSafety({
-      automaticBlockerKinds: ["unsaved-changes"],
-      manualBlockerKinds: ["unsaved-changes"]
-    });
-    act(() => {
-      listeners.get("controllerchange")?.forEach((handler) => handler());
-    });
-    expect(reloadPage).not.toHaveBeenCalled();
-    expect(runtime.getSnapshot().applyState).toBe("blocked");
-    expect(reportWebUpdateEvent).not.toHaveBeenCalledWith(
-      expect.objectContaining({ event: "activation_complete" })
-    );
-
-    runtime.setReloadSafety({
-      automaticBlockerKinds: [],
-      manualBlockerKinds: []
-    });
-    await waitFor(() => expect(reloadPage).toHaveBeenCalledTimes(1));
     expect(reportWebUpdateEvent).toHaveBeenCalledWith(
       expect.objectContaining({ event: "activation_complete" })
     );

@@ -21,7 +21,7 @@ describe("web update telemetry client", () => {
     reportWebUpdateEvent({
       event: "apply_blocked",
       attemptId: "attempt-1",
-      blockerKinds: ["unsaved-changes"],
+      blockerKinds: ["audio"],
     });
 
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
@@ -29,7 +29,7 @@ describe("web update telemetry client", () => {
     expect(payload).toEqual({
       event: "apply_blocked",
       attemptId: "attempt-1",
-      blockerKinds: ["unsaved-changes"],
+      blockerKinds: ["audio"],
       routeGroup: "catalog-event",
     });
     expect(String(request.body)).not.toContain("private-catalog");

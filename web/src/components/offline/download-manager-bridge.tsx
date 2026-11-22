@@ -117,8 +117,6 @@ export function DownloadManagerBridge() {
     return registerBlocker({
       id: `download:${activeKey}`,
       kind: 'download',
-      blocksAutomatic: true,
-      blocksManual: false,
     });
   }, [activeKey, registerBlocker]);
 
