@@ -36,6 +36,13 @@ describe("span state", () => {
     expect(sql).not.toContain("created_at");
   });
 
+  it("lets a disapproval block only until a later approval", () => {
+    const { sql } = spanStatesSql(Prisma.sql`TRUE`);
+    expect(sql).toContain("latest.kind = 'DISAPPROVE'");
+    expect(sql).toContain("max(latest.sequence) FILTER (WHERE latest.kind = 'APPROVE') OVER ()");
+    expect(sql).toContain("FILTER (WHERE e.blocks) > 0 THEN 'needs_attention'");
+  });
+
   it("counts only the decisions on the revision it is asked about", () => {
     const { sql } = spanStatesSql(Prisma.sql`TRUE`);
     expect(sql).toContain("d.revision_id = s.current_revision_id");

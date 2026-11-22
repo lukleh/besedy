@@ -18,7 +18,7 @@ const correctionPath = `/catalog/${TEST_CATALOG_ID}/recording/${recording.hash}/
 test.describe("transcript correction", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("a corrector consents, starts and works through spans @smoke", async ({ page, browser }, testInfo) => {
+  test("a corrector consents, starts and works through spans @smoke", async ({ page, browser, baseURL }, testInfo) => {
     test.skip(testInfo.project.name !== "Desktop Chrome", "The correction page needs a large landscape screen");
     test.setTimeout(90_000);
 
@@ -192,8 +192,44 @@ test.describe("transcript correction", () => {
     // Unsubmitted work survives both span navigation and a page reload, and
     // remains local: saving a draft must never approve text on the server.
     const editor = page.getByRole("textbox").first();
-    const comment = page.getByRole("textbox").nth(1);
+    // A note goes with a disapproval, which needs a first pass by somebody
+    // else: another corrector approves this span, and the editor reloads to
+    // see it. The note box then opens from "Disapprove" and stays open on a
+    // span that has a note being written.
+    const otherContext = await browser.newContext({ baseURL });
+    try {
+      const other = await otherContext.newPage();
+      await loginAs(other, "superadmin");
+      const consentState = await (await other.request.get("/api/me/correction-consent")).json();
+      if (!consentState.consent.accepted) {
+        expect((await other.request.post("/api/me/correction-consent", {
+          data: { termsVersion: consentState.consent.version },
+        })).ok()).toBeTruthy();
+      }
+      const current = await (await other.request.get(`/api/catalogs/${TEST_CATALOG_ID}/recordings/${recording.hash}/correction/spans`)).json();
+      if (!current.spans[1].approverIds.length) {
+        expect((await other.request.post(`/api/catalogs/${TEST_CATALOG_ID}/recordings/${recording.hash}/correction/spans/${spans[1].id}`, {
+          data: {
+            action: "approve",
+            expectedRevisionId: current.spans[1].revisionId,
+            playback: { heardFraction: 1, minPlaybackRate: 1, maxPlaybackRate: 1 },
+          },
+        })).ok()).toBeTruthy();
+      }
+    } finally {
+      await otherContext.close();
+    }
+    await page.reload();
+    await expect(strip).toBeVisible({ timeout: 20000 });
+    await spanList.getByRole("button", { name: /^0:10/ }).first().click();
+    const note = page.getByTestId("correction-note");
+    const openNote = async () => {
+      if (!(await note.isVisible())) await page.getByTestId("correction-disapprove-open").click();
+      await expect(note).toBeVisible();
+    };
+    const comment = note.getByRole("textbox");
     await editor.fill("Rozpracovaná oprava.");
+    await openNote();
     await comment.fill("Ověřit jméno.");
     await spanList.getByRole("button", { name: /^0:00/ }).first().click();
     await spanList.getByRole("button", { name: /^0:10/ }).first().click();
@@ -224,6 +260,7 @@ test.describe("transcript correction", () => {
     });
     try {
       await editor.fill("Oprava v paměti.");
+      await openNote();
       await comment.fill("Poznámka v paměti.");
       await page.setViewportSize({ width: 800, height: 1000 });
       await expect(strip).toHaveCount(0);
@@ -249,6 +286,7 @@ test.describe("transcript correction", () => {
 
     // A flag toggles, and shows its new state once the server has it.
     const unclear = page.getByTestId("correction-flag-UNCLEAR");
+    if (!(await unclear.isVisible())) await page.getByTestId("correction-flags-toggle").click();
     const wasSet = (await unclear.getAttribute("aria-pressed")) === "true";
     await unclear.click();
     await expect(unclear).toHaveAttribute("aria-pressed", wasSet ? "false" : "true");

@@ -275,15 +275,9 @@
     "startNoSource": "This recording has no machine transcript to correct.",
     "start": "Start correction",
     "spanOf": "Segment {index} of {total}",
-    "approveAndContinue": "Approve and continue",
-    "saveApproveAndContinue": "Save, approve and continue",
-    "clearApproveAndContinue": "Mark as no speech and continue",
-    "disapprove": "Disapprove",
     "withdraw": "Withdraw my decision",
     "commentPlaceholder": "Say what is unclear, or why you disagree",
-    "addComment": "Add comment",
     "original": "Machine text",
-    "history": "History",
     "unknownActor": "Unknown account",
     "guide": "Guide",
     "guideDialogDescription": "How corrections are written in this catalog.",
@@ -326,7 +320,6 @@
     "publishInterrupted": "Publication was interrupted before it reached the search index.",
     "publishStalled": "Publication stopped: {code}. {message}",
     "publishFailed": "Publication failed",
-    "nextOpen": "Next to resolve",
     "nothingLeft": "Nothing else is waiting for you.",
     "overviewLink": "Correction overview",
     "shareSegment": "Share segment",
@@ -336,14 +329,6 @@
     "segmentLinkLoadFailed": "Could not load the linked segment. Please try again.",
     "segmentLinkResume": "Continue correcting",
     "segmentLinkRetry": "Try again",
-    "jump": {
-      "label": "Go to the next segment",
-      "mine_open": "Waiting for me",
-      "needs_attention": "Needs attention",
-      "needs_second_approval": "Needs second approval",
-      "not_reviewed": "Not reviewed",
-      "none": "No other segment of this kind."
-    },
     "strip": {
       "label": "Correction progress across the whole recording; click to jump",
       "done": "Done",
@@ -437,7 +422,6 @@
       "confirm": "Nothing was said here"
     },
     "flags": {
-      "label": "Flags",
       "language": "Language",
       "UNCLEAR": "Unclear",
       "OVERLAP": "Overlapping speakers",
@@ -447,7 +431,32 @@
       "EXCLUDE_FROM_TRAINING": "Keep out of training"
     },
     "consentLoadFailed": "Could not check your consent to the use of corrections. Correcting needs it.",
-    "consentRetry": "Try again"
+    "consentRetry": "Try again",
+    "approve": "Approve",
+    "saveAndApprove": "Save and approve",
+    "clearAndApprove": "Mark as no speech",
+    "continue": "Continue",
+    "waitingForYou": "{count, plural, one {# segment is waiting for you} other {# segments are waiting for you}}",
+    "youApproved": "You approved",
+    "noText": "(no text)",
+    "machineTranscript": "Machine transcript",
+    "disapprovedBy": "Disapproved by {names}",
+    "disapprovedByYou": "You disapproved this text. Fix it and approve, or withdraw your decision.",
+    "historyCount": "History ({count})",
+    "historyKind": {
+      "revision": "Text",
+      "APPROVE": "Approved",
+      "DISAPPROVE": "Disapproved",
+      "WITHDRAW": "Withdrew a decision",
+      "comment": "Comment"
+    },
+    "shortcutsTitle": "Keyboard shortcuts",
+    "disapprove": "Disapprove",
+    "disapproveConfirm": "Confirm disapproval",
+    "disapproveHint": "When the text is wrong and you cannot fix it. The others will see your note. A later approval by anyone lifts the disapproval.",
+    "disapproveEditedHint": "Save your change or discard it first.",
+    "sendNote": "Send the note only",
+    "flagAudio": "Flag audio"
   },
   "metadata": {
     "title": "Metadata",

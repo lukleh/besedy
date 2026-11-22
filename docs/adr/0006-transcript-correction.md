@@ -275,11 +275,15 @@ person played a segment, watched a timer or kept the tab focused. This group can
 be trusted to use the tool honestly, and such telemetry would complicate the
 first version without making the statement materially stronger.
 
-An unchanged span has an explicit **Approve and continue** action. An edited
-span has **Save, approve and continue**. The latter creates the revision and the
+An unchanged span has an explicit **Approve** action. An edited
+span has **Save and approve**. The latter creates the revision and the
 editor's approval in one transaction. There is no persistent save-without-
 decision action: an unfinished edit remains a local draft. An uncertain person
-leaves the current text intact, disapproves it and may add a comment.
+leaves the current text intact, disapproves it and may add a comment. The
+surface offers disapproval only as the second pass: on text another person
+approved that still needs a second approval. Untouched machine text is
+corrected or flagged instead, and a done span changes only by an edit, which
+starts its approvals again.
 
 Every reviewer uses this same workflow. There is no first-pass and second-pass
 mode and no continuous-playback shortcut that approves spans merely because the
@@ -289,9 +293,10 @@ only one deliberate action.
 The primary keyboard action is `Ctrl+Enter` or `Cmd+Enter`, which performs the
 same approve or edit-and-approve command as the visible button. Approval is not
 a casual single-key action. Disapprove and withdraw remain explicit buttons.
-After a successful approval the surface advances to and plays the next span.
+After a successful approval the surface advances to the next span still
+waiting for that person and plays it.
 
-### Decisions are visible, reversible by their author and never outvoted
+### Decisions are visible, reversible by their author and answered by a later approval
 
 For each person, their latest decision on the current revision counts. Approving
 after disapproving replaces that person's effective disapproval; withdrawing
@@ -299,10 +304,19 @@ leaves them with no effective decision. Withdrawal appends history and never
 deletes the earlier action. Nobody, including an administrator, can withdraw or
 erase another person's decision.
 
-A current disapproval blocks the span regardless of how many approvals it also
-has. Extra approvals do not outvote an objection. Text must change, or the
-objector must approve or withdraw. There is no adjudication or publisher
-override in the first version.
+A disapproval blocks the span until somebody approves the same revision after
+it. Approvals made before the objection do not outvote it; one made after it
+answers it, by the objector or by anyone else, and the span then counts its
+approvals as usual. The answered disapproval stays in the history. Changing
+the text, or the objector withdrawing, also clears it. While it stands, the
+span waits for everybody except the objector, including people who approved
+it earlier: approving again is their answer. There is no
+adjudication or publisher override in the first version.
+
+This replaces the original rule, under which only the objector or a text
+change could clear a disapproval. For this group that left spans blocked for
+longer than the objection deserved, and a second person who has listened and
+approves is answer enough.
 
 Comments are optional and never block publication. They belong primarily to the
 span, record which revision the author saw, and remain visible after later
@@ -404,8 +418,8 @@ see (the machine transcript, a publication on its way, a current snapshot, or
 a snapshot the live text has moved past). They are kept apart because a
 published recording can be corrected again, and that work belongs with the
 rest of the work in progress. Inside a recording, the segment list always
-holds the whole recording; "next" walks the spans of one kind (what still
-wants the person, or one state), and a strip over the whole recording shows
+holds the whole recording; after a decision the surface moves on to the next
+span that still wants the person, and a strip over the whole recording shows
 where the gaps and disputes are. A filtered list was tried and dropped: its
 members changed with every decision, so the segment being edited could drop
 out of it. Per-person unread comments, assignments and notifications remain

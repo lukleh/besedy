@@ -30,8 +30,11 @@ export interface SpanStateRow {
  * approval from reviving when text returns to earlier wording. A withdrawal
  * leaves the person with no effective decision.
  *
- * The state is evaluated in order, so an objection is never outvoted: extra
- * approvals do not carry a span past someone who currently disapproves of it.
+ * A disapproval blocks the span until somebody approves the same revision
+ * after it: approvals made before an objection do not outvote it, and one
+ * made after it answers it. An answered disapproval stays in the history but
+ * is no longer among `disapprover_ids`. The state is evaluated in order, so
+ * a standing objection comes before any count of approvals.
  *
  * `revision` names the revision whose decisions count. It defaults to the
  * span's current one; a replayed command asks about the revision it was
@@ -55,22 +58,35 @@ export function spanStatesSql(
         ARRAY[]::text[]
       ) AS approver_ids,
       COALESCE(
-        array_agg(e.actor_key ORDER BY e.actor_key) FILTER (WHERE e.kind = 'DISAPPROVE'),
+        array_agg(e.actor_key ORDER BY e.actor_key) FILTER (WHERE e.blocks),
         ARRAY[]::text[]
       ) AS disapprover_ids,
       CASE
-        WHEN count(*) FILTER (WHERE e.kind = 'DISAPPROVE') > 0 THEN 'needs_attention'
+        WHEN count(*) FILTER (WHERE e.blocks) > 0 THEN 'needs_attention'
         WHEN count(*) FILTER (WHERE e.kind = 'APPROVE') >= ${required} THEN 'done'
         WHEN count(*) FILTER (WHERE e.kind = 'APPROVE') > 0 THEN 'needs_second_approval'
         ELSE 'not_reviewed'
       END AS state
     FROM transcript_span s
     LEFT JOIN LATERAL (
-      SELECT DISTINCT ON (d.actor_key) d.actor_key, d.kind
-      FROM transcript_span_decision d
-      WHERE d.span_id = s.id AND d.revision_id = ${revision}
-      ORDER BY d.actor_key, d.sequence DESC
-    ) e ON e.kind IN ('APPROVE', 'DISAPPROVE')
+      SELECT
+        latest.actor_key,
+        latest.kind,
+        (
+          latest.kind = 'DISAPPROVE'
+          AND latest.sequence > COALESCE(
+            max(latest.sequence) FILTER (WHERE latest.kind = 'APPROVE') OVER (),
+            0
+          )
+        ) AS blocks
+      FROM (
+        SELECT DISTINCT ON (d.actor_key) d.actor_key, d.kind, d.sequence
+        FROM transcript_span_decision d
+        WHERE d.span_id = s.id AND d.revision_id = ${revision}
+        ORDER BY d.actor_key, d.sequence DESC
+      ) latest
+      WHERE latest.kind IN ('APPROVE', 'DISAPPROVE')
+    ) e ON TRUE
     WHERE ${scope}
     GROUP BY s.id
   `;

@@ -706,20 +706,20 @@ async function main() {
     playback: HEARD,
     workspaceId: workspace.id,
     spanId: secondNow.id,
-    userId: alice.id,
+    userId: bob.id,
     expectedRevisionId: secondNow.revisionId,
-    kind: "DISAPPROVE",
+    kind: "APPROVE",
   });
   await recordDecision({
     playback: HEARD,
     workspaceId: workspace.id,
     spanId: secondNow.id,
-    userId: bob.id,
+    userId: alice.id,
     expectedRevisionId: secondNow.revisionId,
-    kind: "APPROVE",
+    kind: "DISAPPROVE",
   });
   const blocked = await getPublicationEligibility(workspace.id);
-  check("an objection blocks publication however many approve", !blocked.eligible, blocked);
+  check("an objection made after the approvals blocks publication", !blocked.eligible, blocked);
 
   let refusedWhileBlocked = false;
   try {
@@ -1792,6 +1792,15 @@ async function main() {
     }
     await decide(outvoted.span.id, outvoted.revision.id, "dave", "DISAPPROVE");
 
+    // An approval made after an objection answers it.
+    const answered = await makeSpan();
+    await decide(answered.span.id, answered.revision.id, "dave", "DISAPPROVE");
+    await decide(answered.span.id, answered.revision.id, "alice", "APPROVE");
+    const answeredTwice = await makeSpan();
+    await decide(answeredTwice.span.id, answeredTwice.revision.id, "dave", "DISAPPROVE");
+    await decide(answeredTwice.span.id, answeredTwice.revision.id, "alice", "APPROVE");
+    await decide(answeredTwice.span.id, answeredTwice.revision.id, "bob", "APPROVE");
+
     const changedMind = await makeSpan();
     await decide(changedMind.span.id, changedMind.revision.id, "alice", "DISAPPROVE");
     await decide(changedMind.span.id, changedMind.revision.id, "alice", "APPROVE");
@@ -1838,9 +1847,17 @@ async function main() {
         states.get(sameTwice.span.id)?.approverIds.length === 1
     );
     check(
-      "an objection is never outvoted",
+      "approvals made before an objection do not outvote it",
       stateOf(outvoted.span.id) === "needs_attention" && states.get(outvoted.span.id)?.isDone === false
     );
+    check(
+      "an approval after an objection answers it",
+      stateOf(answered.span.id) === "needs_second_approval" &&
+        states.get(answered.span.id)?.disapproverIds.length === 0 &&
+        states.get(answered.span.id)?.approverIds.join() === "alice",
+      states.get(answered.span.id)
+    );
+    check("an answered span is done with two approvals", stateOf(answeredTwice.span.id) === "done");
     check(
       "a person's latest decision replaces their earlier one",
       stateOf(changedMind.span.id) === "done" && states.get(changedMind.span.id)?.disapproverIds.length === 0
@@ -1869,33 +1886,45 @@ async function main() {
     check("the aggregate counts every span", aggregate?.spanCount === nextOrdinal, aggregate?.spanCount);
     check(
       "the aggregate counts states",
-      aggregate?.counts.done === 2 &&
+      aggregate?.counts.done === 3 &&
         aggregate.counts.needs_attention === 1 &&
-        aggregate.counts.needs_second_approval === 4 &&
+        aggregate.counts.needs_second_approval === 5 &&
         aggregate.counts.not_reviewed === 2,
       aggregate?.counts
     );
     check(
       "the aggregate counts audio, not just spans",
-      aggregate?.seconds.done === 20 && aggregate.totalSeconds === nextOrdinal * 10,
+      aggregate?.seconds.done === 30 && aggregate.totalSeconds === nextOrdinal * 10,
       aggregate?.seconds
     );
     check(
       "the aggregate knows this person's share",
-      aggregate?.mine.approved === 7 &&
+      aggregate?.mine.approved === 9 &&
         aggregate.mine.disapproved === 0 &&
-        aggregate.mine.waitingOnOthers === 4 &&
-        aggregate.mine.open === 2,
+        aggregate.mine.waitingOnOthers === 5 &&
+        aggregate.mine.open === 3,
       aggregate?.mine
     );
 
     const bobAggregate = (await loadWorkspaceAggregates([stateWorkspace.id], "bob")).get(stateWorkspace.id);
-    check("a different person sees their own share", bobAggregate?.mine.approved === 3, bobAggregate?.mine);
+    check("a different person sees their own share", bobAggregate?.mine.approved === 4, bobAggregate?.mine);
 
     const next = await findNextSpan(stateWorkspace.id, "alice");
     check("resuming opens the first span that wants this person", next?.spanId === untouched.span.id, next);
     const afterFirst = await findNextSpan(stateWorkspace.id, "alice", { afterOrdinal: untouched.span.ordinal });
-    check("next opens the following span that wants this person", afterFirst?.spanId === revived.span.id, afterFirst);
+    check(
+      "a disputed span wants the people who approved it before the objection",
+      afterFirst?.spanId === outvoted.span.id,
+      afterFirst
+    );
+    const afterDisputed = await findNextSpan(stateWorkspace.id, "alice", { afterOrdinal: outvoted.span.ordinal });
+    check("next opens the following span that wants this person", afterDisputed?.spanId === revived.span.id, afterDisputed);
+    const objector = await findNextSpan(stateWorkspace.id, "dave", { afterOrdinal: untouched.span.ordinal });
+    check(
+      "a disputed span does not want the person objecting to it",
+      objector !== null && objector.spanId !== outvoted.span.id,
+      objector
+    );
     const wrapped = await findNextSpan(stateWorkspace.id, "alice", { afterOrdinal: revived.span.ordinal });
     check("next wraps round to the start", wrapped?.spanId === untouched.span.id, wrapped);
 
@@ -1924,7 +1953,7 @@ async function main() {
     });
     await decide(revived.span.id, revivedNow.currentRevisionId as string, "alice", "APPROVE");
     const afterDecision = await findNextSpan(stateWorkspace.id, "alice", {
-      afterOrdinal: untouched.span.ordinal,
+      afterOrdinal: outvoted.span.ordinal,
     });
     check("a decision made meanwhile is taken into account", afterDecision?.spanId === untouched.span.id, afterDecision);
     await prisma.transcriptSpanDecision.deleteMany({

@@ -1,14 +1,17 @@
 "use client";
 
-// The working surface: one segment at a time, with its audio, its machine
-// text, its history and the four actions. Everything a corrector does here is
-// one deliberate command carrying the revision they were looking at.
+// The working surface: one segment at a time, with its audio and its text.
+// A corrector listens, fixes the text if needed and approves. Text somebody
+// else approved can be disapproved instead of given its second approval. After a decision the
+// surface moves on by itself to the next segment still waiting for this
+// person. Everything a corrector does here is one deliberate command
+// carrying the revision they were looking at.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { Check, Eraser, MessageSquare, Pause, Play, Share2, SkipForward, ThumbsDown, Undo2 } from "lucide-react";
+import { ArrowRight, Check, Pause, Play, Share2, ThumbsDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,7 +20,6 @@ import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import { shareOrCopyLink } from "@/lib/share-link";
 import {
   buildAudioUrl,
-  buildCorrectionNextUrl,
   buildCorrectionPagePath,
   buildCorrectionSpanCommentsUrl,
   buildCorrectionSpanUrl,
@@ -46,13 +48,10 @@ import {
   type TimeSubscription,
 } from "./correction-span-audio";
 import {
-  nextSpanSchema,
   spanCommandResultSchema,
   spanHistorySchema,
-  spanKindSchema,
   spanPageSchema,
   spanStripSchema,
-  type SpanKind,
   type SpanPage,
   type SpanState,
   type SpanView,
@@ -91,24 +90,25 @@ function revealInList(list: HTMLElement, item: HTMLElement) {
   else if (itemRect.bottom > listRect.bottom) list.scrollTop += itemRect.bottom - listRect.bottom;
 }
 
-const KINDS = spanKindSchema.options;
-
 /**
- * How many spans of each kind the strip holds. `wantsMe` comes from the
- * server, so the rule for what still wants a person is not restated here.
+ * Where to go after a decision: the next span still waiting for this person
+ * after the one just decided, wrapping round to the start. `wantsMe` comes
+ * from the server, so the rule for what still wants a person is not restated
+ * here. The span just decided never counts, so a span this person objected
+ * to does not bring them straight back to it.
  */
-export function countKinds(spans: readonly StripSpan[]): Record<SpanKind, number> {
-  const counts: Record<SpanKind, number> = {
-    mine_open: 0,
-    needs_attention: 0,
-    needs_second_approval: 0,
-    not_reviewed: 0,
-  };
+export function nextWaitingSpan(
+  spans: readonly StripSpan[],
+  from: { spanId: string; ordinal: number }
+): StripSpan | null {
+  let after: StripSpan | null = null;
+  let first: StripSpan | null = null;
   for (const span of spans) {
-    if (span.wantsMe) counts.mine_open += 1;
-    if (span.state !== "done") counts[span.state] += 1;
+    if (!span.wantsMe || span.spanId === from.spanId) continue;
+    if (span.ordinal > from.ordinal && (!after || span.ordinal < after.ordinal)) after = span;
+    if (!first || span.ordinal < first.ordinal) first = span;
   }
-  return counts;
+  return after ?? first;
 }
 
 interface CorrectionSurfaceProps {
@@ -235,9 +235,17 @@ export function CorrectionSurface({
   onChanged,
 }: CorrectionSurfaceProps) {
   const t = useTranslations("correction");
+  const format = useFormatter();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const localDrafts = useCorrectionDrafts(userId, workspace.id);
+  // The span the surface just moved to after a decision, whose audio starts
+  // as soon as it is on screen. Listening comes first anyway, so this saves
+  // a click on every span.
+  const [playOnArrival, setPlayOnArrival] = useState<string | null>(null);
+  // The note for a disapproval, and the audio flags, each open on request.
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [flagsOpen, setFlagsOpen] = useState(false);
 
   // A shared link, `?segment=<span ID>`, opens on that segment. It is read
   // when the page opens and never written: the share button, not the
@@ -362,8 +370,8 @@ export function CorrectionSurface({
 
   // The list always holds the whole recording, so the segment being worked on
   // is always in it. Finding the segments that want attention is the job of
-  // "next" and the strip, not of a narrower list whose members would change
-  // with every decision.
+  // the strip and of moving on after a decision, not of a narrower list whose
+  // members would change with every decision.
   const spansQuery = useInfiniteQuery<SpanPage>({
     queryKey: ["correction-spans", catalogId, hash, workspace.id, anchor],
     initialPageParam: anchor,
@@ -436,6 +444,9 @@ export function CorrectionSurface({
       });
       setConflict(Boolean(restored && restored.baseText.trim() !== selected.text.trim()));
       setCommentBody(saved?.comment ?? "");
+      // A note being written, and flags already set, stay in view.
+      setNoteOpen(Boolean(saved?.comment));
+      setFlagsOpen((selected.flags ?? []).length > 0);
       setDraft(restored?.text ?? selected.text);
       // The gate follows the span in the same render, so the approve button
       // never shows the previous span's listening for even one frame.
@@ -443,14 +454,17 @@ export function CorrectionSurface({
         steppedHeard(playback, speechRegionsInSeconds(selected)) < MIN_HEARD_FRACTION_FOR_TRAINING
       );
       if (seekRequest?.spanId !== selected.id) {
+        // A span reached by moving on after a decision, from a page that had
+        // to load first, starts playing here.
         setSeekRequest({
           spanId: selected.id,
           time: selected.startSeconds,
           end: selected.endSeconds,
           key: (seekRequest?.key ?? 0) + 1,
-          autoPlay: false,
+          autoPlay: playOnArrival === selected.id,
         });
       }
+      if (playOnArrival !== null) setPlayOnArrival(null);
     } else if (draft.trim() === selected.text.trim()) {
       // The new revision says what the draft says: this person's own save
       // landing, or somebody saving the same wording. Nothing to flag.
@@ -572,7 +586,7 @@ export function CorrectionSurface({
   }, []);
 
   const selectSpan = useCallback(
-    (span: SpanView) => {
+    (span: SpanView, play = false) => {
       // The span on screen keeps its position and playback: clicking it
       // again must not throw away where the person paused.
       if (span.id === selectedIdRef.current) return;
@@ -584,60 +598,75 @@ export function CorrectionSurface({
         time: span.startSeconds,
         end: span.endSeconds,
         key: (previous?.key ?? 0) + 1,
-        autoPlay: false,
+        autoPlay: play,
       }));
     },
     [playback]
   );
 
+  const stripKey = useMemo(() => ["correction-strip", catalogId, hash, workspace.id], [catalogId, hash, workspace.id]);
   const stripQuery = useQuery({
-    queryKey: ["correction-strip", catalogId, hash, workspace.id],
+    queryKey: stripKey,
     queryFn: async () =>
       fetchJson(buildCorrectionStripUrl(catalogId, hash), { schema: spanStripSchema }),
   });
 
-  const kindCounts = useMemo(() => countKinds(stripQuery.data?.spans ?? []), [stripQuery.data]);
+  // An empty strip says nothing about the spans; it is treated as not loaded.
+  const stripSpans = stripQuery.data && stripQuery.data.spans.length > 0 ? stripQuery.data.spans : null;
+  const waitingIds = useMemo(
+    () => new Set((stripSpans ?? []).filter((span) => span.wantsMe).map((span) => span.spanId)),
+    [stripSpans]
+  );
 
   // Go to a segment wherever it is. One already in the list is just selected;
   // one that is not reloads the list around its page.
   const jumpTo = useCallback(
-    (target: { spanId: string; ordinal: number }) => {
+    (target: { spanId: string; ordinal: number }, play = false) => {
       const loaded = spans.find((span) => span.id === target.spanId);
       if (loaded) {
-        selectSpan(loaded);
+        selectSpan(loaded, play);
         return;
       }
       playerRef.current?.pause();
       playback.interrupt();
       setAnchor({ offset: pageOffsetOf(target.ordinal) });
       setSelectedSpanId(target.spanId);
+      setPlayOnArrival(play ? target.spanId : null);
     },
     [spans, selectSpan, playback]
   );
 
-  // Move on from the span a command was issued on. Anchored on that span
-  // rather than on whatever is selected now, and only while it is still the
-  // selection: the sidebar stays clickable during a command, and somebody who
-  // has already moved on must not be moved again.
+  // Move on from the span a decision was made on, to the next span still
+  // waiting for this person, and play it. Anchored on that span rather than
+  // on whatever is selected now, and only while it is still the selection:
+  // the sidebar stays clickable during a command, and somebody who has
+  // already moved on must not be moved again. The strip has just been
+  // refreshed, so it already counts the decision.
   const advance = useCallback(
-    async (fromSpanId: string) => {
-      if (selectedIdRef.current !== fromSpanId) return;
-      const index = spans.findIndex((span) => span.id === fromSpanId);
+    async (from: { spanId: string; ordinal: number }) => {
+      if (selectedIdRef.current !== from.spanId) return;
+      const strip = queryClient.getQueryData<{ spans: StripSpan[] }>(stripKey);
+      if (strip && strip.spans.length > 0) {
+        const next = nextWaitingSpan(strip.spans, from);
+        if (next) jumpTo(next, true);
+        else toast({ description: t("nothingLeft") });
+        return;
+      }
+
+      // Without the strip, the next span in the recording.
+      const index = spans.findIndex((span) => span.id === from.spanId);
       if (index < 0) return;
       const next = spans[index + 1];
       if (next) {
-        selectSpan(next);
+        selectSpan(next, true);
         return;
       }
       if (!spansQuery.hasNextPage) return;
-
-      // The next span is on a page that is not loaded yet. Selecting it has to
-      // wait for the fetch, so the editor and player both select the next span.
       const fetched = await spansQuery.fetchNextPage();
       const first = fetched.data?.pages.at(-1)?.spans[0];
-      if (first && selectedIdRef.current === fromSpanId) selectSpan(first);
+      if (first && selectedIdRef.current === from.spanId) selectSpan(first, true);
     },
-    [spans, selectSpan, spansQuery]
+    [queryClient, stripKey, jumpTo, toast, t, spans, selectSpan, spansQuery]
   );
 
   const refresh = useCallback(async () => {
@@ -689,8 +718,10 @@ export function CorrectionSurface({
       // settles the conflict on the span it was issued for.
       if (selectedIdRef.current === variables.span.id) setConflict(false);
       await refresh();
-      if (variables.action === "approve" || variables.action === "save_and_approve") {
-        await advance(variables.span.id);
+      // A decision is the end of the person's work on the span; withdrawing
+      // one is not, so it stays.
+      if (variables.action !== "withdraw") {
+        await advance({ spanId: variables.span.id, ordinal: variables.span.ordinal });
       }
     },
     onError: async (error, variables) => {
@@ -772,32 +803,31 @@ export function CorrectionSurface({
       }),
   });
 
-  // The next span of a kind after the one on screen, wrapping round. The
-  // server answers, so a decision somebody else made a moment ago counts.
-  const goNext = useMutation({
-    mutationFn: async (kind: SpanKind) =>
-      fetchJson(
-        buildCorrectionNextUrl(catalogId, hash, { after: selected?.ordinal ?? -1, kind }),
-        { schema: nextSpanSchema }
-      ),
-    onSuccess: (result, kind) => {
-      if (result.next) jumpTo(result.next);
-      else toast({ description: kind === "mine_open" ? t("nothingLeft") : t("jump.none") });
-    },
-    onError: (error) =>
-      toast({
-        description: error instanceof Error ? error.message : String(error),
-        variant: "destructive",
-      }),
-  });
-
   const isEdited = selected ? draft.trim() !== selected.text.trim() : false;
+  // A span that does not want this person (done, approved by them, or
+  // waiting for an answer to their objection) offers "Continue" instead of
+  // an approval nobody needs. A disputed span wants the people who approved
+  // it earlier too: approving again answers the objection. Until the strip
+  // has loaded, every span counts as waiting.
+  const waitsForMe = selected ? !stripSpans || waitingIds.has(selected.id) : false;
+  const primary: "approve" | "saveAndApprove" | "clearAndApprove" | "confirmEmpty" | "continue" =
+    isEdited
+      ? draft.trim() === "" ? "clearAndApprove" : "saveAndApprove"
+      : !waitsForMe
+        ? "continue"
+        : draft.trim() === "" ? "confirmEmpty" : "approve";
+  const needsListening = mustListen && primary !== "continue";
+
   // An approval made without listening is stored, but training leaves it out
   // (ADR 0012), and the person would only learn that at export time. The
   // editor asks for the listening first; disapproving and withdrawing do not
   // need it.
   const runPrimary = useCallback(() => {
     if (!selected || command.isPending) return;
+    if (primary === "continue") {
+      void advance({ spanId: selected.id, ordinal: selected.ordinal });
+      return;
+    }
     if (mustListen) {
       // Reached from Ctrl+Enter while the button is disabled: say why.
       toast({
@@ -809,7 +839,22 @@ export function CorrectionSurface({
     }
     if (isEdited) issue(selected, "save_and_approve", draft);
     else issue(selected, "approve");
-  }, [selected, command.isPending, mustListen, isEdited, draft, issue, toast, t]);
+  }, [selected, command.isPending, primary, advance, mustListen, isEdited, draft, issue, toast, t]);
+
+  // Disapproving: the note goes first, so the others see the reason together
+  // with the objection.
+  const disapprove = useCallback(async () => {
+    if (!selected || command.isPending) return;
+    const body = commentBody.trim();
+    if (body) {
+      try {
+        await comment.mutateAsync({ span: selected, body: commentBody });
+      } catch {
+        return;
+      }
+    }
+    issue(selected, "disapprove");
+  }, [selected, command.isPending, commentBody, comment, issue]);
 
   // Back to the stored text, for a draft this person no longer wants, on
   // screen or just restored. A comment being written stays.
@@ -886,6 +931,38 @@ export function CorrectionSurface({
         : null
     : null;
 
+  // Disapproving is the second person's "no": somebody else has approved
+  // the text and it still needs another approval. Untouched machine text is
+  // corrected or flagged instead, and a done span changes only by an edit,
+  // which starts its approvals again.
+  const canDisapprove = Boolean(
+    selected &&
+      selected.state === "needs_second_approval" &&
+      !selected.approverIds.includes(userId)
+  );
+
+  // Who objects to the text on screen, and what they wrote about it, so a
+  // disputed span explains itself above the editor.
+  const history = historyQuery.data?.spanId === selected?.id ? historyQuery.data?.history : undefined;
+  const objection = useMemo(() => {
+    if (!selected || selected.disapproverIds.length === 0 || !history) return null;
+    const others = selected.disapproverIds.filter((id) => id !== userId);
+    const names = others.map(
+      (id) => [...history].reverse().find((entry) => entry.userId === id)?.actorName ?? t("unknownActor")
+    );
+    const notes = history
+      .filter(
+        (entry) =>
+          entry.kind === "comment" &&
+          entry.revisionId === selected.revisionId &&
+          entry.userId !== null &&
+          others.includes(entry.userId) &&
+          entry.body
+      )
+      .map((entry) => entry.body as string);
+    return { mine: selected.disapproverIds.includes(userId), names, notes };
+  }, [selected, history, userId, t]);
+
   const shareSegment = async () => {
     if (!selected) return;
     const href = new URL(buildCorrectionPagePath(catalogId, hash, selected.id), window.location.origin).href;
@@ -933,29 +1010,14 @@ export function CorrectionSurface({
         />
       </div>
       <aside ref={listRef} className="max-h-[70vh] space-y-1 overflow-y-auto rounded-lg border p-2">
-        <div
-          role="group"
-          aria-label={t("jump.label")}
-          className="sticky top-0 z-10 -mx-2 -mt-2 mb-1 flex flex-wrap items-center gap-1 border-b bg-background p-2"
-        >
-          <span className="w-full text-xs text-muted-foreground">{t("jump.label")}</span>
-          {KINDS.map((kind) => (
-            <Button
-              key={kind}
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1.5 px-2 text-xs"
-              disabled={goNext.isPending || (stripQuery.isSuccess && kindCounts[kind] === 0)}
-              onClick={() => goNext.mutate(kind)}
-              data-testid={`correction-jump-${kind}`}
-            >
-              {t(`jump.${kind}`)}
-              {stripQuery.isSuccess && (
-                <span className="tabular-nums opacity-70">{kindCounts[kind]}</span>
-              )}
-            </Button>
-          ))}
-        </div>
+        {stripSpans && (
+          <p
+            className="sticky top-0 z-10 -mx-2 -mt-2 mb-1 border-b bg-background p-2 text-sm font-medium"
+            data-testid="correction-waiting-count"
+          >
+            {waitingIds.size > 0 ? t("waitingForYou", { count: waitingIds.size }) : t("nothingLeft")}
+          </p>
+        )}
         {spansQuery.hasPreviousPage && (
           <Button
             variant="ghost"
@@ -973,14 +1035,22 @@ export function CorrectionSurface({
             ref={span.id === selected?.id ? selectedListItemRef : undefined}
             type="button"
             onClick={() => selectSpan(span)}
-            className={`w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted ${
+            // What still waits for this person stands out in the list.
+            className={`w-full rounded-md border-l-4 px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted ${
               span.id === selected?.id ? "bg-muted" : ""
-            }`}
+            } ${waitingIds.has(span.id) ? "border-primary" : "border-transparent"}`}
+            data-waiting={waitingIds.has(span.id) || undefined}
           >
             <span className="flex items-center justify-between gap-2">
               <span className="font-mono text-xs text-muted-foreground">
                 {formatClock(span.startSeconds)}
               </span>
+              {span.approverIds.includes(userId) && (
+                <span className="ml-auto flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground">
+                  <Check className="h-3 w-3" aria-hidden="true" />
+                  {t("youApproved")}
+                </span>
+              )}
               {span.id !== selected?.id &&
                 (localDrafts.drafts[span.id]?.text || localDrafts.drafts[span.id]?.comment) && (
                 <Badge variant="outline" className="shrink-0 border-amber-500/60 text-[10px]">
@@ -999,8 +1069,8 @@ export function CorrectionSurface({
                 )}
               </Badge>
             </span>
-            <span className="mt-0.5 line-clamp-2 block text-muted-foreground">
-              {span.text}
+            <span className={`mt-0.5 line-clamp-2 block text-muted-foreground ${span.text ? "" : "italic"}`}>
+              {span.text || t("noText")}
             </span>
           </button>
         ))}
@@ -1045,7 +1115,7 @@ export function CorrectionSurface({
                 <Share2 className="h-4 w-4" aria-hidden="true" />
                 {t("shareSegment")}
               </Button>
-              <CorrectionGuideDialog body={guide} />
+              <CorrectionGuideDialog body={guide} shortcuts={t("shortcutHint")} />
             </div>
           </div>
         )}
@@ -1072,6 +1142,7 @@ export function CorrectionSurface({
               onRegion={(direction) => playRegion(selected, direction)}
               onBack={() => playBack(selected)}
               onCycleRate={cycleRate}
+              hideSpeechWithoutTextHint={emptyMachineSpan}
             />
           ) : null}
           sleepTimerEnabled={false}
@@ -1106,6 +1177,16 @@ export function CorrectionSurface({
               </div>
             )}
 
+            {objection && (
+              <div className="space-y-1 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm" data-testid="correction-objection">
+                {objection.names.length > 0 && <p className="font-medium">{t("disapprovedBy", { names: objection.names.join(", ") })}</p>}
+                {objection.notes.map((note, index) => (
+                  <p key={index} className="whitespace-pre-wrap">„{note}“</p>
+                ))}
+                {objection.mine && <p>{t("disapprovedByYou")}</p>}
+              </div>
+            )}
+
             <Textarea
               ref={textareaRef}
               value={draft}
@@ -1123,63 +1204,71 @@ export function CorrectionSurface({
               className="text-base leading-relaxed"
             />
 
+            {selected.isEdited && (
+              <details className="text-sm" data-testid="correction-machine-text">
+                <summary className="cursor-pointer text-xs text-muted-foreground">{t("original")}</summary>
+                <p className="mt-1 rounded-md bg-muted/40 p-2">{selected.originalText || t("noText")}</p>
+              </details>
+            )}
+
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 onClick={runPrimary}
-                disabled={command.isPending || mustListen}
+                disabled={command.isPending || needsListening}
                 className="gap-2"
                 data-testid="correction-approve"
+                data-primary={primary}
               >
-                <Check className="h-4 w-4" />
-                {isEdited
-                  ? draft.trim() === ""
-                    ? t("clearApproveAndContinue")
-                    : t("saveApproveAndContinue")
-                  : draft.trim() === ""
-                    ? t("emptySpan.confirm")
-                    : t("approveAndContinue")}
+                {primary === "continue" ? <ArrowRight className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                {primary === "confirmEmpty" ? t("emptySpan.confirm") : t(primary)}
               </Button>
-              <Button
-                variant="outline"
-                className="gap-2"
-                disabled={command.isPending}
-                onClick={() => issue(selected, "disapprove")}
-              >
-                <ThumbsDown className="h-4 w-4" />
-                {t("disapprove")}
-              </Button>
+              {canDisapprove && (
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  aria-expanded={noteOpen}
+                  aria-controls="correction-note"
+                  onClick={() => setNoteOpen((open) => !open)}
+                  data-testid="correction-disapprove-open"
+                >
+                  <ThumbsDown className="h-4 w-4" />
+                  {t("disapprove")}
+                </Button>
+              )}
               {isEdited && (
                 <Button
-                  variant="ghost"
-                  className="gap-2"
+                  variant="link"
+                  size="sm"
+                  className="px-1 text-muted-foreground"
                   disabled={command.isPending}
                   onClick={discardDraft}
                   data-testid="correction-discard-draft"
                 >
-                  <Eraser className="h-4 w-4" />
                   {t("discardDraft")}
                 </Button>
               )}
               {myDecision && (
                 <Button
-                  variant="ghost"
-                  className="gap-2"
+                  variant="link"
+                  size="sm"
+                  className="px-1 text-muted-foreground"
                   disabled={command.isPending}
                   onClick={() => issue(selected, "withdraw")}
+                  data-testid="correction-withdraw"
                 >
-                  <Undo2 className="h-4 w-4" />
                   {t("withdraw")}
                 </Button>
               )}
               <Button
-                variant="ghost"
-                className="gap-2"
-                disabled={command.isPending || goNext.isPending}
-                onClick={() => goNext.mutate("mine_open")}
-                data-testid="correction-next-open"
+                variant="link"
+                size="sm"
+                className="ml-auto px-1 text-muted-foreground"
+                aria-expanded={flagsOpen}
+                aria-controls="correction-flags-panel"
+                onClick={() => setFlagsOpen((open) => !open)}
+                data-testid="correction-flags-toggle"
               >
-                <SkipForward className="h-4 w-4" />
-                {t("nextOpen")}
+                {t("flagAudio")}
               </Button>
             </div>
 
@@ -1188,75 +1277,94 @@ export function CorrectionSurface({
               span={selected}
               tracker={playback}
               subscribeTime={subscribeTime}
-              mustListen={mustListen}
+              mustListen={needsListening}
               playRequested={playRequested}
               onPlay={() => toggleSpanPlayback(selected)}
             />
 
-            <p className="text-xs text-muted-foreground">{t("shortcutHint")}</p>
-
-            <CorrectionFlags
-              span={selected}
-              flagsUrl={`${buildCorrectionSpanUrl(catalogId, hash, selected.id)}/flags`}
-              onChanged={refresh}
-            />
-
-            {selected.isEdited && (
-              <div className="rounded-md border bg-muted/40 p-3">
-                <p className="text-xs font-medium uppercase text-muted-foreground">
-                  {t("original")}
-                </p>
-                <p className="mt-1 text-sm">{selected.originalText}</p>
+            {noteOpen && (
+              <div id="correction-note" className="space-y-2 rounded-md border p-3" data-testid="correction-note">
+                <Textarea
+                  // Opened by a click, the box takes the cursor; restored with
+                  // a span, the editor's own focus effect runs after it.
+                  autoFocus
+                  value={commentBody}
+                  onChange={(event) => {
+                    setCommentBody(event.target.value);
+                    localDrafts.setComment(selected.id, event.target.value);
+                  }}
+                  rows={2}
+                  placeholder={t("commentPlaceholder")}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  {canDisapprove && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={command.isPending || comment.isPending || isEdited}
+                      onClick={() => void disapprove()}
+                      data-testid="correction-disapprove"
+                    >
+                      {t("disapproveConfirm")}
+                    </Button>
+                  )}
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="px-1 text-muted-foreground"
+                    disabled={!commentBody.trim() || comment.isPending}
+                    onClick={() => comment.mutate({ span: selected, body: commentBody })}
+                    data-testid="correction-send-note"
+                  >
+                    {t("sendNote")}
+                  </Button>
+                </div>
+                {canDisapprove && (
+                  <p className="text-xs text-muted-foreground">
+                    {isEdited ? t("disapproveEditedHint") : t("disapproveHint")}
+                  </p>
+                )}
               </div>
             )}
 
-            <div className="space-y-2">
-              <Textarea
-                value={commentBody}
-                onChange={(event) => {
-                  setCommentBody(event.target.value);
-                  localDrafts.setComment(selected.id, event.target.value);
-                }}
-                rows={2}
-                placeholder={t("commentPlaceholder")}
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-2"
-                disabled={!commentBody.trim() || comment.isPending}
-                onClick={() => comment.mutate({ span: selected, body: commentBody })}
-              >
-                <MessageSquare className="h-4 w-4" />
-                {t("addComment")}
-              </Button>
-            </div>
+            {flagsOpen && (
+              <div id="correction-flags-panel" className="rounded-md border p-3">
+                <CorrectionFlags
+                  span={selected}
+                  flagsUrl={`${buildCorrectionSpanUrl(catalogId, hash, selected.id)}/flags`}
+                  onChanged={refresh}
+                />
+              </div>
+            )}
 
-            <div className="rounded-md border p-3">
-              <p className="text-xs font-medium uppercase text-muted-foreground">
-                {t("history")}
-              </p>
-              <ul className="mt-2 space-y-1 text-sm">
-                {historyQuery.data?.history.map((entry, index) => (
-                  <li key={`${entry.kind}-${index}`} className="text-muted-foreground">
-                    <span className="font-mono text-xs">
-                      {new Date(entry.at).toLocaleString()}
-                    </span>{" "}
-                    <span className="font-medium text-foreground">
-                      {entry.actorName ?? t("unknownActor")}
-                    </span>{" "}
-                    <span>{entry.kind}</span>
-                    {entry.decision ? ` · ${entry.decision.toLowerCase()}` : ""}
-                    {entry.body ? ` · ${entry.body}` : ""}
-                    {entry.kind === "revision" && entry.text !== undefined && (
-                      <span className="block whitespace-pre-wrap pl-4 text-foreground">
-                        {entry.text === "" ? t("emptyRevision") : entry.text}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {history && history.length > 0 && (
+              <details className="rounded-md border p-3" data-testid="correction-history">
+                <summary className="cursor-pointer text-xs font-medium uppercase text-muted-foreground">
+                  {t("historyCount", { count: history.length })}
+                </summary>
+                <ul className="mt-2 space-y-1 text-sm">
+                  {history.map((entry, index) => (
+                    <li key={`${entry.kind}-${index}`} className="text-muted-foreground">
+                      <span className="font-mono text-xs">
+                        {format.dateTime(new Date(entry.at), { dateStyle: "short", timeStyle: "short" })}
+                      </span>{" "}
+                      <span className="font-medium text-foreground">
+                        {entry.actorName ?? (entry.kind === "revision" && entry.userId === null
+                          ? t("machineTranscript")
+                          : t("unknownActor"))}
+                      </span>{" "}
+                      <span>· {t(`historyKind.${entry.kind === "decision" && entry.decision ? entry.decision : entry.kind}`)}</span>
+                      {entry.body ? ` · ${entry.body}` : ""}
+                      {entry.kind === "revision" && entry.text !== undefined && (
+                        <span className="block whitespace-pre-wrap pl-4 text-foreground">
+                          {entry.text === "" ? t("emptyRevision") : entry.text}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </>
         ) : null}
       </section>

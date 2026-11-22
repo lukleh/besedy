@@ -171,16 +171,6 @@ export const spanHistorySchema = z.object({
 
 export type SpanHistory = z.infer<typeof spanHistorySchema>;
 
-/** What "next" walks: what still wants this person, or one span state. */
-export const spanKindSchema = z.enum([
-  "mine_open",
-  "needs_attention",
-  "needs_second_approval",
-  "not_reviewed",
-]);
-
-export type SpanKind = z.infer<typeof spanKindSchema>;
-
 export const stripSpanSchema = z.object({
   spanId: z.string(),
   ordinal: z.number(),
@@ -196,10 +186,6 @@ export type StripSpan = z.infer<typeof stripSpanSchema>;
 export const spanStripSchema = z.object({
   workspaceId: z.string(),
   spans: z.array(stripSpanSchema),
-});
-
-export const nextSpanSchema = z.object({
-  next: z.object({ spanId: z.string(), ordinal: z.number() }).nullable(),
 });
 
 export const workStageSchema = z.enum(WORK_STAGES);

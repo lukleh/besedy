@@ -7,8 +7,8 @@ import type { SpanState } from "@/lib/correction/span-state";
  * Counts and positions read straight from the reduced span states.
  *
  * Everything here sits on `spanStatesSql`, the single derivation of what makes
- * a span done, so the overview, the page header, the strip, "next" and the
- * publication check cannot disagree about it.
+ * a span done, so the overview, the page header, the strip, the resume
+ * position and the publication check cannot disagree about it.
  */
 
 export const SPAN_KINDS = [
@@ -19,11 +19,13 @@ export const SPAN_KINDS = [
 ] as const;
 
 /**
- * Which spans "next" walks.
+ * Which spans a position query walks.
  *
- * `mine_open` is what still wants this person: the span is not done and they
- * have not approved it. One they objected to still counts, because it is
- * theirs to withdraw or have addressed. It is also where the work resumes.
+ * `mine_open` is what still wants this person, and where their work resumes.
+ * A span nobody objects to wants them until it is done or they have approved
+ * it. A disputed span wants everybody except the people objecting: an
+ * approval made after the objection answers it, and that includes one from
+ * somebody who had approved before. The objector has said their piece.
  * The other kinds are span states.
  */
 export type SpanKind = (typeof SPAN_KINDS)[number];
@@ -31,7 +33,10 @@ export type SpanKind = (typeof SPAN_KINDS)[number];
 function kindSql(kind: SpanKind, actorKey: string): Prisma.Sql {
   switch (kind) {
     case "mine_open":
-      return Prisma.sql`state <> 'done' AND NOT (${actorKey}::text = ANY(approver_ids))`;
+      return Prisma.sql`CASE
+        WHEN state = 'needs_attention' THEN NOT (${actorKey}::text = ANY(disapprover_ids))
+        ELSE state <> 'done' AND NOT (${actorKey}::text = ANY(approver_ids))
+      END`;
     default:
       return Prisma.sql`state = ${kind}`;
   }
@@ -156,8 +161,8 @@ export interface SpanPosition {
  * With the defaults it is where to pick the work up: a three-hour recording
  * runs to several hundred spans and nobody finishes one in a sitting, so
  * opening at the first span every time would make resuming a scrolling
- * exercise. A span others have finished is not their problem, and one they
- * objected to still is.
+ * exercise. A span others have finished is not their problem, and neither is
+ * one they objected to until somebody answers.
  */
 export async function findNextSpan(
   workspaceId: string,
