@@ -1483,10 +1483,10 @@
     "noArtwork": "Bez obálky"
   },
   "events": {
-    "session": {
-      "ordinal": "{index}/{count}",
-      "ordinalAria": "Sezení {index} z {count}"
-    },
+      "session": {
+        "ordinal": "{index}/{count}",
+        "ordinalAria": "Sezení {index} z {count}"
+      },
     "tabs": {
       "ariaLabel": "Záložky katalogu",
       "recordings": "Nahrávky",

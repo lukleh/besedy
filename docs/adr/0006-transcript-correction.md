@@ -280,9 +280,10 @@ span has **Save and approve**. The latter creates the revision and the
 editor's approval in one transaction. There is no persistent save-without-
 decision action: an unfinished edit remains a local draft. An uncertain person
 leaves the current text intact, disapproves it and may add a comment. The
-surface offers disapproval only where there is a first pass to disapprove:
-text another person approved, or text a person wrote. Untouched machine text
-is corrected or flagged instead.
+surface offers disapproval only as the second pass: on text another person
+approved that still needs a second approval. Untouched machine text is
+corrected or flagged instead, and a done span changes only by an edit, which
+starts its approvals again.
 
 Every reviewer uses this same workflow. There is no first-pass and second-pass
 mode and no continuous-playback shortcut that approves spans merely because the
@@ -307,7 +308,9 @@ A disapproval blocks the span until somebody approves the same revision after
 it. Approvals made before the objection do not outvote it; one made after it
 answers it, by the objector or by anyone else, and the span then counts its
 approvals as usual. The answered disapproval stays in the history. Changing
-the text, or the objector withdrawing, also clears it. There is no
+the text, or the objector withdrawing, also clears it. While it stands, the
+span waits for everybody except the objector, including people who approved
+it earlier: approving again is their answer. There is no
 adjudication or publisher override in the first version.
 
 This replaces the original rule, under which only the objector or a text
@@ -415,8 +418,8 @@ see (the machine transcript, a publication on its way, a current snapshot, or
 a snapshot the live text has moved past). They are kept apart because a
 published recording can be corrected again, and that work belongs with the
 rest of the work in progress. Inside a recording, the segment list always
-holds the whole recording; "next" walks the spans of one kind (what still
-wants the person, or one state), and a strip over the whole recording shows
+holds the whole recording; after a decision the surface moves on to the next
+span that still wants the person, and a strip over the whole recording shows
 where the gaps and disputes are. A filtered list was tried and dropped: its
 members changed with every decision, so the segment being edited could drop
 out of it. Per-person unread comments, assignments and notifications remain

@@ -2,10 +2,10 @@
 
 // The working surface: one segment at a time, with its audio and its text.
 // A corrector listens, fixes the text if needed and approves. Text somebody
-// has already been through can be disapproved instead. After a decision the
-// surface moves on by itself to the
-// next segment still waiting for this person. Everything a corrector does
-// here is one deliberate command carrying the revision they were looking at.
+// else approved can be disapproved instead of given its second approval. After a decision the
+// surface moves on by itself to the next segment still waiting for this
+// person. Everything a corrector does here is one deliberate command
+// carrying the revision they were looking at.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -370,8 +370,8 @@ export function CorrectionSurface({
 
   // The list always holds the whole recording, so the segment being worked on
   // is always in it. Finding the segments that want attention is the job of
-  // "next" and the strip, not of a narrower list whose members would change
-  // with every decision.
+  // the strip and of moving on after a decision, not of a narrower list whose
+  // members would change with every decision.
   const spansQuery = useInfiniteQuery<SpanPage>({
     queryKey: ["correction-spans", catalogId, hash, workspace.id, anchor],
     initialPageParam: anchor,
@@ -804,9 +804,11 @@ export function CorrectionSurface({
   });
 
   const isEdited = selected ? draft.trim() !== selected.text.trim() : false;
-  // A span that does not want this person (done, or already approved by
-  // them) offers "Continue" instead of an approval nobody needs. Until the
-  // strip has loaded, every span counts as waiting.
+  // A span that does not want this person (done, approved by them, or
+  // waiting for an answer to their objection) offers "Continue" instead of
+  // an approval nobody needs. A disputed span wants the people who approved
+  // it earlier too: approving again answers the objection. Until the strip
+  // has loaded, every span counts as waiting.
   const waitsForMe = selected ? !stripSpans || waitingIds.has(selected.id) : false;
   const primary: "approve" | "saveAndApprove" | "clearAndApprove" | "confirmEmpty" | "continue" =
     isEdited
@@ -929,13 +931,14 @@ export function CorrectionSurface({
         : null
     : null;
 
-  // Disapproving needs something to disapprove: text somebody else has
-  // approved, or that a person wrote. Untouched machine text is corrected or
-  // flagged instead. Somebody who already objects has "withdraw".
+  // Disapproving is the second person's "no": somebody else has approved
+  // the text and it still needs another approval. Untouched machine text is
+  // corrected or flagged instead, and a done span changes only by an edit,
+  // which starts its approvals again.
   const canDisapprove = Boolean(
     selected &&
-      myDecision !== "disapproved" &&
-      (selected.isEdited || selected.approverIds.some((id) => id !== userId))
+      selected.state === "needs_second_approval" &&
+      !selected.approverIds.includes(userId)
   );
 
   // Who objects to the text on screen, and what they wrote about it, so a
@@ -1282,6 +1285,9 @@ export function CorrectionSurface({
             {noteOpen && (
               <div id="correction-note" className="space-y-2 rounded-md border p-3" data-testid="correction-note">
                 <Textarea
+                  // Opened by a click, the box takes the cursor; restored with
+                  // a span, the editor's own focus effect runs after it.
+                  autoFocus
                   value={commentBody}
                   onChange={(event) => {
                     setCommentBody(event.target.value);

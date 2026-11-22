@@ -215,7 +215,6 @@ requires the named catalog permission.
 | GET | `/api/catalogs/:id/correction/overview` | `correct_transcripts` | Correction across the catalog: every live workspace with its progress, this person's share, its work stage and what readers see, plus the primary recordings nobody has started. Limited to the recordings and released events the caller may see |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/spans` | `correct_transcripts` | Paged spans with derived state |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/strip` | `correct_transcripts` | Every span's position, state and whether it still wants this person, without text, for the strip over the whole recording |
-| GET | `/api/catalogs/:id/recordings/:hash/correction/next` | `correct_transcripts` | The next span of `kind=` (`mine_open`, the default, `needs_attention`, `needs_second_approval` or `not_reviewed`) after `after=<ordinal>`, wrapping to the start |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId` | `correct_transcripts` | Span history: revisions, decisions, comments |
 | POST | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId` | `correct_transcripts` | Approve, disapprove, withdraw, or save and approve, against an expected revision |
 | POST | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId/comments` | `correct_transcripts` | Add a comment |
@@ -224,7 +223,7 @@ requires the named catalog permission.
 | DELETE | `/api/catalogs/:id/recordings/:hash/correction/publication` | `publish_transcript` | Unpublish: withhold the reader transcript and durably restore machine search; retry resumes a pending unpublish |
 | POST | `/api/catalogs/:id/recordings/:hash/correction/publication/recover` | `manage_catalog_config` | Reconcile or roll back a publication |
 
-A span's state is derived in one SQL query, `spanStatesSql` in `web/src/lib/correction/span-state-sql.ts`. The span listing, the progress and resume figures, the publication check, the overview, "next" and the strip all read it, so no second statement of the two-approval rule exists in application code. It is exercised against a real database by `npm run test:correction-smoke`.
+A span's state is derived in one SQL query, `spanStatesSql` in `web/src/lib/correction/span-state-sql.ts`. The span listing, the progress and resume figures, the publication check, the overview and the strip all read it, so no second statement of the two-approval rule exists in application code. It is exercised against a real database by `npm run test:correction-smoke`.
 
 Correction exposes one logical current publication. Publish activates the same
 snapshot for readers and search after the index confirms it. Unpublish clears

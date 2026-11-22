@@ -1265,6 +1265,7 @@
     "actions": "Actions",
     "add": "Add",
     "delete": "Delete",
+    "created": "Created",
     "updated": "Updated",
     "deleted": "Deleted",
     "newRecorderPlaceholder": "Enter recorder name...",
@@ -1483,10 +1484,10 @@
     "noArtwork": "No artwork"
   },
   "events": {
-    "session": {
-      "ordinal": "{index}/{count}",
-      "ordinalAria": "Session {index} of {count}"
-    },
+      "session": {
+        "ordinal": "{index}/{count}",
+        "ordinalAria": "Session {index} of {count}"
+      },
     "tabs": {
       "ariaLabel": "Catalog tabs",
       "recordings": "Recordings",

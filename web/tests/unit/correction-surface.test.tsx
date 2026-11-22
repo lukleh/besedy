@@ -1082,8 +1082,6 @@ describe("CorrectionSurface", () => {
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
   });
 
-  // "Next to resolve" has to reach a segment that is not in the loaded pages,
-  // and prepare it without starting playback.
   // Approving moves on to the next segment still waiting for this person,
   // not to the next one in the recording, and plays it.
   it("moves on to the next waiting segment after an approval, loading its page, and plays it", async () => {
@@ -1221,15 +1219,16 @@ describe("CorrectionSurface", () => {
 
   // Disapproving needs a first pass to disapprove: untouched machine text is
   // corrected or flagged, and the flags open from their own link.
-  it("offers Disapprove only on text somebody has been through, and flags on request", async () => {
+  it("offers Disapprove only as the second pass, and flags on request", async () => {
     fetchJsonMock.mockImplementation(async (input) => {
       const url = String(input);
       if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
       if (url.includes("/spans?offset=0")) {
-        return page(0, 3, 3, [
+        return page(0, 4, 4, [
           span(0, { state: "not_reviewed", approverIds: [] }),
           span(1, { state: "needs_second_approval", approverIds: ["user-1"] }),
-          span(2, { state: "not_reviewed", approverIds: [], isEdited: true }),
+          span(2, { state: "needs_second_approval", approverIds: ["user-9"] }),
+          span(3, { state: "done", approverIds: ["user-8", "user-9"] }),
         ]);
       }
       if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
@@ -1248,10 +1247,16 @@ describe("CorrectionSurface", () => {
     await screen.findByDisplayValue("machine 1");
     expect(screen.queryByTestId("correction-disapprove-open")).not.toBeInTheDocument();
 
-    // Text a person wrote can be disapproved.
+    // Somebody else approved it and it needs a second approval: this
+    // person is the second pass and can say no.
     await userEvent.click(screen.getByText("machine 2"));
     await screen.findByDisplayValue("machine 2");
     expect(screen.getByTestId("correction-disapprove-open")).toBeInTheDocument();
+
+    // A done segment changes only by an edit.
+    await userEvent.click(screen.getByText("machine 3"));
+    await screen.findByDisplayValue("machine 3");
+    expect(screen.queryByTestId("correction-disapprove-open")).not.toBeInTheDocument();
   });
 
   // A segment that does not wait for this person offers "Continue", which

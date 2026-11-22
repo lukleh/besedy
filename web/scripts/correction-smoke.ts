@@ -1902,7 +1902,7 @@ async function main() {
       aggregate?.mine.approved === 9 &&
         aggregate.mine.disapproved === 0 &&
         aggregate.mine.waitingOnOthers === 5 &&
-        aggregate.mine.open === 2,
+        aggregate.mine.open === 3,
       aggregate?.mine
     );
 
@@ -1912,7 +1912,19 @@ async function main() {
     const next = await findNextSpan(stateWorkspace.id, "alice");
     check("resuming opens the first span that wants this person", next?.spanId === untouched.span.id, next);
     const afterFirst = await findNextSpan(stateWorkspace.id, "alice", { afterOrdinal: untouched.span.ordinal });
-    check("next opens the following span that wants this person", afterFirst?.spanId === revived.span.id, afterFirst);
+    check(
+      "a disputed span wants the people who approved it before the objection",
+      afterFirst?.spanId === outvoted.span.id,
+      afterFirst
+    );
+    const afterDisputed = await findNextSpan(stateWorkspace.id, "alice", { afterOrdinal: outvoted.span.ordinal });
+    check("next opens the following span that wants this person", afterDisputed?.spanId === revived.span.id, afterDisputed);
+    const objector = await findNextSpan(stateWorkspace.id, "dave", { afterOrdinal: untouched.span.ordinal });
+    check(
+      "a disputed span does not want the person objecting to it",
+      objector !== null && objector.spanId !== outvoted.span.id,
+      objector
+    );
     const wrapped = await findNextSpan(stateWorkspace.id, "alice", { afterOrdinal: revived.span.ordinal });
     check("next wraps round to the start", wrapped?.spanId === untouched.span.id, wrapped);
 
@@ -1941,7 +1953,7 @@ async function main() {
     });
     await decide(revived.span.id, revivedNow.currentRevisionId as string, "alice", "APPROVE");
     const afterDecision = await findNextSpan(stateWorkspace.id, "alice", {
-      afterOrdinal: untouched.span.ordinal,
+      afterOrdinal: outvoted.span.ordinal,
     });
     check("a decision made meanwhile is taken into account", afterDecision?.spanId === untouched.span.id, afterDecision);
     await prisma.transcriptSpanDecision.deleteMany({

@@ -154,15 +154,6 @@ export function buildCorrectionStripUrl(catalogId: string, hash: string): string
   return `${buildCorrectionUrl(catalogId, hash)}/strip`;
 }
 
-export function buildCorrectionNextUrl(
-  catalogId: string,
-  hash: string,
-  options: { after: number; kind: string }
-): string {
-  const params = new URLSearchParams({ after: String(options.after), kind: options.kind });
-  return `${buildCorrectionUrl(catalogId, hash)}/next?${params.toString()}`;
-}
-
 export function buildCorrectionOverviewUrl(catalogId: string): string {
   return `/api/catalogs/${catalogId}/correction/overview`;
 }
