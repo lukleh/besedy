@@ -450,15 +450,13 @@
       "WITHDRAW": "Withdrew a decision",
       "comment": "Comment"
     },
-    "problem": {
-      "open": "Something's wrong",
-      "hear": "What you hear",
-      "disapprove": "Disapprove the text",
-      "disapproveHint": "When the text is wrong and you cannot fix it. The others will see your note.",
-      "editedHint": "Save your change or discard it first.",
-      "sendNote": "Send the note only"
-    },
-    "shortcutsTitle": "Keyboard shortcuts"
+    "shortcutsTitle": "Keyboard shortcuts",
+    "disapprove": "Disapprove",
+    "disapproveConfirm": "Confirm disapproval",
+    "disapproveHint": "When the text is wrong and you cannot fix it. The others will see your note. A later approval by anyone lifts the disapproval.",
+    "disapproveEditedHint": "Save your change or discard it first.",
+    "sendNote": "Send the note only",
+    "flagAudio": "Flag audio"
   },
   "metadata": {
     "title": "Metadata",

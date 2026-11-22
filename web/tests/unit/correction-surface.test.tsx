@@ -88,8 +88,9 @@ function span(ordinal: number, overrides: Partial<Record<string, unknown>> = {})
     text: `machine ${ordinal}`,
     revisionId: `rev-${ordinal}-1`,
     isEdited: false,
-    state: "not_reviewed",
-    approverIds: [],
+    // Somebody else has been through it, so it can be disapproved.
+    state: "needs_second_approval",
+    approverIds: ["user-9"],
     disapproverIds: [],
     commentCount: 0,
     lastEditedById: null,
@@ -176,17 +177,17 @@ async function listenThrough(ordinal: number, { from = 0, to = 10 } = {}) {
   });
 }
 
-/** The note lives in "Something's wrong"; open it unless a kept note already did. */
+/** The note opens with "Disapprove"; open it unless a kept note already did. */
 async function noteBox() {
   if (!screen.queryByPlaceholderText("commentPlaceholder")) {
-    await userEvent.click(screen.getByTestId("correction-problem-toggle"));
+    await userEvent.click(screen.getByTestId("correction-disapprove-open"));
   }
   return screen.getByPlaceholderText("commentPlaceholder");
 }
 
 async function disapproveButton() {
   if (!screen.queryByTestId("correction-disapprove")) {
-    await userEvent.click(screen.getByTestId("correction-problem-toggle"));
+    await userEvent.click(screen.getByTestId("correction-disapprove-open"));
   }
   return screen.getByTestId("correction-disapprove");
 }
@@ -673,12 +674,12 @@ describe("CorrectionSurface", () => {
     renderSurface(null);
     await screen.findByDisplayValue("machine 0");
     await userEvent.type(await noteBox(), "submitted note");
-    await userEvent.click(screen.getByRole("button", { name: "problem.sendNote" }));
+    await userEvent.click(screen.getByRole("button", { name: "sendNote" }));
     await userEvent.click(screen.getByText("machine 1"));
     // The note box belongs to the panel, which closes on a span without a note.
     await userEvent.type(await noteBox(), "another span's note");
     complete({ id: "comment-1" });
-    await waitFor(() => expect(screen.getByRole("button", { name: "problem.sendNote" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "sendNote" })).toBeEnabled());
     expect(await noteBox()).toHaveValue("another span's note");
     await userEvent.click(screen.getByText("machine 0"));
     expect(await noteBox()).toHaveValue("");
@@ -798,7 +799,7 @@ describe("CorrectionSurface", () => {
     await userEvent.clear(editor);
     await userEvent.type(editor, "my text");
     await userEvent.type((await noteBox()), "a note");
-    await userEvent.click(screen.getByRole("button", { name: "problem.sendNote" }));
+    await userEvent.click(screen.getByRole("button", { name: "sendNote" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("conflict-current-text")).toHaveTextContent("their text");
@@ -1072,11 +1073,11 @@ describe("CorrectionSurface", () => {
     await screen.findByDisplayValue("machine 0");
 
     await userEvent.type((await noteBox()), "one");
-    await userEvent.click(screen.getByRole("button", { name: "problem.sendNote" }));
+    await userEvent.click(screen.getByRole("button", { name: "sendNote" }));
     expect(await screen.findByDisplayValue("second")).toBeInTheDocument();
 
     await userEvent.type((await noteBox()), "two");
-    await userEvent.click(screen.getByRole("button", { name: "problem.sendNote" }));
+    await userEvent.click(screen.getByRole("button", { name: "sendNote" }));
     expect(await screen.findByDisplayValue("third")).toBeInTheDocument();
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
   });
@@ -1216,6 +1217,41 @@ describe("CorrectionSurface", () => {
     const history = screen.getByTestId("correction-history");
     expect(history).toHaveTextContent("machineTranscript");
     expect(history).toHaveTextContent("historyKind.DISAPPROVE");
+  });
+
+  // Disapproving needs a first pass to disapprove: untouched machine text is
+  // corrected or flagged, and the flags open from their own link.
+  it("offers Disapprove only on text somebody has been through, and flags on request", async () => {
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) {
+        return page(0, 3, 3, [
+          span(0, { state: "not_reviewed", approverIds: [] }),
+          span(1, { state: "needs_second_approval", approverIds: ["user-1"] }),
+          span(2, { state: "not_reviewed", approverIds: [], isEdited: true }),
+        ]);
+      }
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    expect(screen.queryByTestId("correction-disapprove-open")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("correction-flag-UNCLEAR")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("correction-flags-toggle"));
+    expect(screen.getByTestId("correction-flag-UNCLEAR")).toBeInTheDocument();
+
+    // Only this person approved it: theirs to withdraw, not to disapprove.
+    await userEvent.click(screen.getByText("machine 1"));
+    await screen.findByDisplayValue("machine 1");
+    expect(screen.queryByTestId("correction-disapprove-open")).not.toBeInTheDocument();
+
+    // Text a person wrote can be disapproved.
+    await userEvent.click(screen.getByText("machine 2"));
+    await screen.findByDisplayValue("machine 2");
+    expect(screen.getByTestId("correction-disapprove-open")).toBeInTheDocument();
   });
 
   // A segment that does not wait for this person offers "Continue", which

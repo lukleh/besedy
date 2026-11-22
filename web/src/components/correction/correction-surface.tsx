@@ -1,8 +1,9 @@
 "use client";
 
 // The working surface: one segment at a time, with its audio and its text.
-// A corrector listens, fixes the text if needed and decides: "Approve", or
-// "Something's wrong". After a decision the surface moves on by itself to the
+// A corrector listens, fixes the text if needed and approves. Text somebody
+// has already been through can be disapproved instead. After a decision the
+// surface moves on by itself to the
 // next segment still waiting for this person. Everything a corrector does
 // here is one deliberate command carrying the revision they were looking at.
 
@@ -10,7 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, ArrowRight, Check, Pause, Play, Share2 } from "lucide-react";
+import { ArrowRight, Check, Pause, Play, Share2, ThumbsDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -242,8 +243,9 @@ export function CorrectionSurface({
   // as soon as it is on screen. Listening comes first anyway, so this saves
   // a click on every span.
   const [playOnArrival, setPlayOnArrival] = useState<string | null>(null);
-  // "Something's wrong" is open: the reasons, the note and the objection.
-  const [problemOpen, setProblemOpen] = useState(false);
+  // The note for a disapproval, and the audio flags, each open on request.
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [flagsOpen, setFlagsOpen] = useState(false);
 
   // A shared link, `?segment=<span ID>`, opens on that segment. It is read
   // when the page opens and never written: the share button, not the
@@ -442,8 +444,9 @@ export function CorrectionSurface({
       });
       setConflict(Boolean(restored && restored.baseText.trim() !== selected.text.trim()));
       setCommentBody(saved?.comment ?? "");
-      // Reasons already marked, or a note being written, keep the panel open.
-      setProblemOpen(Boolean(saved?.comment) || (selected.flags ?? []).length > 0);
+      // A note being written, and flags already set, stay in view.
+      setNoteOpen(Boolean(saved?.comment));
+      setFlagsOpen((selected.flags ?? []).length > 0);
       setDraft(restored?.text ?? selected.text);
       // The gate follows the span in the same render, so the approve button
       // never shows the previous span's listening for even one frame.
@@ -836,8 +839,8 @@ export function CorrectionSurface({
     else issue(selected, "approve");
   }, [selected, command.isPending, primary, advance, mustListen, isEdited, draft, issue, toast, t]);
 
-  // "Disapprove the text": the note goes first, so the others see the reason
-  // together with the objection.
+  // Disapproving: the note goes first, so the others see the reason together
+  // with the objection.
   const disapprove = useCallback(async () => {
     if (!selected || command.isPending) return;
     const body = commentBody.trim();
@@ -925,6 +928,15 @@ export function CorrectionSurface({
         ? "disapproved"
         : null
     : null;
+
+  // Disapproving needs something to disapprove: text somebody else has
+  // approved, or that a person wrote. Untouched machine text is corrected or
+  // flagged instead. Somebody who already objects has "withdraw".
+  const canDisapprove = Boolean(
+    selected &&
+      myDecision !== "disapproved" &&
+      (selected.isEdited || selected.approverIds.some((id) => id !== userId))
+  );
 
   // Who objects to the text on screen, and what they wrote about it, so a
   // disputed span explains itself above the editor.
@@ -1207,17 +1219,19 @@ export function CorrectionSurface({
                 {primary === "continue" ? <ArrowRight className="h-4 w-4" /> : <Check className="h-4 w-4" />}
                 {primary === "confirmEmpty" ? t("emptySpan.confirm") : t(primary)}
               </Button>
-              <Button
-                variant="outline"
-                className="gap-2"
-                aria-expanded={problemOpen}
-                aria-controls="correction-problem"
-                onClick={() => setProblemOpen((open) => !open)}
-                data-testid="correction-problem-toggle"
-              >
-                <AlertTriangle className="h-4 w-4" />
-                {t("problem.open")}
-              </Button>
+              {canDisapprove && (
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  aria-expanded={noteOpen}
+                  aria-controls="correction-note"
+                  onClick={() => setNoteOpen((open) => !open)}
+                  data-testid="correction-disapprove-open"
+                >
+                  <ThumbsDown className="h-4 w-4" />
+                  {t("disapprove")}
+                </Button>
+              )}
               {isEdited && (
                 <Button
                   variant="link"
@@ -1242,6 +1256,17 @@ export function CorrectionSurface({
                   {t("withdraw")}
                 </Button>
               )}
+              <Button
+                variant="link"
+                size="sm"
+                className="ml-auto px-1 text-muted-foreground"
+                aria-expanded={flagsOpen}
+                aria-controls="correction-flags-panel"
+                onClick={() => setFlagsOpen((open) => !open)}
+                data-testid="correction-flags-toggle"
+              >
+                {t("flagAudio")}
+              </Button>
             </div>
 
             <HeardMeter
@@ -1254,24 +1279,19 @@ export function CorrectionSurface({
               onPlay={() => toggleSpanPlayback(selected)}
             />
 
-            {problemOpen && (
-              <div id="correction-problem" className="space-y-4 rounded-md border p-3" data-testid="correction-problem">
-                <CorrectionFlags
-                  span={selected}
-                  flagsUrl={`${buildCorrectionSpanUrl(catalogId, hash, selected.id)}/flags`}
-                  onChanged={refresh}
+            {noteOpen && (
+              <div id="correction-note" className="space-y-2 rounded-md border p-3" data-testid="correction-note">
+                <Textarea
+                  value={commentBody}
+                  onChange={(event) => {
+                    setCommentBody(event.target.value);
+                    localDrafts.setComment(selected.id, event.target.value);
+                  }}
+                  rows={2}
+                  placeholder={t("commentPlaceholder")}
                 />
-                <div className="space-y-2">
-                  <Textarea
-                    value={commentBody}
-                    onChange={(event) => {
-                      setCommentBody(event.target.value);
-                      localDrafts.setComment(selected.id, event.target.value);
-                    }}
-                    rows={2}
-                    placeholder={t("commentPlaceholder")}
-                  />
-                  <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {canDisapprove && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -1279,23 +1299,35 @@ export function CorrectionSurface({
                       onClick={() => void disapprove()}
                       data-testid="correction-disapprove"
                     >
-                      {t("problem.disapprove")}
+                      {t("disapproveConfirm")}
                     </Button>
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="px-1 text-muted-foreground"
-                      disabled={!commentBody.trim() || comment.isPending}
-                      onClick={() => comment.mutate({ span: selected, body: commentBody })}
-                      data-testid="correction-send-note"
-                    >
-                      {t("problem.sendNote")}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {isEdited ? t("problem.editedHint") : t("problem.disapproveHint")}
-                  </p>
+                  )}
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="px-1 text-muted-foreground"
+                    disabled={!commentBody.trim() || comment.isPending}
+                    onClick={() => comment.mutate({ span: selected, body: commentBody })}
+                    data-testid="correction-send-note"
+                  >
+                    {t("sendNote")}
+                  </Button>
                 </div>
+                {canDisapprove && (
+                  <p className="text-xs text-muted-foreground">
+                    {isEdited ? t("disapproveEditedHint") : t("disapproveHint")}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {flagsOpen && (
+              <div id="correction-flags-panel" className="rounded-md border p-3">
+                <CorrectionFlags
+                  span={selected}
+                  flagsUrl={`${buildCorrectionSpanUrl(catalogId, hash, selected.id)}/flags`}
+                  onChanged={refresh}
+                />
               </div>
             )}
 

@@ -32,7 +32,6 @@ interface CorrectionFlagsProps {
 
 export function CorrectionFlags({ span, flagsUrl, onChanged }: CorrectionFlagsProps) {
   const t = useTranslations("correction.flags");
-  const hear = useTranslations("correction.problem")("hear");
   const { toast } = useToast();
   const [language, setLanguage] = useState<string>("en");
 
@@ -67,7 +66,6 @@ export function CorrectionFlags({ span, flagsUrl, onChanged }: CorrectionFlagsPr
 
   return (
     <div className="space-y-1" data-testid="correction-flags">
-      <p className="text-xs font-medium uppercase text-muted-foreground">{hear}</p>
       <div className="flex flex-wrap items-center gap-1">
         {FLAG_KINDS.map((kind) => {
           const flag = active.get(kind);

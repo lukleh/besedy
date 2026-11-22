@@ -450,15 +450,13 @@
       "WITHDRAW": "Rozhodnutí vzato zpět",
       "comment": "Komentář"
     },
-    "problem": {
-      "open": "Něco nesedí",
-      "hear": "Co je slyšet",
-      "disapprove": "Neschválit text",
-      "disapproveHint": "Když je text špatně a nedokážete ho opravit. Ostatní uvidí vaši poznámku.",
-      "editedHint": "Nejdřív změnu uložte, nebo ji zahoďte.",
-      "sendNote": "Poslat jen poznámku"
-    },
-    "shortcutsTitle": "Klávesové zkratky"
+    "shortcutsTitle": "Klávesové zkratky",
+    "disapprove": "Neschválit",
+    "disapproveConfirm": "Potvrdit neschválení",
+    "disapproveHint": "Když je text špatně a nedokážete ho opravit. Ostatní uvidí vaši poznámku. Pozdější schválení kýmkoli neschválení zruší.",
+    "disapproveEditedHint": "Nejdřív změnu uložte, nebo ji zahoďte.",
+    "sendNote": "Poslat jen poznámku",
+    "flagAudio": "Označit zvuk"
   },
   "metadata": {
     "title": "Metadata",
