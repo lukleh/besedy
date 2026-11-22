@@ -1329,7 +1329,7 @@
     "unauthorized": {
       "title": "Přístup není autorizován",
       "description": "Váš e-mail není na seznamu povolených",
-      "message": "Tato aplikace vyžaduje pozvánku pro přístup.",
+      "message": "Do Besedy se mohou přihlásit jen uživatelé, které jsme přidali. Pokud jsme vás přidali pod jiným e-mailem, přihlaste se tím účtem.",
       "attemptedEmail": "Pokusili jste se přihlásit jako: {email}",
       "contact": "Pro získání přístupu nás kontaktujte."
     },
