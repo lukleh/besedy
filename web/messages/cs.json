@@ -275,15 +275,9 @@
     "startNoSource": "Tato nahrávka nemá strojový přepis ke korektuře.",
     "start": "Začít korekturu",
     "spanOf": "Segment {index} z {total}",
-    "approveAndContinue": "Schválit a pokračovat",
-    "saveApproveAndContinue": "Uložit, schválit a pokračovat",
-    "clearApproveAndContinue": "Označit jako bez řeči a pokračovat",
-    "disapprove": "Neschválit",
     "withdraw": "Vzít rozhodnutí zpět",
     "commentPlaceholder": "Napište, co je nejasné, nebo proč nesouhlasíte",
-    "addComment": "Přidat komentář",
     "original": "Strojový text",
-    "history": "Historie",
     "unknownActor": "Neznámý účet",
     "guide": "Pravidla",
     "guideDialogDescription": "Domluva, jak v tomto katalogu zapisovat opravy.",
@@ -326,7 +320,6 @@
     "publishInterrupted": "Zveřejnění bylo přerušeno dřív, než se dostalo k vyhledávacímu indexu.",
     "publishStalled": "Zveřejnění se zastavilo: {code}. {message}",
     "publishFailed": "Zveřejnění selhalo",
-    "nextOpen": "Další k řešení",
     "nothingLeft": "Nic dalšího na vás nečeká.",
     "overviewLink": "Přehled korektur",
     "shareSegment": "Sdílet segment",
@@ -336,14 +329,6 @@
     "segmentLinkLoadFailed": "Odkazovaný segment se nepodařilo načíst. Zkuste to znovu.",
     "segmentLinkResume": "Pokračovat v korektuře",
     "segmentLinkRetry": "Zkusit znovu",
-    "jump": {
-      "label": "Přejít na další segment",
-      "mine_open": "Čeká na mě",
-      "needs_attention": "Vyžaduje pozornost",
-      "needs_second_approval": "Chybí druhé schválení",
-      "not_reviewed": "Nezkontrolováno",
-      "none": "Žádný další segment tohoto druhu."
-    },
     "strip": {
       "label": "Průběh korektury po celé nahrávce; kliknutím skočíte na místo",
       "done": "Hotovo",
@@ -437,7 +422,6 @@
       "confirm": "Nic tu nezaznělo"
     },
     "flags": {
-      "label": "Příznaky",
       "language": "Jazyk",
       "UNCLEAR": "Nesrozumitelné",
       "OVERLAP": "Překryv mluvčích",
@@ -447,7 +431,34 @@
       "EXCLUDE_FROM_TRAINING": "Nepoužít k trénování"
     },
     "consentLoadFailed": "Nepodařilo se ověřit souhlas s použitím oprav. Bez něj nelze opravovat.",
-    "consentRetry": "Zkusit znovu"
+    "consentRetry": "Zkusit znovu",
+    "approve": "Schválit",
+    "saveAndApprove": "Uložit a schválit",
+    "clearAndApprove": "Označit jako bez řeči",
+    "continue": "Pokračovat",
+    "waitingForYou": "{count, plural, one {Čeká na vás # segment} few {Čekají na vás # segmenty} other {Čeká na vás # segmentů}}",
+    "youApproved": "Schváleno vámi",
+    "noText": "(bez textu)",
+    "machineTranscript": "Strojový přepis",
+    "disapprovedBy": "Neschváleno: {names}",
+    "disapprovedByYou": "Tento text jste neschválili. Opravte ho a schvalte, nebo své rozhodnutí vezměte zpět.",
+    "historyCount": "Historie ({count})",
+    "historyKind": {
+      "revision": "Text",
+      "APPROVE": "Schváleno",
+      "DISAPPROVE": "Neschváleno",
+      "WITHDRAW": "Rozhodnutí vzato zpět",
+      "comment": "Komentář"
+    },
+    "problem": {
+      "open": "Něco nesedí",
+      "hear": "Co je slyšet",
+      "disapprove": "Neschválit text",
+      "disapproveHint": "Když je text špatně a nedokážete ho opravit. Ostatní uvidí vaši poznámku.",
+      "editedHint": "Nejdřív změnu uložte, nebo ji zahoďte.",
+      "sendNote": "Poslat jen poznámku"
+    },
+    "shortcutsTitle": "Klávesové zkratky"
   },
   "metadata": {
     "title": "Metadata",
@@ -1474,10 +1485,10 @@
     "noArtwork": "Bez obálky"
   },
   "events": {
-      "session": {
-        "ordinal": "{index}/{count}",
-        "ordinalAria": "Sezení {index} z {count}"
-      },
+    "session": {
+      "ordinal": "{index}/{count}",
+      "ordinalAria": "Sezení {index} z {count}"
+    },
     "tabs": {
       "ariaLabel": "Záložky katalogu",
       "recordings": "Nahrávky",

@@ -76,6 +76,8 @@ interface CorrectionSpanAudioProps {
   onRegion: (direction: "previous" | "current" | "next") => void;
   onBack: () => void;
   onCycleRate: () => void;
+  /** The surface already says the model wrote nothing for this span. */
+  hideSpeechWithoutTextHint?: boolean;
 }
 
 /** Where `seconds` falls across the span, as a CSS offset. */
@@ -190,6 +192,7 @@ export function CorrectionSpanAudio({
   onRegion,
   onBack,
   onCycleRate,
+  hideSpeechWithoutTextHint = false,
 }: CorrectionSpanAudioProps) {
   const t = useTranslations("correction.audio");
   // Only whether a stop is part-way through the span, not every time update,
@@ -300,7 +303,7 @@ export function CorrectionSpanAudio({
         <SpanPlayhead span={span} subscribeTime={subscribeTime} />
       </div>
 
-      {speechWithoutText > 0 && (
+      {speechWithoutText > 0 && !hideSpeechWithoutTextHint && (
         <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="correction-speech-without-text">
           {t("speechWithoutTextHint", { count: speechWithoutText })}
         </p>

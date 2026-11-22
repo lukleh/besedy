@@ -15,7 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 
-export function CorrectionGuideDialog({ body }: { body: string }) {
+export function CorrectionGuideDialog({ body, shortcuts }: { body: string; shortcuts?: string }) {
   const t = useTranslations("correction");
 
   return (
@@ -33,6 +33,12 @@ export function CorrectionGuideDialog({ body }: { body: string }) {
         <div className="text-sm leading-7">
           <MarkdownContent markdown={body} />
         </div>
+        {shortcuts && (
+          <div className="border-t pt-3 text-sm" data-testid="correction-shortcuts">
+            <p className="font-medium">{t("shortcutsTitle")}</p>
+            <p className="mt-1 text-muted-foreground">{shortcuts}</p>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

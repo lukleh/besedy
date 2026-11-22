@@ -275,8 +275,8 @@ person played a segment, watched a timer or kept the tab focused. This group can
 be trusted to use the tool honestly, and such telemetry would complicate the
 first version without making the statement materially stronger.
 
-An unchanged span has an explicit **Approve and continue** action. An edited
-span has **Save, approve and continue**. The latter creates the revision and the
+An unchanged span has an explicit **Approve** action. An edited
+span has **Save and approve**. The latter creates the revision and the
 editor's approval in one transaction. There is no persistent save-without-
 decision action: an unfinished edit remains a local draft. An uncertain person
 leaves the current text intact, disapproves it and may add a comment.
@@ -289,7 +289,8 @@ only one deliberate action.
 The primary keyboard action is `Ctrl+Enter` or `Cmd+Enter`, which performs the
 same approve or edit-and-approve command as the visible button. Approval is not
 a casual single-key action. Disapprove and withdraw remain explicit buttons.
-After a successful approval the surface advances to and plays the next span.
+After a successful approval the surface advances to the next span still
+waiting for that person and plays it.
 
 ### Decisions are visible, reversible by their author and never outvoted
 

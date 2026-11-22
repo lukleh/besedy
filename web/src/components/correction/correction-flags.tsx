@@ -32,6 +32,7 @@ interface CorrectionFlagsProps {
 
 export function CorrectionFlags({ span, flagsUrl, onChanged }: CorrectionFlagsProps) {
   const t = useTranslations("correction.flags");
+  const hear = useTranslations("correction.problem")("hear");
   const { toast } = useToast();
   const [language, setLanguage] = useState<string>("en");
 
@@ -66,7 +67,7 @@ export function CorrectionFlags({ span, flagsUrl, onChanged }: CorrectionFlagsPr
 
   return (
     <div className="space-y-1" data-testid="correction-flags">
-      <p className="text-xs font-medium uppercase text-muted-foreground">{t("label")}</p>
+      <p className="text-xs font-medium uppercase text-muted-foreground">{hear}</p>
       <div className="flex flex-wrap items-center gap-1">
         {FLAG_KINDS.map((kind) => {
           const flag = active.get(kind);
@@ -86,25 +87,28 @@ export function CorrectionFlags({ span, flagsUrl, onChanged }: CorrectionFlagsPr
             </Button>
           );
         })}
-        <select
-          aria-label={t("language")}
-          className="h-7 rounded-md border bg-background px-1 text-xs"
-          value={otherLanguage?.languageCode ?? language}
-          aria-busy={pendingKind === "OTHER_LANGUAGE"}
-          onChange={(event) => {
-            const code = event.target.value;
-            setLanguage(code);
-            // Changing the language of a set flag records it as a new event.
-            if (otherLanguage) send({ kind: "OTHER_LANGUAGE", set: true, languageCode: code });
-          }}
-          data-testid="correction-flag-language"
-        >
-          {LANGUAGES.map((code) => (
-            <option key={code} value={code}>
-              {code}
-            </option>
-          ))}
-        </select>
+        {/* The language only matters once the flag is set. */}
+        {otherLanguage && (
+          <select
+            aria-label={t("language")}
+            className="h-7 rounded-md border bg-background px-1 text-xs"
+            value={otherLanguage?.languageCode ?? language}
+            aria-busy={pendingKind === "OTHER_LANGUAGE"}
+            onChange={(event) => {
+              const code = event.target.value;
+              setLanguage(code);
+              // Changing the language of a set flag records it as a new event.
+              if (otherLanguage) send({ kind: "OTHER_LANGUAGE", set: true, languageCode: code });
+            }}
+            data-testid="correction-flag-language"
+          >
+            {LANGUAGES.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
     </div>
   );

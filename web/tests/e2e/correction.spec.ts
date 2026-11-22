@@ -192,8 +192,16 @@ test.describe("transcript correction", () => {
     // Unsubmitted work survives both span navigation and a page reload, and
     // remains local: saving a draft must never approve text on the server.
     const editor = page.getByRole("textbox").first();
-    const comment = page.getByRole("textbox").nth(1);
+    // The note lives in "Something's wrong", which opens on request and
+    // stays open on a span that has a note being written.
+    const problem = page.getByTestId("correction-problem");
+    const openProblem = async () => {
+      if (!(await problem.isVisible())) await page.getByTestId("correction-problem-toggle").click();
+      await expect(problem).toBeVisible();
+    };
+    const comment = problem.getByRole("textbox");
     await editor.fill("Rozpracovaná oprava.");
+    await openProblem();
     await comment.fill("Ověřit jméno.");
     await spanList.getByRole("button", { name: /^0:00/ }).first().click();
     await spanList.getByRole("button", { name: /^0:10/ }).first().click();
@@ -224,6 +232,7 @@ test.describe("transcript correction", () => {
     });
     try {
       await editor.fill("Oprava v paměti.");
+      await openProblem();
       await comment.fill("Poznámka v paměti.");
       await page.setViewportSize({ width: 800, height: 1000 });
       await expect(strip).toHaveCount(0);
@@ -248,6 +257,7 @@ test.describe("transcript correction", () => {
     }
 
     // A flag toggles, and shows its new state once the server has it.
+    await openProblem();
     const unclear = page.getByTestId("correction-flag-UNCLEAR");
     const wasSet = (await unclear.getAttribute("aria-pressed")) === "true";
     await unclear.click();

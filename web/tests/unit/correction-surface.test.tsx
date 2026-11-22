@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { useImperativeHandle } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CorrectionSurface } from "@/components/correction/correction-surface";
+import { CorrectionSurface, nextWaitingSpan } from "@/components/correction/correction-surface";
 import type { AudioPlayerProps } from "@/components/player/audio-player-types";
 import { ApiError, fetchJson } from "@/lib/api/fetch-json";
 import { ReloadSafetyProvider, useReloadSafety } from "@/contexts/reload-safety-context";
@@ -11,6 +11,7 @@ import { CorrectionDraftsProvider } from "@/contexts/correction-drafts-context";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
+  useFormatter: () => ({ dateTime: (date: Date) => date.toISOString() }),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -173,6 +174,21 @@ async function listenThrough(ordinal: number, { from = 0, to = 10 } = {}) {
     for (let offset = from; offset <= to; offset += 1) props.onTimeUpdate(start + offset);
     props.onPlayingChange(false);
   });
+}
+
+/** The note lives in "Something's wrong"; open it unless a kept note already did. */
+async function noteBox() {
+  if (!screen.queryByPlaceholderText("commentPlaceholder")) {
+    await userEvent.click(screen.getByTestId("correction-problem-toggle"));
+  }
+  return screen.getByPlaceholderText("commentPlaceholder");
+}
+
+async function disapproveButton() {
+  if (!screen.queryByTestId("correction-disapprove")) {
+    await userEvent.click(screen.getByTestId("correction-problem-toggle"));
+  }
+  return screen.getByTestId("correction-disapprove");
 }
 
 describe("CorrectionSurface", () => {
@@ -441,13 +457,13 @@ describe("CorrectionSurface", () => {
     renderSurface(null);
     const editor = await screen.findByDisplayValue("machine 0");
     await userEvent.clear(editor);
-    await userEvent.type(screen.getByPlaceholderText("commentPlaceholder"), "check this name");
+    await userEvent.type((await noteBox()), "check this name");
     await userEvent.click(screen.getByText("machine 1"));
     expect(editor).toHaveValue("machine 1");
-    expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("");
+    expect((await noteBox())).toHaveValue("");
     await userEvent.click(screen.getByText("machine 0"));
     expect(editor).toHaveValue("");
-    expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("check this name");
+    expect((await noteBox())).toHaveValue("check this name");
     expect(fetchJsonMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
   });
 
@@ -458,13 +474,13 @@ describe("CorrectionSurface", () => {
     const editor = await screen.findByDisplayValue("machine 0");
     await userEvent.clear(editor);
     await userEvent.type(editor, "my correction");
-    await userEvent.type(screen.getByPlaceholderText("commentPlaceholder"), "my note");
+    await userEvent.type((await noteBox()), "my note");
     first.unmount();
     currentPage = page(0, 2, 2, [span(0, { text: "someone else's correction", revisionId: "rev-0-2" }), span(1)]);
     renderSurface(null);
     expect(await screen.findByDisplayValue("my correction")).toBeInTheDocument();
     expect(screen.getByTestId("conflict-current-text")).toHaveTextContent("someone else's correction");
-    expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("my note");
+    expect((await noteBox())).toHaveValue("my note");
   });
 
   it("does not expose another corrector's drafts", async () => {
@@ -523,7 +539,7 @@ describe("CorrectionSurface", () => {
       const editor = await screen.findByDisplayValue("machine 0");
       await userEvent.clear(editor);
       await userEvent.type(editor, "unfinished correction");
-      await userEvent.type(screen.getByPlaceholderText("commentPlaceholder"), "unfinished note");
+      await userEvent.type((await noteBox()), "unfinished note");
       view.showSurface(false);
       expect(screen.queryByDisplayValue("unfinished correction")).not.toBeInTheDocument();
       const beforeUnload = new Event("beforeunload", { cancelable: true });
@@ -532,17 +548,17 @@ describe("CorrectionSurface", () => {
       expect(screen.getByTestId("reload-safety")).toHaveTextContent('{"blocksAutomatic":true,"blocksManual":true}');
       view.showSurface();
       expect(await screen.findByDisplayValue("unfinished correction")).toBeInTheDocument();
-      expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("unfinished note");
+      expect((await noteBox())).toHaveValue("unfinished note");
 
       // The provider's memory fallback remains scoped after changing accounts or workspaces.
       view.showSurface(true, "user-2");
       expect(await screen.findByDisplayValue("machine 0")).toBeInTheDocument();
-      expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("");
+      expect((await noteBox())).toHaveValue("");
       view.showSurface(true, "user-1", { ...WORKSPACE, id: "ws-2" });
       expect(await screen.findByDisplayValue("machine 0")).toBeInTheDocument();
       view.showSurface();
       expect(await screen.findByDisplayValue("unfinished correction")).toBeInTheDocument();
-      expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("unfinished note");
+      expect((await noteBox())).toHaveValue("unfinished note");
     } finally {
       storage.mockRestore();
     }
@@ -569,7 +585,7 @@ describe("CorrectionSurface", () => {
     expect(await screen.findByDisplayValue("shared correction")).toBeInTheDocument();
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
     await listenThrough(0);
-    await userEvent.click(screen.getByRole("button", { name: "approveAndContinue" }));
+    await userEvent.click(screen.getByRole("button", { name: "approve" }));
     await screen.findByDisplayValue("machine 1");
     const beforeUnload = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(beforeUnload);
@@ -592,13 +608,13 @@ describe("CorrectionSurface", () => {
     renderSurface(null);
     const editor = await screen.findByDisplayValue("machine 0");
     await listenThrough(0);
-    await userEvent.click(screen.getByRole("button", { name: "approveAndContinue" }));
+    await userEvent.click(screen.getByRole("button", { name: "approve" }));
     if (newerText) await userEvent.type(editor, newerText);
     complete({ spanId: "span-0", revisionId: "rev-0-1", text: "machine 0", state: "done", approverIds: ["user-1", "user-2"], disapproverIds: [], replayed: false });
     await screen.findByDisplayValue("machine 1");
     await userEvent.click(screen.getByText("machine 0"));
     expect(editor).toHaveValue(`machine 0${newerText}`);
-    expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("unsent note");
+    expect((await noteBox())).toHaveValue("unsent note");
   });
 
   it("clears only the submitted text draft after a successful save", async () => {
@@ -614,15 +630,15 @@ describe("CorrectionSurface", () => {
     const editor = await screen.findByDisplayValue("machine 0");
     await userEvent.clear(editor);
     await userEvent.type(editor, "saved correction");
-    await userEvent.type(screen.getByPlaceholderText("commentPlaceholder"), "unsubmitted note");
+    await userEvent.type((await noteBox()), "unsubmitted note");
     await listenThrough(0);
-    await userEvent.click(screen.getByRole("button", { name: "saveApproveAndContinue" }));
+    await userEvent.click(screen.getByRole("button", { name: "saveAndApprove" }));
     await screen.findByDisplayValue("machine 1");
     first.unmount();
     renderSurface(null);
     expect(await screen.findByDisplayValue("saved correction")).toBeInTheDocument();
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText("commentPlaceholder")).toHaveValue("unsubmitted note");
+    expect((await noteBox())).toHaveValue("unsubmitted note");
   });
 
   it("keeps newer typing when an earlier save finishes and advances", async () => {
@@ -638,7 +654,7 @@ describe("CorrectionSurface", () => {
     await userEvent.clear(editor);
     await userEvent.type(editor, "submitted text");
     await listenThrough(0);
-    await userEvent.click(screen.getByRole("button", { name: "saveApproveAndContinue" }));
+    await userEvent.click(screen.getByRole("button", { name: "saveAndApprove" }));
     await userEvent.type(editor, " plus newer typing");
     complete({ spanId: "span-0", revisionId: "rev-0-2", text: "submitted text", state: "needs_second_approval", approverIds: ["user-1"], disapproverIds: [], replayed: false });
     await screen.findByDisplayValue("machine 1");
@@ -656,18 +672,18 @@ describe("CorrectionSurface", () => {
     });
     renderSurface(null);
     await screen.findByDisplayValue("machine 0");
-    const comment = screen.getByPlaceholderText("commentPlaceholder");
-    await userEvent.type(comment, "submitted note");
-    await userEvent.click(screen.getByRole("button", { name: "addComment" }));
+    await userEvent.type(await noteBox(), "submitted note");
+    await userEvent.click(screen.getByRole("button", { name: "problem.sendNote" }));
     await userEvent.click(screen.getByText("machine 1"));
-    await userEvent.type(comment, "another span's note");
+    // The note box belongs to the panel, which closes on a span without a note.
+    await userEvent.type(await noteBox(), "another span's note");
     complete({ id: "comment-1" });
-    await waitFor(() => expect(screen.getByRole("button", { name: "addComment" })).toBeEnabled());
-    expect(comment).toHaveValue("another span's note");
+    await waitFor(() => expect(screen.getByRole("button", { name: "problem.sendNote" })).toBeEnabled());
+    expect(await noteBox()).toHaveValue("another span's note");
     await userEvent.click(screen.getByText("machine 0"));
-    expect(comment).toHaveValue("");
+    expect(await noteBox()).toHaveValue("");
     await userEvent.click(screen.getByText("machine 1"));
-    expect(comment).toHaveValue("another span's note");
+    expect(await noteBox()).toHaveValue("another span's note");
   });
 
   // Nobody finishes a long recording in one sitting, so the list opens on the
@@ -724,7 +740,7 @@ describe("CorrectionSurface", () => {
     await userEvent.clear(editor);
     await userEvent.type(editor, "my text");
     await listenThrough(0);
-    await userEvent.click(screen.getByRole("button", { name: "saveApproveAndContinue" }));
+    await userEvent.click(screen.getByRole("button", { name: "saveAndApprove" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("conflict-current-text")).toHaveTextContent("their text");
@@ -781,8 +797,8 @@ describe("CorrectionSurface", () => {
     const editor = await screen.findByDisplayValue("machine 0");
     await userEvent.clear(editor);
     await userEvent.type(editor, "my text");
-    await userEvent.type(screen.getByPlaceholderText("commentPlaceholder"), "a note");
-    await userEvent.click(screen.getByRole("button", { name: "addComment" }));
+    await userEvent.type((await noteBox()), "a note");
+    await userEvent.click(screen.getByRole("button", { name: "problem.sendNote" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("conflict-current-text")).toHaveTextContent("their text");
@@ -810,7 +826,7 @@ describe("CorrectionSurface", () => {
     await screen.findByDisplayValue("machine 0");
 
     await listenThrough(0);
-    await userEvent.click(screen.getByRole("button", { name: "approveAndContinue" }));
+    await userEvent.click(screen.getByRole("button", { name: "approve" }));
     await userEvent.click(screen.getByRole("button", { name: /machine 2/ }));
     await screen.findByDisplayValue("machine 2");
 
@@ -853,7 +869,7 @@ describe("CorrectionSurface", () => {
     const { queryClient } = renderSurface(null);
     await screen.findByDisplayValue("machine 0");
     await listenThrough(0);
-    await userEvent.click(screen.getByRole("button", { name: "approveAndContinue" }));
+    await userEvent.click(screen.getByRole("button", { name: "approve" }));
     await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
     const editor = await screen.findByDisplayValue("machine 1");
     await userEvent.clear(editor);
@@ -872,7 +888,7 @@ describe("CorrectionSurface", () => {
       replayed: false,
     });
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "disapprove" })).not.toBeDisabled());
+    await waitFor(() => expect(screen.getByTestId("correction-discard-draft")).not.toBeDisabled());
     expect(editor).toHaveValue("my draft");
     expect(screen.getByTestId("conflict-current-text")).toHaveTextContent("their text");
   });
@@ -895,7 +911,7 @@ describe("CorrectionSurface", () => {
     renderSurface(null);
     await screen.findByDisplayValue("machine 0");
     await listenThrough(0);
-    await userEvent.click(screen.getByRole("button", { name: "approveAndContinue" }));
+    await userEvent.click(screen.getByRole("button", { name: "approve" }));
     await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
     const editor = await screen.findByDisplayValue("machine 1");
     await userEvent.clear(editor);
@@ -903,7 +919,7 @@ describe("CorrectionSurface", () => {
 
     rejectApprove(new ApiError("conflict", 409, { code: "REVISION_CONFLICT" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "disapprove" })).not.toBeDisabled());
+    await waitFor(() => expect(screen.getByTestId("correction-discard-draft")).not.toBeDisabled());
     expect(editor).toHaveValue("my draft");
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
     expect(mocks.toast).toHaveBeenCalledWith({ description: "conflict", variant: "destructive" });
@@ -937,9 +953,9 @@ describe("CorrectionSurface", () => {
     renderSurface(null);
     await screen.findByDisplayValue("machine 0");
 
-    await userEvent.click(screen.getByRole("button", { name: "disapprove" }));
+    await userEvent.click(await disapproveButton());
     await waitFor(() => expect(attempts).toBe(1));
-    await userEvent.click(screen.getByRole("button", { name: "disapprove" }));
+    await userEvent.click(await disapproveButton());
     await waitFor(() => expect(attempts).toBe(2));
 
     const keys = fetchJsonMock.mock.calls
@@ -1024,13 +1040,13 @@ describe("CorrectionSurface", () => {
     await userEvent.clear(editor);
     await userEvent.type(editor, draftText);
     await listenThrough(0);
-    await userEvent.click(screen.getByRole("button", { name: "saveApproveAndContinue" }));
+    await userEvent.click(screen.getByRole("button", { name: "saveAndApprove" }));
 
     await waitFor(() => expect(spansServed).toBeGreaterThan(1));
     expect(editor).toHaveValue(storedText);
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
     // The baseline moved with the save: the text is no longer an edit.
-    expect(screen.getByRole("button", { name: "approveAndContinue" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "approve" })).toBeInTheDocument();
   });
 
   // A clean draft follows each revision in turn. The baseline has to move
@@ -1055,22 +1071,41 @@ describe("CorrectionSurface", () => {
     renderSurface(null);
     await screen.findByDisplayValue("machine 0");
 
-    await userEvent.type(screen.getByPlaceholderText("commentPlaceholder"), "one");
-    await userEvent.click(screen.getByRole("button", { name: "addComment" }));
+    await userEvent.type((await noteBox()), "one");
+    await userEvent.click(screen.getByRole("button", { name: "problem.sendNote" }));
     expect(await screen.findByDisplayValue("second")).toBeInTheDocument();
 
-    await userEvent.type(screen.getByPlaceholderText("commentPlaceholder"), "two");
-    await userEvent.click(screen.getByRole("button", { name: "addComment" }));
+    await userEvent.type((await noteBox()), "two");
+    await userEvent.click(screen.getByRole("button", { name: "problem.sendNote" }));
     expect(await screen.findByDisplayValue("third")).toBeInTheDocument();
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
   });
 
   // "Next to resolve" has to reach a segment that is not in the loaded pages,
   // and prepare it without starting playback.
-  it("jumps to the next segment that wants this person, loading its page", async () => {
-    fetchJsonMock.mockImplementation(async (input) => {
+  // Approving moves on to the next segment still waiting for this person,
+  // not to the next one in the recording, and plays it.
+  it("moves on to the next waiting segment after an approval, loading its page, and plays it", async () => {
+    const waiting = new Set([0, 230]);
+    fetchJsonMock.mockImplementation(async (input, init) => {
       const url = String(input);
-      if (url.includes("/next?after=")) return { next: { spanId: "span-230", ordinal: 230 } };
+      if (init?.method === "POST") {
+        waiting.delete(0);
+        return { spanId: "span-0", revisionId: "rev-0", text: "machine 0", state: "needs_second_approval", approverIds: ["user-1"], disapproverIds: [], replayed: false };
+      }
+      if (url.endsWith("/strip")) {
+        return {
+          workspaceId: WORKSPACE.id,
+          spans: Array.from({ length: 250 }, (_, i) => ({
+            spanId: `span-${i}`,
+            ordinal: i,
+            startSeconds: i * 10,
+            endSeconds: i * 10 + 10,
+            state: waiting.has(i) ? "not_reviewed" : "done",
+            wantsMe: waiting.has(i),
+          })),
+        };
+      }
       if (url.includes("/spans?offset=200")) return page(200, 50, 250);
       if (url.includes("/spans?offset=0")) return page(0, 200, 250);
       if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
@@ -1079,12 +1114,14 @@ describe("CorrectionSurface", () => {
 
     renderSurface(null);
     await screen.findByDisplayValue("machine 0");
+    expect(await screen.findByTestId("correction-waiting-count")).toHaveTextContent("waitingForYou");
+    await listenThrough(0);
 
-    await userEvent.click(screen.getByTestId("correction-next-open"));
+    await userEvent.click(screen.getByRole("button", { name: "approve" }));
 
     expect(await screen.findByDisplayValue("machine 230")).toBeInTheDocument();
     await waitFor(() => {
-      expect(lastPlayerProps().autoPlayOnSeek).toBe(false);
+      expect(lastPlayerProps().autoPlayOnSeek).toBe(true);
       expect(lastPlayerProps().seekTo).toBe(2300);
     });
   });
@@ -1122,13 +1159,72 @@ describe("CorrectionSurface", () => {
     await waitFor(() => expect(lastPlayerProps().autoPlayOnSeek).toBe(false));
   });
 
-  // The jump buttons count from the strip and ask the server for the next
-  // span of their kind after the one on screen; the list itself stays whole.
-  it("jumps to the next segment of a kind, counted from the strip", async () => {
-    const urls: string[] = [];
-    fetchJsonMock.mockImplementation(async (input) => {
+  it("picks the next waiting segment after the decided one, wrapping round and never itself", () => {
+    const strip = [0, 1, 2, 3].map((i) => ({
+      spanId: `span-${i}`, ordinal: i, startSeconds: i * 10, endSeconds: i * 10 + 10,
+      state: "not_reviewed" as const, wantsMe: i === 1 || i === 3,
+    }));
+    expect(nextWaitingSpan(strip, { spanId: "span-1", ordinal: 1 })?.spanId).toBe("span-3");
+    expect(nextWaitingSpan(strip, { spanId: "span-3", ordinal: 3 })?.spanId).toBe("span-1");
+    expect(nextWaitingSpan([strip[0], strip[1]], { spanId: "span-1", ordinal: 1 })).toBeNull();
+  });
+
+  // "Disapprove the text" sends the note first, then the objection, and a
+  // disputed segment names who objects and what they wrote above the editor.
+  it("sends the note with a disapproval and explains a disputed segment", async () => {
+    const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    fetchJsonMock.mockImplementation(async (input, init) => {
       const url = String(input);
-      urls.push(url);
+      if (init?.method === "POST") {
+        posts.push({ url, body: JSON.parse(String(init.body)) });
+        if (url.endsWith("/comments")) return { id: "comment-1" };
+        return { spanId: "span-0", revisionId: "rev-0", text: "machine 0", state: "needs_attention", approverIds: [], disapproverIds: ["user-1"], replayed: false };
+      }
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) {
+        return page(0, 2, 2, [span(0), span(1, { state: "needs_attention", disapproverIds: ["user-2"] })]);
+      }
+      if (/\/spans\/span-1$/.test(url)) {
+        return {
+          spanId: "span-1",
+          history: [
+            { kind: "revision", at: "2026-01-01T10:00:00Z", userId: null, revisionId: span(1).revisionId, actorName: null, text: "machine 1" },
+            { kind: "comment", at: "2026-01-01T11:00:00Z", userId: "user-2", revisionId: span(1).revisionId, actorName: "Jana", body: "chybí slovo" },
+            { kind: "decision", at: "2026-01-01T11:00:01Z", userId: "user-2", revisionId: span(1).revisionId, actorName: "Jana", decision: "DISAPPROVE" },
+          ],
+        };
+      }
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    expect(screen.queryByTestId("correction-objection")).not.toBeInTheDocument();
+    await userEvent.type(await noteBox(), "nerozumím konci");
+    await userEvent.click(await disapproveButton());
+
+    // The decision moves on to the next segment, which is disputed by somebody else.
+    expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
+    expect(posts.map((post) => post.url.split("/").at(-1))).toEqual(["comments", "span-0"]);
+    expect(posts[0].body.body).toBe("nerozumím konci");
+    expect(posts[1].body.action).toBe("disapprove");
+    const objection = await screen.findByTestId("correction-objection");
+    expect(objection).toHaveTextContent("disapprovedBy");
+    expect(objection).toHaveTextContent("chybí slovo");
+    // The history speaks the interface language and names the machine import.
+    const history = screen.getByTestId("correction-history");
+    expect(history).toHaveTextContent("machineTranscript");
+    expect(history).toHaveTextContent("historyKind.DISAPPROVE");
+  });
+
+  // A segment that does not wait for this person offers "Continue", which
+  // needs no listening and sends nothing; the list marks what does wait.
+  it("offers Continue on a segment that is not waiting and goes to the next waiting one", async () => {
+    const urls: string[] = [];
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      urls.push(`${init?.method ?? "GET"} ${url}`);
       if (url.endsWith("/strip")) {
         return {
           workspaceId: WORKSPACE.id,
@@ -1142,7 +1238,6 @@ describe("CorrectionSurface", () => {
           })),
         };
       }
-      if (url.includes("/next?")) return { next: { spanId: "span-2", ordinal: 2 } };
       if (url.includes("/spans?offset=0")) return page(0, 3, 3);
       if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
       throw new Error(`unexpected ${url}`);
@@ -1151,16 +1246,20 @@ describe("CorrectionSurface", () => {
     renderSurface(null);
     await screen.findByDisplayValue("machine 0");
 
-    const attention = screen.getByTestId("correction-jump-needs_attention");
-    await waitFor(() => expect(attention).toHaveTextContent("1"));
-    expect(screen.getByTestId("correction-jump-not_reviewed")).toBeDisabled();
+    const primary = screen.getByTestId("correction-approve");
+    await waitFor(() => expect(primary).toHaveAttribute("data-primary", "continue"));
+    expect(primary).toBeEnabled();
+    expect(screen.queryByText("listenBeforeApprove")).not.toBeInTheDocument();
+    expect(screen.getByText("machine 2").closest("button")).toHaveAttribute("data-waiting", "true");
+    expect(screen.getByText("machine 1").closest("button")).not.toHaveAttribute("data-waiting");
 
-    await userEvent.click(attention);
+    await userEvent.click(primary);
 
     expect(await screen.findByDisplayValue("machine 2")).toBeInTheDocument();
-    expect(urls.some((url) => url.includes("/next?after=0&kind=needs_attention"))).toBe(true);
-    // Every segment is still listed: the jump did not narrow the list.
-    expect(screen.getByText("machine 1")).toBeInTheDocument();
+    await waitFor(() => expect(lastPlayerProps().autoPlayOnSeek).toBe(true));
+    expect(urls.some((url) => url.startsWith("POST"))).toBe(false);
+    // On the last waiting segment the primary action is an approval again.
+    expect(screen.getByTestId("correction-approve")).toHaveAttribute("data-primary", "approve");
   });
 
   // Nothing about finding work may move the person off the segment they are
@@ -1211,7 +1310,7 @@ describe("CorrectionSurface", () => {
     expect(screen.getByTestId("correction-heard")).toHaveAttribute("data-heard", "0.00");
     expect(screen.getByText("listenBeforeApprove")).toBeInTheDocument();
     // Disapproving never waits for playback.
-    expect(screen.getByRole("button", { name: "disapprove" })).toBeEnabled();
+    expect(await disapproveButton()).toBeEnabled();
 
     // Half of the span is not enough.
     await listenThrough(0, { from: 0, to: 5 });
@@ -1253,7 +1352,7 @@ describe("CorrectionSurface", () => {
     expect(screen.queryByText("unsavedDraft")).not.toBeInTheDocument();
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
     // Restored as an edit: the primary action saves it.
-    expect(screen.getByRole("button", { name: "saveApproveAndContinue" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "saveAndApprove" })).toBeInTheDocument();
   });
 
   // Somebody else may save the segment while the draft waits. Returning to it
@@ -1356,7 +1455,7 @@ describe("CorrectionSurface", () => {
     await userEvent.clear(editor);
     await userEvent.type(editor, "my text");
     await listenThrough(0);
-    await userEvent.click(screen.getByRole("button", { name: "saveApproveAndContinue" }));
+    await userEvent.click(screen.getByRole("button", { name: "saveAndApprove" }));
 
     await screen.findByDisplayValue("machine 1");
     expect(screen.queryByText("unsavedDraft")).not.toBeInTheDocument();
@@ -1394,7 +1493,7 @@ describe("CorrectionSurface", () => {
     expect(await screen.findByDisplayValue("my text")).toBeInTheDocument();
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
     expect(screen.queryByText("unsavedDraft")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "approveAndContinue" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "approve" })).toBeInTheDocument();
   });
 
   // The gate must follow the span in the same render as the selection, or
@@ -1450,7 +1549,7 @@ describe("CorrectionSurface", () => {
     expect(editor).toHaveValue("machine 0");
     expect(screen.queryByTestId("correction-discard-draft")).not.toBeInTheDocument();
     expect(sessionStorage.getItem("besedy-correction-drafts:v1:user-1:ws-1")).toBeNull();
-    expect(screen.getByRole("button", { name: "approveAndContinue" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "approve" })).toBeInTheDocument();
   });
 
   // Ctrl+Enter below the threshold must not approve, and must not pass silently.
