@@ -61,7 +61,7 @@ export default function SignInForm({ hasMockOAuth }: SignInFormProps) {
     <Card className="w-full max-w-md">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">{t("signInTitle")}</CardTitle>
-        <CardDescription>{t("signInInviteHint")}</CardDescription>
+        <CardDescription>{t("signInAccessHint")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {displayError && !allowlistRejection && (

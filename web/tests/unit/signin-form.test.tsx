@@ -54,10 +54,10 @@ describe("SignInForm", () => {
     vi.mocked(signInWithOAuth).mockReset();
   });
 
-  it("tells visitors that access is invite-only", () => {
+  it("tells visitors that only added users can sign in", () => {
     render(<SignInForm hasMockOAuth={false} />);
 
-    expect(screen.getByText("signInInviteHint")).toBeInTheDocument();
+    expect(screen.getByText("signInAccessHint")).toBeInTheDocument();
   });
 
   it("redirects allowlist rejections to unauthorized", async () => {

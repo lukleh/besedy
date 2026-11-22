@@ -1283,7 +1283,7 @@
   "auth": {
     "signIn": "Sign In",
     "signInTitle": "Sign in to Besedy",
-    "signInInviteHint": "Besedy is invite-only. Sign in with the account whose email received the invitation.",
+    "signInAccessHint": "Only people who have been added to Besedy can sign in. Use the account with the email address you were added under.",
     "signInWith": "Sign in with {provider}",
     "backToSignIn": "Back to Sign In",
     "noProviders": "No authentication providers are configured. Please set up OAuth credentials or enable dev mode.",
