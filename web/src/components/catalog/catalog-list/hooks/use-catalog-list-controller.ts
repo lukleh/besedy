@@ -11,7 +11,6 @@ import { useFilterOptions, type FilterOptionsResponse } from "@/hooks/use-filter
 import { useRecorders, useLocations, useAlbums } from "@/hooks/use-metadata-enums";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { useColumnResize, type ColumnKey as ResizeColumnKey } from "@/hooks/use-column-resize";
-import { useReloadBlocker } from "@/contexts/reload-safety-context";
 import {
   useInlineEdit,
   type UseInlineEditReturn,
@@ -439,25 +438,6 @@ export function useCatalogListController({
       });
     },
   });
-
-  useReloadBlocker(
-    {
-      id: `catalog-inline-edit:${activeCatalogId ?? "unknown"}`,
-      kind: "unsaved-changes",
-      blocksAutomatic: true,
-      blocksManual: true,
-    },
-    inlineEdit.hasUnsavedChanges
-  );
-  useReloadBlocker(
-    {
-      id: `catalog-inline-save:${activeCatalogId ?? "unknown"}`,
-      kind: "critical-mutation",
-      blocksAutomatic: true,
-      blocksManual: true,
-    },
-    inlineEdit.isSaving
-  );
 
   const columnResize = useColumnResize(visibleColumnKeys as ResizeColumnKey[]);
 

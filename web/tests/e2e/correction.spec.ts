@@ -235,7 +235,7 @@ test.describe("transcript correction", () => {
     await spanList.getByRole("button", { name: /^0:10/ }).first().click();
     await expect(editor).toHaveValue("Rozpracovaná oprava.");
     await expect(comment).toHaveValue("Ověřit jméno.");
-    page.once("dialog", (dialog) => dialog.accept());
+    // Drafts are stored, so the reload asks nothing.
     await page.reload();
     await expect(strip).toBeVisible({ timeout: 20000 });
     await spanList.getByRole("button", { name: /^0:10/ }).first().click();
@@ -246,7 +246,7 @@ test.describe("transcript correction", () => {
     await editor.fill("Dnes budeme mluvit.");
     await comment.fill("");
 
-    // When session storage is full, the app still owns drafts while the
+    // When browser storage is full, the app still owns drafts while the
     // responsive layout or client-side navigation unmounts the editor.
     const restoreStorage = await page.evaluateHandle(() => {
       const setItem = Storage.prototype.setItem;

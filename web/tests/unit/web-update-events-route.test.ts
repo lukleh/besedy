@@ -47,7 +47,7 @@ describe("web update telemetry endpoint", () => {
         clientVersion: "web-v2-" + "a".repeat(40),
         targetVersion: "web-v2-" + "b".repeat(40),
         workerReady: true,
-        blockerKinds: ["unsaved-changes", "private-note", "unsaved-changes"],
+        blockerKinds: ["audio", "private-note", "audio"],
         routeGroup: "/catalog/private-id/event/42",
         arbitrary: "must not be stored",
       })
@@ -62,7 +62,7 @@ describe("web update telemetry endpoint", () => {
         clientVersion: "web-v2-" + "a".repeat(40),
         targetVersion: "web-v2-" + "b".repeat(40),
         workerReady: true,
-        blockerKinds: ["unsaved-changes"],
+        blockerKinds: ["audio"],
         routeGroup: null,
         browser: "Chrome",
       },

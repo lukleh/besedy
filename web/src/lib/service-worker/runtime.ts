@@ -278,9 +278,8 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
   }
 
   function getBlockerKinds(policy: UpdatePolicy): ReloadBlockerKind[] {
-    return policy === "manual"
-      ? reloadSafety.manualBlockerKinds
-      : reloadSafety.automaticBlockerKinds;
+    // An update the person asked for is never held back.
+    return policy === "manual" ? [] : reloadSafety.automaticBlockerKinds;
   }
 
   function rememberDeferredPolicy(policy: UpdatePolicy) {
@@ -1251,8 +1250,7 @@ export function createServiceWorkerRuntime(options: ServiceWorkerRuntimeOptions 
 
     setReloadSafety(nextReloadSafety: ReloadSafetySummary) {
       reloadSafety = {
-        automaticBlockerKinds: [...nextReloadSafety.automaticBlockerKinds],
-        manualBlockerKinds: [...nextReloadSafety.manualBlockerKinds]
+        automaticBlockerKinds: [...nextReloadSafety.automaticBlockerKinds]
       };
       if (snapshot.applyState === "blocked") {
         const policy = pendingControllerReloadPolicy;

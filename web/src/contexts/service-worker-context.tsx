@@ -50,14 +50,13 @@ export function ServiceWorkerProvider({
   passive?: boolean;
 }) {
   const runtime = useMemo(() => createServiceWorkerRuntime(), []);
-  const { automaticBlockerKinds, manualBlockerKinds } = useReloadSafety();
+  const { automaticBlockerKinds } = useReloadSafety();
   const { session, isPending } = useSession();
   const pathname = usePathname() ?? "/";
   const isAuthPage = pathname.startsWith("/auth");
   const isAuthenticatedAppShell = Boolean(session) && !isPending && !isAuthPage;
   const shouldSilentlyActivateWaitingWorker = isAuthPage || (!session && !isPending);
   const automaticBlockerKey = automaticBlockerKinds.join(",");
-  const manualBlockerKey = manualBlockerKinds.join(",");
   const [state, setState] = useState<ServiceWorkerRuntimeSnapshot>(() => runtime.getSnapshot());
 
   useEffect(() => {
@@ -78,9 +77,8 @@ export function ServiceWorkerProvider({
       key ? (key.split(",") as ReloadBlockerKind[]) : [];
     runtime.setReloadSafety({
       automaticBlockerKinds: parseKinds(automaticBlockerKey),
-      manualBlockerKinds: parseKinds(manualBlockerKey),
     });
-  }, [automaticBlockerKey, manualBlockerKey, passive, runtime]);
+  }, [automaticBlockerKey, passive, runtime]);
 
   useEffect(() => {
     if (passive) return;

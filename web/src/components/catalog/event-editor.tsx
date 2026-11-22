@@ -13,7 +13,6 @@ import { buildRecordingPagePath } from "@/lib/api/recording-urls";
 import { withBackTo } from "@/lib/navigation/back-to";
 import { formatPartialDate } from "@/lib/date-format";
 import { useToast } from "@/hooks/use-toast";
-import { useReloadBlocker } from "@/contexts/reload-safety-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -256,38 +255,6 @@ export function EventEditor({ catalogId, eventId }: EventDetailProps) {
     toggleReleaseMutation.isPending ||
     updateMetadataMutation.isPending ||
     deleteMutation.isPending;
-
-  useReloadBlocker(
-    {
-      id: `event-editor:${catalogId}:${eventId}`,
-      kind: "critical-mutation",
-      blocksAutomatic: true,
-      blocksManual: true,
-    },
-    isBusy
-  );
-
-  const hasUnsavedEdit = Boolean(
-    editOpen &&
-      data &&
-      (editTitle !== (data.title ?? "") ||
-        editLocationId !== (data.location?.id ? String(data.location.id) : "") ||
-        editDateYear !== String(data.dateYear) ||
-        editDateMonth !== (data.dateMonth ? String(data.dateMonth) : "") ||
-        editDateDay !== (data.dateDay ? String(data.dateDay) : "") ||
-        editSessionIndex !== String(data.sessionIndex) ||
-        editDescription !== (data.description ?? ""))
-  );
-
-  useReloadBlocker(
-    {
-      id: `event-editor-draft:${catalogId}:${eventId}`,
-      kind: "unsaved-changes",
-      blocksAutomatic: true,
-      blocksManual: true,
-    },
-    hasUnsavedEdit
-  );
 
   const openEditDialog = () => {
     if (!data) return;

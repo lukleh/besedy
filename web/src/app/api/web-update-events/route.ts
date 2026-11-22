@@ -23,7 +23,7 @@ const ROUTE_GROUPS = new Set([
   "auth",
   "other",
 ]);
-const BLOCKER_KINDS = new Set(["audio", "unsaved-changes", "critical-mutation"]);
+const BLOCKER_KINDS = new Set(["audio", "download"]);
 let nextRetentionCleanupAt = 0;
 
 const EVENT_TYPES: Record<string, WebUpdateEventType> = {
