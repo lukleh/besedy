@@ -54,6 +54,12 @@ describe("SignInForm", () => {
     vi.mocked(signInWithOAuth).mockReset();
   });
 
+  it("tells visitors that only added users can sign in", () => {
+    render(<SignInForm hasMockOAuth={false} />);
+
+    expect(screen.getByText("signInAccessHint")).toBeInTheDocument();
+  });
+
   it("redirects allowlist rejections to unauthorized", async () => {
     searchParamsMock.mockReturnValue(
       new URLSearchParams("error=not_authorized%3Auser%40example.com")

@@ -1282,6 +1282,7 @@
   "auth": {
     "signIn": "Přihlášení",
     "signInTitle": "Přihlášení do Besedy",
+    "signInAccessHint": "Do Besedy se mohou přihlásit jen uživatelé, které jsme přidali. Přihlaste se účtem s e-mailem, pod kterým jste byli přidáni.",
     "signInWith": "Přihlásit přes {provider}",
     "backToSignIn": "Zpět na přihlášení",
     "noProviders": "Nejsou nakonfigurovány žádné poskytovatele autentizace. Nastavte OAuth přihlašovací údaje nebo povolte vývojový režim.",
@@ -1328,7 +1329,7 @@
     "unauthorized": {
       "title": "Přístup není autorizován",
       "description": "Váš e-mail není na seznamu povolených",
-      "message": "Tato aplikace vyžaduje pozvánku pro přístup.",
+      "message": "Do Besedy se mohou přihlásit jen uživatelé, které jsme přidali. Pokud jsme vás přidali pod jiným e-mailem, přihlaste se tím účtem.",
       "attemptedEmail": "Pokusili jste se přihlásit jako: {email}",
       "contact": "Pro získání přístupu nás kontaktujte."
     },

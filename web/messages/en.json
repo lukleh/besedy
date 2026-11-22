@@ -1283,6 +1283,7 @@
   "auth": {
     "signIn": "Sign In",
     "signInTitle": "Sign in to Besedy",
+    "signInAccessHint": "Only people who have been added to Besedy can sign in. Use the account with the email address you were added under.",
     "signInWith": "Sign in with {provider}",
     "backToSignIn": "Back to Sign In",
     "noProviders": "No authentication providers are configured. Please set up OAuth credentials or enable dev mode.",
@@ -1329,7 +1330,7 @@
     "unauthorized": {
       "title": "Access Not Authorized",
       "description": "Your email is not on the access list",
-      "message": "This application requires an invitation to access.",
+      "message": "Only people who have been added to Besedy can sign in. If you were added under a different email, sign in with that account.",
       "attemptedEmail": "You tried to sign in with: {email}",
       "contact": "To request access, please contact us."
     },
