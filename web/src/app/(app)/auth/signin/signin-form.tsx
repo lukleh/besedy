@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -60,6 +61,7 @@ export default function SignInForm({ hasMockOAuth }: SignInFormProps) {
     <Card className="w-full max-w-md">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">{t("signInTitle")}</CardTitle>
+        <CardDescription>{t("signInInviteHint")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {displayError && !allowlistRejection && (

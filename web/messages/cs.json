@@ -1282,6 +1282,7 @@
   "auth": {
     "signIn": "Přihlášení",
     "signInTitle": "Přihlášení do Besedy",
+    "signInInviteHint": "Přístup do Besedy je jen na pozvánku. Přihlaste se účtem, na jehož e-mail jste pozvánku dostali.",
     "signInWith": "Přihlásit přes {provider}",
     "backToSignIn": "Zpět na přihlášení",
     "noProviders": "Nejsou nakonfigurovány žádné poskytovatele autentizace. Nastavte OAuth přihlašovací údaje nebo povolte vývojový režim.",
