@@ -1265,7 +1265,9 @@ export function CorrectionSurface({
                 className="gap-2"
                 aria-expanded={flagsOpen}
                 aria-controls="correction-flags-panel"
-                onClick={() => setFlagsOpen((open) => !open)}
+                // The panel stays put while a flag change is on its way: closing
+                // it would drop the wait that holds the submission back.
+                onClick={() => { if (!flagPending) setFlagsOpen((open) => !open); }}
                 data-testid="correction-flags-toggle"
               >
                 <Flag className="h-4 w-4" />
@@ -1371,7 +1373,8 @@ export function CorrectionSurface({
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={!commentBody.trim() || comment.isPending}
+                      // A submission under way sends this note itself.
+                      disabled={!commentBody.trim() || comment.isPending || command.isPending}
                       onClick={() => comment.mutate({ span: selected, body: commentBody })}
                       data-testid="correction-send-note"
                     >
