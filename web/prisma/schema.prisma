@@ -1000,6 +1000,7 @@ enum TranscriptSpanFlagKind {
   MUSIC_NOISE
   CUT_WORD
   EXCLUDE_FROM_TRAINING
+  OTHER
 }
 
 enum TranscriptSpanFlagAction {

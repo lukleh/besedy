@@ -592,9 +592,9 @@ describe("CorrectionSurface", () => {
     expect(localStorage.getItem("besedy-correction-drafts:v1:user-1:ws-1")).toBeNull();
   });
 
-  it.each(["", " plus newer typing"])("preserves an unsent comment and subsequent typing after plain approval: %j", async (newerText) => {
+  it.each(["", " plus newer typing"])("preserves typing that follows a plain approval: %j", async (newerText) => {
     localStorage.setItem("besedy-correction-drafts:v1:user-1:ws-1", JSON.stringify({
-      "span-0": { text: { text: "machine 0", baseText: "older text", revisionId: "older-rev" }, comment: "unsent note" },
+      "span-0": { text: { text: "machine 0", baseText: "older text", revisionId: "older-rev" } },
     }));
     serveDraftSpans();
     const reads = fetchJsonMock.getMockImplementation()!;
@@ -612,10 +612,9 @@ describe("CorrectionSurface", () => {
     await screen.findByDisplayValue("machine 1");
     await userEvent.click(screen.getByText("machine 0"));
     expect(editor).toHaveValue(`machine 0${newerText}`);
-    expect((await noteBox())).toHaveValue("unsent note");
   });
 
-  it("clears only the submitted text draft after a successful save", async () => {
+  it("clears the submitted text draft and the note sent with it after a successful save", async () => {
     let currentPage = page(0, 2, 2);
     serveDraftSpans(() => currentPage);
     const reads = fetchJsonMock.getMockImplementation()!;
@@ -628,7 +627,7 @@ describe("CorrectionSurface", () => {
     const editor = await screen.findByDisplayValue("machine 0");
     await userEvent.clear(editor);
     await userEvent.type(editor, "saved correction");
-    await userEvent.type((await noteBox()), "unsubmitted note");
+    await userEvent.type((await noteBox()), "note sent with the text");
     await listenThrough(0);
     await userEvent.click(screen.getByRole("button", { name: "saveAndApprove" }));
     await screen.findByDisplayValue("machine 1");
@@ -636,7 +635,7 @@ describe("CorrectionSurface", () => {
     renderSurface(null);
     expect(await screen.findByDisplayValue("saved correction")).toBeInTheDocument();
     expect(screen.queryByTestId("conflict-current-text")).not.toBeInTheDocument();
-    expect((await noteBox())).toHaveValue("unsubmitted note");
+    expect((await noteBox())).toHaveValue("");
   });
 
   it("keeps newer typing when an earlier save finishes and advances", async () => {
@@ -1308,8 +1307,107 @@ describe("CorrectionSurface", () => {
     expect(history).toHaveTextContent("historyKind.DISAPPROVE");
   });
 
+  // A note written beside the text is not left behind by the main button.
+  // The decision goes first: a refused one leaves the note a draft, and a
+  // stored one gives the note the revision it settled.
+  it("sends a written note once the submission is stored", async () => {
+    const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    let refuse = true;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (init?.method === "POST") {
+        posts.push({ url, body: JSON.parse(String(init.body)) });
+        if (url.endsWith("/comments")) return { id: "comment-1" };
+        if (refuse) throw new ApiError("locked", 409, { code: "WORKSPACE_LOCKED" });
+        return { spanId: "span-0", revisionId: "rev-0-2", text: "machine 0", state: "done", approverIds: ["user-9", "user-1"], disapproverIds: [], replayed: false };
+      }
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 2, 2, [span(0), span(1)]);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await userEvent.type(await noteBox(), "ke konci není rozumět");
+    await listenThrough(0);
+    await userEvent.click(screen.getByTestId("correction-approve"));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0].body.action).toBe("approve");
+    expect(await noteBox()).toHaveValue("ke konci není rozumět");
+
+    refuse = false;
+    await waitFor(() => expect(screen.getByTestId("correction-approve")).toBeEnabled());
+    await userEvent.click(screen.getByTestId("correction-approve"));
+    await waitFor(() => expect(posts).toHaveLength(3));
+    expect(posts.map((post) => post.url.split("/").at(-1))).toEqual(["span-0", "span-0", "comments"]);
+    expect(posts[2].body).toMatchObject({ body: "ke konci není rozumět", revisionId: "rev-0-2" });
+  });
+
+  it("sends a written note with a withdrawn decision", async () => {
+    const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (init?.method === "POST") {
+        posts.push({ url, body: JSON.parse(String(init.body)) });
+        if (url.endsWith("/comments")) return { id: "comment-1" };
+        return { spanId: "span-0", revisionId: "rev-0-1", text: "machine 0", state: "not_reviewed", approverIds: [], disapproverIds: [], replayed: false };
+      }
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 2, 2, [span(0, { approverIds: ["user-1"] }), span(1)]);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await userEvent.type(screen.getByPlaceholderText("noteOptional"), "spletl jsem se");
+    await userEvent.click(screen.getByTestId("correction-withdraw"));
+
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts.map((post) => post.url.split("/").at(-1))).toEqual(["span-0", "comments"]);
+    expect(posts[0].body.action).toBe("withdraw");
+    expect(posts[1].body.body).toBe("spletl jsem se");
+  });
+
+  // Until a flag change is stored and the list refreshed, the span's flags
+  // on screen are stale, so the submission waits for them.
+  it("holds the submission while a flag change is on its way", async () => {
+    const flagged = span(0, {
+      flags: [{ kind: "UNCLEAR", languageCode: null, comment: null, actorKey: "user:user-1", setAt: "2026-01-01T10:00:00Z" }],
+    });
+    let finishFlag!: (value: unknown) => void;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (init?.method === "POST" && url.endsWith("/flags")) {
+        return new Promise((resolve) => { finishFlag = resolve; });
+      }
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 2, 2, [flagged, span(1)]);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await listenThrough(0);
+    const submit = screen.getByTestId("correction-approve");
+    expect(submit).toBeEnabled();
+    await userEvent.click(await screen.findByTestId("correction-flag-UNCLEAR"));
+    expect(submit).toBeDisabled();
+    // The wait belongs to the editor: leaving for another segment and
+    // coming back, which closes and reopens the panel, does not lose it.
+    await userEvent.click(screen.getByText("machine 1"));
+    await screen.findByDisplayValue("machine 1");
+    await userEvent.click(screen.getByText("machine 0"));
+    await screen.findByDisplayValue("machine 0");
+    expect(screen.getByTestId("correction-approve")).toBeDisabled();
+    await act(async () => { finishFlag({}); });
+    await waitFor(() => expect(submit).toBeEnabled());
+  });
+
   // Disapproving needs a first pass to disapprove: untouched machine text is
-  // corrected or flagged, and the flags open from their own link.
+  // corrected or flagged, and the flags open from their own button.
   it("offers Disapprove only as the second pass, and flags on request", async () => {
     fetchJsonMock.mockImplementation(async (input) => {
       const url = String(input);
@@ -1332,6 +1430,21 @@ describe("CorrectionSurface", () => {
     expect(screen.queryByTestId("correction-flag-UNCLEAR")).not.toBeInTheDocument();
     await userEvent.click(screen.getByTestId("correction-flags-toggle"));
     expect(screen.getByTestId("correction-flag-UNCLEAR")).toBeInTheDocument();
+    // An open panel with no problem chosen holds the submission back, and a
+    // note can go with the problem.
+    expect(screen.getByTestId("correction-flag-choose")).toBeInTheDocument();
+    expect(screen.getByTestId("correction-approve")).toBeDisabled();
+    // Pointing at the greyed-out button says why.
+    expect(screen.getByTestId("correction-approve-wrap").getAttribute("title")).toContain("flagAudioChoose");
+    // The note is optional there, the main button sends it, and training
+    // is not the corrector's choice.
+    expect(screen.getByPlaceholderText("noteAudioProblem")).toBeInTheDocument();
+    expect(screen.queryByTestId("correction-send-note")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("correction-flag-EXCLUDE_FROM_TRAINING")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("correction-flags-toggle"));
+    expect(screen.queryByTestId("correction-flag-choose")).not.toBeInTheDocument();
+    // The note box does not depend on the panel: every segment has it.
+    expect(screen.getByPlaceholderText("noteOptional")).toBeInTheDocument();
 
     // Only this person approved it: theirs to withdraw, not to disapprove.
     await userEvent.click(screen.getByText("machine 1"));

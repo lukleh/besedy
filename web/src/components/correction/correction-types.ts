@@ -30,7 +30,7 @@ export const spanViewSchema = z.object({
   flags: z
     .array(
       z.object({
-        kind: z.enum(["UNCLEAR", "OVERLAP", "OTHER_LANGUAGE", "MUSIC_NOISE", "CUT_WORD", "EXCLUDE_FROM_TRAINING"]),
+        kind: z.enum(["UNCLEAR", "OVERLAP", "OTHER_LANGUAGE", "MUSIC_NOISE", "CUT_WORD", "OTHER", "EXCLUDE_FROM_TRAINING"]),
         languageCode: z.string().nullable(),
         comment: z.string().nullable(),
         actorKey: z.string(),

@@ -290,7 +290,7 @@
     "shortcutHint": "Ctrl+Enter or Cmd+Enter does the same as the button. Alt+P plays the span, Alt+R repeats a part, Alt+← and Alt+→ go to the previous and next part, Alt+B goes back 3 s, Alt+S changes the speed.",
     "unsavedDraft": "Unsaved",
     "heard": "Heard {percent} %",
-    "listenBeforeApprove": "Approving needs at least {percent} % of the span's speech heard; an approval without listening is not used for training.",
+    "listenBeforeApprove": "Submitting needs at least {percent} % of the span's speech heard; a submission without listening is not used for training.",
     "workspaceLocked": "The transcript is being published or somebody is saving another change. Your text stays in the editor; try again in a moment.",
     "discardDraft": "Discard changes",
     "conflict": "Somebody changed this segment while you were working on it. Your text is kept in the editor; the current text is shown here.",
@@ -493,7 +493,7 @@
     },
     "emptySpan": {
       "hint": "The model wrote nothing here. If someone speaks, write the text. If not, confirm that nothing was said.",
-      "confirm": "Nothing was said here"
+      "confirm": "No speech here"
     },
     "flags": {
       "language": "Language",
@@ -502,14 +502,15 @@
       "OTHER_LANGUAGE": "Other language",
       "MUSIC_NOISE": "Music / noise",
       "CUT_WORD": "Cut word",
+      "OTHER": "Something else",
       "EXCLUDE_FROM_TRAINING": "Keep out of training"
     },
     "consentLoadFailed": "Could not check your consent to the use of corrections. Checking needs it.",
     "consentRetry": "Try again",
-    "approve": "Approve",
-    "saveAndApprove": "Save and approve",
-    "clearAndApprove": "Mark as no speech",
-    "continue": "Continue",
+    "approve": "Submit",
+    "saveAndApprove": "Submit",
+    "clearAndApprove": "No speech here",
+    "continue": "Next, without saving",
     "waitingForYou": "{count, plural, one {# segment is waiting for you} other {# segments are waiting for you}}",
     "youApproved": "You approved",
     "noText": "(no text)",
@@ -531,7 +532,10 @@
     "disapproveEditedHint": "Save your change or discard it first.",
     "sendNote": "Send the note only",
     "flagAudio": "Audio problem",
-    "flagAudioHint": "Flag audio issues such as background noise or overlapping speakers, or mark speech in another language."
+    "flagAudioHint": "What is wrong with the audio?",
+    "noteOptional": "Anything to add? (optional)",
+    "noteAudioProblem": "Describe the problem in your own words (optional)",
+    "flagAudioChoose": "Choose what is wrong with the audio, or close Audio problem."
   },
   "metadata": {
     "title": "Metadata",
