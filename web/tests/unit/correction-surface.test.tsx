@@ -1214,14 +1214,18 @@ describe("CorrectionSurface", () => {
   });
 
   // A note written beside the text is not left behind by the main button.
-  it("sends a written note together with the submission", async () => {
+  // The decision goes first: a refused one leaves the note a draft, and a
+  // stored one gives the note the revision it settled.
+  it("sends a written note once the submission is stored", async () => {
     const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    let refuse = true;
     fetchJsonMock.mockImplementation(async (input, init) => {
       const url = String(input);
       if (init?.method === "POST") {
         posts.push({ url, body: JSON.parse(String(init.body)) });
         if (url.endsWith("/comments")) return { id: "comment-1" };
-        return { spanId: "span-0", revisionId: "rev-0-1", text: "machine 0", state: "done", approverIds: ["user-9", "user-1"], disapproverIds: [], replayed: false };
+        if (refuse) throw new ApiError("locked", 409, { code: "WORKSPACE_LOCKED" });
+        return { spanId: "span-0", revisionId: "rev-0-2", text: "machine 0", state: "done", approverIds: ["user-9", "user-1"], disapproverIds: [], replayed: false };
       }
       if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
       if (url.includes("/spans?offset=0")) return page(0, 2, 2, [span(0), span(1)]);
@@ -1234,11 +1238,45 @@ describe("CorrectionSurface", () => {
     await userEvent.type(await noteBox(), "ke konci není rozumět");
     await listenThrough(0);
     await userEvent.click(screen.getByTestId("correction-approve"));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0].body.action).toBe("approve");
+    expect(await noteBox()).toHaveValue("ke konci není rozumět");
 
-    await waitFor(() => expect(posts).toHaveLength(2));
-    expect(posts.map((post) => post.url.split("/").at(-1))).toEqual(["comments", "span-0"]);
-    expect(posts[0].body.body).toBe("ke konci není rozumět");
-    expect(posts[1].body.action).toBe("approve");
+    refuse = false;
+    await waitFor(() => expect(screen.getByTestId("correction-approve")).toBeEnabled());
+    await userEvent.click(screen.getByTestId("correction-approve"));
+    await waitFor(() => expect(posts).toHaveLength(3));
+    expect(posts.map((post) => post.url.split("/").at(-1))).toEqual(["span-0", "span-0", "comments"]);
+    expect(posts[2].body).toMatchObject({ body: "ke konci není rozumět", revisionId: "rev-0-2" });
+  });
+
+  // Until a flag change is stored and the list refreshed, the span's flags
+  // on screen are stale, so the submission waits for them.
+  it("holds the submission while a flag change is on its way", async () => {
+    const flagged = span(0, {
+      flags: [{ kind: "UNCLEAR", languageCode: null, comment: null, actorKey: "user:user-1", setAt: "2026-01-01T10:00:00Z" }],
+    });
+    let finishFlag!: (value: unknown) => void;
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (init?.method === "POST" && url.endsWith("/flags")) {
+        return new Promise((resolve) => { finishFlag = resolve; });
+      }
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 2, 2, [flagged, span(1)]);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await listenThrough(0);
+    const submit = screen.getByTestId("correction-approve");
+    expect(submit).toBeEnabled();
+    await userEvent.click(await screen.findByTestId("correction-flag-UNCLEAR"));
+    expect(submit).toBeDisabled();
+    await act(async () => { finishFlag({}); });
+    await waitFor(() => expect(submit).toBeEnabled());
   });
 
   // Disapproving needs a first pass to disapprove: untouched machine text is

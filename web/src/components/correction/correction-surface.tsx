@@ -133,6 +133,8 @@ interface SpanCommandInput {
   idempotencyKey: string;
   /** What the person heard of the span, measured when they acted (ADR 0012) */
   playback?: PlaybackReport;
+  /** A note written beside the text, sent once the decision is stored. */
+  note?: string;
 }
 
 type PlaybackReport = ReturnType<PlaybackTracker["report"]>;
@@ -246,6 +248,8 @@ export function CorrectionSurface({
   // The note for a disapproval, and the audio flags, each open on request.
   const [noteOpen, setNoteOpen] = useState(false);
   const [flagsOpen, setFlagsOpen] = useState(false);
+  // A flag being set or cleared: the span's flags are not current yet.
+  const [flagPending, setFlagPending] = useState(false);
 
   // A shared link, `?segment=<span ID>`, opens on that segment. It is read
   // when the page opens and never written: the share button, not the
@@ -717,6 +721,14 @@ export function CorrectionSurface({
       // The sidebar stays usable while the command runs. Its result only
       // settles the conflict on the span it was issued for.
       if (selectedIdRef.current === variables.span.id) setConflict(false);
+      // The note follows a stored decision, against the revision it settled.
+      // A refused submission therefore leaves the note a draft, and a note
+      // that fails to send stays one too; its own handler says so.
+      if (variables.note) {
+        await comment
+          .mutateAsync({ span: { ...variables.span, revisionId: result.revisionId }, body: variables.note })
+          .catch(() => undefined);
+      }
       await refresh();
       // A decision is the end of the person's work on the span; withdrawing
       // one is not, so it stays.
@@ -756,7 +768,7 @@ export function CorrectionSurface({
   });
 
   const issue = useCallback(
-    (span: SpanView, action: SpanCommandInput["action"], text?: string) => {
+    (span: SpanView, action: SpanCommandInput["action"], text?: string, note?: string) => {
       const pending = pendingCommandRef.current;
       const key =
         pending &&
@@ -774,7 +786,7 @@ export function CorrectionSurface({
       const draftToClear = action === "save_and_approve"
         ? text
         : action === "approve" && draftText?.trim() === span.text.trim() ? draftText : undefined;
-      command.mutate({ span, action, text, draftToClear, idempotencyKey: key, playback: report });
+      command.mutate({ span, action, text, draftToClear, idempotencyKey: key, playback: report, note });
     },
     [command, localDrafts.drafts, playback]
   );
@@ -836,7 +848,7 @@ export function CorrectionSurface({
   ].filter(Boolean).join(" ") || undefined;
 
   const runPrimary = useCallback(() => {
-    if (!selected || command.isPending || comment.isPending) return;
+    if (!selected || command.isPending || comment.isPending || flagPending) return;
     if (primary === "continue") {
       void advance({ spanId: selected.id, ordinal: selected.ordinal });
       return;
@@ -854,18 +866,12 @@ export function CorrectionSurface({
       toast({ description: t("flagAudioChoose") });
       return;
     }
-    // A note written beside the text goes with the submission, the way it
-    // goes with a disapproval: nobody should have to send it separately.
-    const send = () => {
-      if (isEdited) issue(selected, "save_and_approve", draft);
-      else issue(selected, "approve");
-    };
-    if (commentBody.trim()) {
-      comment.mutateAsync({ span: selected, body: commentBody }).then(send, () => undefined);
-    } else {
-      send();
-    }
-  }, [selected, command.isPending, primary, advance, mustListen, needsFlagChoice, isEdited, draft, issue, toast, t, commentBody, comment]);
+    // A note written beside the text goes with the submission: nobody
+    // should have to send it separately.
+    const note = commentBody.trim() ? commentBody : undefined;
+    if (isEdited) issue(selected, "save_and_approve", draft, note);
+    else issue(selected, "approve", undefined, note);
+  }, [selected, command.isPending, comment.isPending, flagPending, primary, advance, mustListen, needsFlagChoice, isEdited, draft, issue, toast, t, commentBody]);
 
   // Disapproving: the note goes first, so the others see the reason together
   // with the objection.
@@ -1243,7 +1249,7 @@ export function CorrectionSurface({
               <span className="inline-flex" title={blockedReason} data-testid="correction-approve-wrap">
                 <Button
                   onClick={runPrimary}
-                  disabled={command.isPending || comment.isPending || needsListening || needsFlagChoice}
+                  disabled={command.isPending || comment.isPending || flagPending || needsListening || needsFlagChoice}
                   className="gap-2"
                   data-testid="correction-approve"
                   data-primary={primary}
@@ -1324,6 +1330,7 @@ export function CorrectionSurface({
                   span={selected}
                   flagsUrl={`${buildCorrectionSpanUrl(catalogId, hash, selected.id)}/flags`}
                   onChanged={refresh}
+                  onPendingChange={setFlagPending}
                 />
               </div>
             )}

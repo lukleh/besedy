@@ -3,7 +3,7 @@
 // Flags on a span's audio (ADR 0012). They never block publication; training
 // leaves flagged chunks out. Each toggle is one immutable event on the server.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
@@ -29,9 +29,11 @@ interface CorrectionFlagsProps {
   span: SpanView;
   flagsUrl: string;
   onChanged: () => Promise<void> | void;
+  /** True from a click until the refreshed flags are on screen. */
+  onPendingChange?: (pending: boolean) => void;
 }
 
-export function CorrectionFlags({ span, flagsUrl, onChanged }: CorrectionFlagsProps) {
+export function CorrectionFlags({ span, flagsUrl, onChanged, onPendingChange }: CorrectionFlagsProps) {
   const t = useTranslations("correction.flags");
   const { toast } = useToast();
   const [language, setLanguage] = useState<string>("en");
@@ -55,6 +57,14 @@ export function CorrectionFlags({ span, flagsUrl, onChanged }: CorrectionFlagsPr
         variant: "destructive",
       }),
   });
+
+  // The mutation stays pending through `onChanged`, so the editor can hold a
+  // submission until the flags it reads are the ones just set or cleared.
+  const pending = toggle.isPending;
+  useEffect(() => {
+    onPendingChange?.(pending);
+    return () => onPendingChange?.(false);
+  }, [pending, onPendingChange]);
 
   const active = new Map((span.flags ?? []).map((flag) => [flag.kind, flag]));
   const otherLanguage = active.get("OTHER_LANGUAGE");
