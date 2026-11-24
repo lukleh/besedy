@@ -519,7 +519,7 @@
     "disapproveEditedHint": "Nejdřív změnu uložte, nebo ji zahoďte.",
     "sendNote": "Poslat jen poznámku",
     "flagAudio": "Problém se zvukem",
-    "flagAudioHint": "Když není dobře slyšet, co zaznělo, označte proč."
+    "flagAudioHint": "Označte problém se zvukem, třeba šum nebo více mluvčích najednou. Označit můžete i řeč v jiném jazyce."
   },
   "metadata": {
     "title": "Metadata",

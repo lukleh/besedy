@@ -519,7 +519,7 @@
     "disapproveEditedHint": "Save your change or discard it first.",
     "sendNote": "Send the note only",
     "flagAudio": "Audio problem",
-    "flagAudioHint": "When you cannot hear clearly what was said, mark why."
+    "flagAudioHint": "Flag audio issues such as background noise or overlapping speakers, or mark speech in another language."
   },
   "metadata": {
     "title": "Metadata",
