@@ -46,6 +46,7 @@ import type { GrantableExtraPermission } from "@/lib/policy/catalog-permissions"
 import { CatalogSettingsAccessSummary } from "./catalog-settings-access-summary";
 import { CatalogSettingsConfigCard } from "./catalog-settings-config-card";
 import { CatalogSettingsCorrectionGuideCard } from "./catalog-settings-correction-guide-card";
+import { CatalogSettingsCorrectionsCard } from "./catalog-settings-corrections-card";
 import { CatalogSettingsEventHealthCard } from "./catalog-settings-event-health-card";
 import { CatalogSettingsLookupsCard } from "./catalog-settings-lookups-card";
 import { CatalogSettingsPendingUsersCard } from "./catalog-settings-pending-users-card";
@@ -586,6 +587,8 @@ export default function CatalogSettingsContent({
       )}
 
       {cards.lookups && <CatalogSettingsLookupsCard catalogId={catalogId} />}
+
+      {cards.correctionOverview && <CatalogSettingsCorrectionsCard catalogId={catalogId} />}
 
       {cards.correctionGuide && (
         <CatalogSettingsCorrectionGuideCard catalogId={catalogId} />

@@ -331,5 +331,21 @@ test.describe("transcript correction", () => {
       playback: { minPlaybackRate: 1, maxPlaybackRate: 1 },
     });
     expect(body.playback.heardFraction).toBeGreaterThanOrEqual(0.9);
+
+    // Whoever administers correction sees who did that and what now waits
+    // for a second person; a corrector does not get the per-person view.
+    const adminOverviewUrl = `/api/catalogs/${TEST_CATALOG_ID}/correction/admin-overview`;
+    expect((await page.request.get(adminOverviewUrl)).status()).toBe(403);
+    await loginAs(page, "superadmin");
+    await page.goto(`/catalog/${TEST_CATALOG_ID}/settings/corrections`);
+    await expect(page.getByTestId("correction-admin-summary")).toBeVisible({ timeout: 20000 });
+    await expect(page.getByTestId("correction-admin-person").first()).toBeVisible();
+    await expect(
+      page.getByTestId("correction-admin-recording").locator(`a[href="${correctionPath}"]`)
+    ).toBeVisible();
+    const overview = await (await page.request.get(adminOverviewUrl)).json() as {
+      people: Array<{ approvedSeconds7d: number; waitingSeconds: number }>;
+    };
+    expect(overview.people.some((person) => person.approvedSeconds7d > 0 && person.waitingSeconds > 0)).toBe(true);
   });
 });

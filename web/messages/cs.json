@@ -336,6 +336,68 @@
       "needs_attention": "Vyžaduje pozornost",
       "not_reviewed": "Nezkontrolováno"
     },
+    "admin": {
+      "title": "Korektury: kdo na čem pracuje",
+      "description": "Všechny nahrávky v korektuře, lidé, kteří na nich pracují, a co na někoho čeká.",
+      "loadFailed": "Přehled se nepodařilo načíst.",
+      "correctorOverview": "Otevřít přehled pro korektory",
+      "summary": {
+        "done": "Hotovo",
+        "doneOf": "z {total}",
+        "secondPass": "Čeká na druhé čtení",
+        "attention": "Vyžaduje pozornost",
+        "attentionCount": "{count, plural, one {# segment} few {# segmenty} other {# segmentů}}",
+        "active": "Aktivní tento týden",
+        "activePeople": "{count, plural, one {# člověk} few {# lidé} other {# lidí}}",
+        "activeApproved": "schváleno {hours}"
+      },
+      "legend": {
+        "done": "Hotovo",
+        "needs_second_approval": "Čeká na druhé čtení",
+        "needs_attention": "Vyžaduje pozornost",
+        "not_reviewed": "Nezkontrolováno"
+      },
+      "events": {
+        "title": "Události",
+        "event": "Událost",
+        "progress": "Postup",
+        "left": "Zbývá",
+        "who": "Kdo, poslední aktivita",
+        "expand": "Zobrazit nahrávky",
+        "collapse": "Skrýt nahrávky",
+        "notStartedYet": "Nezačato",
+        "soleCorrector": "Jen jeden korektor",
+        "empty": "Zatím se nic neopravuje.",
+        "notStarted": "{count, plural, one {Další # nahrávka} few {Další # nahrávky} other {Dalších # nahrávek}} ({hours}) zatím bez korektury."
+      },
+      "people": {
+        "title": "Lidé",
+        "person": "Korektor",
+        "workingOn": "Naposledy pracoval(a) na",
+        "days7": "7 dní",
+        "days30": "30 dní",
+        "waiting": "Čeká",
+        "disputed": "Sporné",
+        "hint": "7 a 30 dní: schválený nebo upravený zvuk. Čeká: zvuk, který zatím schválil jen tento člověk. Sporné: segmenty, které tento člověk schválil a někdo k nim má námitku.",
+        "empty": "Zatím nikdo nic neopravil."
+      },
+      "action": {
+        "title": "Vyžaduje zásah",
+        "secondPass": "Druhé čtení",
+        "secondPassHint": "Nejvíc čekajícího zvuku nahoře",
+        "firstPassBy": "první čtení: {names}",
+        "soleCorrector": "{count, plural, one {# nahrávka má} few {# nahrávky mají} other {# nahrávek má}} jen jednoho korektora",
+        "disputes": "Spory",
+        "disputesHint": "Nejstarší nahoře",
+        "objectedBy": "námitka: {names}",
+        "more": "a dalších {count}",
+        "status": "Stojí a připraveno",
+        "ready": "Připraveno ke zveřejnění",
+        "stale": "Změněno od zveřejnění",
+        "stalled": "Bez aktivity {days} dní a déle",
+        "none": "Nic."
+      }
+    },
     "overview": {
       "title": "Korektury přepisů",
       "description": "Co se právě opravuje, co čeká na vás a co lze zveřejnit.",
@@ -1729,6 +1791,11 @@
     "title": "Správa katalogu: {name}",
     "titleDefault": "Správa katalogu",
     "description": "Správa přístupu, metadat a nastavení katalogu",
+    "corrections": {
+      "title": "Korektury",
+      "description": "Kdo co opravuje, co zbývá a co čeká na druhé čtení.",
+      "open": "Otevřít přehled"
+    },
     "lookups": {
       "title": "Číselníky katalogu",
       "description": "Zvukaři, místa a alba, ze kterých vybírají metadata tohoto katalogu."
