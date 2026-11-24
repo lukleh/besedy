@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import { fetchJson } from "@/lib/api/fetch-json";
+import { fetchJson, isFinalClientError } from "@/lib/api/fetch-json";
 import { AUTH_SENSITIVE_QUERY_OPTIONS } from "@/lib/query/auth-sensitive";
 
 const CatalogAccessSummarySchema = z.object({
@@ -32,8 +32,14 @@ export function useCatalogAccessSummary(
           `/api/catalogs/${catalogId}/capability`,
           { schema: CatalogAccessSummarySchema }
         );
-      } catch {
-        return { canManageAccess: false, canViewCorrectionOverview: false };
+      } catch (error) {
+        // Only a refusal is an answer. A dropped connection or a server error
+        // fails the query so it is retried, instead of hiding the navigation
+        // until the next full page load.
+        if (isFinalClientError(error)) {
+          return { canManageAccess: false, canViewCorrectionOverview: false };
+        }
+        throw error;
       }
     },
     enabled: (options?.enabled ?? true) && !!catalogId,
