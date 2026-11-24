@@ -1301,10 +1301,13 @@ describe("CorrectionSurface", () => {
     expect(submit).toBeEnabled();
     await userEvent.click(await screen.findByTestId("correction-flag-UNCLEAR"));
     expect(submit).toBeDisabled();
-    // Closing the panel meanwhile would lose that wait, so it stays open.
-    await userEvent.click(screen.getByTestId("correction-flags-toggle"));
-    expect(screen.getByTestId("correction-flag-UNCLEAR")).toBeInTheDocument();
-    expect(submit).toBeDisabled();
+    // The wait belongs to the editor: leaving for another segment and
+    // coming back, which closes and reopens the panel, does not lose it.
+    await userEvent.click(screen.getByText("machine 1"));
+    await screen.findByDisplayValue("machine 1");
+    await userEvent.click(screen.getByText("machine 0"));
+    await screen.findByDisplayValue("machine 0");
+    expect(screen.getByTestId("correction-approve")).toBeDisabled();
     await act(async () => { finishFlag({}); });
     await waitFor(() => expect(submit).toBeEnabled());
   });

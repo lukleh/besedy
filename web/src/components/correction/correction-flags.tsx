@@ -3,12 +3,9 @@
 // Flags on a span's audio (ADR 0012). They never block publication; training
 // leaves flagged chunks out. Each toggle is one immutable event on the server.
 
-import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
-import { fetchJson } from "@/lib/api/fetch-json";
 import type { SpanView } from "./correction-types";
 
 export const FLAG_KINDS = [
@@ -25,54 +22,32 @@ type FlagKind = (typeof FLAG_KINDS)[number];
 
 const LANGUAGES = ["en", "sk", "de", "pl", "ru", "uk", "fr", "es", "it", "la"] as const;
 
-interface CorrectionFlagsProps {
-  span: SpanView;
-  flagsUrl: string;
-  onChanged: () => Promise<void> | void;
-  /** True from a click until the refreshed flags are on screen. */
-  onPendingChange?: (pending: boolean) => void;
+export interface FlagToggle {
+  kind: FlagKind;
+  set: boolean;
+  languageCode: string;
 }
 
-export function CorrectionFlags({ span, flagsUrl, onChanged, onPendingChange }: CorrectionFlagsProps) {
+interface CorrectionFlagsProps {
+  span: SpanView;
+  /** The kind being written for this span, while its request is on its way. */
+  pendingKind: FlagKind | undefined;
+  /** A flag write is on its way, for this span or another: one at a time. */
+  busy: boolean;
+  /** The editor owns the write, so its pending state outlives this panel. */
+  onToggle: (input: FlagToggle) => void;
+}
+
+export function CorrectionFlags({ span, pendingKind, busy, onToggle }: CorrectionFlagsProps) {
   const t = useTranslations("correction.flags");
-  const { toast } = useToast();
   const [language, setLanguage] = useState<string>("en");
-
-  const toggle = useMutation({
-    mutationFn: async (input: { kind: FlagKind; set: boolean; languageCode: string }) =>
-      fetchJson(flagsUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          kind: input.kind,
-          action: input.set ? "SET" : "CLEAR",
-          languageCode: input.kind === "OTHER_LANGUAGE" && input.set ? input.languageCode : null,
-          idempotencyKey: crypto.randomUUID(),
-        }),
-      }),
-    onSuccess: () => onChanged(),
-    onError: (error) =>
-      toast({
-        description: error instanceof Error ? error.message : String(error),
-        variant: "destructive",
-      }),
-  });
-
-  // The mutation stays pending through `onChanged`, so the editor can hold a
-  // submission until the flags it reads are the ones just set or cleared.
-  const pending = toggle.isPending;
-  useEffect(() => {
-    onPendingChange?.(pending);
-    return () => onPendingChange?.(false);
-  }, [pending, onPendingChange]);
 
   const active = new Map((span.flags ?? []).map((flag) => [flag.kind, flag]));
   const otherLanguage = active.get("OTHER_LANGUAGE");
   // One event at a time; the buttons stay enabled so focus stays where it was.
-  const pendingKind = toggle.isPending ? toggle.variables?.kind : undefined;
-  const send = (input: { kind: FlagKind; set: boolean; languageCode: string }) => {
-    if (toggle.isPending) return;
-    toggle.mutate(input);
+  const send = (input: FlagToggle) => {
+    if (busy) return;
+    onToggle(input);
   };
 
   return (

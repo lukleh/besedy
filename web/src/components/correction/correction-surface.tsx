@@ -35,7 +35,7 @@ import {
   speechRegionsInSeconds,
 } from "@/lib/correction/playback-coverage";
 import { CorrectionStrip } from "./correction-strip";
-import { CorrectionFlags } from "./correction-flags";
+import { CorrectionFlags, type FlagToggle } from "./correction-flags";
 import { CorrectionGuideDialog } from "./correction-guide-dialog";
 import { useCorrectionDrafts } from "@/contexts/correction-drafts-context";
 import {
@@ -248,8 +248,6 @@ export function CorrectionSurface({
   // The note for a disapproval, and the audio flags, each open on request.
   const [noteOpen, setNoteOpen] = useState(false);
   const [flagsOpen, setFlagsOpen] = useState(false);
-  // A flag being set or cleared: the span's flags are not current yet.
-  const [flagPending, setFlagPending] = useState(false);
 
   // A shared link, `?segment=<span ID>`, opens on that segment. It is read
   // when the page opens and never written: the share button, not the
@@ -815,6 +813,31 @@ export function CorrectionSurface({
       }),
   });
 
+  // Setting or clearing an audio problem. The write lives here, not in the
+  // panel, so that closing the panel or visiting another span does not lose
+  // sight of it: until it is stored and the list refreshed, the flags on
+  // screen are stale and the submission waits.
+  const flagToggle = useMutation({
+    mutationFn: async (input: FlagToggle & { spanId: string }) =>
+      fetchJson(`${buildCorrectionSpanUrl(catalogId, hash, input.spanId)}/flags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: input.kind,
+          action: input.set ? "SET" : "CLEAR",
+          languageCode: input.kind === "OTHER_LANGUAGE" && input.set ? input.languageCode : null,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      }),
+    onSuccess: () => refresh(),
+    onError: (error) =>
+      toast({
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      }),
+  });
+  const flagPending = flagToggle.isPending;
+
   const isEdited = selected ? draft.trim() !== selected.text.trim() : false;
   // A span that does not want this person (done, approved by them, or
   // waiting for an answer to their objection) offers "Continue" instead of
@@ -1270,9 +1293,7 @@ export function CorrectionSurface({
                 className="gap-2"
                 aria-expanded={flagsOpen}
                 aria-controls="correction-flags-panel"
-                // The panel stays put while a flag change is on its way: closing
-                // it would drop the wait that holds the submission back.
-                onClick={() => { if (!flagPending) setFlagsOpen((open) => !open); }}
+                onClick={() => setFlagsOpen((open) => !open)}
                 data-testid="correction-flags-toggle"
               >
                 <Flag className="h-4 w-4" />
@@ -1309,7 +1330,8 @@ export function CorrectionSurface({
               {myDecision && (
                 <Button
                   variant="outline"
-                  disabled={command.isPending}
+                  // A note being sent on its own must not go a second time.
+                  disabled={command.isPending || comment.isPending}
                   // Like every action that records something, it takes a
                   // written note along.
                   onClick={() => issue(selected, "withdraw", undefined, commentBody.trim() ? commentBody : undefined)}
@@ -1342,9 +1364,13 @@ export function CorrectionSurface({
                 )}
                 <CorrectionFlags
                   span={selected}
-                  flagsUrl={`${buildCorrectionSpanUrl(catalogId, hash, selected.id)}/flags`}
-                  onChanged={refresh}
-                  onPendingChange={setFlagPending}
+                  pendingKind={
+                    flagPending && flagToggle.variables?.spanId === selected.id
+                      ? flagToggle.variables.kind
+                      : undefined
+                  }
+                  busy={flagPending}
+                  onToggle={(input) => flagToggle.mutate({ ...input, spanId: selected.id })}
                 />
               </div>
             )}
