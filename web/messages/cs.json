@@ -329,7 +329,14 @@
     "segmentLinkLoadFailed": "Odkazovaný segment se nepodařilo načíst. Zkuste to znovu.",
     "segmentLinkResume": "Pokračovat v korektuře",
     "segmentLinkRetry": "Zkusit znovu",
+    "presence": {
+      "here": "{name} tu právě pracuje",
+      "editing": "{name} právě upravuje tento segment",
+      "hereNote": "{count, plural, one {Na tomto segmentu je právě také {names}.} other {Na tomto segmentu jsou právě také {names}.}}",
+      "editingNote": "{count, plural, one {{names} právě upravuje tento segment.} other {{names} právě upravují tento segment.}} Počkejte na jejich změnu, nebo si vezměte jiný segment; když uložíte oba, pozdější text se neuloží a zůstane v editoru."
+    },
     "strip": {
+      "present": "Kde právě pracují ostatní; kliknutím tam skočíte",
       "label": "Průběh korektury po celé nahrávce; kliknutím skočíte na místo",
       "done": "Hotovo",
       "needs_second_approval": "Chybí druhé schválení",
@@ -438,6 +445,11 @@
         "disapproved": "vámi neschváleno {count}",
         "open": "čeká na vás {count}"
       },
+      "presentNow": "Právě tu pracuje:",
+      "presentPerson": "{name}",
+      "presentAt": "{name} v čase {time}",
+      "presentEditingAt": "{name} v čase {time}, upravuje",
+      "contributors": "Pracovali na ní také: {names}{more, plural, =0 {} one { a # další} few { a # další} other { a # dalších}}",
       "lastActivity": "Poslední změna: {name}, {when}",
       "actions": {
         "start": "Začít korekturu",

@@ -61,6 +61,8 @@ function item(hash: string, overrides: Partial<OverviewItem> = {}): OverviewItem
     touchedByMe: false,
     lastActivity: null,
     myLastActivityAt: null,
+    contributorNames: [],
+    present: [],
     changedSinceReaderPublication: 0,
     publication: { inFlight: null },
     ...overrides,
@@ -98,6 +100,34 @@ function renderPage() {
 
 beforeEach(() => {
   fetchJsonMock.mockReset();
+});
+
+describe("who is working on a recording", () => {
+  it("names who is in a recording now and who has worked on it", async () => {
+    fetchJsonMock.mockResolvedValue(
+      overview([
+        item("a", {
+          present: [
+            { name: "Jana Nováková", startSeconds: 760, editing: true },
+            { name: null, startSeconds: null, editing: false },
+          ],
+          contributorNames: ["Jana Nováková", "Petr", null, "Eva", "Ota", "Iva"],
+        }),
+        item("b"),
+      ])
+    );
+    renderPage();
+
+    const present = await screen.findByTestId("correction-overview-present");
+    expect(present).toHaveTextContent('presentEditingAt {"name":"Jana Nováková","time":"12:40"}');
+    expect(present).toHaveTextContent('presentPerson {"name":"unknownActor"');
+    expect(screen.getByTestId("correction-overview-contributors")).toHaveTextContent(
+      'contributors {"names":"Jana Nováková, Petr, unknownActor, Eva","more":2}'
+    );
+    // A recording nobody else is in says nothing about it.
+    expect(screen.getAllByTestId("correction-overview-present")).toHaveLength(1);
+    expect(screen.getAllByTestId("correction-overview-contributors")).toHaveLength(1);
+  });
 });
 
 describe("deriveWorkStage", () => {

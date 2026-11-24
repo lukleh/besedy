@@ -188,6 +188,22 @@ export const spanStripSchema = z.object({
   spans: z.array(stripSpanSchema),
 });
 
+export const presentPersonSchema = z.object({
+  userId: z.string(),
+  name: z.string().nullable(),
+  spanId: z.string().nullable(),
+  ordinal: z.number().nullable(),
+  startSeconds: z.number().nullable(),
+  editing: z.boolean(),
+});
+
+export type PresentPerson = z.infer<typeof presentPersonSchema>;
+
+export const presenceSchema = z.object({
+  workspaceId: z.string(),
+  people: z.array(presentPersonSchema),
+});
+
 export const workStageSchema = z.enum(WORK_STAGES);
 export const readerStateSchema = z.enum(READER_STATES);
 
@@ -234,6 +250,10 @@ export const overviewItemSchema = z.object({
   touchedByMe: z.boolean(),
   lastActivity: z.object({ at: z.string(), actorName: z.string().nullable() }).nullable(),
   myLastActivityAt: z.string().nullable(),
+  contributorNames: z.array(z.string().nullable()),
+  present: z.array(
+    z.object({ name: z.string().nullable(), startSeconds: z.number().nullable(), editing: z.boolean() })
+  ),
   changedSinceReaderPublication: z.number(),
   publication: z
     .object({

@@ -3,6 +3,7 @@ import prisma from "@/lib/db";
 import { loadSessionOrdinals } from "@/lib/catalog-events/read-service";
 import { getPublishedVisibleEventIds } from "@/lib/catalog-events/visibility";
 import { loadActorNames } from "@/lib/correction/actor-names";
+import { loadPresence } from "@/lib/correction/presence";
 import { IN_FLIGHT_PUBLICATION_STATUSES } from "@/lib/correction/publication-status";
 import { eligibilityOfAggregate } from "@/lib/correction/publication-eligibility";
 import { loadWorkspaceAggregates, type WorkspaceAggregate } from "@/lib/correction/span-queries";
@@ -58,6 +59,13 @@ export interface OverviewItem {
   touchedByMe: boolean;
   lastActivity: { at: Date; actorName: string | null } | null;
   myLastActivityAt: Date | null;
+  /**
+   * Everyone else who has acted in the workspace, most recently active
+   * first, so a person choosing a recording sees whose work it already is.
+   */
+  contributorNames: Array<string | null>;
+  /** Everyone else who has it open right now, and where (advisory; ADR 0006) */
+  present: Array<{ name: string | null; startSeconds: number | null; editing: boolean }>;
   /** Spans edited since the snapshot readers see */
   changedSinceReaderPublication: number;
   publication: {
@@ -251,10 +259,12 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
   ]);
 
   const workspaceIds = workspaceRows.map((row) => row.workspaceId);
-  const [aggregates, activityRows, changedRows, inFlight] = await Promise.all([
+  const [aggregates, activityRows, changedRows, contributors, present, inFlight] = await Promise.all([
     loadWorkspaceAggregates(workspaceIds, actorKey),
     loadActivity(workspaceIds, actorKey),
     loadChangedSinceReaderPublication(workspaceIds),
+    loadContributors(workspaceIds, actorKey),
+    loadPresence(workspaceIds, actorKey),
     workspaceIds.length === 0
       ? Promise.resolve([])
       : prisma.transcriptPublication.findMany({
@@ -264,7 +274,10 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
   ]);
 
   const [names, sessions] = await Promise.all([
-    loadActorNames(activityRows.map((row) => row.lastActorKey)),
+    loadActorNames([
+      ...activityRows.map((row) => row.lastActorKey),
+      ...[...contributors.values()].flat(),
+    ]),
     loadOverviewSessions(catalogId, input.canSeeUnreleased, [...workspaceRows, ...notStartedRows]),
   ]);
   const activityByWorkspace = new Map(activityRows.map((row) => [row.workspaceId, row]));
@@ -310,6 +323,12 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
         ? { at: activity.lastAt, actorName: names.get(activity.lastActorKey) ?? null }
         : null,
       myLastActivityAt: activity?.myLastAt ?? null,
+      contributorNames: (contributors.get(row.workspaceId) ?? []).map((key) => names.get(key) ?? null),
+      present: (present.get(row.workspaceId) ?? []).map(({ name, startSeconds, editing }) => ({
+        name,
+        startSeconds,
+        editing,
+      })),
       changedSinceReaderPublication: changed,
       publication: {
         inFlight: flight
@@ -338,6 +357,8 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
     touchedByMe: false,
     lastActivity: null,
     myLastActivityAt: null,
+    contributorNames: [],
+    present: [],
     changedSinceReaderPublication: 0,
     publication: null,
   }));
@@ -425,6 +446,27 @@ async function loadActivity(workspaceIds: readonly string[], actorKey: string): 
     FROM latest
     LEFT JOIN mine ON mine.workspace_id = latest.workspace_id
   `);
+}
+
+/** Everyone but this person who has acted in each workspace, most recent first. */
+async function loadContributors(
+  workspaceIds: readonly string[],
+  actorKey: string
+): Promise<Map<string, string[]>> {
+  const result = new Map<string, string[]>();
+  if (workspaceIds.length === 0) return result;
+
+  const rows = await prisma.$queryRaw<Array<{ workspaceId: string; actorKey: string }>>(Prisma.sql`
+    SELECT workspace_id AS "workspaceId", actor_key AS "actorKey"
+    FROM (${activityEventsSql(workspaceIds)}) events
+    WHERE actor_key <> ${actorKey}
+    GROUP BY workspace_id, actor_key
+    ORDER BY max(at) DESC
+  `);
+  for (const row of rows) {
+    result.set(row.workspaceId, [...(result.get(row.workspaceId) ?? []), row.actorKey]);
+  }
+  return result;
 }
 
 /**

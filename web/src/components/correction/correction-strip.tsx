@@ -4,10 +4,11 @@
 // It shows where the gaps and the disputes are, which a list of several
 // hundred segments cannot, and a click on it jumps there.
 
-import { useMemo } from "react";
+import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { formatClock } from "@/lib/correction/format";
-import type { SpanState, StripSpan } from "./correction-types";
+import type { PresentPerson, SpanState, StripSpan } from "./correction-types";
+import { PersonChip } from "./person-chip";
 
 const BUCKETS = 240;
 
@@ -70,20 +71,88 @@ interface CorrectionStripProps {
   spans: readonly StripSpan[];
   /** The span on screen, to mark where the person is */
   selectedOrdinal: number | null;
+  /** The others who have the recording open, to mark where each of them is */
+  present?: readonly PresentPerson[];
   onJump: (span: StripSpan) => void;
 }
 
-export function CorrectionStrip({ spans, selectedOrdinal, onJump }: CorrectionStripProps) {
+/** The others by the segment they are on, in the order of the recording. */
+export function presenceMarkers(
+  present: readonly PresentPerson[]
+): Array<{ spanId: string; startSeconds: number; people: PresentPerson[] }> {
+  const bySpan = new Map<string, { spanId: string; startSeconds: number; people: PresentPerson[] }>();
+  for (const person of present) {
+    if (person.spanId === null || person.startSeconds === null) continue;
+    const marker = bySpan.get(person.spanId) ?? {
+      spanId: person.spanId,
+      startSeconds: person.startSeconds,
+      people: [],
+    };
+    marker.people.push(person);
+    bySpan.set(person.spanId, marker);
+  }
+  return [...bySpan.values()].sort((a, b) => a.startSeconds - b.startSeconds);
+}
+
+const NOBODY: readonly PresentPerson[] = [];
+
+export function CorrectionStrip({ spans, selectedOrdinal, present = NOBODY, onJump }: CorrectionStripProps) {
   const t = useTranslations("correction.strip");
   const total = useMemo(() => spans.reduce((max, span) => Math.max(max, span.endSeconds), 0), [spans]);
   const buckets = useMemo(() => bucketStrip(spans, total), [spans, total]);
   const byId = useMemo(() => new Map(spans.map((span) => [span.spanId, span])), [spans]);
   const selected = selectedOrdinal === null ? null : spans.find((span) => span.ordinal === selectedOrdinal);
+  const markers = useMemo(() => presenceMarkers(present), [present]);
 
   if (spans.length === 0 || total <= 0) return null;
 
   return (
     <div className="space-y-1.5" data-testid="correction-strip">
+      {markers.length > 0 && (
+        // Above the bar, so a badge never hides the state of the stretch it marks.
+        <div
+          className="flex h-5 w-full overflow-hidden [container-type:inline-size]"
+          aria-label={t("present")}
+          role="group"
+          data-testid="correction-strip-presence"
+        >
+          {/*
+            Each badge starts at its segment, or right after the badge before
+            it when that one is in the way. The box before a badge is as wide
+            as the badge's place on the strip and holds everything earlier,
+            so it is never narrower than what it holds: earlier badges push
+            a later one only when they actually reach it. The boxes give way
+            at the right edge, so the last badges stay inside the strip.
+          */}
+          {markers.reduce<ReactNode>(
+            (earlier, marker) => (
+              <>
+                <span
+                  className="flex shrink grow-0 basis-[var(--at)]"
+                  style={{ "--at": `${(marker.startSeconds / total) * 100}cqw` } as CSSProperties}
+                  data-testid="correction-strip-presence-place"
+                >
+                  {earlier}
+                </span>
+                {/* One button per segment, so each person's place is its own target. */}
+                <button
+                  type="button"
+                  className="flex shrink-0 gap-0.5 pr-0.5"
+                  onClick={() => {
+                    const target = byId.get(marker.spanId);
+                    if (target) onJump(target);
+                  }}
+                >
+                  {marker.people.map((person) => (
+                    <PersonChip key={person.userId} name={person.name} editing={person.editing} />
+                  ))}
+                </button>
+              </>
+            ),
+            null
+          )}
+        </div>
+      )}
       <div
         role="group"
         aria-label={t("label")}
@@ -104,6 +173,13 @@ export function CorrectionStrip({ spans, selectedOrdinal, onJump }: CorrectionSt
               const target = bucket.spanId ? byId.get(bucket.spanId) : undefined;
               if (target) onJump(target);
             }}
+          />
+        ))}
+        {markers.map((marker) => (
+          <div
+            key={marker.spanId}
+            className="pointer-events-none absolute top-0 h-full w-0.5 bg-sky-600"
+            style={{ left: `${(marker.startSeconds / total) * 100}%` }}
           />
         ))}
         {selected && (

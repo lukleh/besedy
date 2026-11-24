@@ -384,6 +384,7 @@ authoritative for work in progress; the rendered artifacts are immutable files.
 | `transcript_span_decision`    | Immutable approve / disapprove / withdraw by one person, with how much of the span they heard |
 | `transcript_span_flag_event`  | Immutable set / clear of one flag on a span's audio                 |
 | `transcript_contributor_consent` | A person's acceptance of the contributor terms, with the text they saw |
+| `transcript_workspace_presence` | Who has a workspace open now and on which span; advisory, expires on its own, not correction data |
 | `transcript_span_comment`     | Optional discussion, recording the revision its author saw         |
 | `transcript_publication`      | One immutable snapshot, the job that activates it, and what search reported |
 | `transcript_publication_span` | The exact revision used for every span in a publication            |
