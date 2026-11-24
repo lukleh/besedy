@@ -70,6 +70,9 @@ export function CorrectionFlags({ span, flagsUrl, onChanged }: CorrectionFlagsPr
       <div className="flex flex-wrap items-center gap-1">
         {FLAG_KINDS.map((kind) => {
           const flag = active.get(kind);
+          // Every flag keeps the chunk out of training, so correctors are
+          // not offered this one; a span that carries it can still clear it.
+          if (kind === "EXCLUDE_FROM_TRAINING" && !flag) return null;
           return (
             <Button
               key={kind}

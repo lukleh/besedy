@@ -496,9 +496,9 @@
     "consentLoadFailed": "Nepodařilo se ověřit souhlas s použitím oprav. Bez něj nelze opravovat.",
     "consentRetry": "Zkusit znovu",
     "approve": "Odeslat",
-    "saveAndApprove": "Uložit a odeslat",
-    "clearAndApprove": "Označit jako bez řeči",
-    "continue": "Pokračovat",
+    "saveAndApprove": "Odeslat",
+    "clearAndApprove": "Nic tu nezaznělo",
+    "continue": "Další, bez uložení",
     "waitingForYou": "{count, plural, one {Čeká na vás # segment} few {Čekají na vás # segmenty} other {Čeká na vás # segmentů}}",
     "youApproved": "Schváleno vámi",
     "noText": "(bez textu)",
@@ -520,8 +520,9 @@
     "disapproveEditedHint": "Nejdřív změnu uložte, nebo ji zahoďte.",
     "sendNote": "Poslat jen poznámku",
     "flagAudio": "Problém se zvukem",
-    "flagAudioHint": "Označte problém se zvukem, třeba šum nebo více mluvčích najednou. Označit můžete i řeč v jiném jazyce.",
-    "flagAudioChoose": "Než odešlete, vyberte, o jaký problém jde, nebo Problém se zvukem zavřete."
+    "flagAudioHint": "Co je se zvukem špatně?",
+    "noteOptional": "Chcete něco doplnit? (nepovinné)",
+    "flagAudioChoose": "Vyberte, co je se zvukem špatně, nebo Problém se zvukem zavřete."
   },
   "metadata": {
     "title": "Metadata",

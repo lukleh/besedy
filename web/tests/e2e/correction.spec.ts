@@ -305,7 +305,7 @@ test.describe("transcript correction", () => {
     // A span with nothing written asks whether anything was said.
     await spanList.getByRole("button", { name: /^0:49/ }).first().click();
     await expect(page.getByTestId("correction-empty-span")).toBeVisible();
-    await expect(page.getByRole("button", { name: /Nic tu nezaznělo|Nothing was said here/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Nic tu nezaznělo|No speech here/ })).toBeVisible();
 
     // Approving waits until most of the span was heard, then reports the
     // playback; the server refuses an approval without a report.

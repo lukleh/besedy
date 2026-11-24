@@ -1312,11 +1312,13 @@ export function CorrectionSurface({
 
             {flagsOpen && (
               <div id="correction-flags-panel" className="space-y-2 rounded-md border p-3">
-                <p className="text-sm text-muted-foreground">{t("flagAudioHint")}</p>
-                {needsFlagChoice && (
+                {/* One line: the question, or what is still missing to submit. */}
+                {needsFlagChoice ? (
                   <p className="text-sm text-amber-700 dark:text-amber-500" data-testid="correction-flag-choose">
                     {t("flagAudioChoose")}
                   </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t("flagAudioHint")}</p>
                 )}
                 <CorrectionFlags
                   span={selected}
@@ -1340,7 +1342,9 @@ export function CorrectionSurface({
                     localDrafts.setComment(selected.id, event.target.value);
                   }}
                   rows={2}
-                  placeholder={t("commentPlaceholder")}
+                  // Beside an audio problem the note is extra; a disapproval
+                  // asks for the reason.
+                  placeholder={canDisapprove ? t("commentPlaceholder") : t("noteOptional")}
                 />
                 <div className="flex flex-wrap items-center gap-2">
                   {canDisapprove && (
@@ -1354,15 +1358,19 @@ export function CorrectionSurface({
                       {t("disapproveConfirm")}
                     </Button>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!commentBody.trim() || comment.isPending}
-                    onClick={() => comment.mutate({ span: selected, body: commentBody })}
-                    data-testid="correction-send-note"
-                  >
-                    {t("sendNote")}
-                  </Button>
+                  {/* The main button sends the note with the submission; a
+                      button for the note alone is for when it sends nothing. */}
+                  {(canDisapprove || primary === "continue") && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!commentBody.trim() || comment.isPending}
+                      onClick={() => comment.mutate({ span: selected, body: commentBody })}
+                      data-testid="correction-send-note"
+                    >
+                      {t("sendNote")}
+                    </Button>
+                  )}
                 </div>
                 {canDisapprove && (
                   <p className="text-xs text-muted-foreground">

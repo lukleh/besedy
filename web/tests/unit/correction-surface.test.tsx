@@ -1271,10 +1271,14 @@ describe("CorrectionSurface", () => {
     expect(screen.getByTestId("correction-approve")).toBeDisabled();
     // Pointing at the greyed-out button says why.
     expect(screen.getByTestId("correction-approve-wrap").getAttribute("title")).toContain("flagAudioChoose");
-    expect(screen.getByPlaceholderText("commentPlaceholder")).toBeInTheDocument();
+    // The note is optional there, the main button sends it, and training
+    // is not the corrector's choice.
+    expect(screen.getByPlaceholderText("noteOptional")).toBeInTheDocument();
+    expect(screen.queryByTestId("correction-send-note")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("correction-flag-EXCLUDE_FROM_TRAINING")).not.toBeInTheDocument();
     await userEvent.click(screen.getByTestId("correction-flags-toggle"));
     expect(screen.queryByTestId("correction-flag-choose")).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("commentPlaceholder")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("noteOptional")).not.toBeInTheDocument();
 
     // Only this person approved it: theirs to withdraw, not to disapprove.
     await userEvent.click(screen.getByText("machine 1"));

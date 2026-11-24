@@ -481,7 +481,7 @@
     },
     "emptySpan": {
       "hint": "The model wrote nothing here. If someone speaks, write the text. If not, confirm that nothing was said.",
-      "confirm": "Nothing was said here"
+      "confirm": "No speech here"
     },
     "flags": {
       "language": "Language",
@@ -496,9 +496,9 @@
     "consentLoadFailed": "Could not check your consent to the use of corrections. Correcting needs it.",
     "consentRetry": "Try again",
     "approve": "Submit",
-    "saveAndApprove": "Save and submit",
-    "clearAndApprove": "Mark as no speech",
-    "continue": "Continue",
+    "saveAndApprove": "Submit",
+    "clearAndApprove": "No speech here",
+    "continue": "Next, without saving",
     "waitingForYou": "{count, plural, one {# segment is waiting for you} other {# segments are waiting for you}}",
     "youApproved": "You approved",
     "noText": "(no text)",
@@ -520,8 +520,9 @@
     "disapproveEditedHint": "Save your change or discard it first.",
     "sendNote": "Send the note only",
     "flagAudio": "Audio problem",
-    "flagAudioHint": "Flag audio issues such as background noise or overlapping speakers, or mark speech in another language.",
-    "flagAudioChoose": "Choose what the problem is before you submit, or close Audio problem."
+    "flagAudioHint": "What is wrong with the audio?",
+    "noteOptional": "Anything to add? (optional)",
+    "flagAudioChoose": "Choose what is wrong with the audio, or close Audio problem."
   },
   "metadata": {
     "title": "Metadata",
