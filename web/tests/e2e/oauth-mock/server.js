@@ -50,15 +50,9 @@ function appendQuery(pathname, queryString) {
 // This allows parallel tests to work correctly by associating hints with specific flows
 const codeToEmail = new Map();
 
-// Predefined test users matching prisma/test-data.ts
+// Predefined test users matching prisma/test-data.ts. The seeded superadmin
+// is left out: E2E tests sign in as it directly, and nobody needs it here.
 const TEST_USERS = [
-  {
-    email: "superadmin@besedy.test",
-    label: "Superadmin",
-    description: "Full system access",
-    category: "system",
-    color: "#9333ea", // purple-600
-  },
   {
     email: "admin@besedy.test",
     label: "Admin",
