@@ -827,6 +827,14 @@ export function CorrectionSurface({
   // (ADR 0012), and the person would only learn that at export time. The
   // editor asks for the listening first; disapproving and withdrawing do not
   // need it.
+  // Why the main button is greyed out, for whoever points at it.
+  const blockedReason = [
+    needsListening
+      ? t("listenBeforeApprove", { percent: Math.round(MIN_HEARD_FRACTION_FOR_TRAINING * 100) })
+      : null,
+    needsFlagChoice ? t("flagAudioChoose") : null,
+  ].filter(Boolean).join(" ") || undefined;
+
   const runPrimary = useCallback(() => {
     if (!selected || command.isPending || comment.isPending) return;
     if (primary === "continue") {
@@ -1230,16 +1238,20 @@ export function CorrectionSurface({
             )}
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                onClick={runPrimary}
-                disabled={command.isPending || comment.isPending || needsListening || needsFlagChoice}
-                className="gap-2"
-                data-testid="correction-approve"
-                data-primary={primary}
-              >
-                {primary === "continue" ? <ArrowRight className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-                {primary === "confirmEmpty" ? t("emptySpan.confirm") : t(primary)}
-              </Button>
+              {/* A disabled button takes no pointer events, so the reason it is
+                  greyed out hangs on a wrapper and shows on hover. */}
+              <span className="inline-flex" title={blockedReason} data-testid="correction-approve-wrap">
+                <Button
+                  onClick={runPrimary}
+                  disabled={command.isPending || comment.isPending || needsListening || needsFlagChoice}
+                  className="gap-2"
+                  data-testid="correction-approve"
+                  data-primary={primary}
+                >
+                  {primary === "continue" ? <ArrowRight className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                  {primary === "confirmEmpty" ? t("emptySpan.confirm") : t(primary)}
+                </Button>
+              </span>
               <Button
                 // Looks pressed while its panel is open, so it is plain that a
                 // problem is being reported and one has to be chosen.

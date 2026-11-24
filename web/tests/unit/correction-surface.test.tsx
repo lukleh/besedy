@@ -1269,6 +1269,8 @@ describe("CorrectionSurface", () => {
     // note can go with the problem.
     expect(screen.getByTestId("correction-flag-choose")).toBeInTheDocument();
     expect(screen.getByTestId("correction-approve")).toBeDisabled();
+    // Pointing at the greyed-out button says why.
+    expect(screen.getByTestId("correction-approve-wrap").getAttribute("title")).toContain("flagAudioChoose");
     expect(screen.getByPlaceholderText("commentPlaceholder")).toBeInTheDocument();
     await userEvent.click(screen.getByTestId("correction-flags-toggle"));
     expect(screen.queryByTestId("correction-flag-choose")).not.toBeInTheDocument();
