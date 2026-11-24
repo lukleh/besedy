@@ -4,6 +4,7 @@ import { validateParams, validateRequestBody } from "@/lib/api/validation";
 import { CatalogHashParamSchema } from "@/lib/validation/schemas";
 import { requireCorrectionAccess } from "@/lib/correction/access";
 import { clearPresence, loadPresence, recordPresence } from "@/lib/correction/presence";
+import { CorrectionError } from "@/lib/correction/errors";
 import { handleCorrectionRouteError } from "@/lib/correction/route-errors";
 import { requireActiveWorkspace } from "@/lib/correction/workspace-service";
 
@@ -12,6 +13,8 @@ export const dynamic = "force-dynamic";
 
 const PresenceSchema = z
   .object({
+    /** The workspace the page is showing */
+    workspaceId: z.string().uuid(),
     spanId: z.string().uuid().nullable(),
     editing: z.boolean(),
   })
@@ -39,8 +42,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     const { userId } = await requireCorrectionAccess(catalogId, hash, "correct");
     const workspace = await requireActiveWorkspace(catalogId, hash);
+    const { workspaceId, spanId, editing } = bodyResult.data;
+    // A page left open across an archive and a fresh start is not in the
+    // workspace that replaced the one it shows.
+    if (workspaceId !== workspace.id) {
+      throw new CorrectionError("WORKSPACE_ARCHIVED", "This correction workspace has been archived");
+    }
 
-    await recordPresence({ workspaceId: workspace.id, userId, ...bodyResult.data });
+    await recordPresence({ workspaceId: workspace.id, userId, spanId, editing });
     const present = await loadPresence([workspace.id], userId);
 
     return NextResponse.json({
@@ -52,8 +61,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-/** DELETE - this person left the page. */
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+/**
+ * DELETE - this person left the page showing `?workspace=`. Leaving a
+ * workspace that is no longer the active one clears nothing: the person's
+ * presence in its replacement belongs to another page.
+ */
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const paramsResult = validateParams(await params, CatalogHashParamSchema);
     if (!paramsResult.success) return paramsResult.response;
@@ -61,7 +74,9 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     const { userId } = await requireCorrectionAccess(catalogId, hash, "correct");
     const workspace = await requireActiveWorkspace(catalogId, hash);
-    await clearPresence(workspace.id, userId);
+    if (request.nextUrl.searchParams.get("workspace") === workspace.id) {
+      await clearPresence(workspace.id, userId);
+    }
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {

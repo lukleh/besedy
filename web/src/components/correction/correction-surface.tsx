@@ -639,6 +639,7 @@ export function CorrectionSurface({
   const present = useCorrectionPresence(
     catalogId,
     hash,
+    workspace.id,
     selected?.id ?? null,
     selected ? draft.trim() !== selected.text.trim() : false
   );
@@ -728,6 +729,14 @@ export function CorrectionSurface({
       if (document.visibilityState === "visible") void refresh();
     }, PRESENCE_HEARTBEAT_SECONDS * 1000);
     return () => clearInterval(timer);
+  }, [othersPresent, refresh]);
+  // Somebody who saves and leaves between two of those fetches takes the
+  // timer with them, so the moment the last of the others is gone is one
+  // more occasion to fetch what they left behind.
+  const hadOthersRef = useRef(false);
+  useEffect(() => {
+    if (hadOthersRef.current && !othersPresent) void refresh();
+    hadOthersRef.current = othersPresent;
   }, [othersPresent, refresh]);
 
   const command = useMutation({

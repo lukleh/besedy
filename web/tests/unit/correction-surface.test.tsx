@@ -1210,7 +1210,7 @@ describe("CorrectionSurface", () => {
       "JNpresence.editing",
       "PDpresence.here",
     ]);
-    expect(heartbeats[0]).toEqual({ spanId: "span-0", editing: false });
+    expect(heartbeats[0]).toEqual({ workspaceId: WORKSPACE.id, spanId: "span-0", editing: false });
 
     await userEvent.click(within(strip).getAllByRole("button")[1]);
     expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
@@ -1218,11 +1218,37 @@ describe("CorrectionSurface", () => {
     await waitFor(() =>
       expect(screen.getByTestId("correction-presence-note")).toHaveTextContent("presence.hereNote")
     );
-    await waitFor(() => expect(heartbeats).toContainEqual({ spanId: "span-1", editing: false }));
+    await waitFor(() => expect(heartbeats).toContainEqual(expect.objectContaining({ spanId: "span-1", editing: false })));
 
     // Typing is what the others are told about.
     await userEvent.type(screen.getByDisplayValue("machine 1"), "!");
-    await waitFor(() => expect(heartbeats).toContainEqual({ spanId: "span-1", editing: true }));
+    await waitFor(() => expect(heartbeats).toContainEqual(expect.objectContaining({ spanId: "span-1", editing: true })));
+  });
+
+  // Somebody who saves and leaves between two refreshes must not leave
+  // their change unseen: nothing would fetch it once this person is alone.
+  it("fetches the others' last saves when the last of them leaves", async () => {
+    let others = [{ userId: "user-2", name: "Jana", spanId: "span-1", ordinal: 1, startSeconds: 10, editing: false }];
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/presence")) return { workspaceId: WORKSPACE.id, people: others };
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 2, 2);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+    const listFetches = () =>
+      fetchJsonMock.mock.calls.filter(([input]) => String(input).includes("/spans?offset=0")).length;
+    renderSurface(null);
+    expect(await screen.findAllByTestId("correction-person-chip")).not.toHaveLength(0);
+    const before = listFetches();
+
+    // The next heartbeat finds nobody else.
+    others = [];
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+
+    await waitFor(() => expect(screen.queryAllByTestId("correction-person-chip")).toHaveLength(0));
+    await waitFor(() => expect(listFetches()).toBeGreaterThan(before));
   });
 
   // "Disapprove the text" sends the note first, then the objection, and a

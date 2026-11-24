@@ -377,7 +377,12 @@ test.describe("transcript correction", () => {
     }
     // Somebody whose browser was closed without leaving lingers for the
     // presence window; an earlier run must not be mistaken for company.
-    expect((await page.request.delete(`${api}/presence`)).status()).toBe(204);
+    const { workspace } = await (await page.request.get(api)).json() as { workspace: { id: string } };
+    expect((await page.request.delete(`${api}/presence?workspace=${workspace.id}`)).status()).toBe(204);
+    // A page showing some other workspace is not in this one.
+    expect((await page.request.put(`${api}/presence`, {
+      data: { workspaceId: "00000000-0000-4000-8000-000000000000", spanId: null, editing: false },
+    })).status()).toBe(409);
     await loginAs(page, "editor");
     await prepare(page);
 

@@ -94,6 +94,38 @@ export function presenceMarkers(
   return [...bySpan.values()].sort((a, b) => a.startSeconds - b.startSeconds);
 }
 
+type PresenceMarker = ReturnType<typeof presenceMarkers>[number];
+
+/**
+ * How far apart, as a share of the strip, two markers must be to stand on
+ * their own. A badge is about this wide on the narrowest strip the page is
+ * offered on, so closer markers would cover one another.
+ */
+const MARKER_SPACING = 0.05;
+
+/**
+ * Markers too close to stand side by side, gathered into one row. Somebody
+ * working a few segments behind somebody else is the usual case, and on a
+ * long recording those segments are a pixel apart: each person still gets
+ * their own badge, in the order of the recording.
+ */
+export function clusterMarkers(
+  markers: readonly PresenceMarker[],
+  totalSeconds: number,
+  spacing = MARKER_SPACING
+): Array<{ position: number; markers: PresenceMarker[] }> {
+  const clusters: Array<{ position: number; markers: PresenceMarker[] }> = [];
+  for (const marker of markers) {
+    const position = totalSeconds > 0 ? marker.startSeconds / totalSeconds : 0;
+    const last = clusters.at(-1);
+    // Measured from the cluster's own position, so a chain of near
+    // neighbours cannot stretch one cluster along the whole strip.
+    if (last && position - last.position < spacing) last.markers.push(marker);
+    else clusters.push({ position, markers: [marker] });
+  }
+  return clusters;
+}
+
 const NOBODY: readonly PresentPerson[] = [];
 
 export function CorrectionStrip({ spans, selectedOrdinal, present = NOBODY, onJump }: CorrectionStripProps) {
@@ -103,6 +135,7 @@ export function CorrectionStrip({ spans, selectedOrdinal, present = NOBODY, onJu
   const byId = useMemo(() => new Map(spans.map((span) => [span.spanId, span])), [spans]);
   const selected = selectedOrdinal === null ? null : spans.find((span) => span.ordinal === selectedOrdinal);
   const markers = useMemo(() => presenceMarkers(present), [present]);
+  const clusters = useMemo(() => clusterMarkers(markers, total), [markers, total]);
 
   if (spans.length === 0 || total <= 0) return null;
 
@@ -111,21 +144,29 @@ export function CorrectionStrip({ spans, selectedOrdinal, present = NOBODY, onJu
       {markers.length > 0 && (
         // Above the bar, so a badge never hides the state of the stretch it marks.
         <div className="relative h-5" aria-label={t("present")} role="group" data-testid="correction-strip-presence">
-          {markers.map((marker) => (
-            <button
-              key={marker.spanId}
-              type="button"
+          {clusters.map((cluster) => (
+            <div
+              key={cluster.markers[0].spanId}
               className="absolute top-0 flex -translate-x-1/2 gap-0.5"
-              style={{ left: `clamp(1rem, ${(marker.startSeconds / total) * 100}%, calc(100% - 1rem))` }}
-              onClick={() => {
-                const target = byId.get(marker.spanId);
-                if (target) onJump(target);
-              }}
+              style={{ left: `clamp(1rem, ${cluster.position * 100}%, calc(100% - 1rem))` }}
             >
-              {marker.people.map((person) => (
-                <PersonChip key={person.userId} name={person.name} editing={person.editing} />
+              {cluster.markers.map((marker) => (
+                // One button per segment, so each person's place is its own target.
+                <button
+                  key={marker.spanId}
+                  type="button"
+                  className="flex gap-0.5"
+                  onClick={() => {
+                    const target = byId.get(marker.spanId);
+                    if (target) onJump(target);
+                  }}
+                >
+                  {marker.people.map((person) => (
+                    <PersonChip key={person.userId} name={person.name} editing={person.editing} />
+                  ))}
+                </button>
               ))}
-            </button>
+            </div>
           ))}
         </div>
       )}

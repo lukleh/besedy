@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { initialsOf } from "@/components/correction/person-chip";
-import { presenceMarkers } from "@/components/correction/correction-strip";
+import { clusterMarkers, presenceMarkers } from "@/components/correction/correction-strip";
 import type { PresentPerson } from "@/components/correction/correction-types";
 
 function person(userId: string, spanId: string | null, startSeconds: number | null, editing = false): PresentPerson {
@@ -40,5 +40,29 @@ describe("presenceMarkers", () => {
 
   it("leaves out somebody whose page has no segment on screen yet", () => {
     expect(presenceMarkers([person("jana", null, null)])).toEqual([]);
+  });
+});
+
+describe("clusterMarkers", () => {
+  const ids = (clusters: ReturnType<typeof clusterMarkers>) =>
+    clusters.map((cluster) => cluster.markers.map((marker) => marker.spanId));
+
+  // An hour-long recording: neighbouring segments are a fraction of a percent apart.
+  it("gathers people a few segments apart into one row, each with their own marker", () => {
+    const markers = presenceMarkers([person("jana", "span-0", 0), person("petr", "span-1", 10), person("eva", "span-200", 2000)]);
+
+    expect(ids(clusterMarkers(markers, 3600))).toEqual([["span-0", "span-1"], ["span-200"]]);
+  });
+
+  it("leaves people far enough apart on their own", () => {
+    const markers = presenceMarkers([person("jana", "span-0", 0), person("petr", "span-1", 10)]);
+
+    expect(ids(clusterMarkers(markers, 100))).toEqual([["span-0"], ["span-1"]]);
+  });
+
+  it("does not let a chain of near neighbours stretch one cluster along the strip", () => {
+    const markers = presenceMarkers([0, 4, 8, 12].map((start) => person(`p${start}`, `span-${start}`, start)));
+
+    expect(ids(clusterMarkers(markers, 100))).toEqual([["span-0", "span-4"], ["span-8", "span-12"]]);
   });
 });

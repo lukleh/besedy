@@ -216,8 +216,8 @@ requires the named catalog permission.
 | GET | `/api/catalogs/:id/correction/admin-overview` | `manage_catalog_config` | The correction overview plus who did what: each person's latest activity and recent pace, who has worked in each workspace and whose first pass waits for a second person, and the oldest disputed spans. Read by the corrections page under Manage catalog |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/spans` | `correct_transcripts` | Paged spans with derived state |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/strip` | `correct_transcripts` | Every span's position, state and whether it still wants this person, without text, for the strip over the whole recording |
-| PUT | `/api/catalogs/:id/recordings/:hash/correction/presence` | `correct_transcripts` | The page's heartbeat: the span this person is on and whether they have unsaved wording; answers with where the others are. Advisory, takes no workspace lock |
-| DELETE | `/api/catalogs/:id/recordings/:hash/correction/presence` | `correct_transcripts` | This person left the correction page |
+| PUT | `/api/catalogs/:id/recordings/:hash/correction/presence` | `correct_transcripts` | The page's heartbeat: the workspace it shows, the span this person is on and whether they have unsaved wording; answers with where the others are, or `WORKSPACE_ARCHIVED` when that workspace is no longer the active one. Advisory, takes no workspace lock |
+| DELETE | `/api/catalogs/:id/recordings/:hash/correction/presence` | `correct_transcripts` | This person left the page showing `?workspace=`; clears nothing when that is not the active workspace |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId` | `correct_transcripts` | Span history: revisions, decisions, comments |
 | POST | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId` | `correct_transcripts` | Approve, disapprove, withdraw, or save and approve, against an expected revision |
 | POST | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId/comments` | `correct_transcripts` | Add a comment |
