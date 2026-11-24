@@ -40,7 +40,7 @@ test.describe("transcript correction", () => {
     // A retried run may find consent given or the workspace started, so wait
     // for whichever state the page is in rather than assume the first one.
     const consent = page.getByTestId("correction-consent");
-    const start = page.getByRole("button", { name: /Začít korekturu|Start correction/ });
+    const start = page.getByRole("button", { name: /Začít kontrolu přepisu|Start transcript check/ });
     const strip = page.getByTestId("correction-span-audio");
     await expect(consent.or(start).or(strip)).toBeVisible({ timeout: 20000 });
     if (await consent.isVisible()) {
@@ -164,13 +164,13 @@ test.describe("transcript correction", () => {
       const missingId = "00000000-0000-4000-8000-000000000000";
       await linkedPage.goto(`${correctionPath}?segment=${missingId}`);
       const missingLink = linkedPage.getByRole("alert").filter({
-        hasText: /Odkazovaný segment v této korektuře neexistuje|The linked segment does not exist in this correction workspace/,
+        hasText: /Odkazovaný segment v této kontrole přepisu neexistuje|The linked segment does not exist in this transcript check/,
       });
       await expect(missingLink).toBeVisible();
       await expect(linkedPage.locator("textarea")).toHaveCount(0);
       await expect(linkedPage.getByTestId("correction-span-audio")).toHaveCount(0);
       await expect(linkedPage).toHaveURL((url) => url.searchParams.get("segment") === missingId);
-      await missingLink.getByRole("button", { name: /Pokračovat v korektuře|Continue correcting/ }).click();
+      await missingLink.getByRole("button", { name: /Pokračovat v kontrole přepisu|Continue the transcript check/ }).click();
       await expect(linkedPage.getByTestId("correction-span-audio")).toBeVisible();
       await expect(linkedPage.getByRole("textbox").first()).toBeVisible();
       await expect(linkedPage).toHaveURL((url) => !url.searchParams.has("segment"));
@@ -416,7 +416,7 @@ test.describe("transcript correction", () => {
       await expect(note).toHaveCount(0);
 
       // Unsaved wording turns the badge into a warning on that segment.
-      await other.getByRole("textbox").first().fill("Rozepsaná oprava druhého korektora.");
+      await other.getByRole("textbox").first().fill("Rozepsaná oprava druhého kontrolora.");
       await page.locator("aside").getByRole("button", { name: /^0:10/ }).first().click();
       await expect(note).toContainText(
         /právě upravuje tento segment|is editing this segment right now/,

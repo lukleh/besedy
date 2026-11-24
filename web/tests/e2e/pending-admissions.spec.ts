@@ -295,7 +295,7 @@ test.describe("Pending Admission Management", () => {
       // unlike the narrower host list asserted in the host test below.
       await expect(
         dialog.getByText(
-          "You can grant: Listener, Reader, Corrector, Host, Curator, Catalog admin."
+          "You can grant: Listener, Reader, Transcript checker, Host, Curator, Catalog admin."
         )
       ).toBeVisible();
 
@@ -360,7 +360,7 @@ test.describe("Pending Admission Management", () => {
       // see_unreleased) are offered, so Host/Curator/Catalog admin are
       // absent.
       await expect(
-        dialog.getByText("You can grant: Listener, Reader, Corrector.")
+        dialog.getByText("You can grant: Listener, Reader, Transcript checker.")
       ).toBeVisible();
 
       const inviteButton = dialog.getByRole("button", { name: "Invite User" });

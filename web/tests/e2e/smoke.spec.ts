@@ -171,7 +171,9 @@ test.describe("Smoke Tests @smoke", () => {
 
     await page.goto(URLS.recording(primary.hash));
     await waitForPageReady(page);
-    await expect(page.getByText(/correction has not started/i)).toBeVisible({ timeout: 15000 });
+    await expect(
+      page.getByRole("heading", { name: "Transcript check has not started", exact: true })
+    ).toBeVisible({ timeout: 15000 });
     await expect(page.locator("[data-segment-index]")).toHaveCount(0);
   });
 });

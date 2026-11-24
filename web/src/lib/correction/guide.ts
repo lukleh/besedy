@@ -9,14 +9,17 @@ import prisma from "@/lib/db";
  * revision records the guide it followed. The corrector's text is the truth;
  * the guide recommends how to write it.
  */
-export const DEFAULT_CORRECTION_GUIDE = `# Návod pro korektury
+export const DEFAULT_CORRECTION_GUIDE = `# Návod pro kontrolu přepisu
 
-Text korektora je pravda: zapište, co v úseku zaznělo.
+Přepis má být doslovný: zapište přesně, co v úseku zaznělo. Neopravujete
+jazyk mluvčího, opravujete chyby strojového přepisu.
 
 ## Co a jak psát
 
 - Opravte špatně slyšená slova, jména, čísla, velká písmena a interpunkci.
 - Pište, co zaznělo. Neopravujte styl ani gramatické či věcné chyby mluvčího.
+  Nespisovné tvary nechte tak, jak zazněly: „dělaj“ zůstane „dělaj“, ne
+  „dělají“; „vokno“ zůstane „vokno“.
 - **Vycpávková slova** pište tak, jak zazněla, a jen těmito zápisy: „ehm“,
   „eee“, „hm“, „mhm“. Slova „no“ a „jo“ jsou běžná slova a píšou se vždy.
 - **Useknutá slova, opakování a opravené začátky** pište tak, jak zazněly:
