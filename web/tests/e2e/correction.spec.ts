@@ -333,9 +333,8 @@ test.describe("transcript correction", () => {
     expect(body.playback.heardFraction).toBeGreaterThanOrEqual(0.9);
 
     // An administrator sees who did that and what now waits for a second
-    // person; a corrector does not get the per-person view.
+    // person; who may open the page is covered in admin-corrections.spec.ts.
     const adminOverviewUrl = "/api/admin/corrections";
-    expect((await page.request.get(adminOverviewUrl)).status()).toBe(403);
     await loginAs(page, "superadmin");
     await page.goto("/admin/corrections");
     await expect(page.getByTestId("correction-admin-summary")).toBeVisible({ timeout: 20000 });
