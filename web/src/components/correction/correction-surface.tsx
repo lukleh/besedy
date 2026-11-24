@@ -1310,7 +1310,9 @@ export function CorrectionSurface({
                 <Button
                   variant="outline"
                   disabled={command.isPending}
-                  onClick={() => issue(selected, "withdraw")}
+                  // Like every action that records something, it takes a
+                  // written note along.
+                  onClick={() => issue(selected, "withdraw", undefined, commentBody.trim() ? commentBody : undefined)}
                   data-testid="correction-withdraw"
                 >
                   {t("withdraw")}

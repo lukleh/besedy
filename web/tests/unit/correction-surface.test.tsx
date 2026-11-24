@@ -1250,6 +1250,32 @@ describe("CorrectionSurface", () => {
     expect(posts[2].body).toMatchObject({ body: "ke konci není rozumět", revisionId: "rev-0-2" });
   });
 
+  it("sends a written note with a withdrawn decision", async () => {
+    const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (init?.method === "POST") {
+        posts.push({ url, body: JSON.parse(String(init.body)) });
+        if (url.endsWith("/comments")) return { id: "comment-1" };
+        return { spanId: "span-0", revisionId: "rev-0-1", text: "machine 0", state: "not_reviewed", approverIds: [], disapproverIds: [], replayed: false };
+      }
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 2, 2, [span(0, { approverIds: ["user-1"] }), span(1)]);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "span-0", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+
+    renderSurface(null);
+    await screen.findByDisplayValue("machine 0");
+    await userEvent.type(screen.getByPlaceholderText("noteOptional"), "spletl jsem se");
+    await userEvent.click(screen.getByTestId("correction-withdraw"));
+
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts.map((post) => post.url.split("/").at(-1))).toEqual(["span-0", "comments"]);
+    expect(posts[0].body.action).toBe("withdraw");
+    expect(posts[1].body.body).toBe("spletl jsem se");
+  });
+
   // Until a flag change is stored and the list refreshed, the span's flags
   // on screen are stale, so the submission waits for them.
   it("holds the submission while a flag change is on its way", async () => {
