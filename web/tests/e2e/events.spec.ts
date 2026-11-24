@@ -55,7 +55,7 @@ test.describe("Event Catalog", () => {
       timeout: 10000,
     });
 
-    await loginAs(page, "viewer");
+    await loginAs(page, "reader");
     await page.goto(URLS.catalog);
     await waitForPageReady(page);
 
@@ -68,7 +68,7 @@ test.describe("Event Catalog", () => {
     // Viewers default to the events view
     // without a tab switcher (tabs require canEdit). Verify the events list
     // loads and the Create Event control is absent.
-    await loginAs(page, "viewer");
+    await loginAs(page, "reader");
     await page.goto(URLS.catalog);
     await waitForPageReady(page);
 
@@ -83,7 +83,7 @@ test.describe("Event Catalog", () => {
   test("curator can create events", async ({ page }) => {
     // The legacy editor fixture is migrated to the curator role, which owns
     // editorial event work.
-    await loginAs(page, "editor");
+    await loginAs(page, "curator");
     await page.goto(URLS.catalog);
     await waitForPageReady(page);
 

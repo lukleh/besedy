@@ -135,7 +135,7 @@ test.describe("Smoke Tests @smoke", () => {
   });
 
   test("reader sees the transcript of a recording", async ({ page }) => {
-    await loginAs(page, "viewer");
+    await loginAs(page, "reader");
 
     // The fixtures must sit where the app resolves transcripts; the access
     // checks in security.spec.ts pass wherever they are.
@@ -156,7 +156,7 @@ test.describe("Smoke Tests @smoke", () => {
   test("reader sees correction progress instead of a primary recording's machine transcript", async ({
     page,
   }) => {
-    await loginAs(page, "viewer");
+    await loginAs(page, "reader");
 
     // The primary recording of an event is in correction scope (ADR 0006):
     // until a corrected transcript is published there is no text to read.

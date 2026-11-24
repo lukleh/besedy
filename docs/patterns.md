@@ -204,11 +204,12 @@ by scripts in `web/tests/e2e/scripts/generate-*.ts`.
 E2E tests create signed sessions directly against the test database and set the
 session cookie in Playwright. No mock-auth UI.
 
-`await loginAs(page, "editor")  // uses helpers/auth.ts`
+`await loginAs(page, "curator")  // uses helpers/auth.ts`
 
 Seeded test users: see `web/prisma/test-data.ts` and
-`web/tests/e2e/helpers/auth.ts`. Roles: superadmin, admin, owner, editor,
-member, viewer, listener, noaccess, pending, blocked.
+`web/tests/e2e/helpers/auth.ts`. Accounts: superadmin, admin, one per
+catalog role (catalog_admin, curator, host, corrector, reader, listener),
+downloader (reader + download_audio), noaccess, pending, blocked.
 
 ### Assertion Patterns
 
