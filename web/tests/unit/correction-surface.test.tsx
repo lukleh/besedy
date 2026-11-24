@@ -1320,7 +1320,8 @@ describe("CorrectionSurface", () => {
     expect(screen.queryByTestId("correction-flag-EXCLUDE_FROM_TRAINING")).not.toBeInTheDocument();
     await userEvent.click(screen.getByTestId("correction-flags-toggle"));
     expect(screen.queryByTestId("correction-flag-choose")).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("noteOptional")).not.toBeInTheDocument();
+    // The note box does not depend on the panel: every segment has it.
+    expect(screen.getByPlaceholderText("noteOptional")).toBeInTheDocument();
 
     // Only this person approved it: theirs to withdraw, not to disapprove.
     await userEvent.click(screen.getByText("machine 1"));

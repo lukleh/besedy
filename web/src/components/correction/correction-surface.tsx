@@ -973,6 +973,11 @@ export function CorrectionSurface({
       !selected.approverIds.includes(userId)
   );
 
+  // The disapproval's own controls show once it was asked for, or a note
+  // already written on such a span came back with it.
+  const disapproving = canDisapprove && (noteOpen || commentBody.trim() !== "");
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+
   // Who objects to the text on screen, and what they wrote about it, so a
   // disputed span explains itself above the editor.
   const history = historyQuery.data?.spanId === selected?.id ? historyQuery.data?.history : undefined;
@@ -1279,7 +1284,12 @@ export function CorrectionSurface({
                   className="gap-2"
                   aria-expanded={noteOpen || commentBody.trim() !== ""}
                   aria-controls="correction-note"
-                  onClick={() => setNoteOpen((open) => !open)}
+                  onClick={() => {
+                    // The note box is always there; disapproving takes the
+                    // cursor to it and shows the confirmation under it.
+                    if (!noteOpen) noteRef.current?.focus();
+                    setNoteOpen((open) => !open);
+                  }}
                   data-testid="correction-disapprove-open"
                 >
                   <ThumbsDown className="h-4 w-4" />
@@ -1337,58 +1347,54 @@ export function CorrectionSurface({
               </div>
             )}
 
-            {/* A note being written stays in view: it is unsaved work. An audio
-                problem can be explained too, so its panel brings the note along. */}
-            {(noteOpen || flagsOpen || commentBody.trim() !== "") && (
-              <div id="correction-note" className="space-y-2 rounded-md border p-3" data-testid="correction-note">
-                <Textarea
-                  // Opened by a click, the box takes the cursor; restored with
-                  // a span, the editor's own focus effect runs after it.
-                  autoFocus={noteOpen}
-                  value={commentBody}
-                  onChange={(event) => {
-                    setCommentBody(event.target.value);
-                    localDrafts.setComment(selected.id, event.target.value);
-                  }}
-                  rows={2}
-                  // Beside an audio problem the note is extra; a disapproval
-                  // asks for the reason.
-                  placeholder={canDisapprove ? t("commentPlaceholder") : t("noteOptional")}
-                />
-                <div className="flex flex-wrap items-center gap-2">
-                  {canDisapprove && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={command.isPending || comment.isPending || isEdited}
-                      onClick={() => void disapprove()}
-                      data-testid="correction-disapprove"
-                    >
-                      {t("disapproveConfirm")}
-                    </Button>
-                  )}
-                  {/* The main button sends the note with the submission; a
-                      button for the note alone is for when it sends nothing. */}
-                  {(canDisapprove || primary === "continue") && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      // A submission under way sends this note itself.
-                      disabled={!commentBody.trim() || comment.isPending || command.isPending}
-                      onClick={() => comment.mutate({ span: selected, body: commentBody })}
-                      data-testid="correction-send-note"
-                    >
-                      {t("sendNote")}
-                    </Button>
-                  )}
-                </div>
-                {canDisapprove && (
-                  <p className="text-xs text-muted-foreground">
-                    {isEdited ? t("disapproveEditedHint") : t("disapproveHint")}
-                  </p>
+            {/* Every segment can be commented on, whatever else is done with
+                it: the note box is always there. */}
+            <div id="correction-note" className="space-y-2 rounded-md border p-3" data-testid="correction-note">
+              <Textarea
+                ref={noteRef}
+                value={commentBody}
+                onChange={(event) => {
+                  setCommentBody(event.target.value);
+                  localDrafts.setComment(selected.id, event.target.value);
+                }}
+                rows={2}
+                // The note is extra, except with a disapproval, which asks
+                // for the reason.
+                placeholder={disapproving ? t("commentPlaceholder") : t("noteOptional")}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                {disapproving && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={command.isPending || comment.isPending || isEdited}
+                    onClick={() => void disapprove()}
+                    data-testid="correction-disapprove"
+                  >
+                    {t("disapproveConfirm")}
+                  </Button>
+                )}
+                {/* The main button sends the note with the submission. Sending
+                    it alone is offered once there is something to send. */}
+                {commentBody.trim() !== "" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    // A submission under way sends this note itself.
+                    disabled={comment.isPending || command.isPending}
+                    onClick={() => comment.mutate({ span: selected, body: commentBody })}
+                    data-testid="correction-send-note"
+                  >
+                    {t("sendNote")}
+                  </Button>
                 )}
               </div>
-            )}
+              {disapproving && (
+                <p className="text-xs text-muted-foreground">
+                  {isEdited ? t("disapproveEditedHint") : t("disapproveHint")}
+                </p>
+              )}
+            </div>
 
             {history && history.length > 0 && (
               <details className="rounded-md border p-3" data-testid="correction-history">
