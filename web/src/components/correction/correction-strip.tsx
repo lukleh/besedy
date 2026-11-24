@@ -4,7 +4,7 @@
 // It shows where the gaps and the disputes are, which a list of several
 // hundred segments cannot, and a click on it jumps there.
 
-import { Fragment, useMemo } from "react";
+import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { formatClock } from "@/lib/correction/format";
 import type { PresentPerson, SpanState, StripSpan } from "./correction-types";
@@ -94,22 +94,6 @@ export function presenceMarkers(
   return [...bySpan.values()].sort((a, b) => a.startSeconds - b.startSeconds);
 }
 
-/**
- * How much of the strip lies between each marker and the one before it (the
- * first is measured from the start). The badges sit in one row with a gap of
- * this share before each; the gaps give way when badges need the room, so a
- * badge is at its segment where there is space and never on top of another.
- */
-export function markerGaps(
-  markers: ReturnType<typeof presenceMarkers>,
-  totalSeconds: number
-): number[] {
-  if (totalSeconds <= 0) return markers.map(() => 0);
-  return markers.map(
-    (marker, index) => (marker.startSeconds - (index === 0 ? 0 : markers[index - 1].startSeconds)) / totalSeconds
-  );
-}
-
 const NOBODY: readonly PresentPerson[] = [];
 
 export function CorrectionStrip({ spans, selectedOrdinal, present = NOBODY, onJump }: CorrectionStripProps) {
@@ -119,7 +103,6 @@ export function CorrectionStrip({ spans, selectedOrdinal, present = NOBODY, onJu
   const byId = useMemo(() => new Map(spans.map((span) => [span.spanId, span])), [spans]);
   const selected = selectedOrdinal === null ? null : spans.find((span) => span.ordinal === selectedOrdinal);
   const markers = useMemo(() => presenceMarkers(present), [present]);
-  const gaps = useMemo(() => markerGaps(markers, total), [markers, total]);
 
   if (spans.length === 0 || total <= 0) return null;
 
@@ -128,29 +111,46 @@ export function CorrectionStrip({ spans, selectedOrdinal, present = NOBODY, onJu
       {markers.length > 0 && (
         // Above the bar, so a badge never hides the state of the stretch it marks.
         <div
-          className="flex h-5 w-full overflow-hidden"
+          className="flex h-5 w-full overflow-hidden [container-type:inline-size]"
           aria-label={t("present")}
           role="group"
           data-testid="correction-strip-presence"
         >
-          {markers.map((marker, index) => (
-            <Fragment key={marker.spanId}>
-              <span aria-hidden="true" className="min-w-0 shrink" style={{ flexBasis: `${gaps[index] * 100}%` }} />
-              {/* One button per segment, so each person's place is its own target. */}
-              <button
-                type="button"
-                className="flex shrink-0 gap-0.5 pr-0.5"
-                onClick={() => {
-                  const target = byId.get(marker.spanId);
-                  if (target) onJump(target);
-                }}
-              >
-                {marker.people.map((person) => (
-                  <PersonChip key={person.userId} name={person.name} editing={person.editing} />
-                ))}
-              </button>
-            </Fragment>
-          ))}
+          {/*
+            Each badge starts at its segment, or right after the badge before
+            it when that one is in the way. The box before a badge is as wide
+            as the badge's place on the strip and holds everything earlier,
+            so it is never narrower than what it holds: earlier badges push
+            a later one only when they actually reach it. The boxes give way
+            at the right edge, so the last badges stay inside the strip.
+          */}
+          {markers.reduce<ReactNode>(
+            (earlier, marker) => (
+              <>
+                <span
+                  className="flex shrink grow-0 basis-[var(--at)]"
+                  style={{ "--at": `${(marker.startSeconds / total) * 100}cqw` } as CSSProperties}
+                  data-testid="correction-strip-presence-place"
+                >
+                  {earlier}
+                </span>
+                {/* One button per segment, so each person's place is its own target. */}
+                <button
+                  type="button"
+                  className="flex shrink-0 gap-0.5 pr-0.5"
+                  onClick={() => {
+                    const target = byId.get(marker.spanId);
+                    if (target) onJump(target);
+                  }}
+                >
+                  {marker.people.map((person) => (
+                    <PersonChip key={person.userId} name={person.name} editing={person.editing} />
+                  ))}
+                </button>
+              </>
+            ),
+            null
+          )}
         </div>
       )}
       <div

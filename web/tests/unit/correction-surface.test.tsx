@@ -1211,6 +1211,14 @@ describe("CorrectionSurface", () => {
       "PDpresence.here",
     ]);
     expect(heartbeats[0]).toEqual({ workspaceId: WORKSPACE.id, spanId: "span-0", editing: false });
+    // Each badge is placed at its own segment: the box before it is as wide
+    // as that segment's place on the strip and holds the badges before it,
+    // so an earlier badge moves a later one only by standing in its way.
+    const places = within(strip).getAllByTestId("correction-strip-presence-place");
+    expect(places.map((place) => place.style.getPropertyValue("--at"))).toEqual(["50cqw", "0cqw"]);
+    const [later, first] = places;
+    expect(within(later).getAllByTestId("correction-person-chip")).toHaveLength(1);
+    expect(within(first).queryAllByTestId("correction-person-chip")).toHaveLength(0);
 
     await userEvent.click(within(strip).getAllByRole("button")[1]);
     expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
