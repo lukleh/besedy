@@ -11,6 +11,7 @@ import { test, expect } from "./helpers/base-test";
 import { loginAs } from "./helpers/auth";
 import { TEST_AUDIO_FILES, TEST_CATALOG_ID } from "./helpers/fixtures";
 import { waitForPageReady } from "./helpers/navigation";
+import { TEST_USERS } from "../../prisma/test-data";
 
 const recording = TEST_AUDIO_FILES.find((file) => file.shortHash === "ab00004dab")!;
 const correctionPath = `/catalog/${TEST_CATALOG_ID}/recording/${recording.hash}/correction`;
@@ -383,15 +384,21 @@ test.describe("transcript correction", () => {
     expect((await page.request.put(`${api}/presence`, {
       data: { workspaceId: "00000000-0000-4000-8000-000000000000", spanId: null, editing: false },
     })).status()).toBe(409);
-    await loginAs(page, "editor");
+    await loginAs(page, "corrector");
     await prepare(page);
 
     await page.goto(correctionPath);
     const spanAudio = page.getByTestId("correction-span-audio");
     await expect(spanAudio).toBeVisible({ timeout: 20000 });
     await page.locator("aside").getByRole("button", { name: /^0:00/ }).first().click();
-    // Alone in the recording, nobody is marked.
-    await expect(page.getByTestId("correction-strip-presence")).toHaveCount(0);
+    // People are told apart by name: whoever the test above left behind
+    // lingers for the presence window and is not this test's business.
+    const second = TEST_USERS.superadmin.name;
+    const badge = (target: typeof page, name: string) =>
+      target.getByTestId("correction-strip-presence").getByTestId("correction-person-chip").filter({ hasText: name });
+    const note = page.getByTestId("correction-presence-note").filter({ hasText: second });
+    const onOverview = page.getByTestId("correction-overview-present").filter({ hasText: second });
+    await expect(badge(page, second)).toHaveCount(0);
 
     const otherContext = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 } });
     try {
@@ -403,16 +410,16 @@ test.describe("transcript correction", () => {
 
       // The second person sees the first at once; the first learns of the
       // second with the next heartbeat.
-      await expect(other.getByTestId("correction-strip-presence").getByTestId("correction-person-chip")).toHaveCount(1);
-      const marker = page.getByTestId("correction-strip-presence").getByTestId("correction-person-chip");
+      await expect(badge(other, TEST_USERS.corrector.name)).toHaveCount(1);
+      const marker = badge(page, second);
       await expect(marker).toHaveCount(1, { timeout: 45_000 });
       await expect(marker).not.toHaveAttribute("data-editing");
-      await expect(page.getByTestId("correction-presence-note")).toHaveCount(0);
+      await expect(note).toHaveCount(0);
 
       // Unsaved wording turns the badge into a warning on that segment.
       await other.getByRole("textbox").first().fill("Rozepsaná oprava druhého korektora.");
       await page.locator("aside").getByRole("button", { name: /^0:10/ }).first().click();
-      await expect(page.getByTestId("correction-presence-note")).toContainText(
+      await expect(note).toContainText(
         /právě upravuje tento segment|is editing this segment right now/,
         { timeout: 45_000 }
       );
@@ -420,7 +427,7 @@ test.describe("transcript correction", () => {
 
       // The overview says who is where, without opening the recording.
       await page.goto(`/catalog/${TEST_CATALOG_ID}/correction`);
-      await expect(page.getByTestId("correction-overview-present").first()).toContainText(/0:10/, { timeout: 20000 });
+      await expect(onOverview).toContainText(/0:10/, { timeout: 20000 });
 
       // Leaving the page takes the person out well before the presence
       // window ends. A heartbeat already under way can land after the
@@ -430,7 +437,7 @@ test.describe("transcript correction", () => {
       await expect(async () => {
         await page.reload();
         await expect(page.getByRole("list").first()).toBeVisible();
-        await expect(page.getByTestId("correction-overview-present")).toHaveCount(0, { timeout: 2000 });
+        await expect(onOverview).toHaveCount(0, { timeout: 2000 });
       }).toPass({ timeout: 40_000 });
     } finally {
       await otherContext.close();
