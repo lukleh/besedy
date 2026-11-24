@@ -260,3 +260,41 @@ export const correctionOverviewSchema = z.object({
 });
 
 export type CorrectionOverview = z.infer<typeof correctionOverviewSchema>;
+
+export const correctionAdminOverviewSchema = correctionOverviewSchema.extend({
+  people: z.array(
+    z.object({
+      name: z.string().nullable(),
+      lastActivityAt: z.string(),
+      lastAudioHash: z.string(),
+      approvedSeconds7d: z.number(),
+      approvedSeconds30d: z.number(),
+      waitingSeconds: z.number(),
+      disputedCount: z.number(),
+    })
+  ),
+  contributors: z.record(
+    z.string(),
+    z.array(
+      z.object({
+        name: z.string().nullable(),
+        lastActivityAt: z.string(),
+        waitingSeconds: z.number(),
+      })
+    )
+  ),
+  disputes: z.object({
+    total: z.number(),
+    items: z.array(
+      z.object({
+        audioHash: z.string(),
+        spanId: z.string(),
+        startSeconds: z.number(),
+        since: z.string().nullable(),
+        objectorNames: z.array(z.string().nullable()),
+      })
+    ),
+  }),
+});
+
+export type CorrectionAdminOverview = z.infer<typeof correctionAdminOverviewSchema>;

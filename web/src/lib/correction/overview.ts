@@ -374,31 +374,39 @@ export async function loadCorrectionOverview(input: OverviewInput): Promise<Corr
 }
 
 /**
+ * Everything a person did in the given workspaces, one row per action:
+ * `workspace_id`, `actor_key`, `at`.
+ */
+export function activityEventsSql(workspaceIds: readonly string[]): Prisma.Sql {
+  const ids = [...workspaceIds];
+  return Prisma.sql`
+    SELECT id AS workspace_id, started_by AS actor_key, created_at AS at
+    FROM transcript_workspace
+    WHERE id = ANY(${ids}::uuid[]) AND started_by IS NOT NULL
+    UNION ALL
+    SELECT workspace_id, actor_key, created_at
+    FROM transcript_span_revision
+    WHERE workspace_id = ANY(${ids}::uuid[]) AND actor_key IS NOT NULL
+    UNION ALL
+    SELECT workspace_id, actor_key, created_at
+    FROM transcript_span_decision
+    WHERE workspace_id = ANY(${ids}::uuid[])
+    UNION ALL
+    SELECT workspace_id, actor_key, created_at
+    FROM transcript_span_comment
+    WHERE workspace_id = ANY(${ids}::uuid[])
+  `;
+}
+
+/**
  * Last action in each workspace, and the last by this person. Starting the
  * workspace counts: whoever started a recording has taken it up.
  */
 async function loadActivity(workspaceIds: readonly string[], actorKey: string): Promise<RawActivity[]> {
   if (workspaceIds.length === 0) return [];
-  const ids = [...workspaceIds];
 
   return prisma.$queryRaw<RawActivity[]>(Prisma.sql`
-    WITH events AS (
-      SELECT id AS workspace_id, started_by AS actor_key, created_at AS at
-      FROM transcript_workspace
-      WHERE id = ANY(${ids}::uuid[]) AND started_by IS NOT NULL
-      UNION ALL
-      SELECT workspace_id, actor_key, created_at
-      FROM transcript_span_revision
-      WHERE workspace_id = ANY(${ids}::uuid[]) AND actor_key IS NOT NULL
-      UNION ALL
-      SELECT workspace_id, actor_key, created_at
-      FROM transcript_span_decision
-      WHERE workspace_id = ANY(${ids}::uuid[])
-      UNION ALL
-      SELECT workspace_id, actor_key, created_at
-      FROM transcript_span_comment
-      WHERE workspace_id = ANY(${ids}::uuid[])
-    ),
+    WITH events AS (${activityEventsSql(workspaceIds)}),
     latest AS (
       SELECT DISTINCT ON (workspace_id) workspace_id, actor_key, at
       FROM events

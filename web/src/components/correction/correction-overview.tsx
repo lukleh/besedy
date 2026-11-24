@@ -49,7 +49,7 @@ export function formatEventDate(recording: OverviewItem["recording"], locale: st
     : formatPartialDate(year, month, day, locale) || String(year);
 }
 
-function formatWhen(iso: string, locale: string): string {
+export function formatWhen(iso: string, locale: string): string {
   const seconds = Math.round((new Date(iso).getTime() - Date.now()) / 1000);
   const formatter = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
   const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
@@ -84,15 +84,20 @@ export function orderForTab(items: readonly OverviewItem[], tab: OverviewTab): O
   return rows.sort((a, b) => wantsMe(b) - wantsMe(a));
 }
 
-const SEGMENTS: Array<{ state: keyof NonNullable<OverviewItem["progress"]>["seconds"]; className: string }> = [
+export const SEGMENTS: Array<{ state: keyof NonNullable<OverviewItem["progress"]>["seconds"]; className: string }> = [
   { state: "done", className: "bg-emerald-600" },
   { state: "needs_second_approval", className: "bg-amber-500" },
   { state: "needs_attention", className: "bg-destructive" },
   { state: "not_reviewed", className: "bg-muted-foreground/25" },
 ];
 
-function ProgressBar({ item, label }: { item: OverviewItem; label: string }) {
-  const progress = item.progress;
+export function ProgressBar({
+  progress,
+  label,
+}: {
+  progress: Pick<NonNullable<OverviewItem["progress"]>, "seconds" | "totalSeconds"> | null;
+  label: string;
+}) {
   if (!progress || progress.totalSeconds <= 0) return null;
 
   return (
@@ -237,7 +242,7 @@ function OverviewRow({
 
         {progress && (
           <>
-            <ProgressBar item={item} label={progressLabel} />
+            <ProgressBar progress={progress} label={progressLabel} />
             <p className="text-xs text-muted-foreground">
               {progressLabel}
               {progress.counts.needs_attention > 0 && (

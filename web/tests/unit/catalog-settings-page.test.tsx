@@ -77,6 +77,7 @@ describe("CatalogSettingsPage", () => {
     canManageCatalogConfiguration: false,
     canManageAccess: false,
     canEditCorrectionGuide: false,
+    canAdministerCorrection: false,
     canManageLookups: false,
     ...overrides,
   });
@@ -107,6 +108,7 @@ describe("CatalogSettingsPage", () => {
       canManageCatalogConfiguration: true,
       canManageAccess: true,
       canEditCorrectionGuide: true,
+      canAdministerCorrection: true,
       canManageLookups: true,
     });
     withEventEditing(true);
@@ -159,7 +161,7 @@ describe("CatalogSettingsPage", () => {
     });
     expect(content).toHaveAttribute(
       "data-cards",
-      "access,configuration,correctionGuide,eventHealth,lookups,transcriptExports"
+      "access,configuration,correctionGuide,correctionOverview,eventHealth,lookups,transcriptExports"
     );
   });
 
@@ -202,6 +204,12 @@ describe("CatalogSettingsPage", () => {
       cards: "correctionGuide",
     },
     {
+      name: "correction overview",
+      capability: { canAdministerCorrection: true },
+      events: false,
+      cards: "correctionOverview",
+    },
+    {
       name: "lookups",
       capability: { canManageLookups: true },
       events: false,
@@ -214,7 +222,7 @@ describe("CatalogSettingsPage", () => {
 
     expect(await renderPage()).toHaveAttribute(
       "data-cards",
-      "access,configuration,correctionGuide,eventHealth,transcriptExports"
+      "access,configuration,correctionGuide,correctionOverview,eventHealth,transcriptExports"
     );
   });
 
