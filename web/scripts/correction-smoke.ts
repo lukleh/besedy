@@ -2222,6 +2222,69 @@ async function main() {
   }
   check("a workspace with spans cannot be deleted", !workspaceDeleted);
 
+  // --- the admin overview ---------------------------------------------------
+  console.log("\nthe admin overview");
+  {
+    const { loadCorrectionAdminOverview } = await import("@/lib/correction/admin-overview");
+
+    const [renewed, standing] = await prisma.transcriptSpan.findMany({
+      where: { workspaceId: restarted.id, currentRevisionId: { not: null } },
+      orderBy: { ordinal: "asc" },
+      take: 2,
+    });
+    const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+    const decideAt = async (
+      span: typeof renewed,
+      actor: string,
+      kind: "DISAPPROVE" | "WITHDRAW",
+      createdAt: Date
+    ) =>
+      prisma.transcriptSpanDecision.create({
+        data: {
+          workspaceId: restarted.id, spanId: span.id, revisionId: span.currentRevisionId!, actorKey: actor, kind,
+          commandName: kind.toLowerCase(), commandDigest: "0".repeat(64), createdAt,
+          ...(kind === "WITHDRAW" ? {} : HEARD),
+        },
+      });
+    // One objection was raised first, taken back and raised again; the other
+    // has stood since in between.
+    await decideAt(renewed, "erin", "DISAPPROVE", daysAgo(5));
+    await decideAt(renewed, "erin", "WITHDRAW", daysAgo(4));
+    await decideAt(standing, "frank", "DISAPPROVE", daysAgo(3));
+    await decideAt(renewed, "erin", "DISAPPROVE", daysAgo(1));
+
+    const admin = await loadCorrectionAdminOverview({
+      catalogId: CATALOG_ID,
+      actorKey: alice.id,
+      canSeeUnreleased: true,
+    });
+    const disputes = admin.disputes.items.filter((item) => item.audioHash === AUDIO_HASH);
+    check(
+      "disputes are counted with the list",
+      admin.disputes.total === admin.disputes.items.length && disputes.length === 2,
+      admin.disputes
+    );
+    check(
+      "a renewed objection is as old as its renewal, not its withdrawn first attempt",
+      disputes[0]?.spanId === standing.id &&
+        disputes[1]?.spanId === renewed.id &&
+        Math.abs((disputes[1].since?.getTime() ?? 0) - daysAgo(1).getTime()) < 60_000,
+      disputes
+    );
+    check(
+      "people are listed with the recording they last touched",
+      admin.people.length > 0 && admin.people[0].lastAudioHash === AUDIO_HASH,
+      admin.people
+    );
+    const here = admin.contributors[restarted.id] ?? [];
+    check(
+      "a workspace names its contributors, most recent first",
+      here.length > 0 &&
+        here.every((person, index) => index === 0 || here[index - 1].lastActivityAt >= person.lastActivityAt),
+      here
+    );
+  }
+
   console.log(`\ncorrections root: ${correctionsDir}`);
   console.log(failures.length === 0 ? "\nALL CHECKS PASSED" : `\n${failures.length} CHECK(S) FAILED`);
 

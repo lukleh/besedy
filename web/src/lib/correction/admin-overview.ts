@@ -85,6 +85,7 @@ interface RawDispute {
   startSeconds: number;
   objectorKeys: string[];
   since: Date | null;
+  total: bigint;
 }
 
 export async function loadCorrectionAdminOverview(
@@ -146,15 +147,21 @@ export async function loadCorrectionAdminOverview(
              states.span_id AS "spanId",
              states.start_seconds AS "startSeconds",
              states.disapprover_ids AS "objectorKeys",
+             -- Each objector's latest decision is the standing objection; an
+             -- earlier one they withdrew, or that was answered, does not age it.
              (
-               SELECT min(d.created_at)
-               FROM transcript_span_decision d
-               JOIN transcript_span sp ON sp.id = d.span_id
-               WHERE d.span_id = states.span_id
-                 AND d.revision_id = sp.current_revision_id
-                 AND d.kind = 'DISAPPROVE'
-                 AND d.actor_key = ANY(states.disapprover_ids)
-             ) AS since
+               SELECT min(standing.created_at)
+               FROM (
+                 SELECT DISTINCT ON (d.actor_key) d.created_at
+                 FROM transcript_span_decision d
+                 JOIN transcript_span sp ON sp.id = d.span_id
+                 WHERE d.span_id = states.span_id
+                   AND d.revision_id = sp.current_revision_id
+                   AND d.actor_key = ANY(states.disapprover_ids)
+                 ORDER BY d.actor_key, d.sequence DESC
+               ) standing
+             ) AS since,
+             count(*) OVER () AS total
       FROM (${states}) states
       WHERE states.state = 'needs_attention'
       ORDER BY since ASC NULLS LAST, states.span_id
@@ -205,10 +212,8 @@ export async function loadCorrectionAdminOverview(
     people: [...people.values()],
     contributors,
     disputes: {
-      total: overview.workspaces.reduce(
-        (sum, item) => sum + (item.progress?.counts.needs_attention ?? 0),
-        0
-      ),
+      // Counted in the same read as the list, so the two cannot disagree.
+      total: disputes.length > 0 ? Number(disputes[0].total) : 0,
       items: disputes.map((row) => ({
         audioHash: audioHashByWorkspace.get(row.workspaceId) ?? "",
         spanId: row.spanId,
