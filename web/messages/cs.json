@@ -290,7 +290,7 @@
     "shortcutHint": "Ctrl+Enter nebo Cmd+Enter udělá totéž co tlačítko. Alt+P přehraje úsek, Alt+R zopakuje část, Alt+← a Alt+→ přejdou na předchozí a další část, Alt+B vrátí o 3 s, Alt+S změní rychlost.",
     "unsavedDraft": "Rozepsáno",
     "heard": "Poslechnuto {percent} %",
-    "listenBeforeApprove": "Schválit lze po poslechu alespoň {percent} % řeči v úseku; schválení bez poslechu se k trénování nepoužije.",
+    "listenBeforeApprove": "Odeslat lze po poslechu alespoň {percent} % řeči v úseku; odeslání bez poslechu se k trénování nepoužije.",
     "workspaceLocked": "Přepis se právě zveřejňuje nebo někdo ukládá jinou změnu. Váš text zůstává v editoru; zkuste to za chvíli.",
     "discardDraft": "Zahodit změny",
     "conflict": "Někdo tento segment mezitím změnil. Váš text zůstává v editoru; aktuální text je zobrazen zde.",
@@ -494,8 +494,8 @@
     },
     "consentLoadFailed": "Nepodařilo se ověřit souhlas s použitím oprav. Bez něj nelze opravovat.",
     "consentRetry": "Zkusit znovu",
-    "approve": "Schválit",
-    "saveAndApprove": "Uložit a schválit",
+    "approve": "Odeslat",
+    "saveAndApprove": "Uložit a odeslat",
     "clearAndApprove": "Označit jako bez řeči",
     "continue": "Pokračovat",
     "waitingForYou": "{count, plural, one {Čeká na vás # segment} few {Čekají na vás # segmenty} other {Čeká na vás # segmentů}}",
@@ -519,7 +519,8 @@
     "disapproveEditedHint": "Nejdřív změnu uložte, nebo ji zahoďte.",
     "sendNote": "Poslat jen poznámku",
     "flagAudio": "Problém se zvukem",
-    "flagAudioHint": "Označte problém se zvukem, třeba šum nebo více mluvčích najednou. Označit můžete i řeč v jiném jazyce."
+    "flagAudioHint": "Označte problém se zvukem, třeba šum nebo více mluvčích najednou. Označit můžete i řeč v jiném jazyce.",
+    "flagAudioChoose": "Než odešlete, vyberte, o jaký problém jde, nebo Problém se zvukem zavřete."
   },
   "metadata": {
     "title": "Metadata",

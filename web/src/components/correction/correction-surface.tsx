@@ -817,13 +817,18 @@ export function CorrectionSurface({
         ? "continue"
         : draft.trim() === "" ? "confirmEmpty" : "approve";
   const needsListening = mustListen && primary !== "continue";
+  // The audio problem panel is open on a span without a flag only because
+  // this person opened it. Submitting then would record no problem at all,
+  // so the problem is named first, or the panel closed.
+  const needsFlagChoice =
+    flagsOpen && primary !== "continue" && (selected?.flags ?? []).length === 0;
 
   // An approval made without listening is stored, but training leaves it out
   // (ADR 0012), and the person would only learn that at export time. The
   // editor asks for the listening first; disapproving and withdrawing do not
   // need it.
   const runPrimary = useCallback(() => {
-    if (!selected || command.isPending) return;
+    if (!selected || command.isPending || comment.isPending) return;
     if (primary === "continue") {
       void advance({ spanId: selected.id, ordinal: selected.ordinal });
       return;
@@ -837,9 +842,22 @@ export function CorrectionSurface({
       });
       return;
     }
-    if (isEdited) issue(selected, "save_and_approve", draft);
-    else issue(selected, "approve");
-  }, [selected, command.isPending, primary, advance, mustListen, isEdited, draft, issue, toast, t]);
+    if (needsFlagChoice) {
+      toast({ description: t("flagAudioChoose") });
+      return;
+    }
+    // A note written beside the text goes with the submission, the way it
+    // goes with a disapproval: nobody should have to send it separately.
+    const send = () => {
+      if (isEdited) issue(selected, "save_and_approve", draft);
+      else issue(selected, "approve");
+    };
+    if (commentBody.trim()) {
+      comment.mutateAsync({ span: selected, body: commentBody }).then(send, () => undefined);
+    } else {
+      send();
+    }
+  }, [selected, command.isPending, primary, advance, mustListen, needsFlagChoice, isEdited, draft, issue, toast, t, commentBody, comment]);
 
   // Disapproving: the note goes first, so the others see the reason together
   // with the objection.
@@ -1214,7 +1232,7 @@ export function CorrectionSurface({
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 onClick={runPrimary}
-                disabled={command.isPending || needsListening}
+                disabled={command.isPending || comment.isPending || needsListening || needsFlagChoice}
                 className="gap-2"
                 data-testid="correction-approve"
                 data-primary={primary}
@@ -1278,13 +1296,30 @@ export function CorrectionSurface({
               onPlay={() => toggleSpanPlayback(selected)}
             />
 
-            {/* A note being written stays in view: it is unsaved work. */}
-            {(noteOpen || commentBody.trim() !== "") && (
+            {flagsOpen && (
+              <div id="correction-flags-panel" className="space-y-2 rounded-md border p-3">
+                <p className="text-sm text-muted-foreground">{t("flagAudioHint")}</p>
+                {needsFlagChoice && (
+                  <p className="text-sm text-amber-700 dark:text-amber-500" data-testid="correction-flag-choose">
+                    {t("flagAudioChoose")}
+                  </p>
+                )}
+                <CorrectionFlags
+                  span={selected}
+                  flagsUrl={`${buildCorrectionSpanUrl(catalogId, hash, selected.id)}/flags`}
+                  onChanged={refresh}
+                />
+              </div>
+            )}
+
+            {/* A note being written stays in view: it is unsaved work. An audio
+                problem can be explained too, so its panel brings the note along. */}
+            {(noteOpen || flagsOpen || commentBody.trim() !== "") && (
               <div id="correction-note" className="space-y-2 rounded-md border p-3" data-testid="correction-note">
                 <Textarea
                   // Opened by a click, the box takes the cursor; restored with
                   // a span, the editor's own focus effect runs after it.
-                  autoFocus
+                  autoFocus={noteOpen}
                   value={commentBody}
                   onChange={(event) => {
                     setCommentBody(event.target.value);
@@ -1320,17 +1355,6 @@ export function CorrectionSurface({
                     {isEdited ? t("disapproveEditedHint") : t("disapproveHint")}
                   </p>
                 )}
-              </div>
-            )}
-
-            {flagsOpen && (
-              <div id="correction-flags-panel" className="space-y-2 rounded-md border p-3">
-                <p className="text-sm text-muted-foreground">{t("flagAudioHint")}</p>
-                <CorrectionFlags
-                  span={selected}
-                  flagsUrl={`${buildCorrectionSpanUrl(catalogId, hash, selected.id)}/flags`}
-                  onChanged={refresh}
-                />
               </div>
             )}
 

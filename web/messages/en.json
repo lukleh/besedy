@@ -290,7 +290,7 @@
     "shortcutHint": "Ctrl+Enter or Cmd+Enter does the same as the button. Alt+P plays the span, Alt+R repeats a part, Alt+← and Alt+→ go to the previous and next part, Alt+B goes back 3 s, Alt+S changes the speed.",
     "unsavedDraft": "Unsaved",
     "heard": "Heard {percent} %",
-    "listenBeforeApprove": "Approving needs at least {percent} % of the span's speech heard; an approval without listening is not used for training.",
+    "listenBeforeApprove": "Submitting needs at least {percent} % of the span's speech heard; a submission without listening is not used for training.",
     "workspaceLocked": "The transcript is being published or somebody is saving another change. Your text stays in the editor; try again in a moment.",
     "discardDraft": "Discard changes",
     "conflict": "Somebody changed this segment while you were working on it. Your text is kept in the editor; the current text is shown here.",
@@ -494,8 +494,8 @@
     },
     "consentLoadFailed": "Could not check your consent to the use of corrections. Correcting needs it.",
     "consentRetry": "Try again",
-    "approve": "Approve",
-    "saveAndApprove": "Save and approve",
+    "approve": "Submit",
+    "saveAndApprove": "Save and submit",
     "clearAndApprove": "Mark as no speech",
     "continue": "Continue",
     "waitingForYou": "{count, plural, one {# segment is waiting for you} other {# segments are waiting for you}}",
@@ -519,7 +519,8 @@
     "disapproveEditedHint": "Save your change or discard it first.",
     "sendNote": "Send the note only",
     "flagAudio": "Audio problem",
-    "flagAudioHint": "Flag audio issues such as background noise or overlapping speakers, or mark speech in another language."
+    "flagAudioHint": "Flag audio issues such as background noise or overlapping speakers, or mark speech in another language.",
+    "flagAudioChoose": "Choose what the problem is before you submit, or close Audio problem."
   },
   "metadata": {
     "title": "Metadata",
