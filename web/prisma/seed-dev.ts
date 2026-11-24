@@ -51,25 +51,36 @@ const DIRECT_USERS: Array<{
 // Content-backed invitations exercise first-login creation and claim.
 const INVITED_USERS = [
   {
-    email: TEST_USERS.owner.email,
-    name: TEST_USERS.owner.name,
+    email: TEST_USERS.catalog_admin.email,
+    name: TEST_USERS.catalog_admin.name,
+    role: "catalog_admin" as CatalogRole,
+  },
+  {
+    email: TEST_USERS.curator.email,
+    name: TEST_USERS.curator.name,
+    role: "curator" as CatalogRole,
+  },
+  {
+    email: TEST_USERS.host.email,
+    name: TEST_USERS.host.name,
     role: "host" as CatalogRole,
     extraPermissions: ["download_transcripts"],
   },
   {
-    email: TEST_USERS.editor.email,
-    name: TEST_USERS.editor.name,
-    role: "curator" as CatalogRole,
+    email: TEST_USERS.corrector.email,
+    name: TEST_USERS.corrector.name,
+    role: "corrector" as CatalogRole,
   },
   {
-    email: TEST_USERS.member.email,
-    name: TEST_USERS.member.name,
+    email: TEST_USERS.reader.email,
+    name: TEST_USERS.reader.name,
     role: "reader" as CatalogRole,
   },
   {
-    email: TEST_USERS.viewer.email,
-    name: TEST_USERS.viewer.name,
+    email: TEST_USERS.downloader.email,
+    name: TEST_USERS.downloader.name,
     role: "reader" as CatalogRole,
+    extraPermissions: ["download_audio"],
   },
   {
     email: TEST_USERS.listener.email,

@@ -20,7 +20,7 @@ test.describe("Transcript View menu", () => {
       testInfo.project.name !== "Desktop Chrome",
       "Desktop dropdown with a classic scrollbar; Chromium only"
     );
-    await loginAs(page, "viewer");
+    await loginAs(page, "reader");
     await page.goto(URLS.recording(FIRST_RECORDING.hash));
     await expect(page.locator("[data-segment-index]").first()).toBeVisible({
       timeout: 15000,

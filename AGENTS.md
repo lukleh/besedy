@@ -160,8 +160,10 @@ npm run test:e2e:generate   # Regenerate test fixtures
 
 **Test Users (dev auth mode):**
 - Source of truth: `web/prisma/test-data.ts` and `web/tests/e2e/helpers/auth.ts`
-- Common seeded accounts: `superadmin`, `admin`, `owner`, `editor`, `member`,
-  `viewer`, `listener`, `noaccess`, `pending`, `blocked`
+- Common seeded accounts: `superadmin`, `admin`, one per catalog role
+  (`catalog_admin`, `curator`, `host`, `corrector`, `reader`, `listener`),
+  `downloader` (a reader with the `download_audio` extra), `noaccess`,
+  `pending`, `blocked`
 - Keep redirect behavior and auth edge cases out of this file; those flows change
   more often than the seeded identities. Check `docs/web/security.md`,
   `docs/web/architecture.md`, or the relevant route/page code when you need the
