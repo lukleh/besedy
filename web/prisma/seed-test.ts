@@ -86,8 +86,24 @@ const DIRECT_USERS: Array<{
   },
   // Catalog access users - created directly to support devLogin API testing
   {
-    email: TEST_USERS.owner.email,
-    name: TEST_USERS.owner.name,
+    email: TEST_USERS.catalog_admin.email,
+    name: TEST_USERS.catalog_admin.name,
+    isSuperadmin: false,
+    isAdmin: false,
+    status: "ACTIVE",
+    role: "catalog_admin",
+  },
+  {
+    email: TEST_USERS.curator.email,
+    name: TEST_USERS.curator.name,
+    isSuperadmin: false,
+    isAdmin: false,
+    status: "ACTIVE",
+    role: "curator",
+  },
+  {
+    email: TEST_USERS.host.email,
+    name: TEST_USERS.host.name,
     isSuperadmin: false,
     isAdmin: false,
     status: "ACTIVE",
@@ -95,32 +111,31 @@ const DIRECT_USERS: Array<{
     extraPermissions: ["download_transcripts"],
   },
   {
-    email: TEST_USERS.editor.email,
-    name: TEST_USERS.editor.name,
+    email: TEST_USERS.corrector.email,
+    name: TEST_USERS.corrector.name,
     isSuperadmin: false,
     isAdmin: false,
     status: "ACTIVE",
-    role: "curator",
+    role: "corrector",
   },
   {
-    email: TEST_USERS.member.email,
-    name: TEST_USERS.member.name,
+    email: TEST_USERS.reader.email,
+    name: TEST_USERS.reader.name,
     isSuperadmin: false,
     isAdmin: false,
     status: "ACTIVE",
-    // The member account exists to prove that downloading works, and
-    // downloading is no longer something a role reaches by being high enough
-    // on a scale. It is an extra, granted per account.
     role: "reader",
+  },
+  {
+    email: TEST_USERS.downloader.email,
+    name: TEST_USERS.downloader.name,
+    isSuperadmin: false,
+    isAdmin: false,
+    status: "ACTIVE",
+    role: "reader",
+    // Downloading is not something a role reaches by being high enough on
+    // a scale. It is an extra, granted per account.
     extraPermissions: ["download_audio"],
-  },
-  {
-    email: TEST_USERS.viewer.email,
-    name: TEST_USERS.viewer.name,
-    isSuperadmin: false,
-    isAdmin: false,
-    status: "ACTIVE",
-    role: "reader",
   },
   {
     email: TEST_USERS.listener.email,
@@ -142,26 +157,36 @@ const DIRECT_USERS: Array<{
 // Pending admissions to keep allowlist workflows testable
 const INVITED_USERS = [
   {
-    email: TEST_USERS.owner.email,
-    name: TEST_USERS.owner.name,
+    email: TEST_USERS.catalog_admin.email,
+    name: TEST_USERS.catalog_admin.name,
+    role: "catalog_admin" as CatalogRole,
+  },
+  {
+    email: TEST_USERS.curator.email,
+    name: TEST_USERS.curator.name,
+    role: "curator" as CatalogRole,
+  },
+  {
+    email: TEST_USERS.host.email,
+    name: TEST_USERS.host.name,
     role: "host" as CatalogRole,
     extraPermissions: ["download_transcripts"],
   },
   {
-    email: TEST_USERS.editor.email,
-    name: TEST_USERS.editor.name,
-    role: "curator" as CatalogRole,
+    email: TEST_USERS.corrector.email,
+    name: TEST_USERS.corrector.name,
+    role: "corrector" as CatalogRole,
   },
   {
-    email: TEST_USERS.member.email,
-    name: TEST_USERS.member.name,
+    email: TEST_USERS.reader.email,
+    name: TEST_USERS.reader.name,
+    role: "reader" as CatalogRole,
+  },
+  {
+    email: TEST_USERS.downloader.email,
+    name: TEST_USERS.downloader.name,
     role: "reader" as CatalogRole,
     extraPermissions: ["download_audio"],
-  },
-  {
-    email: TEST_USERS.viewer.email,
-    name: TEST_USERS.viewer.name,
-    role: "reader" as CatalogRole,
   },
   {
     email: TEST_USERS.listener.email,

@@ -11,12 +11,16 @@ import { test, expect } from "./helpers/base-test";
 import { loginAs } from "./helpers/auth";
 import { TEST_AUDIO_FILES, TEST_CATALOG_ID } from "./helpers/fixtures";
 import { waitForPageReady } from "./helpers/navigation";
+import { TEST_USERS } from "../../prisma/test-data";
 
 const recording = TEST_AUDIO_FILES.find((file) => file.shortHash === "ab00004dab")!;
 const correctionPath = `/catalog/${TEST_CATALOG_ID}/recording/${recording.hash}/correction`;
 
 test.describe("transcript correction", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
+  // Both tests work in the one workspace of this recording, as the same
+  // corrector; side by side, each would see the other's presence and decisions.
+  test.describe.configure({ mode: "serial" });
 
   test("a corrector consents, starts and works through spans @smoke", async ({ page, browser, baseURL }, testInfo) => {
     test.skip(testInfo.project.name !== "Desktop Chrome", "The correction page needs a large landscape screen");
@@ -29,7 +33,7 @@ test.describe("transcript correction", () => {
     });
     expect(guide.ok()).toBeTruthy();
 
-    await loginAs(page, "editor");
+    await loginAs(page, "curator");
     await page.goto(correctionPath);
     await waitForPageReady(page);
 
@@ -332,12 +336,11 @@ test.describe("transcript correction", () => {
     });
     expect(body.playback.heardFraction).toBeGreaterThanOrEqual(0.9);
 
-    // Whoever administers correction sees who did that and what now waits
-    // for a second person; a corrector does not get the per-person view.
-    const adminOverviewUrl = `/api/catalogs/${TEST_CATALOG_ID}/correction/admin-overview`;
-    expect((await page.request.get(adminOverviewUrl)).status()).toBe(403);
+    // An administrator sees who did that and what now waits for a second
+    // person; who may open the page is covered in admin-corrections.spec.ts.
+    const adminOverviewUrl = "/api/admin/corrections";
     await loginAs(page, "superadmin");
-    await page.goto(`/catalog/${TEST_CATALOG_ID}/settings/corrections`);
+    await page.goto("/admin/corrections");
     await expect(page.getByTestId("correction-admin-summary")).toBeVisible({ timeout: 20000 });
     await expect(page.getByTestId("correction-admin-person").first()).toBeVisible();
     await expect(
@@ -347,5 +350,96 @@ test.describe("transcript correction", () => {
       people: Array<{ approvedSeconds7d: number; waitingSeconds: number }>;
     };
     expect(overview.people.some((person) => person.approvedSeconds7d > 0 && person.waitingSeconds > 0)).toBe(true);
+  });
+
+  test("two correctors see where each other is", async ({ page, browser, baseURL }, testInfo) => {
+    test.skip(testInfo.project.name !== "Desktop Chrome", "The correction page needs a large landscape screen");
+    test.setTimeout(90_000);
+
+    const api = `/api/catalogs/${TEST_CATALOG_ID}/recordings/${recording.hash}/correction`;
+    // Self-sufficient: the guide, both consents and the workspace exist
+    // whether or not the test above has run.
+    const prepare = async (target: typeof page) => {
+      const state = await (await target.request.get("/api/me/correction-consent")).json();
+      if (!state.consent.accepted) {
+        expect((await target.request.post("/api/me/correction-consent", {
+          data: { termsVersion: state.consent.version },
+        })).ok()).toBeTruthy();
+      }
+    };
+    await loginAs(page, "superadmin");
+    expect((await page.request.put(`/api/catalogs/${TEST_CATALOG_ID}/correction-guide`, {
+      data: { body: "# Návod\n\nPište, co zaznělo." },
+    })).ok()).toBeTruthy();
+    await prepare(page);
+    if (!(await (await page.request.get(api)).json()).workspace) {
+      expect((await page.request.post(api, { data: {} })).ok()).toBeTruthy();
+    }
+    // Somebody whose browser was closed without leaving lingers for the
+    // presence window; an earlier run must not be mistaken for company.
+    const { workspace } = await (await page.request.get(api)).json() as { workspace: { id: string } };
+    expect((await page.request.delete(`${api}/presence?workspace=${workspace.id}`)).status()).toBe(204);
+    // A page showing some other workspace is not in this one.
+    expect((await page.request.put(`${api}/presence`, {
+      data: { workspaceId: "00000000-0000-4000-8000-000000000000", spanId: null, editing: false },
+    })).status()).toBe(409);
+    await loginAs(page, "corrector");
+    await prepare(page);
+
+    await page.goto(correctionPath);
+    const spanAudio = page.getByTestId("correction-span-audio");
+    await expect(spanAudio).toBeVisible({ timeout: 20000 });
+    await page.locator("aside").getByRole("button", { name: /^0:00/ }).first().click();
+    // People are told apart by name: whoever the test above left behind
+    // lingers for the presence window and is not this test's business.
+    const second = TEST_USERS.superadmin.name;
+    const badge = (target: typeof page, name: string) =>
+      target.getByTestId("correction-strip-presence").getByTestId("correction-person-chip").filter({ hasText: name });
+    const note = page.getByTestId("correction-presence-note").filter({ hasText: second });
+    const onOverview = page.getByTestId("correction-overview-present").filter({ hasText: second });
+    await expect(badge(page, second)).toHaveCount(0);
+
+    const otherContext = await browser.newContext({ baseURL, viewport: { width: 1440, height: 900 } });
+    try {
+      const other = await otherContext.newPage();
+      await loginAs(other, "superadmin");
+      await other.goto(correctionPath);
+      await expect(other.getByTestId("correction-span-audio")).toBeVisible({ timeout: 20000 });
+      await other.locator("aside").getByRole("button", { name: /^0:10/ }).first().click();
+
+      // The second person sees the first at once; the first learns of the
+      // second with the next heartbeat.
+      await expect(badge(other, TEST_USERS.corrector.name)).toHaveCount(1);
+      const marker = badge(page, second);
+      await expect(marker).toHaveCount(1, { timeout: 45_000 });
+      await expect(marker).not.toHaveAttribute("data-editing");
+      await expect(note).toHaveCount(0);
+
+      // Unsaved wording turns the badge into a warning on that segment.
+      await other.getByRole("textbox").first().fill("Rozepsaná oprava druhého korektora.");
+      await page.locator("aside").getByRole("button", { name: /^0:10/ }).first().click();
+      await expect(note).toContainText(
+        /právě upravuje tento segment|is editing this segment right now/,
+        { timeout: 45_000 }
+      );
+      await expect(marker).toHaveAttribute("data-editing", "true");
+
+      // The overview says who is where, without opening the recording.
+      await page.goto(`/catalog/${TEST_CATALOG_ID}/correction`);
+      await expect(onOverview).toContainText(/0:10/, { timeout: 20000 });
+
+      // Leaving the page takes the person out well before the presence
+      // window ends. A heartbeat already under way can land after the
+      // goodbye, so the overview is asked again rather than once.
+      await other.getByTestId("header-back").click();
+      await expect(other).toHaveURL(`/catalog/${TEST_CATALOG_ID}/correction`);
+      await expect(async () => {
+        await page.reload();
+        await expect(page.getByRole("list").first()).toBeVisible();
+        await expect(onOverview).toHaveCount(0, { timeout: 2000 });
+      }).toPass({ timeout: 40_000 });
+    } finally {
+      await otherContext.close();
+    }
   });
 });

@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/table";
 import { fetchJson } from "@/lib/api/fetch-json";
 import {
-  buildCorrectionAdminOverviewUrl,
   buildCorrectionOverviewPath,
   buildCorrectionPagePath,
 } from "@/lib/api/recording-urls";
@@ -415,7 +414,7 @@ export function CorrectionAdminOverviewPage({ catalogId }: CorrectionAdminOvervi
   const query = useQuery<CorrectionAdminOverview>({
     queryKey: ["correction-admin-overview", catalogId],
     queryFn: async () =>
-      fetchJson<CorrectionAdminOverview>(buildCorrectionAdminOverviewUrl(catalogId), {
+      fetchJson<CorrectionAdminOverview>("/api/admin/corrections", {
         schema: correctionAdminOverviewSchema,
       }),
   });
@@ -457,7 +456,7 @@ export function CorrectionAdminOverviewPage({ catalogId }: CorrectionAdminOvervi
   }, [data, now]);
 
   return (
-    <div className="container mx-auto space-y-8 px-4 py-6">
+    <div className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-lg font-medium">{t("title")}</h1>

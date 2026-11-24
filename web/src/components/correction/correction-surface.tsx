@@ -35,6 +35,9 @@ import {
   speechRegionsInSeconds,
 } from "@/lib/correction/playback-coverage";
 import { CorrectionStrip } from "./correction-strip";
+import { PersonChip } from "./person-chip";
+import { useCorrectionPresence } from "./use-correction-presence";
+import { PRESENCE_HEARTBEAT_SECONDS } from "@/lib/correction/presence-window";
 import { CorrectionFlags, type FlagToggle } from "./correction-flags";
 import { CorrectionGuideDialog } from "./correction-guide-dialog";
 import { useCorrectionDrafts } from "@/contexts/correction-drafts-context";
@@ -52,6 +55,7 @@ import {
   spanHistorySchema,
   spanPageSchema,
   spanStripSchema,
+  type PresentPerson,
   type SpanPage,
   type SpanState,
   type SpanView,
@@ -97,18 +101,29 @@ function revealInList(list: HTMLElement, item: HTMLElement) {
  * here. The span just decided never counts, so a span this person objected
  * to does not bring them straight back to it.
  */
+const NO_SPANS: ReadonlySet<string> = new Set();
+
 export function nextWaitingSpan(
   spans: readonly StripSpan[],
-  from: { spanId: string; ordinal: number }
+  from: { spanId: string; ordinal: number },
+  /**
+   * Segments somebody else is editing right now. They are passed over while
+   * anything else waits, so two people do not type into the same segment;
+   * when nothing else waits, they are still where the work is.
+   */
+  avoid: ReadonlySet<string> = NO_SPANS
 ): StripSpan | null {
-  let after: StripSpan | null = null;
-  let first: StripSpan | null = null;
-  for (const span of spans) {
-    if (!span.wantsMe || span.spanId === from.spanId) continue;
-    if (span.ordinal > from.ordinal && (!after || span.ordinal < after.ordinal)) after = span;
-    if (!first || span.ordinal < first.ordinal) first = span;
-  }
-  return after ?? first;
+  const find = (skip: ReadonlySet<string>) => {
+    let after: StripSpan | null = null;
+    let first: StripSpan | null = null;
+    for (const span of spans) {
+      if (!span.wantsMe || span.spanId === from.spanId || skip.has(span.spanId)) continue;
+      if (span.ordinal > from.ordinal && (!after || span.ordinal < after.ordinal)) after = span;
+      if (!first || span.ordinal < first.ordinal) first = span;
+    }
+    return after ?? first;
+  };
+  return find(avoid) ?? (avoid.size > 0 ? find(NO_SPANS) : null);
 }
 
 interface CorrectionSurfaceProps {
@@ -620,6 +635,28 @@ export function CorrectionSurface({
     [stripSpans]
   );
 
+  // Where the others are. This person counts as editing while the text on
+  // screen differs from the stored text, which is when a second editor of
+  // the same segment would run into a conflict.
+  const present = useCorrectionPresence(
+    catalogId,
+    hash,
+    workspace.id,
+    selected?.id ?? null,
+    selected ? draft.trim() !== selected.text.trim() : false
+  );
+  const presentBySpan = useMemo(() => {
+    const bySpan = new Map<string, PresentPerson[]>();
+    for (const person of present) {
+      if (person.spanId) bySpan.set(person.spanId, [...(bySpan.get(person.spanId) ?? []), person]);
+    }
+    return bySpan;
+  }, [present]);
+  const editedByOthers = useMemo(
+    () => new Set(present.filter((person) => person.editing && person.spanId).map((person) => person.spanId as string)),
+    [present]
+  );
+
   // Go to a segment wherever it is. One already in the list is just selected;
   // one that is not reloads the list around its page.
   const jumpTo = useCallback(
@@ -649,7 +686,7 @@ export function CorrectionSurface({
       if (selectedIdRef.current !== from.spanId) return;
       const strip = queryClient.getQueryData<{ spans: StripSpan[] }>(stripKey);
       if (strip && strip.spans.length > 0) {
-        const next = nextWaitingSpan(strip.spans, from);
+        const next = nextWaitingSpan(strip.spans, from, editedByOthers);
         if (next) jumpTo(next, true);
         else toast({ description: t("nothingLeft") });
         return;
@@ -668,7 +705,7 @@ export function CorrectionSurface({
       const first = fetched.data?.pages.at(-1)?.spans[0];
       if (first && selectedIdRef.current === from.spanId) selectSpan(first, true);
     },
-    [queryClient, stripKey, jumpTo, toast, t, spans, selectSpan, spansQuery]
+    [queryClient, stripKey, editedByOthers, jumpTo, toast, t, spans, selectSpan, spansQuery]
   );
 
   const refresh = useCallback(async () => {
@@ -683,6 +720,26 @@ export function CorrectionSurface({
     });
     onChanged();
   }, [queryClient, catalogId, hash, workspace.id, onChanged]);
+
+  // With somebody else in the recording, their saves are fetched at the pace
+  // of the heartbeat, so a changed segment shows before this person acts on
+  // it. Alone, nothing is fetched: nobody else can change anything.
+  const othersPresent = present.length > 0;
+  useEffect(() => {
+    if (!othersPresent) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void refresh();
+    }, PRESENCE_HEARTBEAT_SECONDS * 1000);
+    return () => clearInterval(timer);
+  }, [othersPresent, refresh]);
+  // Somebody who saves and leaves between two of those fetches takes the
+  // timer with them, so the moment the last of the others is gone is one
+  // more occasion to fetch what they left behind.
+  const hadOthersRef = useRef(false);
+  useEffect(() => {
+    if (hadOthersRef.current && !othersPresent) void refresh();
+    hadOthersRef.current = othersPresent;
+  }, [othersPresent, refresh]);
 
   const command = useMutation({
     mutationFn: async (input: SpanCommandInput) =>
@@ -1023,6 +1080,14 @@ export function CorrectionSurface({
     return { mine: selected.disapproverIds.includes(userId), names, notes };
   }, [selected, history, userId, t]);
 
+  // The others on the segment on screen; those editing it are the ones a
+  // save here would collide with, so the note names them alone.
+  const othersHere = selected ? presentBySpan.get(selected.id) ?? [] : [];
+  const othersEditing = othersHere.some((person) => person.editing);
+  const othersNamed = othersHere
+    .filter((person) => person.editing || !othersEditing)
+    .map((person) => person.name ?? t("unknownActor"));
+
   const shareSegment = async () => {
     if (!selected) return;
     const href = new URL(buildCorrectionPagePath(catalogId, hash, selected.id), window.location.origin).href;
@@ -1066,6 +1131,7 @@ export function CorrectionSurface({
         <CorrectionStrip
           spans={stripQuery.data?.spans ?? []}
           selectedOrdinal={selected?.ordinal ?? null}
+          present={present}
           onJump={(span: StripSpan) => jumpTo(span)}
         />
       </div>
@@ -1105,6 +1171,9 @@ export function CorrectionSurface({
               <span className="font-mono text-xs text-muted-foreground">
                 {formatClock(span.startSeconds)}
               </span>
+              {(presentBySpan.get(span.id) ?? []).map((person) => (
+                <PersonChip key={person.userId} name={person.name} editing={person.editing} />
+              ))}
               {span.approverIds.includes(userId) && (
                 <span className="ml-auto flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground">
                   <Check className="h-3 w-3" aria-hidden="true" />
@@ -1245,6 +1314,24 @@ export function CorrectionSurface({
                 ))}
                 {objection.mine && <p>{t("disapprovedByYou")}</p>}
               </div>
+            )}
+
+            {othersHere.length > 0 && (
+              <p
+                className={`flex flex-wrap items-center gap-1.5 rounded-md border p-3 text-sm ${
+                  othersEditing ? "border-amber-500/40 bg-amber-500/5" : "bg-muted/50"
+                }`}
+                role="status"
+                data-testid="correction-presence-note"
+              >
+                {othersHere.map((person) => (
+                  <PersonChip key={person.userId} name={person.name} editing={person.editing} />
+                ))}
+                {t(othersEditing ? "presence.editingNote" : "presence.hereNote", {
+                  count: othersNamed.length,
+                  names: othersNamed.join(", "),
+                })}
+              </p>
             )}
 
             <Textarea

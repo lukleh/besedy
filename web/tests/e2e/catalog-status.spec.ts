@@ -4,7 +4,7 @@ import { TEST_CATALOG_ID } from "./helpers/fixtures";
 
 test.describe("Catalog Status API", () => {
   test("returns catalog status for authorized user", async ({ page }) => {
-    await loginAs(page, "viewer");
+    await loginAs(page, "reader");
 
     const response = await page.request.get(
       `/api/catalogs/${TEST_CATALOG_ID}/status`
@@ -30,7 +30,7 @@ test.describe("Catalog Status API", () => {
   });
 
   test("returns error for non-existent catalog", async ({ page }) => {
-    await loginAs(page, "viewer");
+    await loginAs(page, "reader");
 
     // Use a valid timestamp format that doesn't exist
     const response = await page.request.get(

@@ -60,6 +60,8 @@ function item(hash: string, overrides: Partial<OverviewItem> = {}): OverviewItem
     touchedByMe: false,
     lastActivity: { at: daysAgo(1), actorName: "Jana" },
     myLastActivityAt: null,
+    contributorNames: [],
+    present: [],
     changedSinceReaderPublication: 0,
     publication: { inFlight: null },
     ...overrides,
@@ -175,7 +177,6 @@ describe("CorrectionAdminOverviewPage", () => {
     const tab = { count: 0, seconds: 0 };
     return {
       catalogId: CATALOG_ID,
-      canPublish: true,
       summary: {
         byTab: {
           mine: tab,

@@ -1164,6 +1164,100 @@ describe("CorrectionSurface", () => {
     expect(nextWaitingSpan([strip[0], strip[1]], { spanId: "span-1", ordinal: 1 })).toBeNull();
   });
 
+  it("passes over a segment somebody is editing while anything else waits", () => {
+    const strip = [0, 1, 2, 3].map((i) => ({
+      spanId: `span-${i}`, ordinal: i, startSeconds: i * 10, endSeconds: i * 10 + 10,
+      state: "not_reviewed" as const, wantsMe: i > 0,
+    }));
+    const from = { spanId: "span-0", ordinal: 0 };
+    expect(nextWaitingSpan(strip, from, new Set(["span-1"]))?.spanId).toBe("span-2");
+    // Nothing else waits: the segment being edited is still where the work is.
+    expect(nextWaitingSpan(strip, from, new Set(["span-1", "span-2", "span-3"]))?.spanId).toBe("span-1");
+  });
+
+  it("reports the segment on screen and shows who else is there", async () => {
+    const jana = { userId: "user-2", name: "Jana Nováková", spanId: "span-0", ordinal: 0, startSeconds: 0, editing: true };
+    const petr = { userId: "user-3", name: "Petr Dvořák", spanId: "span-1", ordinal: 1, startSeconds: 10, editing: false };
+    const heartbeats: unknown[] = [];
+    fetchJsonMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/presence")) {
+        heartbeats.push(JSON.parse(String(init?.body)));
+        return { workspaceId: WORKSPACE.id, people: [jana, petr] };
+      }
+      if (url.endsWith("/strip")) return {
+        workspaceId: WORKSPACE.id,
+        spans: page(0, 2, 2).spans.map((span) => ({
+          spanId: span.id, ordinal: span.ordinal,
+          startSeconds: span.startSeconds, endSeconds: span.endSeconds,
+          state: span.state, wantsMe: true,
+        })),
+      };
+      if (url.includes("/spans?offset=0")) return page(0, 2, 2);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+    renderSurface(null);
+
+    // Somebody editing the segment on screen is named above the editor.
+    const note = await screen.findByTestId("correction-presence-note");
+    expect(note).toHaveTextContent("presence.editingNote");
+    expect(within(note).getAllByTestId("correction-person-chip")).toHaveLength(1);
+    // Both are marked on the strip, where a click goes to them.
+    const strip = screen.getByTestId("correction-strip-presence");
+    expect(within(strip).getAllByTestId("correction-person-chip").map((chip) => chip.textContent)).toEqual([
+      "JNpresence.editing",
+      "PDpresence.here",
+    ]);
+    expect(heartbeats[0]).toEqual({ workspaceId: WORKSPACE.id, spanId: "span-0", editing: false });
+    // Each badge is placed at its own segment: the box before it is as wide
+    // as that segment's place on the strip and holds the badges before it,
+    // so an earlier badge moves a later one only by standing in its way.
+    const places = within(strip).getAllByTestId("correction-strip-presence-place");
+    expect(places.map((place) => place.style.getPropertyValue("--at"))).toEqual(["50cqw", "0cqw"]);
+    const [later, first] = places;
+    expect(within(later).getAllByTestId("correction-person-chip")).toHaveLength(1);
+    expect(within(first).queryAllByTestId("correction-person-chip")).toHaveLength(0);
+
+    await userEvent.click(within(strip).getAllByRole("button")[1]);
+    expect(await screen.findByDisplayValue("machine 1")).toBeInTheDocument();
+    // Somebody merely looking at a segment is mentioned, not warned about.
+    await waitFor(() =>
+      expect(screen.getByTestId("correction-presence-note")).toHaveTextContent("presence.hereNote")
+    );
+    await waitFor(() => expect(heartbeats).toContainEqual(expect.objectContaining({ spanId: "span-1", editing: false })));
+
+    // Typing is what the others are told about.
+    await userEvent.type(screen.getByDisplayValue("machine 1"), "!");
+    await waitFor(() => expect(heartbeats).toContainEqual(expect.objectContaining({ spanId: "span-1", editing: true })));
+  });
+
+  // Somebody who saves and leaves between two refreshes must not leave
+  // their change unseen: nothing would fetch it once this person is alone.
+  it("fetches the others' last saves when the last of them leaves", async () => {
+    let others = [{ userId: "user-2", name: "Jana", spanId: "span-1", ordinal: 1, startSeconds: 10, editing: false }];
+    fetchJsonMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/presence")) return { workspaceId: WORKSPACE.id, people: others };
+      if (url.endsWith("/strip")) return { workspaceId: WORKSPACE.id, spans: [] };
+      if (url.includes("/spans?offset=0")) return page(0, 2, 2);
+      if (/\/spans\/span-\d+$/.test(url)) return { spanId: "x", history: [] };
+      throw new Error(`unexpected ${url}`);
+    });
+    const listFetches = () =>
+      fetchJsonMock.mock.calls.filter(([input]) => String(input).includes("/spans?offset=0")).length;
+    renderSurface(null);
+    expect(await screen.findAllByTestId("correction-person-chip")).not.toHaveLength(0);
+    const before = listFetches();
+
+    // The next heartbeat finds nobody else.
+    others = [];
+    await userEvent.click(screen.getByRole("button", { name: /machine 1/ }));
+
+    await waitFor(() => expect(screen.queryAllByTestId("correction-person-chip")).toHaveLength(0));
+    await waitFor(() => expect(listFetches()).toBeGreaterThan(before));
+  });
+
   // "Disapprove the text" sends the note first, then the objection, and a
   // disputed segment names who objects and what they wrote above the editor.
   it("sends the note with a disapproval and explains a disputed segment", async () => {

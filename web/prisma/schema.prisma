@@ -169,6 +169,7 @@ model User {
   transcriptSpanFlagEvents      TranscriptSpanFlagEvent[]        @relation("TranscriptSpanFlagEventUser")
   /// Contributor terms this user accepted
   transcriptContributorConsents TranscriptContributorConsent[]
+  transcriptWorkspacePresences  TranscriptWorkspacePresence[]
 
   @@map("users")
 }
@@ -1071,6 +1072,7 @@ model TranscriptWorkspace {
   comments          TranscriptSpanComment[]
   publications      TranscriptPublication[]
   flagEvents        TranscriptSpanFlagEvent[]
+  presences         TranscriptWorkspacePresence[]
   readerPublication TranscriptPublication?    @relation("TranscriptWorkspaceReaderPublication", fields: [readerPublicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   searchPublication TranscriptPublication?    @relation("TranscriptWorkspaceSearchPublication", fields: [searchPublicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -1113,6 +1115,7 @@ model TranscriptSpan {
   comments         TranscriptSpanComment[]
   publicationSpans TranscriptPublicationSpan[]
   flagEvents       TranscriptSpanFlagEvent[]
+  presences        TranscriptWorkspacePresence[]
 
   @@unique([workspaceId, ordinal])
   @@index([workspaceId, startSeconds])
@@ -1364,6 +1367,30 @@ model TranscriptContributorConsent {
 
   @@unique([actorKey, termsVersion])
   @@map("transcript_contributor_consent")
+}
+
+/// Who has a correction workspace open right now, and on which span.
+///
+/// Advisory only (ADR 0006): it tells correctors where the others are so they
+/// can stay out of each other's way. No write checks it, a row older than the
+/// presence window counts as absent, and losing every row loses nothing. It is
+/// not correction data, so unlike the tables above it may be deleted freely.
+model TranscriptWorkspacePresence {
+  workspaceId String   @map("workspace_id") @db.Uuid
+  userId      String   @map("user_id")
+  /// The span on the person's screen
+  spanId      String?  @map("span_id") @db.Uuid
+  /// The person has unsaved wording on that span
+  editing     Boolean  @default(false)
+  /// Last heartbeat, by the database clock
+  seenAt      DateTime @map("seen_at")
+
+  workspace TranscriptWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  span      TranscriptSpan?     @relation(fields: [spanId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@map("transcript_workspace_presence")
 }
 
 // ============================================================================

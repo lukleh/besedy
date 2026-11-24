@@ -142,7 +142,7 @@ test.describe('Header back navigation', () => {
   });
 
   test('catalog settings returns to the page it was opened from', async ({ page }) => {
-    await loginAs(page, 'owner');
+    await loginAs(page, 'host');
     const recording = URLS.recording(FIRST_RECORDING.hash);
     await page.goto(recording);
     await waitForPageReady(page);

@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Bot,
   Upload,
+  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,11 @@ const navItems = [
     titleKey: "nav.ingest" as const,
     href: "/admin/ingest",
     icon: Upload,
+  },
+  {
+    titleKey: "nav.corrections" as const,
+    href: "/admin/corrections",
+    icon: ClipboardCheck,
   },
   {
     titleKey: "nav.transcripts" as const,
@@ -150,6 +156,7 @@ function Breadcrumb() {
       users: t("nav.users"),
       catalogs: t("nav.catalogs"),
       ingest: t("nav.ingest"),
+      corrections: t("nav.corrections"),
       "transcript-order": t("nav.transcripts"),
       audit: t("nav.auditLog"),
       mcp: t("nav.mcpUsage"),

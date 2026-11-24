@@ -136,7 +136,6 @@ describe('catalog settings sync status', () => {
             configuration: true,
             access: false,
             correctionGuide: false,
-            correctionOverview: false,
             eventHealth: false,
             lookups: false,
             transcriptExports: false,

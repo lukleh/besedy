@@ -365,6 +365,25 @@ reduce a rare ergonomic collision.
 Comments do not fail merely because the text changed while they were written.
 They attach to the span and record the revision the author had seen.
 
+#### Amendment: presence is shown, never enforced
+
+With several people correcting, they could not tell who was in a recording or
+where, and met only when a save was refused. The correction page now reports
+which span its person has on screen, and whether they have unsaved wording on
+it, every 30 seconds while the tab is visible. A person not heard from for 90
+seconds counts as gone. The others see a badge on that span, a note above the
+editor when somebody is editing the span they are on, and on the overview who
+is in each recording and who has worked on it. Moving on after a decision
+passes over a span somebody else is editing while anything else waits, and
+while somebody else is in the recording the page fetches their saves at the
+same pace.
+
+This is still not a lease. Presence lives in `transcript_workspace_presence`,
+which no write reads: opening, editing and approving a span somebody else is
+on all remain possible, and the revision check above remains the only
+guarantee. The table is not correction data, so ADR 0012's protection of the
+correction tables does not cover it; its rows may be deleted at any time.
+
 ### Correction changes text, not timing
 
 ADR 0012 (proposed) amends where the fixed boundaries come from: runs of VAD

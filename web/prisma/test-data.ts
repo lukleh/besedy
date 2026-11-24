@@ -98,10 +98,15 @@ export const TEST_EVENTS: TestEventSpec[] = [
 export const TEST_USERS = {
   superadmin: { email: "superadmin@besedy.test", name: "Super Admin" },
   admin: { email: "admin@besedy.test", name: "Admin" },
-  owner: { email: "owner@besedy.test", name: "Catalog Owner" },
-  editor: { email: "editor@besedy.test", name: "Catalog Editor" },
-  member: { email: "member@besedy.test", name: "Catalog Member" },
-  viewer: { email: "viewer@besedy.test", name: "Catalog Viewer" },
+  // Catalog accounts are named after the role they hold.
+  catalog_admin: { email: "catalog-admin@besedy.test", name: "Catalog Admin" },
+  curator: { email: "curator@besedy.test", name: "Catalog Curator" },
+  host: { email: "host@besedy.test", name: "Catalog Host" },
+  corrector: { email: "corrector@besedy.test", name: "Catalog Corrector" },
+  reader: { email: "reader@besedy.test", name: "Catalog Reader" },
+  // A reader with the download_audio extra: downloading is granted per
+  // account, not reached through a role.
+  downloader: { email: "downloader@besedy.test", name: "Catalog Downloader" },
   listener: { email: "listener@besedy.test", name: "Catalog Listener" },
   noaccess: { email: "noaccess@besedy.test", name: "No Access User" },
   // Dedicated user for mutation tests - never used in parallel tests

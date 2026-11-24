@@ -2223,6 +2223,84 @@ async function main() {
   check("a workspace with spans cannot be deleted", !workspaceDeleted);
 
   // --- the admin overview ---------------------------------------------------
+  console.log("\nwho is here now");
+  {
+    const { clearPresence, loadPresence, recordPresence } = await import("@/lib/correction/presence");
+    const { loadCorrectionOverview } = await import("@/lib/correction/overview");
+
+    // The second corrector of the fixture was deleted above; presence
+    // belongs to an account, so this is a new one.
+    const carol = await prisma.user.create({
+      data: { id: `carol-${randomUUID()}`, email: `carol-${randomUUID()}@example.test`, status: "ACTIVE" },
+    });
+    const [first, second] = await prisma.transcriptSpan.findMany({
+      where: { workspaceId: restarted.id },
+      orderBy: { ordinal: "asc" },
+      take: 2,
+    });
+    const foreign = await prisma.transcriptSpan.findFirstOrThrow({
+      where: { workspaceId: { not: restarted.id } },
+    });
+
+    await recordPresence({ workspaceId: restarted.id, userId: carol.id, spanId: second.id, editing: true });
+    await recordPresence({ workspaceId: restarted.id, userId: alice.id, spanId: first.id, editing: false });
+    const seenByAlice = (await loadPresence([restarted.id], alice.id)).get(restarted.id) ?? [];
+    check(
+      "a person sees the others and where they are, not themselves",
+      seenByAlice.length === 1 &&
+        seenByAlice[0].userId === carol.id &&
+        seenByAlice[0].spanId === second.id &&
+        seenByAlice[0].startSeconds === second.startSeconds &&
+        seenByAlice[0].editing,
+      seenByAlice
+    );
+
+    await recordPresence({ workspaceId: restarted.id, userId: carol.id, spanId: first.id, editing: false });
+    const moved = (await loadPresence([restarted.id], alice.id)).get(restarted.id) ?? [];
+    check(
+      "a later heartbeat moves the person instead of adding a second one",
+      moved.length === 1 && moved[0].spanId === first.id && !moved[0].editing,
+      moved
+    );
+
+    await recordPresence({ workspaceId: restarted.id, userId: carol.id, spanId: foreign.id, editing: true });
+    const misplaced = (await loadPresence([restarted.id], alice.id)).get(restarted.id) ?? [];
+    check(
+      "a span from another workspace is recorded as no span",
+      misplaced.length === 1 && misplaced[0].spanId === null && !misplaced[0].editing,
+      misplaced
+    );
+
+    const overview = await loadCorrectionOverview({ catalogId: CATALOG_ID, actorKey: alice.id, canSeeUnreleased: true });
+    const row = overview.workspaces.find((item) => item.workspaceId === restarted.id);
+    check(
+      "the overview says who is in a recording now",
+      row?.present.length === 1 && row.present[0].name !== null,
+      row?.present
+    );
+    check(
+      "the overview names the others who worked on a recording, never the asking person",
+      row !== undefined && !row.contributorNames.includes(alice.email!.split("@")[0]),
+      row?.contributorNames
+    );
+
+    await prisma.$executeRaw`
+      UPDATE transcript_workspace_presence
+      SET seen_at = seen_at - interval '5 minutes'
+      WHERE workspace_id = ${restarted.id}::uuid AND user_id = ${carol.id}
+    `;
+    check(
+      "a person not heard from for a while counts as gone",
+      ((await loadPresence([restarted.id], alice.id)).get(restarted.id) ?? []).length === 0
+    );
+
+    await clearPresence(restarted.id, alice.id);
+    check(
+      "leaving the page removes the person at once",
+      ((await loadPresence([restarted.id], carol.id)).get(restarted.id) ?? []).length === 0
+    );
+  }
+
   console.log("\nthe admin overview");
   {
     const { loadCorrectionAdminOverview } = await import("@/lib/correction/admin-overview");

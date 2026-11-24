@@ -329,7 +329,14 @@
     "segmentLinkLoadFailed": "Could not load the linked segment. Please try again.",
     "segmentLinkResume": "Continue correcting",
     "segmentLinkRetry": "Try again",
+    "presence": {
+      "here": "{name} is here now",
+      "editing": "{name} is editing this segment",
+      "hereNote": "{count, plural, one {{names} is} other {{names} are}} on this segment too.",
+      "editingNote": "{count, plural, one {{names} is} other {{names} are}} editing this segment right now. Wait for their change or take another segment; if you both save, the later text is not saved and stays in its editor."
+    },
     "strip": {
+      "present": "Where the others are right now; click to go there",
       "label": "Correction progress across the whole recording; click to jump",
       "done": "Done",
       "needs_second_approval": "Needs second approval",
@@ -438,6 +445,11 @@
         "disapproved": "{count} you objected to",
         "open": "{count} waiting for you"
       },
+      "presentNow": "Here now:",
+      "presentPerson": "{name}",
+      "presentAt": "{name} at {time}",
+      "presentEditingAt": "{name} at {time}, editing",
+      "contributors": "Also worked on by {names}{more, plural, =0 {} other { and # more}}",
       "lastActivity": "Last activity: {name}, {when}",
       "actions": {
         "start": "Start correction",
@@ -576,6 +588,7 @@
       "users": "Users",
       "catalogs": "Catalogs",
       "ingest": "Ingest",
+      "corrections": "Corrections",
       "transcripts": "Transcript Order",
       "addUsers": "Add Users",
       "auditLog": "Audit Log",
@@ -1797,11 +1810,6 @@
     "title": "Manage catalog: {name}",
     "titleDefault": "Manage catalog",
     "description": "Manage catalog access, metadata, and configuration",
-    "corrections": {
-      "title": "Corrections",
-      "description": "Who is correcting what, what is left and what waits for a second pass.",
-      "open": "Open the overview"
-    },
     "lookups": {
       "title": "Catalog lookups",
       "description": "Recorders, locations and albums that this catalog's metadata picks from."
