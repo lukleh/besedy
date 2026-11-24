@@ -332,12 +332,12 @@ test.describe("transcript correction", () => {
     });
     expect(body.playback.heardFraction).toBeGreaterThanOrEqual(0.9);
 
-    // Whoever administers correction sees who did that and what now waits
-    // for a second person; a corrector does not get the per-person view.
-    const adminOverviewUrl = `/api/catalogs/${TEST_CATALOG_ID}/correction/admin-overview`;
+    // An administrator sees who did that and what now waits for a second
+    // person; a corrector does not get the per-person view.
+    const adminOverviewUrl = "/api/admin/corrections";
     expect((await page.request.get(adminOverviewUrl)).status()).toBe(403);
     await loginAs(page, "superadmin");
-    await page.goto(`/catalog/${TEST_CATALOG_ID}/settings/corrections`);
+    await page.goto("/admin/corrections");
     await expect(page.getByTestId("correction-admin-summary")).toBeVisible({ timeout: 20000 });
     await expect(page.getByTestId("correction-admin-person").first()).toBeVisible();
     await expect(

@@ -261,7 +261,7 @@ export const correctionOverviewSchema = z.object({
 
 export type CorrectionOverview = z.infer<typeof correctionOverviewSchema>;
 
-export const correctionAdminOverviewSchema = correctionOverviewSchema.extend({
+export const correctionAdminOverviewSchema = correctionOverviewSchema.omit({ canPublish: true }).extend({
   people: z.array(
     z.object({
       name: z.string().nullable(),

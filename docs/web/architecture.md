@@ -213,7 +213,6 @@ requires the named catalog permission.
 | POST | `/api/catalogs/:id/recordings/:hash/correction` | `correct_transcripts` | Start correction: freeze the default machine transcript and import its segments |
 | DELETE | `/api/catalogs/:id/recordings/:hash/correction` | `manage_catalog_config` | Archive the workspace with a reason so a new one can be started |
 | GET | `/api/catalogs/:id/correction/overview` | `correct_transcripts` | Correction across the catalog: every live workspace with its progress, this person's share, its work stage and what readers see, plus the primary recordings nobody has started. Limited to the recordings and released events the caller may see |
-| GET | `/api/catalogs/:id/correction/admin-overview` | `manage_catalog_config` | The correction overview plus who did what: each person's latest activity and recent pace, who has worked in each workspace and whose first pass waits for a second person, and the oldest disputed spans. Read by the corrections page under Manage catalog |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/spans` | `correct_transcripts` | Paged spans with derived state |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/strip` | `correct_transcripts` | Every span's position, state and whether it still wants this person, without text, for the strip over the whole recording |
 | GET | `/api/catalogs/:id/recordings/:hash/correction/spans/:spanId` | `correct_transcripts` | Span history: revisions, decisions, comments |
@@ -331,6 +330,7 @@ call it. Endpoints not listed above:
 | GET | `/api/admin/audit/analytics` | Activity analytics for charts |
 | GET | `/api/admin/client-errors` | Client error list |
 | GET | `/api/admin/dashboard/stats` | Dashboard statistics |
+| GET | `/api/admin/corrections` | Correction across the catalog with who did what: every recording's progress, each person's latest activity and recent pace, whose first pass waits for a second person, and the oldest disputed spans |
 | GET | `/api/admin/mcp-usage` | MCP tool usage |
 | GET/PUT | `/api/admin/transcript-backends` | Discovered transcript backends and their priorities |
 | GET | `/api/admin/users/:id/catalog-access` | A user's catalog access |
@@ -364,12 +364,12 @@ an authorization check.
 | Recording | `/catalog/[catalogId]/recording/[hash]` | Catalog access, release-scoped (transcripts: `read_transcripts`) |
 | Recording Edit | `/catalog/[catalogId]/recording/[hash]/edit` | `edit_metadata` |
 | Correction | `/catalog/[catalogId]/recording/[hash]/correction` | `correct_transcripts`; the working surface for a recording in correction scope (ADR 0006) |
-| Catalog Settings | `/catalog/[catalogId]/settings` | Separately gated cards, page opens if any applies: access card needs `manage_access`; configuration card needs `manage_catalog_config` (`catalog_admin` wildcard only); event health card needs `manage_events`; transcript-exports card needs `bulk_export_transcripts`; correction-guide card needs `manage_catalog_config`; corrections card needs `manage_catalog_config`; lookups card needs `manage_lookups` and an active catalog |
-| Corrections | `/catalog/[catalogId]/settings/corrections` | `manage_catalog_config`; who is correcting what, per event day and per person, and what waits for a second pass, is disputed, stalled or ready to publish. Read-only |
+| Catalog Settings | `/catalog/[catalogId]/settings` | Separately gated cards, page opens if any applies: access card needs `manage_access`; configuration card needs `manage_catalog_config` (`catalog_admin` wildcard only); event health card needs `manage_events`; transcript-exports card needs `bulk_export_transcripts`; correction-guide card needs `manage_catalog_config`; lookups card needs `manage_lookups` and an active catalog |
 | Catalog Lookups | `/catalog/[catalogId]/settings/metadata/{recorders,locations,albums}` | `manage_lookups` on an active catalog; without it redirects to `/catalog/[catalogId]`; an inactive catalog is not found |
 | User Settings | `/settings` | Auth |
 | Admin | `/admin` | Admin |
 | Admin Ingest | `/admin/ingest` | Admin |
+| Admin Corrections | `/admin/corrections` | Admin; who is correcting what, per event day and per person, and what waits for a second pass, is disputed, stalled or ready to publish. Read-only |
 | Sign In | `/auth/signin` | Public |
 
 - Auth proxy (`src/proxy.ts`) redirects unauthenticated users to `/auth/signin`.

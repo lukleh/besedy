@@ -162,14 +162,6 @@ export function buildCorrectionOverviewPath(catalogId: string): string {
   return `/catalog/${catalogId}/correction`;
 }
 
-export function buildCorrectionAdminOverviewUrl(catalogId: string): string {
-  return `/api/catalogs/${catalogId}/correction/admin-overview`;
-}
-
-export function buildCorrectionAdminOverviewPath(catalogId: string): string {
-  return `/catalog/${catalogId}/settings/corrections`;
-}
-
 export function buildCorrectionSpanUrl(
   catalogId: string,
   hash: string,
