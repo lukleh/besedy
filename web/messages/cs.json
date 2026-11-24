@@ -584,6 +584,7 @@
       "users": "Uživatelé",
       "catalogs": "Katalogy",
       "ingest": "Nahrání záznamů",
+      "corrections": "Korektury",
       "transcripts": "Pořadí přepisů",
       "addUsers": "Přidat uživatele",
       "auditLog": "Auditní log",
@@ -1804,11 +1805,6 @@
     "title": "Správa katalogu: {name}",
     "titleDefault": "Správa katalogu",
     "description": "Správa přístupu, metadat a nastavení katalogu",
-    "corrections": {
-      "title": "Korektury",
-      "description": "Kdo co opravuje, co zbývá a co čeká na druhé čtení.",
-      "open": "Otevřít přehled"
-    },
     "lookups": {
       "title": "Číselníky katalogu",
       "description": "Zvukaři, místa a alba, ze kterých vybírají metadata tohoto katalogu."

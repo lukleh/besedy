@@ -1,80 +1,64 @@
 ---
-description: Get authenticated session for API testing with curl. Use when testing API endpoints locally without going through OAuth flow.
-argument-hint: <email> (e.g., admin@besedy.test)
+description: Get an authenticated session cookie for API testing with curl, by running the mock OAuth sign-in for a seeded test account.
+argument-hint: <account> (e.g. corrector, curator, admin)
 ---
 
 # Dev Login for API Testing
 
-Obtain session cookies for testing API endpoints directly with curl or other HTTP clients.
+Sign in as a seeded test account through the mock OAuth provider and keep the
+session cookie for curl. This runs the same flow as the "Sign in with Mock
+OAuth" button, with `login_hint` choosing the account instead of the picker.
 
-## Quick Usage
+Works against the development and test stacks, which run the `mock-oauth`
+Compose profile. Production has no mock provider.
 
-Get session for admin user:
+## Usage
+
+Set `BASE` to the stack's `AUTH_URL` (dev default `http://localhost:3001`,
+test `http://localhost:3002`) and `EMAIL` to the account:
+
 ```bash
-curl -c cookies.txt "http://localhost:3001/api/auth/dev-login?email=admin@besedy.test"
+BASE=http://localhost:3001
+EMAIL=corrector@besedy.test
+JAR=$(mktemp)
+
+url=$(curl -s -c "$JAR" -b "$JAR" -H "Origin: $BASE" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"mock-oauth","callbackURL":"/catalog","errorCallbackURL":"/catalog"}' \
+  "$BASE/api/auth/sign-in/social" | jq -r .url)
+curl -s -c "$JAR" -b "$JAR" -L -o /dev/null -w '%{url_effective}\n' \
+  "$url&login_hint=$EMAIL"
 ```
 
-Use cookies with any API:
+The last command prints where the sign-in landed: `/catalog/<id>` for an
+account with catalog access, `/auth/no-access` or `/auth/signin` otherwise.
+
+Then call any API with the cookie jar:
+
 ```bash
-curl -b cookies.txt http://localhost:3001/api/catalogs
+curl -s -b "$JAR" "$BASE/api/archive"
 ```
 
-## Available Test Users
+## Accounts
 
-| Email | Role | Access |
-|-------|------|--------|
-| superadmin@besedy.test | Superadmin | Full system access |
-| admin@besedy.test | Admin | User/catalog management |
-| owner@besedy.test | User | OWNER on test catalog |
-| editor@besedy.test | User | EDITOR on test catalog |
-| member@besedy.test | User | MEMBER on test catalog |
-| viewer@besedy.test | User | VIEWER on test catalog |
-| listener@besedy.test | User | LISTENER (no transcripts) |
-| noaccess@besedy.test | User | No catalog access |
-| pending@besedy.test | User | PENDING status |
-| blocked@besedy.test | User | BLOCKED status |
+Source of truth: `web/prisma/test-data.ts` and the seeds `prisma/seed-dev.ts`
+and `prisma/seed-test.ts`. All use `@besedy.test`:
 
-## Requirements
+- System: `superadmin`, `admin`
+- One per catalog role: `catalog-admin`, `curator`, `host`, `corrector`,
+  `reader`, `listener`
+- `downloader`: a reader with the `download_audio` extra
+- States: `noaccess`, `pending`, `blocked`
 
-- Dev environment running: `just dev-up`
-- `DEV_AUTH_ENABLED=true` in `.env.dev` (copy from `.env.dev.example`)
+Catalog accounts are invitations in the dev seed: the first sign-in creates
+the user and claims the grant. Run `just dev-seed` first if the account is
+missing.
 
-## Response Format
+## Notes
 
-The endpoint returns JSON with user and session info:
-```json
-{
-  "success": true,
-  "user": {
-    "id": "...",
-    "email": "admin@besedy.test",
-    "name": "Admin User",
-    "status": "ACTIVE",
-    "isSuperadmin": false,
-    "isAdmin": true
-  },
-  "session": {
-    "id": "...",
-    "expiresAt": "2024-01-18T..."
-  }
-}
-```
-
-## E2E Test Usage
-
-In Playwright tests, use the `devLogin()` helper for API-focused tests:
-```typescript
-import { devLogin } from "./helpers/auth";
-
-// Faster than OAuth flow
-await devLogin(page, "admin");
-const response = await page.request.get("/api/catalogs");
-```
-
-## Security Note
-
-This endpoint only works when:
-1. `NODE_ENV !== 'production'`
-2. `DEV_AUTH_ENABLED=true` is set
-
-It returns 404 in production environments.
+- `$BASE` must be the stack's `AUTH_URL`; the mock provider redirects back to
+  it, and Better Auth rejects other origins.
+- Right after an invitation is claimed, `/api/auth/get-session` may still
+  report `PENDING` from the session cache; the database row is `ACTIVE`.
+- Playwright tests do not use this flow: `loginAs()` in
+  `web/tests/e2e/helpers/auth.ts` writes the session directly.

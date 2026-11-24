@@ -28,7 +28,6 @@ export default async function CatalogSettingsPage({
   const cards: CatalogSettingsCards = {
     transcriptExports: capability.canBulkExportTranscripts,
     correctionGuide: capability.canEditCorrectionGuide,
-    correctionOverview: capability.canAdministerCorrection,
     configuration: capability.canManageCatalogConfiguration,
     eventHealth: features.features.events.canEdit,
     access: capability.canManageAccess,
