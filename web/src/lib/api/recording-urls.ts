@@ -154,6 +154,10 @@ export function buildCorrectionStripUrl(catalogId: string, hash: string): string
   return `${buildCorrectionUrl(catalogId, hash)}/strip`;
 }
 
+export function buildCorrectionPresenceUrl(catalogId: string, hash: string): string {
+  return `${buildCorrectionUrl(catalogId, hash)}/presence`;
+}
+
 export function buildCorrectionOverviewUrl(catalogId: string): string {
   return `/api/catalogs/${catalogId}/correction/overview`;
 }

@@ -19,7 +19,7 @@ import {
   buildCorrectionPagePath,
   buildRecordingPagePath,
 } from "@/lib/api/recording-urls";
-import { formatHoursMinutes } from "@/lib/correction/format";
+import { formatClock, formatHoursMinutes } from "@/lib/correction/format";
 import { formatMediumDate, formatPartialDate } from "@/lib/date-format";
 import {
   inOverviewTab,
@@ -32,6 +32,7 @@ import {
   type CorrectionOverview,
   type OverviewItem,
 } from "./correction-types";
+import { PersonChip } from "./person-chip";
 
 interface CorrectionOverviewPageProps {
   catalogId: string;
@@ -267,6 +268,40 @@ function OverviewRow({
           </p>
         )}
 
+        {item.present.length > 0 && (
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" data-testid="correction-overview-present">
+            <span className="font-medium">{to("presentNow")}</span>
+            {item.present.map((person, index) => (
+              <span key={index} className="inline-flex items-center gap-1">
+                <PersonChip name={person.name} editing={person.editing} />
+                {to(
+                  person.startSeconds === null
+                    ? "presentPerson"
+                    : person.editing
+                      ? "presentEditingAt"
+                      : "presentAt",
+                  {
+                    name: person.name ?? t("unknownActor"),
+                    time: formatClock(person.startSeconds ?? 0),
+                  }
+                )}
+              </span>
+            ))}
+          </p>
+        )}
+
+        {item.contributorNames.length > 0 && (
+          <p className="text-xs text-muted-foreground" data-testid="correction-overview-contributors">
+            {to("contributors", {
+              names: item.contributorNames
+                .slice(0, MAX_CONTRIBUTORS_SHOWN)
+                .map((name) => name ?? t("unknownActor"))
+                .join(", "),
+              more: Math.max(0, item.contributorNames.length - MAX_CONTRIBUTORS_SHOWN),
+            })}
+          </p>
+        )}
+
         {item.lastActivity && (
           <p className="text-xs text-muted-foreground">
             {to("lastActivity", {
@@ -286,6 +321,11 @@ function OverviewRow({
   );
 }
 
+/** Names listed on a row before the rest are counted. */
+const MAX_CONTRIBUTORS_SHOWN = 4;
+/** How often the overview looks again for who is where, while it is on screen. */
+const PRESENCE_REFRESH_MS = 60_000;
+
 export function CorrectionOverviewPage({ catalogId }: CorrectionOverviewPageProps) {
   const t = useTranslations("correction.overview");
   const [chosenTab, setChosenTab] = useState<OverviewTab | null>(null);
@@ -296,6 +336,7 @@ export function CorrectionOverviewPage({ catalogId }: CorrectionOverviewPageProp
       fetchJson<CorrectionOverview>(buildCorrectionOverviewUrl(catalogId), {
         schema: correctionOverviewSchema,
       }),
+    refetchInterval: PRESENCE_REFRESH_MS,
   });
 
   const data = query.data;
