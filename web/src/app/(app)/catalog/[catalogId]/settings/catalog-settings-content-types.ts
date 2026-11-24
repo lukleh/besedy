@@ -223,7 +223,6 @@ export const CATALOG_ROLE_VALUES = Object.values(CatalogRole);
 export interface CatalogSettingsCards {
   transcriptExports: boolean;
   correctionGuide: boolean;
-  correctionOverview: boolean;
   configuration: boolean;
   eventHealth: boolean;
   access: boolean;
