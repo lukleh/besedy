@@ -196,6 +196,7 @@ A corrector can set flags on a span:
 - `other_language`: with an ISO 639-1 code;
 - `music_noise`: music or noise over speech;
 - `cut_word`: a word cut at the span boundary;
+- `other`: a problem none of the kinds above names, explained in a note;
 - `exclude_from_training`: with an optional comment.
 
 Flags are stored as immutable set and clear events with an actor and time. A

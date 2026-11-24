@@ -490,6 +490,7 @@
       "OTHER_LANGUAGE": "Other language",
       "MUSIC_NOISE": "Music / noise",
       "CUT_WORD": "Cut word",
+      "OTHER": "Something else",
       "EXCLUDE_FROM_TRAINING": "Keep out of training"
     },
     "consentLoadFailed": "Could not check your consent to the use of corrections. Correcting needs it.",

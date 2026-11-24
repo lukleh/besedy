@@ -1241,7 +1241,9 @@ export function CorrectionSurface({
                 {primary === "confirmEmpty" ? t("emptySpan.confirm") : t(primary)}
               </Button>
               <Button
-                variant="outline"
+                // Looks pressed while its panel is open, so it is plain that a
+                // problem is being reported and one has to be chosen.
+                variant={flagsOpen ? "secondary" : "outline"}
                 className="gap-2"
                 aria-expanded={flagsOpen}
                 aria-controls="correction-flags-panel"

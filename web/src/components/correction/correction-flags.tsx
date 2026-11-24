@@ -17,6 +17,7 @@ export const FLAG_KINDS = [
   "OTHER_LANGUAGE",
   "MUSIC_NOISE",
   "CUT_WORD",
+  "OTHER",
   "EXCLUDE_FROM_TRAINING",
 ] as const;
 
