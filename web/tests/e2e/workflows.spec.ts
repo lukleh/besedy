@@ -88,8 +88,8 @@ test.describe("User Workflows", () => {
     await expect(downloadButton).toBeHidden({ timeout: 3000 });
   });
 
-  test("VIEWER: can read transcript content", async ({ page }) => {
-    await loginAs(page, "viewer");
+  test("READER: can read transcript content", async ({ page }) => {
+    await loginAs(page, "reader");
     await page.goto(URLS.recording(FIRST_RECORDING.hash));
     await waitForPageReady(page);
 
@@ -116,7 +116,7 @@ test.describe("User Workflows", () => {
     await expect(editLink).toBeHidden({ timeout: 3000 });
   });
 
-  test("VIEWER: playback position survives navigation", async ({
+  test("READER: playback position survives navigation", async ({
     page,
   }, testInfo) => {
     // Localhost only — needs a consistent storage domain and no cross-origin
@@ -129,7 +129,7 @@ test.describe("User Workflows", () => {
     // Use a recording that isn't touched by the mutation tests so we do not
     // race against attach/detach/release writes.
     const recording = TEST_AUDIO_FILES[1]; // 60s, stable across runs
-    await loginAs(page, "viewer");
+    await loginAs(page, "reader");
 
     // Scrub any stored position for this hash so the first visit starts at 0.
     await page.goto(URLS.recording(recording.hash));
@@ -194,7 +194,7 @@ test.describe("User Workflows", () => {
       .toBeGreaterThanOrEqual(storedSeconds - 0.5);
   });
 
-  test("VIEWER: playback continues when the tab is hidden", async ({
+  test("READER: playback continues when the tab is hidden", async ({
     page,
   }, testInfo) => {
     test.skip(
@@ -202,7 +202,7 @@ test.describe("User Workflows", () => {
       "Single-viewport coverage is sufficient for a visibility policy check"
     );
 
-    await loginAs(page, "viewer");
+    await loginAs(page, "reader");
     await page.goto(URLS.recording(TEST_AUDIO_FILES[1].hash));
     await waitForPageReady(page);
 
@@ -262,8 +262,8 @@ test.describe("User Workflows", () => {
       .toBeGreaterThan(timeBeforeHide);
   });
 
-  test("VIEWER: can view different recordings", async ({ page }) => {
-    await loginAs(page, "viewer");
+  test("READER: can view different recordings", async ({ page }) => {
+    await loginAs(page, "reader");
 
     // Use second recording instead of first to catch hash-specific bugs
     const secondRecording = TEST_AUDIO_FILES[1]; // ab00002def - 60 second recording
@@ -282,7 +282,7 @@ test.describe("User Workflows", () => {
   test("reader with download extra can download recordings", async ({
     page,
   }) => {
-    await loginAs(page, "member");
+    await loginAs(page, "downloader");
     await page.goto(URLS.recording(FIRST_RECORDING.hash));
     await waitForPageReady(page);
 
@@ -303,8 +303,8 @@ test.describe("User Workflows", () => {
     await expect(editLink).toBeHidden({ timeout: 3000 });
   });
 
-  test("EDITOR: can navigate to edit page", async ({ page }) => {
-    await loginAs(page, "editor");
+  test("CURATOR: can navigate to edit page", async ({ page }) => {
+    await loginAs(page, "curator");
     await page.goto(URLS.recording(FIRST_RECORDING.hash));
     await waitForPageReady(page);
 
@@ -329,14 +329,14 @@ test.describe("User Workflows", () => {
     await expect(page).toHaveURL(/\/edit$/, { timeout: 10000 });
   });
 
-  test("EDITOR: can save metadata changes", async ({ page }, testInfo) => {
+  test("CURATOR: can save metadata changes", async ({ page }, testInfo) => {
     // Skip on non-primary projects to avoid DB race when saving to same recording
     test.skip(
       testInfo.project.name !== "Desktop Chrome",
       "Mutation test runs only on Desktop Chrome to avoid parallel DB races"
     );
 
-    await loginAs(page, "editor");
+    await loginAs(page, "curator");
     await page.goto(URLS.recordingEdit(FIRST_RECORDING.hash));
     await waitForPageReady(page);
 
@@ -369,7 +369,7 @@ test.describe("User Workflows", () => {
   });
 
   test("host can manage catalog access", async ({ page }) => {
-    await loginAs(page, "owner");
+    await loginAs(page, "host");
     await page.goto(URLS.catalogSettings);
     await waitForPageReady(page);
 
@@ -457,7 +457,7 @@ test.describe("User Workflows", () => {
 
   test("Responsive: app works on mobile viewport", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await loginAs(page, "viewer");
+    await loginAs(page, "reader");
 
     // Catalog loads with content. With the events-default rollout, viewers
     // land on the events tab which renders event-card buttons on mobile; on
@@ -481,7 +481,7 @@ test.describe("User Workflows", () => {
     const playButton = page.getByTestId("audio-play-button");
     await expect(playButton).toBeVisible({ timeout: 10000 });
 
-    // Transcript visible (viewer has access)
+    // Transcript visible (reader has access)
     const transcriptHeading = page.getByRole("heading", {
       name: /transcript/i,
     });

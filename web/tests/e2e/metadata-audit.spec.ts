@@ -11,7 +11,7 @@ import { URLS, FIRST_RECORDING, TEST_CATALOG_ID } from "./helpers/fixtures";
 import { waitForPageReady } from "./helpers/navigation";
 
 test.describe("Metadata Audit Logging", () => {
-  test("METADATA_UPDATED: logged when editor saves metadata changes", async ({
+  test("METADATA_UPDATED: logged when a curator saves metadata changes", async ({
     page,
   }, testInfo) => {
     // Only run on primary project to avoid DB race conditions
@@ -20,8 +20,8 @@ test.describe("Metadata Audit Logging", () => {
       "Mutation test runs only on Desktop Chrome to avoid parallel DB races"
     );
 
-    // Step 1: Login as editor and edit metadata
-    await devLogin(page, "editor");
+    // Step 1: Login as curator and edit metadata
+    await devLogin(page, "curator");
     await page.goto(URLS.recordingEdit(FIRST_RECORDING.hash));
     await waitForPageReady(page);
 
@@ -65,7 +65,7 @@ test.describe("Metadata Audit Logging", () => {
     expect(auditEntry.details.changedFields).toContain("notes");
   });
 
-  test("METADATA_VERIFIED: logged when editor toggles verification", async ({
+  test("METADATA_VERIFIED: logged when a curator toggles verification", async ({
     page,
   }, testInfo) => {
     // Only run on primary project to avoid DB race conditions
@@ -74,8 +74,8 @@ test.describe("Metadata Audit Logging", () => {
       "Mutation test runs only on Desktop Chrome to avoid parallel DB races"
     );
 
-    // Step 1: Login as editor and toggle verification
-    await devLogin(page, "editor");
+    // Step 1: Login as curator and toggle verification
+    await devLogin(page, "curator");
     await page.goto(URLS.recordingEdit(FIRST_RECORDING.hash));
     await waitForPageReady(page);
 
@@ -121,7 +121,7 @@ test.describe("Metadata Audit Logging", () => {
     expect(auditEntry.details.verified).toBe(!wasChecked);
 
     // Cleanup: restore original verified state
-    await devLogin(page, "editor");
+    await devLogin(page, "curator");
     await page.goto(URLS.recordingEdit(FIRST_RECORDING.hash));
     await waitForPageReady(page);
     const checkbox = page.getByRole("checkbox", { name: /verified/i });
@@ -146,8 +146,8 @@ test.describe("Metadata Audit Logging", () => {
     // Capture timestamp before changes
     const beforeTimestamp = new Date().toISOString();
 
-    // Step 1: Login as editor and make both changes
-    await devLogin(page, "editor");
+    // Step 1: Login as curator and make both changes
+    await devLogin(page, "curator");
     await page.goto(URLS.recordingEdit(FIRST_RECORDING.hash));
     await waitForPageReady(page);
 
@@ -203,7 +203,7 @@ test.describe("Metadata Audit Logging", () => {
     expect(verifiedEntry).toBeDefined();
 
     // Cleanup: restore original verified state
-    await devLogin(page, "editor");
+    await devLogin(page, "curator");
     await page.goto(URLS.recordingEdit(FIRST_RECORDING.hash));
     await waitForPageReady(page);
     const checkbox = page.getByRole("checkbox", { name: /verified/i });

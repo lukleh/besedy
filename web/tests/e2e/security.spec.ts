@@ -46,22 +46,22 @@ test.describe("API Security Boundaries @security", () => {
     expect(response.status()).toBe(403);
   });
 
-  test("VIEWER cannot download audio via API", async ({ page }) => {
-    await loginAs(page, "viewer");
+  test("READER cannot download audio via API", async ({ page }) => {
+    await loginAs(page, "reader");
 
     // Try to download audio directly via API with download=true
     const response = await page.request.get(
       `/api/catalogs/${TEST_CATALOG_ID}/recordings/${FIRST_RECORDING.hash}/audio?download=true`
     );
 
-    // Should be forbidden (VIEWER role cannot download)
+    // Should be forbidden (a reader without the download_audio extra cannot download)
     expect(response.status()).toBe(403);
     const body = await response.json();
     expect(body.error).toMatch(/download|permitted/i);
   });
 
-  test("MEMBER cannot edit metadata via API", async ({ page }) => {
-    await loginAs(page, "member");
+  test("DOWNLOADER cannot edit metadata via API", async ({ page }) => {
+    await loginAs(page, "downloader");
 
     // Try to PUT metadata directly via API
     const response = await page.request.put(
@@ -71,14 +71,14 @@ test.describe("API Security Boundaries @security", () => {
       }
     );
 
-    // Should be forbidden (MEMBER role cannot edit metadata)
+    // Should be forbidden (a reader cannot edit metadata)
     expect(response.status()).toBe(403);
     const body = await response.json();
     expect(body.error).toMatch(/permission|edit|metadata/i);
   });
 
   test("host cannot grant another host via API", async ({ page }) => {
-    await loginAs(page, "owner");
+    await loginAs(page, "host");
 
     // Find any valid target user. Prefer the dedicated 'mutation' user when
     // it is visible in search, but fall back to any returned user (e.g.,
@@ -101,7 +101,7 @@ test.describe("API Security Boundaries @security", () => {
       (await searchAndPickFirst("listener"));
     expect(
       targetUserId,
-      "expected a searchable target user for OWNER grant test"
+      "expected a searchable target user for host grant test"
     ).not.toBeNull();
 
     // A host cannot grant another role carrying manage_access.

@@ -351,7 +351,7 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
 
     await page.goto(authorizeUrl.toString());
     await page.getByRole('button', { name: 'Sign in with Mock OAuth' }).click();
-    await page.getByRole('button', { name: 'Owner' }).click();
+    await page.getByRole('button', { name: 'Host', exact: true }).click();
     await page.getByRole('button', { name: 'Allow' }).click();
     await page.waitForURL(`${redirectUri}**`);
 
@@ -641,8 +641,8 @@ test('@smoke MCP OAuth v2 exercises every read tool', async ({
     expect(identityBody.result?.structuredContent).toMatchObject({
       account: {
         id: expect.any(String),
-        name: 'Catalog Owner',
-        email: 'owner@besedy.test',
+        name: 'Catalog Host',
+        email: 'host@besedy.test',
       },
       authorization: {
         clientId,

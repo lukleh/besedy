@@ -22,7 +22,7 @@ test.describe("Authentication", () => {
   test("user can sign in and reach catalog", async ({ page }) => {
     // Use superadmin (direct user with pre-created account) to avoid race conditions
     // when multiple browsers run this test in parallel. Each browser would otherwise
-    // race to claim the same seeded pending admission for users like 'owner'.
+    // race to claim the same seeded pending admission for users like 'host'.
     await loginAs(page, "superadmin");
 
     // Redirected to catalog or admin (superadmin can access both)
@@ -71,8 +71,8 @@ test.describe("Session Bootstrap (API Testing)", () => {
   });
 
   test("devLogin works for different user roles", async ({ page }) => {
-    // Test with viewer role
-    await devLogin(page, "viewer");
+    // Test with the reader account
+    await devLogin(page, "reader");
 
     // Can access the configured archive API
     const response = await page.request.get("/api/archive");
@@ -80,7 +80,7 @@ test.describe("Session Bootstrap (API Testing)", () => {
   });
 
   test("devLogin session allows page navigation", async ({ page }) => {
-    await devLogin(page, "owner");
+    await devLogin(page, "host");
 
     // Navigate to catalog page - should work without sign-in redirect
     await page.goto(URLS.catalog);

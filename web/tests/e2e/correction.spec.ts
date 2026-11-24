@@ -32,7 +32,7 @@ test.describe("transcript correction", () => {
     });
     expect(guide.ok()).toBeTruthy();
 
-    await loginAs(page, "editor");
+    await loginAs(page, "curator");
     await page.goto(correctionPath);
     await waitForPageReady(page);
 

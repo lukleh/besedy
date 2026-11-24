@@ -75,7 +75,7 @@ it("seeds status fixtures directly and invites only users with content access", 
     });
   }
 
-  expect(mocks.syncSeedPendingAdmissions).toHaveBeenCalledTimes(5);
+  expect(mocks.syncSeedPendingAdmissions).toHaveBeenCalledTimes(7);
   expect(
     mocks.syncSeedPendingAdmissions.mock.calls.map(([, input]) => ({
       email: input.email,
@@ -84,22 +84,32 @@ it("seeds status fixtures directly and invites only users with content access", 
     })),
   ).toEqual([
     {
-      email: TEST_USERS.owner.email,
+      email: TEST_USERS.catalog_admin.email,
       catalogId: "20260101_000000",
-      role: "host",
+      role: "catalog_admin",
     },
     {
-      email: TEST_USERS.editor.email,
+      email: TEST_USERS.curator.email,
       catalogId: "20260101_000000",
       role: "curator",
     },
     {
-      email: TEST_USERS.member.email,
+      email: TEST_USERS.host.email,
+      catalogId: "20260101_000000",
+      role: "host",
+    },
+    {
+      email: TEST_USERS.corrector.email,
+      catalogId: "20260101_000000",
+      role: "corrector",
+    },
+    {
+      email: TEST_USERS.reader.email,
       catalogId: "20260101_000000",
       role: "reader",
     },
     {
-      email: TEST_USERS.viewer.email,
+      email: TEST_USERS.downloader.email,
       catalogId: "20260101_000000",
       role: "reader",
     },

@@ -400,7 +400,7 @@ just mcp-smoke
 It runs the MCP server against the disposable test database and mock OAuth
 provider, never production, and contains two tests.
 
-The first signs in as the seeded catalog owner through the mock OAuth UI,
+The first signs in as the seeded catalog host through the mock OAuth UI,
 accepts the MCP consent screen, exchanges an authorization code with PKCE,
 validates the audience-bound JWT, exercises stored-token issue and revocation,
 sends MCP 2026-07-28 `tools/list`, and calls every corpus tool. It verifies

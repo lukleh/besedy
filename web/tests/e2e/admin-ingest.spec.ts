@@ -70,7 +70,7 @@ test.describe("Admin Ingest @smoke", () => {
   });
 
   test("catalog owners are redirected away from the ingest page", async ({ page }) => {
-    await loginAs(page, "owner");
+    await loginAs(page, "host");
     await page.goto("/admin/ingest");
     await waitForPageReady(page);
 
@@ -79,7 +79,7 @@ test.describe("Admin Ingest @smoke", () => {
   });
 
   test("ingest API is admin-only", async ({ page }) => {
-    await loginAs(page, "owner");
+    await loginAs(page, "host");
 
     const list = await page.request.get("/api/admin/ingest");
     expect(list.status()).toBe(403);

@@ -54,7 +54,7 @@ test.describe('Service worker updates', () => {
       });
     });
 
-    await loginAs(page, 'viewer');
+    await loginAs(page, 'reader');
     await page.goto(URLS.catalog);
     await waitForPageReady(page);
 

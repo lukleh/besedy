@@ -16,10 +16,12 @@ import { TEST_CATALOG_ID, TEST_EVENTS } from "../../../prisma/test-data";
 export type UserRole =
   | "superadmin"
   | "admin"
-  | "owner"
-  | "editor"
-  | "member"
-  | "viewer"
+  | "catalog_admin"
+  | "curator"
+  | "host"
+  | "corrector"
+  | "reader"
+  | "downloader"
   | "listener"
   | "noaccess"
   | "pending"
@@ -33,10 +35,12 @@ type NotificationSeedRole = "superadmin" | "admin";
 export const ROLE_EMAILS: Record<UserRole, string> = {
   superadmin: "superadmin@besedy.test",
   admin: "admin@besedy.test",
-  owner: "owner@besedy.test",
-  editor: "editor@besedy.test",
-  member: "member@besedy.test",
-  viewer: "viewer@besedy.test",
+  catalog_admin: "catalog-admin@besedy.test",
+  curator: "curator@besedy.test",
+  host: "host@besedy.test",
+  corrector: "corrector@besedy.test",
+  reader: "reader@besedy.test",
+  downloader: "downloader@besedy.test",
   listener: "listener@besedy.test",
   noaccess: "noaccess@besedy.test",
   pending: "pending@besedy.test",
@@ -240,10 +244,12 @@ export async function resetSeededNotifications(role: NotificationSeedRole): Prom
 const ROLE_REDIRECT_PATTERNS: Record<UserRole, RegExp> = {
   superadmin: /\/(admin|catalog)/,
   admin: /\/(admin|catalog)/,
-  owner: /\/catalog/,
-  editor: /\/catalog/,
-  member: /\/catalog/,
-  viewer: /\/catalog/,
+  catalog_admin: /\/catalog/,
+  curator: /\/catalog/,
+  host: /\/catalog/,
+  corrector: /\/catalog/,
+  reader: /\/catalog/,
+  downloader: /\/catalog/,
   listener: /\/catalog/,
   noaccess: /\/auth\/no-access/,
   pending: /\/auth\/signin/,
@@ -295,34 +301,6 @@ export async function loginAsSuperadmin(page: Page): Promise<void> {
  */
 export async function loginAsAdmin(page: Page): Promise<void> {
   await loginAs(page, "admin");
-}
-
-/**
- * Log in as catalog owner (OWNER access on test catalog)
- */
-export async function loginAsOwner(page: Page): Promise<void> {
-  await loginAs(page, "owner");
-}
-
-/**
- * Log in as catalog editor (EDITOR access on test catalog)
- */
-export async function loginAsEditor(page: Page): Promise<void> {
-  await loginAs(page, "editor");
-}
-
-/**
- * Log in as catalog member (MEMBER access on test catalog)
- */
-export async function loginAsMember(page: Page): Promise<void> {
-  await loginAs(page, "member");
-}
-
-/**
- * Log in as catalog viewer (VIEWER access on test catalog)
- */
-export async function loginAsViewer(page: Page): Promise<void> {
-  await loginAs(page, "viewer");
 }
 
 /**
