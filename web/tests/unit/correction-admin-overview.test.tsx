@@ -175,7 +175,6 @@ describe("CorrectionAdminOverviewPage", () => {
     const tab = { count: 0, seconds: 0 };
     return {
       catalogId: CATALOG_ID,
-      canPublish: true,
       summary: {
         byTab: {
           mine: tab,

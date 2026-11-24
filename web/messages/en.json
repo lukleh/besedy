@@ -572,6 +572,7 @@
       "users": "Users",
       "catalogs": "Catalogs",
       "ingest": "Ingest",
+      "corrections": "Corrections",
       "transcripts": "Transcript Order",
       "addUsers": "Add Users",
       "auditLog": "Audit Log",
@@ -1793,11 +1794,6 @@
     "title": "Manage catalog: {name}",
     "titleDefault": "Manage catalog",
     "description": "Manage catalog access, metadata, and configuration",
-    "corrections": {
-      "title": "Corrections",
-      "description": "Who is correcting what, what is left and what waits for a second pass.",
-      "open": "Open the overview"
-    },
     "lookups": {
       "title": "Catalog lookups",
       "description": "Recorders, locations and albums that this catalog's metadata picks from."
