@@ -522,6 +522,7 @@
     "flagAudio": "Audio problem",
     "flagAudioHint": "What is wrong with the audio?",
     "noteOptional": "Anything to add? (optional)",
+    "noteAudioProblem": "Describe the problem in your own words (optional)",
     "flagAudioChoose": "Choose what is wrong with the audio, or close Audio problem."
   },
   "metadata": {

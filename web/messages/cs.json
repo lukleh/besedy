@@ -522,6 +522,7 @@
     "flagAudio": "Problém se zvukem",
     "flagAudioHint": "Co je se zvukem špatně?",
     "noteOptional": "Chcete něco doplnit? (nepovinné)",
+    "noteAudioProblem": "Popište problém vlastními slovy (nepovinné)",
     "flagAudioChoose": "Vyberte, co je se zvukem špatně, nebo Problém se zvukem zavřete."
   },
   "metadata": {

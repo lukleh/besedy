@@ -1341,7 +1341,7 @@ describe("CorrectionSurface", () => {
     expect(screen.getByTestId("correction-approve-wrap").getAttribute("title")).toContain("flagAudioChoose");
     // The note is optional there, the main button sends it, and training
     // is not the corrector's choice.
-    expect(screen.getByPlaceholderText("noteOptional")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("noteAudioProblem")).toBeInTheDocument();
     expect(screen.queryByTestId("correction-send-note")).not.toBeInTheDocument();
     expect(screen.queryByTestId("correction-flag-EXCLUDE_FROM_TRAINING")).not.toBeInTheDocument();
     await userEvent.click(screen.getByTestId("correction-flags-toggle"));

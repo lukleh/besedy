@@ -1360,9 +1360,11 @@ export function CorrectionSurface({
                   localDrafts.setComment(selected.id, event.target.value);
                 }}
                 rows={2}
-                // The note is extra, except with a disapproval, which asks
-                // for the reason.
-                placeholder={disapproving ? t("commentPlaceholder") : t("noteOptional")}
+                // The note is extra. A disapproval asks for the reason, and
+                // an audio problem invites the person's own words for it.
+                placeholder={
+                  disapproving ? t("commentPlaceholder") : flagsOpen ? t("noteAudioProblem") : t("noteOptional")
+                }
               />
               <div className="flex flex-wrap items-center gap-2">
                 {disapproving && (
