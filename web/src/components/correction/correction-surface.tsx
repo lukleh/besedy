@@ -38,7 +38,7 @@ import { CorrectionStrip } from "./correction-strip";
 import { PersonChip } from "./person-chip";
 import { useCorrectionPresence } from "./use-correction-presence";
 import { PRESENCE_HEARTBEAT_SECONDS } from "@/lib/correction/presence-window";
-import { CorrectionFlags } from "./correction-flags";
+import { CorrectionFlags, type FlagToggle } from "./correction-flags";
 import { CorrectionGuideDialog } from "./correction-guide-dialog";
 import { useCorrectionDrafts } from "@/contexts/correction-drafts-context";
 import {
@@ -148,6 +148,8 @@ interface SpanCommandInput {
   idempotencyKey: string;
   /** What the person heard of the span, measured when they acted (ADR 0012) */
   playback?: PlaybackReport;
+  /** A note written beside the text, sent once the decision is stored. */
+  note?: string;
 }
 
 type PlaybackReport = ReturnType<PlaybackTracker["report"]>;
@@ -774,6 +776,14 @@ export function CorrectionSurface({
       // The sidebar stays usable while the command runs. Its result only
       // settles the conflict on the span it was issued for.
       if (selectedIdRef.current === variables.span.id) setConflict(false);
+      // The note follows a stored decision, against the revision it settled.
+      // A refused submission therefore leaves the note a draft, and a note
+      // that fails to send stays one too; its own handler says so.
+      if (variables.note) {
+        await comment
+          .mutateAsync({ span: { ...variables.span, revisionId: result.revisionId }, body: variables.note })
+          .catch(() => undefined);
+      }
       await refresh();
       // A decision is the end of the person's work on the span; withdrawing
       // one is not, so it stays.
@@ -813,7 +823,7 @@ export function CorrectionSurface({
   });
 
   const issue = useCallback(
-    (span: SpanView, action: SpanCommandInput["action"], text?: string) => {
+    (span: SpanView, action: SpanCommandInput["action"], text?: string, note?: string) => {
       const pending = pendingCommandRef.current;
       const key =
         pending &&
@@ -831,7 +841,7 @@ export function CorrectionSurface({
       const draftToClear = action === "save_and_approve"
         ? text
         : action === "approve" && draftText?.trim() === span.text.trim() ? draftText : undefined;
-      command.mutate({ span, action, text, draftToClear, idempotencyKey: key, playback: report });
+      command.mutate({ span, action, text, draftToClear, idempotencyKey: key, playback: report, note });
     },
     [command, localDrafts.drafts, playback]
   );
@@ -860,6 +870,31 @@ export function CorrectionSurface({
       }),
   });
 
+  // Setting or clearing an audio problem. The write lives here, not in the
+  // panel, so that closing the panel or visiting another span does not lose
+  // sight of it: until it is stored and the list refreshed, the flags on
+  // screen are stale and the submission waits.
+  const flagToggle = useMutation({
+    mutationFn: async (input: FlagToggle & { spanId: string }) =>
+      fetchJson(`${buildCorrectionSpanUrl(catalogId, hash, input.spanId)}/flags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: input.kind,
+          action: input.set ? "SET" : "CLEAR",
+          languageCode: input.kind === "OTHER_LANGUAGE" && input.set ? input.languageCode : null,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      }),
+    onSuccess: () => refresh(),
+    onError: (error) =>
+      toast({
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      }),
+  });
+  const flagPending = flagToggle.isPending;
+
   const isEdited = selected ? draft.trim() !== selected.text.trim() : false;
   // A span that does not want this person (done, approved by them, or
   // waiting for an answer to their objection) offers "Continue" instead of
@@ -874,13 +909,26 @@ export function CorrectionSurface({
         ? "continue"
         : draft.trim() === "" ? "confirmEmpty" : "approve";
   const needsListening = mustListen && primary !== "continue";
+  // The audio problem panel is open on a span without a flag only because
+  // this person opened it. Submitting then would record no problem at all,
+  // so the problem is named first, or the panel closed.
+  const needsFlagChoice =
+    flagsOpen && primary !== "continue" && (selected?.flags ?? []).length === 0;
 
   // An approval made without listening is stored, but training leaves it out
   // (ADR 0012), and the person would only learn that at export time. The
   // editor asks for the listening first; disapproving and withdrawing do not
   // need it.
+  // Why the main button is greyed out, for whoever points at it.
+  const blockedReason = [
+    needsListening
+      ? t("listenBeforeApprove", { percent: Math.round(MIN_HEARD_FRACTION_FOR_TRAINING * 100) })
+      : null,
+    needsFlagChoice ? t("flagAudioChoose") : null,
+  ].filter(Boolean).join(" ") || undefined;
+
   const runPrimary = useCallback(() => {
-    if (!selected || command.isPending) return;
+    if (!selected || command.isPending || comment.isPending || flagPending) return;
     if (primary === "continue") {
       void advance({ spanId: selected.id, ordinal: selected.ordinal });
       return;
@@ -894,9 +942,16 @@ export function CorrectionSurface({
       });
       return;
     }
-    if (isEdited) issue(selected, "save_and_approve", draft);
-    else issue(selected, "approve");
-  }, [selected, command.isPending, primary, advance, mustListen, isEdited, draft, issue, toast, t]);
+    if (needsFlagChoice) {
+      toast({ description: t("flagAudioChoose") });
+      return;
+    }
+    // A note written beside the text goes with the submission: nobody
+    // should have to send it separately.
+    const note = commentBody.trim() ? commentBody : undefined;
+    if (isEdited) issue(selected, "save_and_approve", draft, note);
+    else issue(selected, "approve", undefined, note);
+  }, [selected, command.isPending, comment.isPending, flagPending, primary, advance, mustListen, needsFlagChoice, isEdited, draft, issue, toast, t, commentBody]);
 
   // Disapproving: the note goes first, so the others see the reason together
   // with the objection.
@@ -997,6 +1052,11 @@ export function CorrectionSurface({
       selected.state === "needs_second_approval" &&
       !selected.approverIds.includes(userId)
   );
+
+  // The disapproval's own controls show once it was asked for, or a note
+  // already written on such a span came back with it.
+  const disapproving = canDisapprove && (noteOpen || commentBody.trim() !== "");
+  const noteRef = useRef<HTMLTextAreaElement>(null);
 
   // Who objects to the text on screen, and what they wrote about it, so a
   // disputed span explains itself above the editor.
@@ -1299,18 +1359,24 @@ export function CorrectionSurface({
             )}
 
             <div className="flex flex-wrap items-center gap-2">
+              {/* A disabled button takes no pointer events, so the reason it is
+                  greyed out hangs on a wrapper and shows on hover. */}
+              <span className="inline-flex" title={blockedReason} data-testid="correction-approve-wrap">
+                <Button
+                  onClick={runPrimary}
+                  disabled={command.isPending || comment.isPending || flagPending || needsListening || needsFlagChoice}
+                  className="gap-2"
+                  data-testid="correction-approve"
+                  data-primary={primary}
+                >
+                  {primary === "continue" ? <ArrowRight className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                  {primary === "confirmEmpty" ? t("emptySpan.confirm") : t(primary)}
+                </Button>
+              </span>
               <Button
-                onClick={runPrimary}
-                disabled={command.isPending || needsListening}
-                className="gap-2"
-                data-testid="correction-approve"
-                data-primary={primary}
-              >
-                {primary === "continue" ? <ArrowRight className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-                {primary === "confirmEmpty" ? t("emptySpan.confirm") : t(primary)}
-              </Button>
-              <Button
-                variant="outline"
+                // Looks pressed while its panel is open, so it is plain that a
+                // problem is being reported and one has to be chosen.
+                variant={flagsOpen ? "secondary" : "outline"}
                 className="gap-2"
                 aria-expanded={flagsOpen}
                 aria-controls="correction-flags-panel"
@@ -1326,7 +1392,12 @@ export function CorrectionSurface({
                   className="gap-2"
                   aria-expanded={noteOpen || commentBody.trim() !== ""}
                   aria-controls="correction-note"
-                  onClick={() => setNoteOpen((open) => !open)}
+                  onClick={() => {
+                    // The note box is always there; disapproving takes the
+                    // cursor to it and shows the confirmation under it.
+                    if (!noteOpen) noteRef.current?.focus();
+                    setNoteOpen((open) => !open);
+                  }}
                   data-testid="correction-disapprove-open"
                 >
                   <ThumbsDown className="h-4 w-4" />
@@ -1346,8 +1417,11 @@ export function CorrectionSurface({
               {myDecision && (
                 <Button
                   variant="outline"
-                  disabled={command.isPending}
-                  onClick={() => issue(selected, "withdraw")}
+                  // A note being sent on its own must not go a second time.
+                  disabled={command.isPending || comment.isPending}
+                  // Like every action that records something, it takes a
+                  // written note along.
+                  onClick={() => issue(selected, "withdraw", undefined, commentBody.trim() ? commentBody : undefined)}
                   data-testid="correction-withdraw"
                 >
                   {t("withdraw")}
@@ -1365,61 +1439,79 @@ export function CorrectionSurface({
               onPlay={() => toggleSpanPlayback(selected)}
             />
 
-            {/* A note being written stays in view: it is unsaved work. */}
-            {(noteOpen || commentBody.trim() !== "") && (
-              <div id="correction-note" className="space-y-2 rounded-md border p-3" data-testid="correction-note">
-                <Textarea
-                  // Opened by a click, the box takes the cursor; restored with
-                  // a span, the editor's own focus effect runs after it.
-                  autoFocus
-                  value={commentBody}
-                  onChange={(event) => {
-                    setCommentBody(event.target.value);
-                    localDrafts.setComment(selected.id, event.target.value);
-                  }}
-                  rows={2}
-                  placeholder={t("commentPlaceholder")}
+            {flagsOpen && (
+              <div id="correction-flags-panel" className="space-y-2 rounded-md border p-3">
+                {/* One line: the question, or what is still missing to submit. */}
+                {needsFlagChoice ? (
+                  <p className="text-sm text-amber-700 dark:text-amber-500" data-testid="correction-flag-choose">
+                    {t("flagAudioChoose")}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t("flagAudioHint")}</p>
+                )}
+                <CorrectionFlags
+                  span={selected}
+                  pendingKind={
+                    flagPending && flagToggle.variables?.spanId === selected.id
+                      ? flagToggle.variables.kind
+                      : undefined
+                  }
+                  busy={flagPending}
+                  onToggle={(input) => flagToggle.mutate({ ...input, spanId: selected.id })}
                 />
-                <div className="flex flex-wrap items-center gap-2">
-                  {canDisapprove && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={command.isPending || comment.isPending || isEdited}
-                      onClick={() => void disapprove()}
-                      data-testid="correction-disapprove"
-                    >
-                      {t("disapproveConfirm")}
-                    </Button>
-                  )}
+              </div>
+            )}
+
+            {/* Every segment can be commented on, whatever else is done with
+                it: the note box is always there. */}
+            <div id="correction-note" className="space-y-2 rounded-md border p-3" data-testid="correction-note">
+              <Textarea
+                ref={noteRef}
+                value={commentBody}
+                onChange={(event) => {
+                  setCommentBody(event.target.value);
+                  localDrafts.setComment(selected.id, event.target.value);
+                }}
+                rows={2}
+                // The note is extra. A disapproval asks for the reason, and
+                // an audio problem invites the person's own words for it.
+                placeholder={
+                  disapproving ? t("commentPlaceholder") : flagsOpen ? t("noteAudioProblem") : t("noteOptional")
+                }
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                {disapproving && (
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={!commentBody.trim() || comment.isPending}
+                    disabled={command.isPending || comment.isPending || isEdited}
+                    onClick={() => void disapprove()}
+                    data-testid="correction-disapprove"
+                  >
+                    {t("disapproveConfirm")}
+                  </Button>
+                )}
+                {/* The main button sends the note with the submission. Sending
+                    it alone is offered once there is something to send. */}
+                {commentBody.trim() !== "" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    // A submission under way sends this note itself.
+                    disabled={comment.isPending || command.isPending}
                     onClick={() => comment.mutate({ span: selected, body: commentBody })}
                     data-testid="correction-send-note"
                   >
                     {t("sendNote")}
                   </Button>
-                </div>
-                {canDisapprove && (
-                  <p className="text-xs text-muted-foreground">
-                    {isEdited ? t("disapproveEditedHint") : t("disapproveHint")}
-                  </p>
                 )}
               </div>
-            )}
-
-            {flagsOpen && (
-              <div id="correction-flags-panel" className="space-y-2 rounded-md border p-3">
-                <p className="text-sm text-muted-foreground">{t("flagAudioHint")}</p>
-                <CorrectionFlags
-                  span={selected}
-                  flagsUrl={`${buildCorrectionSpanUrl(catalogId, hash, selected.id)}/flags`}
-                  onChanged={refresh}
-                />
-              </div>
-            )}
+              {disapproving && (
+                <p className="text-xs text-muted-foreground">
+                  {isEdited ? t("disapproveEditedHint") : t("disapproveHint")}
+                </p>
+              )}
+            </div>
 
             {history && history.length > 0 && (
               <details className="rounded-md border p-3" data-testid="correction-history">

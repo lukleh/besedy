@@ -22,7 +22,7 @@ interface RouteParams {
 
 const FlagSchema = z
   .object({
-    kind: z.enum(["UNCLEAR", "OVERLAP", "OTHER_LANGUAGE", "MUSIC_NOISE", "CUT_WORD", "EXCLUDE_FROM_TRAINING"]),
+    kind: z.enum(["UNCLEAR", "OVERLAP", "OTHER_LANGUAGE", "MUSIC_NOISE", "CUT_WORD", "OTHER", "EXCLUDE_FROM_TRAINING"]),
     action: z.enum(["SET", "CLEAR"]),
     /** ISO 639-1, only with OTHER_LANGUAGE */
     languageCode: z.string().regex(/^[a-z]{2}$/).nullish(),
