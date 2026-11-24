@@ -67,37 +67,51 @@ const TEST_USERS = [
     color: "#4f46e5", // indigo-600
   },
   {
-    email: "owner@besedy.test",
-    label: "Owner",
-    description: "OWNER catalog access",
+    email: "catalog-admin@besedy.test",
+    label: "Catalog admin",
+    description: "catalog_admin: everything in the catalog",
     category: "catalog",
-    color: "#15803d", // green-700
+    color: "#7c3aed", // violet-600
   },
   {
-    email: "editor@besedy.test",
-    label: "Editor",
-    description: "EDITOR catalog access",
+    email: "curator@besedy.test",
+    label: "Curator",
+    description: "curator: metadata, events, corrections",
     category: "catalog",
     color: "#a16207", // yellow-700
   },
   {
-    email: "member@besedy.test",
-    label: "Member",
-    description: "MEMBER catalog access",
+    email: "host@besedy.test",
+    label: "Host",
+    description: "host: reader + access management",
     category: "catalog",
-    color: "#2563eb", // blue-600
+    color: "#15803d", // green-700
   },
   {
-    email: "viewer@besedy.test",
-    label: "Viewer",
-    description: "VIEWER catalog access",
+    email: "corrector@besedy.test",
+    label: "Corrector",
+    description: "corrector: reader + transcript corrections",
+    category: "catalog",
+    color: "#0d9488", // teal-600
+  },
+  {
+    email: "reader@besedy.test",
+    label: "Reader",
+    description: "reader: transcripts, no downloads",
     category: "catalog",
     color: "#6b7280", // gray-500
   },
   {
+    email: "downloader@besedy.test",
+    label: "Reader + download",
+    description: "reader with the download_audio extra",
+    category: "catalog",
+    color: "#2563eb", // blue-600
+  },
+  {
     email: "listener@besedy.test",
     label: "Listener",
-    description: "LISTENER (no transcripts)",
+    description: "listener: audio only, no transcripts",
     category: "catalog",
     color: "#475569", // slate-600
   },

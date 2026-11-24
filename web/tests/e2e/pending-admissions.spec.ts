@@ -136,8 +136,8 @@ test.describe("Pending Admission Management", () => {
     });
 
     test("non-admin cannot create pending admission", async ({ page }) => {
-      // Login as regular user (owner has catalog access but not admin)
-      await loginAs(page, "owner");
+      // Login as regular user (host has catalog access but not admin)
+      await loginAs(page, "host");
 
       const email = uniqueEmail("unauthorized");
 
@@ -292,7 +292,7 @@ test.describe("Pending Admission Management", () => {
       ).toHaveCount(0);
 
       // A catalog admin's role select carries the full role vocabulary,
-      // unlike the narrower host list asserted in the owner test below.
+      // unlike the narrower host list asserted in the host test below.
       await expect(
         dialog.getByText(
           "You can grant: Listener, Reader, Corrector, Host, Curator, Catalog admin."
@@ -315,10 +315,10 @@ test.describe("Pending Admission Management", () => {
       ).toBeVisible({ timeout: 10000 });
     });
 
-    test("owner can invite a user with a role-only grant", async ({
+    test("host can invite a user with a role-only grant", async ({
       page,
     }) => {
-      await loginAs(page, "owner");
+      await loginAs(page, "host");
 
       // Navigate to catalog settings
       await page.goto(URLS.catalogSettings);
@@ -339,7 +339,7 @@ test.describe("Pending Admission Management", () => {
       const userSearch = dialog.getByRole("combobox").first();
       await expect(userSearch).toBeVisible({ timeout: 5000 });
 
-      const email = uniqueEmail("owner-role-only-dialog");
+      const email = uniqueEmail("host-role-only-dialog");
       await userSearch.fill(email);
       await page.getByRole("button", { name: `Invite ${email}` }).click();
 
@@ -376,12 +376,12 @@ test.describe("Pending Admission Management", () => {
       ).toBeVisible({ timeout: 10000 });
     });
 
-    test("owner can add a pending grant via the catalog API", async ({
+    test("host can add a pending grant via the catalog API", async ({
       page,
     }) => {
-      await loginAs(page, "owner");
+      await loginAs(page, "host");
 
-      const email = uniqueEmail("owner-pending-grant");
+      const email = uniqueEmail("host-pending-grant");
 
       // Use the dedicated pending-grant API (which creates pending grant or direct access)
       const response = await page.request.post(

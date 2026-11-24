@@ -72,7 +72,7 @@ test.describe('Offline Mode', () => {
       page,
       context,
     }) => {
-      await loginAs(page, 'viewer');
+      await loginAs(page, 'reader');
       await page.goto(URLS.catalog);
       await waitForPageReady(page);
 
@@ -94,7 +94,7 @@ test.describe('Offline Mode', () => {
     test('download button is visible and idle on the recording page', async ({
       page,
     }) => {
-      await loginAs(page, 'viewer');
+      await loginAs(page, 'reader');
       await clearOfflineStorage(page);
       await page.goto(URLS.recording(FIRST_RECORDING.hash));
       await waitForPageReady(page);
@@ -107,7 +107,7 @@ test.describe('Offline Mode', () => {
     test('downloads a recording and lists it on the Downloads page', async ({
       page,
     }) => {
-      await loginAs(page, 'viewer');
+      await loginAs(page, 'reader');
       await clearOfflineStorage(page);
       await page.goto(URLS.recording(FIRST_RECORDING.hash));
       await waitForPageReady(page);
@@ -131,7 +131,7 @@ test.describe('Offline Mode', () => {
     test('streams audio that is not downloaded straight from the server', async ({
       page,
     }) => {
-      await loginAs(page, 'viewer');
+      await loginAs(page, 'reader');
       await clearOfflineStorage(page);
       await page.goto(URLS.recording(FIRST_RECORDING.hash));
       await waitForPageReady(page);
@@ -561,7 +561,7 @@ test.describe('Offline Mode', () => {
       browserName,
     }) => {
       skipOfflineNavigationOnWebKit(browserName);
-      await loginAs(page, 'viewer');
+      await loginAs(page, 'reader');
       await page.goto('/downloads');
       await waitForPageReady(page);
       await waitForServiceWorker(page);

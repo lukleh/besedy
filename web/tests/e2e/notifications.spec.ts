@@ -80,7 +80,7 @@ async function getEventIdByTitle(
 test.describe("Notifications", () => {
   test.describe("Notification Bell - Basic UI", () => {
     test("bell icon is visible in header for authenticated users", async ({ page }) => {
-      await loginAs(page, "viewer");
+      await loginAs(page, "reader");
       await waitForPageReady(page);
 
       // Bell button should be visible in the header
@@ -89,7 +89,7 @@ test.describe("Notifications", () => {
     });
 
     test("popover opens when bell is clicked", async ({ page }) => {
-      await loginAs(page, "viewer");
+      await loginAs(page, "reader");
       await waitForPageReady(page);
 
       // Click bell
@@ -110,8 +110,8 @@ test.describe("Notifications", () => {
       // Event publishing fans notifications out to every catalog-access
       // user, including the viewer role. Earlier tests in the run may have
       // released an event, so scrub the viewer's notifications first.
-      await clearEventNotificationsForRole("viewer");
-      await loginAs(page, "viewer");
+      await clearEventNotificationsForRole("reader");
+      await loginAs(page, "reader");
       await waitForPageReady(page);
 
       // Click bell
@@ -124,7 +124,7 @@ test.describe("Notifications", () => {
     });
 
     test("links to settings page from popover", async ({ page }) => {
-      await loginAs(page, "viewer");
+      await loginAs(page, "reader");
       await waitForPageReady(page);
 
       // Click bell
@@ -246,7 +246,7 @@ test.describe("Notifications", () => {
 
   test.describe("Notification Settings Page", () => {
     test("settings page loads correctly", async ({ page }) => {
-      await loginAs(page, "viewer");
+      await loginAs(page, "reader");
       await page.goto("/settings");
       await waitForPageReady(page);
 
@@ -256,7 +256,7 @@ test.describe("Notifications", () => {
     });
 
     test("shows push notification toggle", async ({ page }) => {
-      await loginAs(page, "viewer");
+      await loginAs(page, "reader");
       await page.goto("/settings");
       await waitForPageReady(page);
 
@@ -269,7 +269,7 @@ test.describe("Notifications", () => {
     });
 
     test("shows about section", async ({ page }) => {
-      await loginAs(page, "viewer");
+      await loginAs(page, "reader");
       await page.goto("/settings");
       await waitForPageReady(page);
 
@@ -279,7 +279,7 @@ test.describe("Notifications", () => {
     });
 
     test("back link returns to catalog", async ({ page }) => {
-      await loginAs(page, "viewer");
+      await loginAs(page, "reader");
       await page.goto("/settings");
       await waitForPageReady(page);
 
@@ -293,7 +293,7 @@ test.describe("Notifications", () => {
     });
 
     test("toggle shows permission state when clicked", async ({ page }) => {
-      await loginAs(page, "viewer");
+      await loginAs(page, "reader");
       await page.goto("/settings");
       await waitForPageReady(page);
 
@@ -324,7 +324,7 @@ test.describe("Notifications", () => {
      */
 
     test("shows a valid capability state", async ({ page }) => {
-      await loginAs(page, "viewer");
+      await loginAs(page, "reader");
       await page.goto("/settings");
       await waitForPageReady(page);
 
@@ -332,7 +332,7 @@ test.describe("Notifications", () => {
     });
 
     test("toggle remains stable after click when available", async ({ page }) => {
-      await loginAs(page, "viewer");
+      await loginAs(page, "reader");
       await page.goto("/settings");
       await waitForPageReady(page);
 
