@@ -224,7 +224,7 @@ describe("admin user archive invitations", () => {
     expect(
       dialog.queryByRole("button", { name: "Add Catalog Access" })
     ).not.toBeInTheDocument();
-    expect(dialog.getAllByText("Corrector").length).toBeGreaterThan(0);
+    expect(dialog.getAllByText("Transcript checker").length).toBeGreaterThan(0);
     expect(dialog.getByRole("button", { name: "Remove access" })).toBeEnabled();
   });
 
@@ -254,7 +254,7 @@ describe("admin user archive invitations", () => {
     fireEvent.keyDown(screen.getByRole("combobox", { name: "Role" }), {
       key: "ArrowDown",
     });
-    fireEvent.click(await screen.findByRole("option", { name: "Corrector" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Transcript checker" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await expectMutation("/api/admin/portal-admissions/invitation-1", "PATCH", {

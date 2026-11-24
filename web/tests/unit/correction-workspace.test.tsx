@@ -390,13 +390,13 @@ describe("CorrectionWorkspace contributor consent", () => {
 
   // Read once before the first edit, formatted rather than as Markdown source.
   it("shows the whole guide, formatted, under the consent", async () => {
-    const guide = "# Návod pro korektury\n\n- **Čísla** pište číslicemi.";
+    const guide = "# Návod pro kontrolu přepisu\n\n- **Čísla** pište číslicemi.";
     renderWorkspace(
       state({ guide: { revisionId: "g1", body: guide, authorId: null, updatedAt: null, isDefault: false } }),
       { consent: { accepted: false, version: "v", text: "Souhlasím s trénováním." } }
     );
     const card = await screen.findByTestId("correction-consent-guide");
-    expect(within(card).getByRole("heading", { level: 1, name: "Návod pro korektury" })).toBeInTheDocument();
+    expect(within(card).getByRole("heading", { level: 1, name: "Návod pro kontrolu přepisu" })).toBeInTheDocument();
     expect(within(card).getByText("Čísla").tagName).toBe("STRONG");
     expect(card).not.toHaveTextContent("**");
   });
