@@ -94,6 +94,23 @@ describe("correction presence", () => {
     expect(clearPresence).not.toHaveBeenCalled();
   });
 
+  it("writes nothing for a heartbeat the page has already cancelled", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const response = await PUT(
+      new NextRequest(URL, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId: WORKSPACE_ID, spanId: SPAN_ID, editing: true }),
+        signal: controller.signal,
+      }),
+      params
+    );
+
+    expect(response.status).toBe(204);
+    expect(recordPresence).not.toHaveBeenCalled();
+  });
+
   it("takes the person out when they leave the page", async () => {
     const response = await DELETE(new NextRequest(`${URL}?workspace=${WORKSPACE_ID}`, { method: "DELETE" }), params);
 

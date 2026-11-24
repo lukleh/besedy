@@ -49,6 +49,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       throw new CorrectionError("WORKSPACE_ARCHIVED", "This correction workspace has been archived");
     }
 
+    // The page cancels a heartbeat under way before it says goodbye. One
+    // that got this far must not write after that goodbye and bring the
+    // person back for the presence window.
+    if (request.signal.aborted) return new NextResponse(null, { status: 204 });
+
     await recordPresence({ workspaceId: workspace.id, userId, spanId, editing });
     const present = await loadPresence([workspace.id], userId);
 

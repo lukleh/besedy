@@ -4,7 +4,7 @@
 // It shows where the gaps and the disputes are, which a list of several
 // hundred segments cannot, and a click on it jumps there.
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { formatClock } from "@/lib/correction/format";
 import type { PresentPerson, SpanState, StripSpan } from "./correction-types";
@@ -94,36 +94,20 @@ export function presenceMarkers(
   return [...bySpan.values()].sort((a, b) => a.startSeconds - b.startSeconds);
 }
 
-type PresenceMarker = ReturnType<typeof presenceMarkers>[number];
-
 /**
- * How far apart, as a share of the strip, two markers must be to stand on
- * their own. A badge is about this wide on the narrowest strip the page is
- * offered on, so closer markers would cover one another.
+ * How much of the strip lies between each marker and the one before it (the
+ * first is measured from the start). The badges sit in one row with a gap of
+ * this share before each; the gaps give way when badges need the room, so a
+ * badge is at its segment where there is space and never on top of another.
  */
-const MARKER_SPACING = 0.05;
-
-/**
- * Markers too close to stand side by side, gathered into one row. Somebody
- * working a few segments behind somebody else is the usual case, and on a
- * long recording those segments are a pixel apart: each person still gets
- * their own badge, in the order of the recording.
- */
-export function clusterMarkers(
-  markers: readonly PresenceMarker[],
-  totalSeconds: number,
-  spacing = MARKER_SPACING
-): Array<{ position: number; markers: PresenceMarker[] }> {
-  const clusters: Array<{ position: number; markers: PresenceMarker[] }> = [];
-  for (const marker of markers) {
-    const position = totalSeconds > 0 ? marker.startSeconds / totalSeconds : 0;
-    const last = clusters.at(-1);
-    // Measured from the cluster's own position, so a chain of near
-    // neighbours cannot stretch one cluster along the whole strip.
-    if (last && position - last.position < spacing) last.markers.push(marker);
-    else clusters.push({ position, markers: [marker] });
-  }
-  return clusters;
+export function markerGaps(
+  markers: ReturnType<typeof presenceMarkers>,
+  totalSeconds: number
+): number[] {
+  if (totalSeconds <= 0) return markers.map(() => 0);
+  return markers.map(
+    (marker, index) => (marker.startSeconds - (index === 0 ? 0 : markers[index - 1].startSeconds)) / totalSeconds
+  );
 }
 
 const NOBODY: readonly PresentPerson[] = [];
@@ -135,7 +119,7 @@ export function CorrectionStrip({ spans, selectedOrdinal, present = NOBODY, onJu
   const byId = useMemo(() => new Map(spans.map((span) => [span.spanId, span])), [spans]);
   const selected = selectedOrdinal === null ? null : spans.find((span) => span.ordinal === selectedOrdinal);
   const markers = useMemo(() => presenceMarkers(present), [present]);
-  const clusters = useMemo(() => clusterMarkers(markers, total), [markers, total]);
+  const gaps = useMemo(() => markerGaps(markers, total), [markers, total]);
 
   if (spans.length === 0 || total <= 0) return null;
 
@@ -143,30 +127,29 @@ export function CorrectionStrip({ spans, selectedOrdinal, present = NOBODY, onJu
     <div className="space-y-1.5" data-testid="correction-strip">
       {markers.length > 0 && (
         // Above the bar, so a badge never hides the state of the stretch it marks.
-        <div className="relative h-5" aria-label={t("present")} role="group" data-testid="correction-strip-presence">
-          {clusters.map((cluster) => (
-            <div
-              key={cluster.markers[0].spanId}
-              className="absolute top-0 flex -translate-x-1/2 gap-0.5"
-              style={{ left: `clamp(1rem, ${cluster.position * 100}%, calc(100% - 1rem))` }}
-            >
-              {cluster.markers.map((marker) => (
-                // One button per segment, so each person's place is its own target.
-                <button
-                  key={marker.spanId}
-                  type="button"
-                  className="flex gap-0.5"
-                  onClick={() => {
-                    const target = byId.get(marker.spanId);
-                    if (target) onJump(target);
-                  }}
-                >
-                  {marker.people.map((person) => (
-                    <PersonChip key={person.userId} name={person.name} editing={person.editing} />
-                  ))}
-                </button>
-              ))}
-            </div>
+        <div
+          className="flex h-5 w-full overflow-hidden"
+          aria-label={t("present")}
+          role="group"
+          data-testid="correction-strip-presence"
+        >
+          {markers.map((marker, index) => (
+            <Fragment key={marker.spanId}>
+              <span aria-hidden="true" className="min-w-0 shrink" style={{ flexBasis: `${gaps[index] * 100}%` }} />
+              {/* One button per segment, so each person's place is its own target. */}
+              <button
+                type="button"
+                className="flex shrink-0 gap-0.5 pr-0.5"
+                onClick={() => {
+                  const target = byId.get(marker.spanId);
+                  if (target) onJump(target);
+                }}
+              >
+                {marker.people.map((person) => (
+                  <PersonChip key={person.userId} name={person.name} editing={person.editing} />
+                ))}
+              </button>
+            </Fragment>
           ))}
         </div>
       )}

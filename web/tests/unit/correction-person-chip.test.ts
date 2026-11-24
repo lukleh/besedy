@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { initialsOf } from "@/components/correction/person-chip";
-import { clusterMarkers, presenceMarkers } from "@/components/correction/correction-strip";
+import { markerGaps, presenceMarkers } from "@/components/correction/correction-strip";
 import type { PresentPerson } from "@/components/correction/correction-types";
 
 function person(userId: string, spanId: string | null, startSeconds: number | null, editing = false): PresentPerson {
@@ -43,26 +43,22 @@ describe("presenceMarkers", () => {
   });
 });
 
-describe("clusterMarkers", () => {
-  const ids = (clusters: ReturnType<typeof clusterMarkers>) =>
-    clusters.map((cluster) => cluster.markers.map((marker) => marker.spanId));
+describe("markerGaps", () => {
+  // An hour-long recording at the narrowest supported width: badges at 0:00,
+  // 0:10 and 3:00 are far wider than the strip between them.
+  it("gives each marker the share of the strip since the one before it", () => {
+    const markers = presenceMarkers([person("eva", "span-18", 180), person("jana", "span-0", 0), person("petr", "span-1", 10)]);
 
-  // An hour-long recording: neighbouring segments are a fraction of a percent apart.
-  it("gathers people a few segments apart into one row, each with their own marker", () => {
-    const markers = presenceMarkers([person("jana", "span-0", 0), person("petr", "span-1", 10), person("eva", "span-200", 2000)]);
-
-    expect(ids(clusterMarkers(markers, 3600))).toEqual([["span-0", "span-1"], ["span-200"]]);
+    expect(markers.map((marker) => marker.spanId)).toEqual(["span-0", "span-1", "span-18"]);
+    const gaps = markerGaps(markers, 3600);
+    expect(gaps[0]).toBe(0);
+    expect(gaps[1]).toBeCloseTo(10 / 3600);
+    expect(gaps[2]).toBeCloseTo(170 / 3600);
+    // The gaps add up to where the last marker is, so nothing is placed twice.
+    expect(gaps.reduce((sum, gap) => sum + gap, 0)).toBeCloseTo(180 / 3600);
   });
 
-  it("leaves people far enough apart on their own", () => {
-    const markers = presenceMarkers([person("jana", "span-0", 0), person("petr", "span-1", 10)]);
-
-    expect(ids(clusterMarkers(markers, 100))).toEqual([["span-0"], ["span-1"]]);
-  });
-
-  it("does not let a chain of near neighbours stretch one cluster along the strip", () => {
-    const markers = presenceMarkers([0, 4, 8, 12].map((start) => person(`p${start}`, `span-${start}`, start)));
-
-    expect(ids(clusterMarkers(markers, 100))).toEqual([["span-0", "span-4"], ["span-8", "span-12"]]);
+  it("places nothing on a recording without a length", () => {
+    expect(markerGaps(presenceMarkers([person("jana", "span-1", 10)]), 0)).toEqual([0]);
   });
 });
