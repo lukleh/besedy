@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { ArrowRight, Check, Pause, Play, Share2, ThumbsDown } from "lucide-react";
+import { ArrowRight, Check, Flag, Pause, Play, Share2, ThumbsDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -1222,6 +1222,17 @@ export function CorrectionSurface({
                 {primary === "continue" ? <ArrowRight className="h-4 w-4" /> : <Check className="h-4 w-4" />}
                 {primary === "confirmEmpty" ? t("emptySpan.confirm") : t(primary)}
               </Button>
+              <Button
+                variant="outline"
+                className="gap-2"
+                aria-expanded={flagsOpen}
+                aria-controls="correction-flags-panel"
+                onClick={() => setFlagsOpen((open) => !open)}
+                data-testid="correction-flags-toggle"
+              >
+                <Flag className="h-4 w-4" />
+                {t("flagAudio")}
+              </Button>
               {canDisapprove && (
                 <Button
                   variant="outline"
@@ -1237,9 +1248,7 @@ export function CorrectionSurface({
               )}
               {isEdited && (
                 <Button
-                  variant="link"
-                  size="sm"
-                  className="px-1 text-muted-foreground"
+                  variant="outline"
                   disabled={command.isPending}
                   onClick={discardDraft}
                   data-testid="correction-discard-draft"
@@ -1249,9 +1258,7 @@ export function CorrectionSurface({
               )}
               {myDecision && (
                 <Button
-                  variant="link"
-                  size="sm"
-                  className="px-1 text-muted-foreground"
+                  variant="outline"
                   disabled={command.isPending}
                   onClick={() => issue(selected, "withdraw")}
                   data-testid="correction-withdraw"
@@ -1259,17 +1266,6 @@ export function CorrectionSurface({
                   {t("withdraw")}
                 </Button>
               )}
-              <Button
-                variant="link"
-                size="sm"
-                className="ml-auto px-1 text-muted-foreground"
-                aria-expanded={flagsOpen}
-                aria-controls="correction-flags-panel"
-                onClick={() => setFlagsOpen((open) => !open)}
-                data-testid="correction-flags-toggle"
-              >
-                {t("flagAudio")}
-              </Button>
             </div>
 
             <HeardMeter
@@ -1310,9 +1306,8 @@ export function CorrectionSurface({
                     </Button>
                   )}
                   <Button
-                    variant="link"
+                    variant="outline"
                     size="sm"
-                    className="px-1 text-muted-foreground"
                     disabled={!commentBody.trim() || comment.isPending}
                     onClick={() => comment.mutate({ span: selected, body: commentBody })}
                     data-testid="correction-send-note"
@@ -1329,7 +1324,8 @@ export function CorrectionSurface({
             )}
 
             {flagsOpen && (
-              <div id="correction-flags-panel" className="rounded-md border p-3">
+              <div id="correction-flags-panel" className="space-y-2 rounded-md border p-3">
+                <p className="text-sm text-muted-foreground">{t("flagAudioHint")}</p>
                 <CorrectionFlags
                   span={selected}
                   flagsUrl={`${buildCorrectionSpanUrl(catalogId, hash, selected.id)}/flags`}

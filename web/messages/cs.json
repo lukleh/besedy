@@ -518,7 +518,8 @@
     "disapproveHint": "Když je text špatně a nedokážete ho opravit. Ostatní uvidí vaši poznámku. Pozdější schválení kýmkoli neschválení zruší.",
     "disapproveEditedHint": "Nejdřív změnu uložte, nebo ji zahoďte.",
     "sendNote": "Poslat jen poznámku",
-    "flagAudio": "Označit zvuk"
+    "flagAudio": "Problém se zvukem",
+    "flagAudioHint": "Když není dobře slyšet, co zaznělo, označte proč."
   },
   "metadata": {
     "title": "Metadata",

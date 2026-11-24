@@ -518,7 +518,8 @@
     "disapproveHint": "When the text is wrong and you cannot fix it. The others will see your note. A later approval by anyone lifts the disapproval.",
     "disapproveEditedHint": "Save your change or discard it first.",
     "sendNote": "Send the note only",
-    "flagAudio": "Flag audio"
+    "flagAudio": "Audio problem",
+    "flagAudioHint": "When you cannot hear clearly what was said, mark why."
   },
   "metadata": {
     "title": "Metadata",
