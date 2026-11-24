@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useCatalogAccessSummary } from '@/hooks/use-catalog-access-summary';
 import { ApiError, fetchJson } from '@/lib/api/fetch-json';
 
@@ -26,6 +26,10 @@ describe('useCatalogAccessSummary', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('treats a refusal as no access', async () => {
@@ -53,5 +57,30 @@ describe('useCatalogAccessSummary', () => {
       expect(result.current.isError).toBe(true);
     });
     expect(result.current.data).toBeUndefined();
+  });
+
+  it('asks again after a temporary failure and recovers', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const granted = { canManageAccess: true, canViewCorrectionOverview: true };
+    fetchJsonMock
+      .mockRejectedValueOnce(new ApiError('Unavailable', 503))
+      .mockResolvedValue(granted);
+
+    const { result } = renderSummary();
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+    expect(fetchJsonMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    await waitFor(() => {
+      expect(result.current.data).toEqual(granted);
+    });
+
+    // An answered lookup is not polled.
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(fetchJsonMock).toHaveBeenCalledTimes(2);
   });
 });
